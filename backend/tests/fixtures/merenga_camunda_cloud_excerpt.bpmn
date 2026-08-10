@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+  xmlns:ns1="http://camunda.org/schema/modeler/1.0"
+  id="Definitions_merenga_excerpt" targetNamespace="http://bpmn.io/schema/bpmn"
+  ns1:executionPlatform="Camunda Cloud" ns1:executionPlatformVersion="8.8.0">
+  <bpmn:process id="Process_merenga_excerpt" isExecutable="false">
+    <bpmn:task id="Activity_1ba1v7n" name="Извлечь ингредиент с емкости">
+          <bpmn:extensionElements>
+            <zeebe:properties>
+              <zeebe:property name="container_tara" value="Противень"/>
+              <zeebe:property name="ingredient" value="Готовый полуфабрикат блины"/>
+            </zeebe:properties>
+            <camunda:properties>
+              <camunda:property name="container_tara" value="Противень"/>
+              <camunda:property name="ingredient" value="Готовый полуфабрикат блины"/>
+              <camunda:property name="tara" value="Шпилька"/>
+              
+            </camunda:properties>
+          </bpmn:extensionElements>
+          <bpmn:outgoing>Flow_1kma62n</bpmn:outgoing>
+          <bpmn:property id="Property_1580aaw" name="__targetRef_placeholder"/>
+          <bpmn:dataInputAssociation id="DataInputAssociation_148eh0x">
+            <bpmn:sourceRef>DataStoreReference_0t6gyw9</bpmn:sourceRef>
+            <bpmn:targetRef>Property_1580aaw</bpmn:targetRef>
+          </bpmn:dataInputAssociation>
+        </bpmn:task>
+    <bpmn:task id="Activity_18xixja" name="Извлечь ингредиент с емкости">
+          <bpmn:extensionElements>
+            <zeebe:properties>
+              <zeebe:property name="container_tara" value="Дежа"/>
+              <zeebe:property name="ingredient" value="Тесто"/>
+            </zeebe:properties>
+            <camunda:properties>
+              <camunda:property name="container_tara" value="Дежа"/>
+              <camunda:property name="ingredient" value="Тесто"/>
+              <camunda:property name="tara" value="Тележка"/>
+              
+            </camunda:properties>
+          </bpmn:extensionElements>
+          <bpmn:outgoing>Flow_09ahowx</bpmn:outgoing>
+          <bpmn:property id="Property_16b6rbx" name="__targetRef_placeholder"/>
+          <bpmn:dataInputAssociation id="DataInputAssociation_0y5rqn7">
+            <bpmn:sourceRef>DataStoreReference_0fny5t3</bpmn:sourceRef>
+            <bpmn:targetRef>Property_16b6rbx</bpmn:targetRef>
+          </bpmn:dataInputAssociation>
+        </bpmn:task>
+    <bpmn:startEvent id="Event_18h1aoo" name="Получить задание">
+          <bpmn:extensionElements>
+            <camunda:properties>
+              <camunda:property name="document" value="Задание на производство"/>
+            </camunda:properties>
+          </bpmn:extensionElements>
+          <bpmn:outgoing>Flow_0jfxdo7</bpmn:outgoing>
+          <bpmn:dataOutputAssociation id="DataOutputAssociation_1nfknte">
+            <bpmn:targetRef>DataObjectReference_1iqu5dq</bpmn:targetRef>
+          </bpmn:dataOutputAssociation>
+          <bpmn:messageEventDefinition id="MessageEventDefinition_0yyu733"/>
+        </bpmn:startEvent>
+    <bpmn:task id="Activity_0wh7wzm" name="Взвесить ингредиент">
+          <bpmn:extensionElements>
+            <camunda:properties>
+              <camunda:property name="ingredient" value="Готовый полуфабрикат блины"/>
+              <camunda:property name="ingredient" value="Крем"/>
+              <camunda:property name="equipment" value="Весы высокоточные"/>
+            </camunda:properties>
+          </bpmn:extensionElements>
+          <bpmn:incoming>Flow_1rjgzwy</bpmn:incoming>
+          <bpmn:outgoing>Flow_10wbjzq</bpmn:outgoing>
+        </bpmn:task>
+  </bpmn:process>
+</bpmn:definitions>
