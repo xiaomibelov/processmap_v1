@@ -73,3 +73,90 @@
   error-events/{event_id}) — нужны seed-хелперы в промпт (append_error_event и пр.).
 - sqlite-env admin-операции (llm providers/prompts/features/usage) по-прежнему
   вне контура (pg-only таблицы).
+
+---
+
+# Часть 2 — запуск генератора из админки (кнопка-пульт)
+
+## Устройство запуска
+
+```
+Админка (/admin/llm?tab=testgen)                 GitHub Actions
+┌──────────────────────────┐    workflow_dispatch    ┌────────────────────────┐
+│ карточка «Генерация      │ ─────────────────────▶ │ llm-testgen.yml        │
+│ API-тестов» (таб TestGen)│  POST /api/admin/      │ coverage → генерация → │
+└──────────┬───────────────┘  testgen/run            │ ветка test/llm-gen-* + │
+           │                       │                 │ PR с отчётом +         │
+           │ GET runs[/id]         ▼                 │ артефакты              │
+           │ ◀────────────  admin_testgen.py ◀───────┘ run-name [run_id],
+           │  поллинг 12с      sqlite testgen_runs     PR «(run <id>, …)»
+           │  (статусы         (queued/running/
+           │   queued→running→ done/failed + pr_url)
+           │   done/failed)
+```
+
+- **Workflow** `.github/workflows/llm-testgen.yml` — только `workflow_dispatch`
+  (inputs: tag, limit, run_id). Шаги: валидация inputs (белый список тегов,
+  limit 1..20, зеркало бэкенда) → deps → coverage baseline (pytest
+  --api-coverage, как nightly) → генерация `scripts/llm_test_generator/` →
+  прогон сгенерированных тестов в общий coverage → дельта → ветка
+  `test/llm-gen-<run_id>-<ts>` + PR через gh с отчётом → артефакты
+  (coverage before/after JSON, HTML, delta, needs_human.md, usage из
+  last_run.json). `run-name` содержит маркер `[run_id]` — по нему бэкенд
+  находит run через GitHub API.
+- **Backend** `app/routers/admin_testgen.py` — генератор на сервере НЕ
+  исполняется, только dispatch + учёт. Право = «API Docs» (is_admin или
+  орг-роль org_owner/org_admin/auditor, фронт `canOpenOrgSettings`). 409 на
+  дубль активного запуска по тегу. Синк статусов при чтении (best-effort:
+  падение GitHub API не роняет GET). Токен: env `GITHUB_TOKEN`/`GH_PAT`,
+  репозиторий `GITHUB_REPOSITORY` (default xiaomibelov/processmap_v1).
+- **Frontend** — таб TestGen в `/admin/llm` (LLM-раздел админки): форма
+  тег/батч, кнопка с состояниями (Запустить → Запуск… → Генерация идёт…),
+  карточка активного запуска (статус, PR-ссылка, ошибка), история запусков,
+  поллинг 12 сек пока есть активный. Без права таба/панели нет в DOM.
+
+## Скриншоты
+
+- `testgen-full.png` — страница /admin/llm?tab=testgen целиком (таб, карточка
+  запуска, активный запуск running, история с done + PR-ссылкой).
+- `testgen-panel.png` — только панель TestGen.
+
+Снято на production-сборке фронта (`vite build` + `vite preview`) с моками
+/api/* — соответствует реальному рендеру компонентов.
+
+## Пример запуска на stage
+
+**Блокер до мержа:** `workflow_dispatch` срабатывает только для workflow,
+присутствующего в default-ветке (main). До мержа PR кнопка вернёт 502
+(`github_dispatch_failed: github_api_404`) — запись помечается failed, повтор
+не блокируется (проверено тестом `test_run_502_on_dispatch_failure`).
+
+После мержа нужны секреты репозитория: `LLM_TESTGEN_API_KEY`,
+`LLM_TESTGEN_BASE_URL` (+ опционально var `LLM_TESTGEN_MODEL`, default
+deepseek-v4-flash) и `GITHUB_TOKEN`/`GH_PAT` на бэкенде (repo + actions RW).
+Пример сгенерированного PR — см. #703-контур (notes-батч) и admin-батч выше:
+именно такие PR будет создавать workflow автоматически.
+
+## Верификация Части 2
+
+- backend: `pytest tests/test_admin_testgen_api.py` — **13 passed** (401/403/
+  валидация tag/limit/409/503/502/статусы queued→running→done/failed + PR,
+  GitHub API замокан).
+- frontend: `node --test src/features/admin/pages/AdminLlmPage.testgen.test.mjs`
+  — **5 passed** (видимость по праву, состояния кнопки, POST с tag/limit, 409);
+  существующий `AdminLlmPage.test.mjs` — 8 passed (не сломан).
+- contract fuzz: 404 `runs/{run_id}` закрыт spec-gap waiver (фаззер детерминирован).
+- spec-drift: docs/openapi.yaml дополнен 3 эндпоинтами + схемой TestgenRunBody.
+- Регрессы: основной suite + contract — см. блок «Верификация (git-proof)» выше
+  и финальный прогон перед PR (ниже, после мержа параллельных коммитов).
+
+## Ограничения / follow-up (Часть 2)
+
+- Синк статусов опирается на маркер `[run_id]` в run-name и `(run <id>…)` в
+  заголовке PR — если формат в workflow поменяется, синк сломается (держать
+  зеркально).
+- Белый список тегов дублируется в трёх местах (backend `_ALLOWED_TAGS`,
+  workflow Validate inputs, фронт `TESTGEN_TAGS`) — при добавлении тега в
+  спеку обновлять все три.
+- workflow_dispatch из бэкенда требует токен с `actions:write` на репозиторий;
+  задокументировать в deploy-чеклисте stage.
