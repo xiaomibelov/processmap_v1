@@ -11,8 +11,8 @@ export default function ProcessStageSaveConflictModal({
   onRefreshSession = null,
   onOverwrite = null,
   onStay = null,
-  onDiscardLocalChanges = null,
-  onCompare = null,
+  onReport = null,
+  reportSent = false,
 }) {
   const resolvedView = view && typeof view === "object" ? view : {};
   const contextLines = Array.isArray(resolvedView.contextLines) ? resolvedView.contextLines : [];
@@ -20,6 +20,11 @@ export default function ProcessStageSaveConflictModal({
   const title = toText(resolvedView.title) || "Конфликт версии сессии";
   const lead = toText(resolvedView.lead);
   const actorMode = toText(resolvedView.actorMode) || "unknown";
+  const refreshLabel = toText(actions.refreshLabel) || "Загрузить версию с сервера";
+  const overwriteLabel = toText(actions.overwriteLabel) || "Оставить мою версию";
+  const reportLabel = reportSent === true
+    ? "Отчёт отправлен"
+    : (toText(actions.reportLabel) || "Сообщить об ошибке");
   return (
     <Modal
       open={open === true}
@@ -38,7 +43,7 @@ export default function ProcessStageSaveConflictModal({
             data-testid="diagram-save-conflict-modal-refresh"
             title={toText(actions.refreshHint)}
           >
-            {toText(actions.refreshLabel) || "Обновить и продолжить"}
+            {refreshLabel}
           </button>
           {typeof onOverwrite === "function" ? (
             <button
@@ -49,39 +54,19 @@ export default function ProcessStageSaveConflictModal({
               data-testid="diagram-save-conflict-modal-overwrite"
               title={toText(actions.overwriteHint)}
             >
-              {toText(actions.overwriteLabel) || "Перезаписать мои изменения"}
+              {overwriteLabel}
             </button>
           ) : null}
-          <button
-            type="button"
-            className="secondaryBtn h-9 px-3 text-xs"
-            onClick={onStay}
-            disabled={busy === true}
-            data-testid="diagram-save-conflict-modal-stay"
-            title={toText(actions.stayHint)}
-          >
-            {toText(actions.stayLabel) || "Отмена"}
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn h-9 px-3 text-xs"
-            onClick={onDiscardLocalChanges}
-            disabled={busy === true}
-            data-testid="diagram-save-conflict-modal-discard"
-            title={toText(actions.discardHint)}
-          >
-            {toText(actions.discardLabel) || "Отбросить локальные изменения"}
-          </button>
-          {typeof onCompare === "function" ? (
+          {typeof onReport === "function" ? (
             <button
               type="button"
-              className="secondaryBtn h-9 px-3 text-xs"
-              onClick={onCompare}
-              disabled={busy === true}
-              data-testid="diagram-save-conflict-modal-compare"
-              title={toText(actions.compareHint)}
+              className="ghostBtn h-9 px-3 text-xs"
+              onClick={onReport}
+              disabled={busy === true || reportSent === true}
+              data-testid="diagram-save-conflict-modal-report"
+              title={toText(actions.reportHint)}
             >
-              {toText(actions.compareLabel) || "Сравнить и выбрать"}
+              {reportLabel}
             </button>
           ) : null}
         </>
@@ -101,18 +86,15 @@ export default function ProcessStageSaveConflictModal({
           </ul>
         ) : null}
         <div className="text-[11px] text-muted">
-          {toText(actions.refreshLabel) || "Обновить и продолжить"}: {toText(actions.refreshHint)}
+          {refreshLabel}: {toText(actions.refreshHint)}
         </div>
         {typeof onOverwrite === "function" ? (
           <div className="text-[11px] text-muted">
-            {toText(actions.overwriteLabel) || "Перезаписать мои изменения"}: {toText(actions.overwriteHint)}
+            {overwriteLabel}: {toText(actions.overwriteHint)}
           </div>
         ) : null}
         <div className="text-[11px] text-muted">
-          {toText(actions.stayLabel) || "Отмена"}: {toText(actions.stayHint)}
-        </div>
-        <div className="text-[11px] text-muted">
-          {toText(actions.discardLabel) || "Отбросить локальные изменения"}: {toText(actions.discardHint)}
+          Отложить решение можно, закрыв окно — сохранения останутся на паузе до выбора.
         </div>
       </div>
     </Modal>
