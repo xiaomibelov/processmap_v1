@@ -149,6 +149,16 @@ def _as_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+# sqlite INTEGER — 64-бит signed; int query-параметры большего размера падают
+# с OverflowError на bind (баг из contract-фаззинга: limit/ts = 1.8e28 → 500).
+_MAX_SQLITE_INT = 2**62 - 1
+
+
+def _as_ts(value: Any, default: int = 0) -> int:
+    """timestamp/int-фильтр, безопасный для sqlite-bind: [0, _MAX_SQLITE_INT]."""
+    return max(0, min(_as_int(value, default), _MAX_SQLITE_INT))
+
+
 def _autopass_used_fallback(autopass_raw: Dict[str, Any], bpmn_meta_raw: Dict[str, Any]) -> bool:
     autopass = _as_dict(autopass_raw)
     bpmn_meta = _as_dict(bpmn_meta_raw)
@@ -926,8 +936,8 @@ def admin_ai_executions(
         workspace_id=workspace_id,
         project_id=project_id,
         session_id=session_id,
-        created_from=max(0, _as_int(created_from, 0)),
-        created_to=max(0, _as_int(created_to, 0)),
+        created_from=_as_ts(created_from),
+        created_to=_as_ts(created_to),
         limit=max(1, min(_as_int(limit, 50), 200)),
         offset=max(0, _as_int(offset, 0)),
     )
@@ -1217,8 +1227,8 @@ def admin_sessions(
     off = max(0, _as_int(offset, 0))
     needs_attention_raw = _as_int(needs_attention, -1)
     needs_attention_value = None if needs_attention_raw < 0 else needs_attention_raw
-    updated_from_raw = _as_int(updated_from, 0)
-    updated_to_raw = _as_int(updated_to, 0)
+    updated_from_raw = _as_ts(updated_from)
+    updated_to_raw = _as_ts(updated_to)
     workspace, ws_err = _workspace_payload(
         request,
         q=q,
@@ -1716,8 +1726,8 @@ def admin_error_events(
     lim = max(1, min(_as_int(limit, 50), 100))
     off = max(0, _as_int(offset, 0))
     sort_order = "desc" if _as_text(order).lower() == "desc" else "asc"
-    from_ts_raw = _as_int(occurred_from, 0)
-    to_ts_raw = _as_int(occurred_to, 0)
+    from_ts_raw = _as_ts(occurred_from)
+    to_ts_raw = _as_ts(occurred_to)
     filters = {
         "session_id": _as_text(session_id) or None,
         "request_id": _as_text(request_id) or None,
@@ -1784,8 +1794,8 @@ def admin_audit(
     lim = max(1, min(_as_int(limit, 20), 50))
     off = max(0, _as_int(offset, 0))
     q_value = _as_text(q).lower() or None
-    updated_from_raw = _as_int(updated_from, 0)
-    updated_to_raw = _as_int(updated_to, 0)
+    updated_from_raw = _as_ts(updated_from)
+    updated_to_raw = _as_ts(updated_to)
     from_ts = updated_from_raw if updated_from_raw > 0 else None
     to_ts = updated_to_raw if updated_to_raw > 0 else None
     total = count_audit_log(
