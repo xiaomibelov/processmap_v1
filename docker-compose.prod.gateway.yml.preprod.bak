@@ -1,0 +1,16 @@
+services:
+  gateway:
+    depends_on: !override
+      api:
+        condition: service_started
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway.prod
+    image: ${GATEWAY_IMAGE_TAG:-processmap-gateway:dev}
+    networks:
+      - processmap_edge_net
+
+networks:
+  processmap_edge_net:
+    name: processmap_edge_net
+    external: true
