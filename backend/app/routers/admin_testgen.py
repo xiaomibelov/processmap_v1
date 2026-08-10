@@ -26,7 +26,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-import httpx
+import requests
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
@@ -166,7 +166,7 @@ def _github_api(method: str, path: str, payload: Optional[Dict[str, Any]] = None
     token = _github_token()
     if not token:
         raise RuntimeError("github_token_not_configured")
-    resp = httpx.request(
+    resp = requests.request(
         method,
         f"https://api.github.com{path}",
         headers={
