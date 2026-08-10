@@ -1436,6 +1436,7 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
   const doc = parseXmlDocument(raw);
   if (!doc) return {};
 
+  const platformPreference = readExecutionPlatformPreference(doc);
   const out = {};
   const allNodes = asArray(doc.getElementsByTagName("*"));
   allNodes.forEach((ownerNode) => {
@@ -1445,6 +1446,7 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
       || findDirectChild(ownerNode, "extensionElements");
     if (!extensionElementsNode) return;
 
+    const activePropertiesNs = resolveActivePropertiesNamespace(extensionElementsNode, platformPreference);
     const managedProperties = [];
     const managedListeners = [];
     const preservedExtensionElements = [];
@@ -1462,6 +1464,14 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
         (childNamespace === CAMUNDA_NAMESPACE_URI || childNamespace === ZEEBE_NAMESPACE_URI)
         && childLocalNameLower === "properties"
       ) {
+        if (activePropertiesNs && childNamespace !== activePropertiesNs) {
+          // Shadowed legacy namespace (zeebe: wins on Camunda Cloud exports,
+          // camunda: only for explicit Camunda Platform files): not read as
+          // managed properties, but preserved raw so user data survives.
+          const rawChildXml = serializeXmlNode(child);
+          if (rawChildXml) preservedExtensionElements.push(rawChildXml);
+          return;
+        }
         const parsedProperties = parseManagedPropertiesBlockFromDom(child, childNamespace);
         if (parsedProperties) {
           managedProperties.push(...parsedProperties);
@@ -1493,6 +1503,50 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
   });
 
   return normalizeCamundaExtensionsMap(out);
+}
+
+export function detectCamundaNamespaceDivergence(xmlText) {
+  // Elements carrying BOTH camunda:properties and zeebe:properties blocks
+  // whose property sets differ. camundaOnly rows are stale legacy values the
+  // importer ignores in favour of zeebe: (unless executionPlatform says
+  // otherwise). Used to warn the user on import.
+  const raw = String(xmlText || "").trim();
+  if (!raw) return [];
+  const doc = parseXmlDocument(raw);
+  if (!doc) return [];
+
+  const diverged = [];
+  asArray(doc.getElementsByTagName("*")).forEach((ownerNode) => {
+    const elementId = asText(ownerNode?.getAttribute?.("id"));
+    if (!elementId) return;
+    const extensionElementsNode = findDirectChild(ownerNode, "extensionElements", BPMN_NAMESPACE_URI)
+      || findDirectChild(ownerNode, "extensionElements");
+    if (!extensionElementsNode) return;
+
+    let camundaKeys = null;
+    let zeebeKeys = null;
+    directChildElements(extensionElementsNode).forEach((child) => {
+      if (localNameOf(child).toLowerCase() !== "properties") return;
+      const ns = namespaceOf(child);
+      if (ns !== CAMUNDA_NAMESPACE_URI && ns !== ZEEBE_NAMESPACE_URI) return;
+      const parsed = parseManagedPropertiesBlockFromDom(child, ns);
+      if (!parsed) return;
+      const keys = parsed.map((item) => `${String(item?.name || "")}\u0000${String(item?.value || "")}`);
+      if (ns === CAMUNDA_NAMESPACE_URI) camundaKeys = [...(camundaKeys || []), ...keys];
+      else zeebeKeys = [...(zeebeKeys || []), ...keys];
+    });
+    if (!camundaKeys?.length || !zeebeKeys?.length) return;
+    const camundaSet = new Set(camundaKeys);
+    const zeebeSet = new Set(zeebeKeys);
+    const same = camundaKeys.length === zeebeKeys.length && camundaKeys.every((key) => zeebeSet.has(key));
+    if (same) return;
+    diverged.push({
+      elementId,
+      camundaOnly: camundaKeys.filter((key) => !zeebeSet.has(key)),
+      zeebeOnly: zeebeKeys.filter((key) => !camundaSet.has(key)),
+    });
+  });
+  return diverged;
 }
 
 export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap, allowSeedFromBpmn = true } = {}) {
@@ -1861,6 +1915,35 @@ function shouldUseZeebePropertiesProfile(doc) {
   }
   if (hasZeebeExtensionNodes(doc)) return true;
   return hasZeebeNamespaceDeclaration(doc);
+}
+
+function readExecutionPlatformPreference(doc) {
+  const platform = readDefinitionExecutionPlatform(doc);
+  if (platform.includes("cloud") || platform.includes("zeebe")) return "cloud";
+  if (platform.includes("platform")) return "platform";
+  return "";
+}
+
+function resolveActivePropertiesNamespace(extensionElementsNode, platformPreference = "") {
+  // Camunda Cloud exports may carry two parallel blocks per element:
+  // zeebe:properties (live, written by the modeler) and legacy
+  // camunda:properties (C7, often stale). Exactly one namespace wins.
+  let hasZeebe = false;
+  let hasCamunda = false;
+  directChildElements(extensionElementsNode).forEach((child) => {
+    if (localNameOf(child).toLowerCase() !== "properties") return;
+    const ns = namespaceOf(child);
+    if (ns === ZEEBE_NAMESPACE_URI) hasZeebe = true;
+    if (ns === CAMUNDA_NAMESPACE_URI) hasCamunda = true;
+  });
+  if (platformPreference === "platform") {
+    if (hasCamunda) return CAMUNDA_NAMESPACE_URI;
+    if (hasZeebe) return ZEEBE_NAMESPACE_URI;
+    return "";
+  }
+  if (hasZeebe) return ZEEBE_NAMESPACE_URI;
+  if (hasCamunda) return CAMUNDA_NAMESPACE_URI;
+  return "";
 }
 
 function isManagedPropertiesNode(child) {
