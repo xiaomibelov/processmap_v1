@@ -199,6 +199,9 @@ spec_gap_status_operations:
     statuses: [404, 409]
     reason: "Доменные 404 (несуществующий org/project id от coverage) / 409 (duplicate-title); spec-gap."
   # Версии отчётов/группы: сгенерированные id не существуют → доменный 404.
+  - id: admin_testgen_run_detail_api_admin_testgen_runs__run_id__get
+    statuses: [404]
+    reason: "Доменный 404 (run_id=0 не существует); spec-gap."
   - id: get_org_session_report_version_api_orgs__org_id__sessions__session_id__reports__version_id__get
     statuses: [404]
     reason: "Доменный 404 (version_id=0 не существует); spec-gap."

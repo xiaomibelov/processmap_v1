@@ -51,6 +51,20 @@
   26 падений побайтово совпадают с pre-existing списком (pg/redis), новых нет.
 - LLM: 20 вызовов ≈ 175K токенов (deepseek-v4-flash), включая отладку правила 12.
 
+## Состав ветки (полный)
+
+- `60c680b4` ci(testgen): workflow `llm-testgen.yml` — ручной запуск генератора
+  (coverage → генерация → PR → артефакты)
+- `2ac78ee1` feat(admin): API `/api/admin/testgen/*` — запуск через
+  workflow_dispatch, учёт/синк статусов (sqlite testgen_runs)
+- `c81e7070` test(admin): 13 кейсов на `/api/admin/testgen/*` (401/403/409/валидация)
+- `e1beeedc` feat(admin-ui): карточка «Генерация API-тестов» в /admin/llm
+- `3aac7e2b` feat: _TAG_RULES + правило «недостижимые 4xx»
+- `792d560b` test: admin-батч — 7 операций, 13 тестов
+- `51129ba1` docs: этот отчёт
+- `ea83a884` docs(api): testgen в openapi.yaml-снапшот + spec-gap 404 waiver
+  для `runs/{run_id}` (contract fuzz deterministic)
+
 ## Ограничения / follow-up
 
 - Недостижимые задокументированные 422 (permissions, matrix) — сигнал в
