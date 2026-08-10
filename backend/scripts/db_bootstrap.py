@@ -27,10 +27,12 @@ import psycopg
 # 010/011 НЕ считалась «невалидной» и не уводилась stamp'ом вниз до 009
 # (иначе каждый рестарт api пересаживал upgrade на неидемпотентную 010 →
 # column process_layer already exists → ретраи + degraded-старт).
-LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015"]
+LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016"]
 
 # маркер «объект ревизии существует» (SELECT 1 ... LIMIT 1)
 MARKERS = {
+    # LLM-model-config: маркер 016 — реестр моделей (структурный маркер).
+    "016": "SELECT 1 FROM information_schema.tables WHERE table_name='llm_models' LIMIT 1",
     # LLM3: маркер 015 — сид-промт schema_assistant (data-маркер).
     "015": "SELECT 1 FROM llm_prompts WHERE feature='schema_assistant' LIMIT 1",
     # LLM2: маркер 014 — сид-промт as_is_transform (data-маркер).

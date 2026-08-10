@@ -60,6 +60,8 @@ def sandbox():
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM llm_providers WHERE org_id = %s", (org_id,))
+            cur.execute("DELETE FROM llm_models WHERE org_id = %s", (org_id,))
+            cur.execute("DELETE FROM llm_feature_models WHERE org_id = %s", (org_id,))
             cur.execute("DELETE FROM llm_prompts WHERE feature = %s", (feature,))
             cur.execute("DELETE FROM llm_feature_flags WHERE feature = %s", (feature,))
             cur.execute(
@@ -131,6 +133,66 @@ def test_fallback_chain_by_priority(sandbox):
     rows = _usage_rows(feature)
     assert [r["status"] for r in rows].count("error") == 1, "ошибка p1 записана"
     assert rows[-1]["status"] == "ok" and rows[-1]["prompt_tokens"] == 11
+
+
+# ------------------------------------------------------- реестр моделей (016)
+
+def test_registry_default_model_wins_over_provider_model(sandbox):
+    """feat/llm-model-config: default реестра уходит в payload вместо provider.model."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="provider-model",
+                              api_key="key-a", priority=10)
+    llm_store.create_model(org_id=org, model_name="registry-default", is_default=True, actor="t")
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.update(kwargs)
+        return _llm_response(model=str(kwargs.get("model") or ""))
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+    assert result["ok"] is True
+    assert captured["model"] == "registry-default"
+    assert result["model"] == "registry-default"
+    llm_store.invalidate_model_cache()
+
+
+def test_registry_feature_override_wins_over_default(sandbox):
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="provider-model",
+                              api_key="key-a", priority=10)
+    llm_store.create_model(org_id=org, model_name="registry-default", is_default=True, actor="t")
+    override = llm_store.create_model(org_id=org, model_name="override-model", actor="t")
+    llm_store.set_feature_model_override(feature, override["id"], org_id=org)
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.update(kwargs)
+        return _llm_response(model=str(kwargs.get("model") or ""))
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+    assert result["ok"] is True
+    assert captured["model"] == "override-model", "per-feature override > default"
+    llm_store.invalidate_model_cache()
+
+
+def test_empty_registry_falls_back_to_provider_model(sandbox):
+    """Пустой реестр (до миграции/без записей) → старое поведение: provider.model."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="provider-model",
+                              api_key="key-a", priority=10)
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.update(kwargs)
+        return _llm_response(model=str(kwargs.get("model") or ""))
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+    assert result["ok"] is True
+    assert captured["model"] == "provider-model"
+    llm_store.invalidate_model_cache()
 
 
 def test_fallback_false_when_primary_answers(sandbox):

@@ -157,11 +157,16 @@ export function resolveLlmStatusView(llmStatus = null) {
   const quota = result.quota && typeof result.quota === "object" ? result.quota : {};
   const used = toInt(quota.used);
   const limit = toInt(quota.limit);
+  const model = result.model && typeof result.model === "object" ? result.model : {};
   return {
     kind: "configured",
     used,
     limit,
     exhausted: limit > 0 && used >= limit,
+    // Активная модель из реестра (feat/llm-model-config): apiLlmStatus.model.
+    modelName: typeof model.name === "string" ? model.name : "",
+    modelDisplayName: typeof model.display_name === "string" ? model.display_name : "",
+    modelSource: typeof model.source === "string" ? model.source : "",
   };
 }
 

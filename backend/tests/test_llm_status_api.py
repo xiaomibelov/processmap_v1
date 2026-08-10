@@ -4,8 +4,9 @@
 
 Покрытие:
 - RBAC: 401 без токена, 404 для не-члена организации, 200 для viewer (роль viewer+);
-- shape: {configured, quota:{used, limit}} — ТОЛЬКО эти ключи; секретов/имён
-  провайдеров/base_url/model в ответе нет;
+- shape: {configured, quota:{used, limit}, model:{name, display_name, source}} —
+  ТОЛЬКО эти ключи; секретов/имён провайдеров/base_url в ответе нет
+  (model — активная модель из реестра llm_models, контур feat/llm-model-config);
 - configured = enabled провайдер с непустым ключом (enabled_providers_with_key,
   а НЕ any_enabled_provider — провайдер без ключа не делает статус configured);
 - quota.used = сумма токенов по фиче analysis за 24ч;
@@ -32,8 +33,9 @@ from backend.app.auth import create_access_token  # noqa: E402
 from backend.app.ai import llm_store  # noqa: E402
 from backend.app.storage import create_org_record, upsert_org_membership  # noqa: E402
 
-STATUS_SHAPE = {"configured": bool, "quota": dict}
+STATUS_SHAPE = {"configured": bool, "quota": dict, "model": dict}
 QUOTA_SHAPE = {"used": int, "limit": int}
+MODEL_SHAPE = {"name": str, "display_name": str, "source": str}
 
 
 def _assert_shape(item: dict, shape: dict, where: str) -> None:
@@ -155,15 +157,17 @@ def test_status_404_foreign_user(client, foreign_user):
 
 
 def test_status_200_viewer_shape(client, org_and_user):
-    """viewer+ — 200; shape ровно {configured, quota:{used, limit}}; без секретов."""
+    """viewer+ — 200; shape {configured, quota, model}; без секретов."""
     resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     _assert_shape(body, STATUS_SHAPE, "status")
     _assert_shape(body["quota"], QUOTA_SHAPE, "status.quota")
+    _assert_shape(body["model"], MODEL_SHAPE, "status.model")
     assert isinstance(body["configured"], bool)
-    # имена провайдеров/секреты не должны просочиться в сыром тексте
-    for needle in ("api_key", "base_url", "deepseek", "sk-", org_and_user["marker"]):
+    # секреты/ключи/base_url не должны просочиться в сыром тексте
+    # (имя модели в ответе — осознанный контракт feat/llm-model-config)
+    for needle in ("api_key", "base_url", "sk-", org_and_user["marker"]):
         assert needle not in resp.text, f"в ответе не должно быть {needle!r}"
 
 
@@ -199,7 +203,8 @@ def test_configured_true_provider_with_key(client, org_and_user):
     body = resp.json()
     assert body["configured"] is True
     assert "sk-supersecret-llm4-test" not in resp.text
-    assert "deepseek-chat" not in resp.text
+    # имя модели в ответе — осознанный контракт feat/llm-model-config
+    assert body["model"]["name"]
 
 
 def test_configured_true_disabled_provider_with_key_ignored(client, org_and_user):
