@@ -27,12 +27,12 @@
 }
 
 .pm-processman {
-  flex: 0 0 380px;
-  width: 380px;
+  flex: 0 0 460px;
+  width: 460px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--pm-tobe-bg);
+  background: #eef3f9;
   border-left: 1px solid var(--pm-tobe-border);
   color: var(--pm-tobe-fg);
   font-family: var(--pm-tobe-font-body, 'Fira Sans', system-ui, sans-serif);
@@ -53,7 +53,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 360px;
+    width: min(390px, calc(100vw - 24px));
     flex: none;
     z-index: 30;
     box-shadow: var(--pm-tobe-shadow-pop);
@@ -77,21 +77,21 @@
 
 /* --- шапка 56px: white surface, аватар + статус + действия --- */
 .pm-processman__header {
-  flex: 0 0 56px;
-  height: 56px;
+  flex: 0 0 76px;
+  height: 76px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 0 14px;
   background: var(--pm-tobe-surface);
   border-bottom: 1px solid var(--pm-tobe-border);
 }
 
 /* ✦-аватар ассистента: 28px SOLID-фиолетовая плашка radius 8 (видимый agent-цвет) */
 .pm-processman__icon {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -102,22 +102,33 @@
 
 .pm-processman__icon svg {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .pm-processman__title {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--pm-tobe-fg);
+}
+
+.pm-processman__mission {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--pm-tobe-muted-fg);
 }
 
 .pm-processman__context-badge {
   margin-left: auto;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--pm-tobe-muted-fg);
   background: var(--pm-tobe-muted);
@@ -150,7 +161,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -393,6 +404,17 @@
   white-space: nowrap;
 }
 
+.pm-processman__runbook {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pm-tobe-assistant-soft);
+  color: var(--pm-tobe-assistant);
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 25%, var(--pm-tobe-border));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .pm-processman__cache-badge {
   flex: 0 0 auto;
   padding: 2px 6px;
@@ -467,7 +489,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  line-height: 1.2;
+  line-height: 1.18;
 }
 
 .pm-processman__status {
@@ -597,24 +619,90 @@
 }
 
 .pm-processman-chat {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
 }
 
+.pm-processman-workbench {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 28%, var(--pm-tobe-border));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--pm-tobe-assistant-soft) 78%, var(--pm-tobe-surface)) 0 86px, var(--pm-tobe-surface) 86px 100%);
+  box-shadow: var(--pm-tobe-shadow-pop);
+  overflow: hidden;
+}
+
+.pm-processman-workbench__bar {
+  flex: 0 0 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 70%, var(--pm-tobe-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 20%, var(--pm-tobe-border));
+}
+
+.pm-processman-workbench__bar .pm-processman-workbench__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--pm-tobe-step-pending);
+}
+
+.pm-processman-workbench__bar .pm-processman-workbench__dot:first-child {
+  background: var(--pm-tobe-assistant);
+}
+
+.pm-processman-workbench__bar strong {
+  margin-left: 4px;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-workbench .pm-processman__chat-wrap {
+  padding: 14px;
+  background:
+    linear-gradient(180deg, transparent 0 36px, color-mix(in srgb, var(--pm-tobe-bg) 72%, var(--pm-tobe-surface)) 36px 100%);
+}
+
 /* --- лента сообщений (тонкий стилизованный скроллбар) --- */
 .pm-processman-feed {
   flex: 1 1 auto;
-  min-height: 120px;
+  min-height: 220px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  position: relative;
   padding-right: 4px;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--pm-tobe-muted-fg) 45%, transparent) transparent;
+}
+
+.pm-processman-feed__ambient {
+  position: sticky;
+  top: 0;
+  z-index: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.pm-processman-feed__ambient::before {
+  content: "";
+  display: block;
+  height: 34px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 88%, var(--pm-tobe-surface));
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 24%, transparent);
 }
 
 .pm-processman-feed::-webkit-scrollbar {
@@ -633,6 +721,8 @@
 /* микродвижение: fade+slide 180ms для новых сообщений (60 FPS: opacity+transform) */
 .pm-processman-msg {
   animation: pm-processman-msg-in 180ms ease-out;
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes pm-processman-msg-in {
@@ -647,10 +737,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-radius: 12px 12px 4px 12px;
-  background: var(--pm-tobe-muted);
-  border: 1px solid var(--pm-tobe-border);
+  background: #e7edf6;
+  border: 1px solid #d6deeb;
 }
 
 .pm-processman-msg__user-label {
@@ -673,12 +763,18 @@
 .pm-processman-msg--agent {
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--pm-tobe-surface);
-  border: 1px solid var(--pm-tobe-border);
-  border-left: 3px solid var(--pm-tobe-assistant);
-  box-shadow: var(--pm-tobe-shadow-sm);
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 26%, var(--pm-tobe-border));
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.10);
   overflow: hidden;
+}
+
+.pm-processman-msg__rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: var(--pm-tobe-assistant);
 }
 
 .pm-processman-msg--streaming {
@@ -689,15 +785,24 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: var(--pm-tobe-assistant-soft);
+  padding: 10px 14px 10px 16px;
+  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 84%, var(--pm-tobe-surface));
   border-bottom: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 18%, var(--pm-tobe-border));
 }
 
+.pm-processman-msg__role {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--pm-tobe-muted-fg);
+}
+
 .pm-processman-msg__avatar {
-  flex: 0 0 20px;
-  width: 20px;
-  height: 20px;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -708,14 +813,15 @@
 
 .pm-processman-msg__avatar svg {
   display: block;
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
 }
 
 .pm-processman-msg__agent-name {
-  font-size: 10px;
+  margin-left: auto;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--pm-tobe-assistant);
 }
@@ -731,13 +837,13 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 14px 16px;
 }
 
 .pm-processman-msg__text {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--pm-tobe-fg);
   white-space: pre-wrap;
   word-break: break-word;
@@ -966,12 +1072,12 @@
 .pm-processman-quick-wrap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 /* секционный лейбл над карточками */
 .pm-processman-quick__section {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -982,7 +1088,7 @@
 .pm-processman-quick {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .pm-processman-quick__card {
@@ -990,11 +1096,11 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 13px;
   border-radius: 12px;
   border: 1px solid var(--pm-tobe-border);
   background: var(--pm-tobe-surface);
-  box-shadow: var(--pm-tobe-shadow-sm);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.07);
   color: var(--pm-tobe-fg);
   font-size: 13px;
   text-align: left;
@@ -1140,17 +1246,38 @@
   transform: translateY(-1px);
 }
 
+@media (max-width: 640px) {
+  .pm-processman {
+    width: 100%;
+    right: 0;
+  }
+
+  .pm-processman__mission,
+  .pm-processman__runbook {
+    display: none;
+  }
+
+  .pm-processman-workbench .pm-processman__chat-wrap {
+    padding: 10px;
+  }
+
+  .pm-processman-msg--user,
+  .pm-processman-msg--agent {
+    max-width: 100%;
+  }
+}
+
 /* --- composer: плавающая pill-плашка (surface), borderless input + круг send 32px --- */
 .pm-processman-composer {
   flex: 0 0 auto;
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 6px 6px 6px 14px;
+  padding: 8px 8px 8px 16px;
   border-radius: 999px;
   border: 1px solid var(--pm-tobe-border);
   background: var(--pm-tobe-surface);
-  box-shadow: var(--pm-tobe-shadow-sm);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
@@ -1181,8 +1308,8 @@
 
 .pm-processman-composer__send {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1296,7 +1423,251 @@
   .pm-processman-empty__chip,
   .pm-processman-composer__send,
   .pm-processman-contextchip,
-  .pm-processman-nodechip {
+  .pm-processman-nodechip,
+  .agent-processman-button,
+  .agent-processman-modal__primary,
+  .agent-processman-modal__secondary {
     transition: none;
+  }
+}
+
+/* ================= Legacy global agent entry aligned to PROCESSMAN ================= */
+.agent-processman-button {
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+
+.agent-processman-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--pm-tobe-fg) 46%, transparent);
+}
+
+.agent-processman-modal__shell {
+  width: min(680px, 100%);
+  max-height: min(760px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-rows: auto auto minmax(120px, auto) auto auto auto;
+  gap: 12px;
+  overflow: hidden;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-bg);
+  box-shadow: var(--pm-tobe-shadow-pop);
+  color: var(--pm-tobe-fg);
+  font-family: var(--pm-tobe-font-body, system-ui, sans-serif);
+}
+
+.agent-processman-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 24%, var(--pm-tobe-border));
+  background: var(--pm-tobe-surface);
+}
+
+.agent-processman-modal__icon {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+}
+
+.agent-processman-modal__icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.agent-processman-modal__heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.agent-processman-modal__heading h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--pm-tobe-fg);
+}
+
+.agent-processman-modal__heading p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.agent-processman-modal__close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.agent-processman-modal__close:hover {
+  background: var(--pm-tobe-muted);
+  color: var(--pm-tobe-fg);
+}
+
+.agent-processman-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.agent-processman-modal__field select,
+.agent-processman-modal__field textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  color: var(--pm-tobe-fg);
+  font: inherit;
+  font-weight: 400;
+}
+
+.agent-processman-modal__field select {
+  height: 40px;
+  padding: 0 10px;
+}
+
+.agent-processman-modal__field textarea {
+  min-height: 150px;
+  resize: vertical;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+.agent-processman-modal__field select:focus,
+.agent-processman-modal__field textarea:focus {
+  outline: 2px solid var(--pm-tobe-assistant);
+  outline-offset: 2px;
+}
+
+.agent-processman-modal__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 12px;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.agent-processman-modal__status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--pm-tobe-accent);
+}
+
+.agent-processman-modal__status--active::before {
+  background: var(--pm-tobe-assistant);
+  animation: pm-processman-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-processman-modal__log,
+.agent-processman-modal__result {
+  max-height: 170px;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  padding: 12px;
+  font-size: 12px;
+}
+
+.agent-processman-modal__log {
+  font-family: var(--pm-tobe-font-mono);
+  color: var(--pm-tobe-muted-fg);
+}
+
+.agent-processman-modal__result {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  color: var(--pm-tobe-fg);
+  border-left: 4px solid var(--pm-tobe-assistant);
+}
+
+.agent-processman-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.agent-processman-modal__primary,
+.agent-processman-modal__secondary {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.agent-processman-modal__primary {
+  border: 1px solid var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+}
+
+.agent-processman-modal__primary:hover:not(:disabled) {
+  border-color: var(--pm-tobe-assistant-strong);
+  background: var(--pm-tobe-assistant-strong);
+}
+
+.agent-processman-modal__primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-processman-modal__secondary {
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  color: var(--pm-tobe-muted-fg);
+}
+
+.agent-processman-modal__secondary:hover {
+  border-color: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+}
+
+@media (max-width: 640px) {
+  .agent-processman-modal {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .agent-processman-modal__shell {
+    max-height: calc(100dvh - 20px);
   }
 }

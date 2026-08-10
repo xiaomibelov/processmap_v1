@@ -4,6 +4,9 @@ export const en = {
   // LLM4 — processman.* (панель PROCESSMAN).
   processman: {
     buttonLabel: "PROCESSMAN",
+    processmanMission: "Operational agent chat for the process map",
+    processmanRunbook: "Context + answer + actions",
+    processmanWorkbench: "Agent workbench",
     buttonTitle: "Process manager: assistant, TO BE, analysis",
     buttonAriaLabel: "PROCESSMAN — AI assistant for the process",
     buttonDisabledNoKey: "Configure an LLM provider in the admin panel (LLM section)",
@@ -91,6 +94,18 @@ export const en = {
     noStepReplyText: "Select a step on the diagram and repeat the question — I won't invent an answer for the whole map.",
     skipRevealAria: "Show the full answer at once",
     youLabel: "You",
+    agentModalTitle: "PROCESSMAN",
+    agentModalSubtitle: "Standalone agent run without a selected step context",
+    agentModalModel: "Model",
+    agentModalPrompt: "Agent task",
+    agentModalPromptPlaceholder: "Describe the task for PROCESSMAN...",
+    agentModalStatusReady: "Ready to run",
+    agentModalStatusSending: "Sending task...",
+    agentModalClose: "Close",
+    agentModalRun: "Run",
+    agentModalRunning: "Running...",
+    agentModalLogs: "Execution log",
+    agentModalResult: "PROCESSMAN answer",
   },
   // UX-UPDATE — app_update.* (тост «Вышло обновление»).
   app_update: {

@@ -1,6 +1,23 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { ru } from '../../shared/i18n/ru';
+import processmanIconRaw from '../../assets/icons/processman.svg?raw';
+import '../../features/process/processman/processman.css';
 
-const API_URL = 'http://91.184.252.237:8000';
+const t = ru.processman;
+
+function agentApiBase(): string {
+  const runtimeBase = typeof window !== 'undefined'
+    ? String((window as Window & { __ENV__?: { VITE_API_BASE?: string } }).__ENV__?.VITE_API_BASE || '').trim()
+    : '';
+  const viteBase = String(import.meta.env?.VITE_API_BASE || '').trim();
+  return (runtimeBase || viteBase).replace(/\/+$/, '');
+}
+
+function agentApiPath(path: string): string {
+  const base = agentApiBase();
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${normalized}`;
+}
 
 interface TaskStatus {
   status: string;
@@ -12,7 +29,7 @@ interface TaskStatus {
 export const AgentModal: React.FC<{onClose: () => void}> = ({ onClose }) => {
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState('moonshotai/kimi-k2.6');
-  const [status, setStatus] = useState('Готов');
+  const [status, setStatus] = useState(t.agentModalStatusReady);
   const [logs, setLogs] = useState<string[]>([]);
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,7 +47,7 @@ export const AgentModal: React.FC<{onClose: () => void}> = ({ onClose }) => {
 
   const checkTask = useCallback(async (taskId: string) => {
     try {
-      const resp = await fetch(`${API_URL}/v1/task/${taskId}`);
+      const resp = await fetch(agentApiPath(`/v1/task/${encodeURIComponent(taskId)}`));
       const data: TaskStatus = await resp.json();
       setStatus(`${data.status} ${data.progress || ''}`);
       setLogs(prev => [...prev, ...data.logs.slice(prev.length)]);
@@ -40,7 +57,7 @@ export const AgentModal: React.FC<{onClose: () => void}> = ({ onClose }) => {
         setLoading(false);
         setResult(data.reply || '');
       }
-    } catch(e) {
+    } catch(e: unknown) {
       setLogs(prev => [...prev, `Ошибка polling: ${e}`]);
     }
   }, [stopPoll]);
@@ -48,12 +65,12 @@ export const AgentModal: React.FC<{onClose: () => void}> = ({ onClose }) => {
   const run = useCallback(async () => {
     if (!prompt.trim()) return;
     setLoading(true);
-    setStatus('Отправка...');
+    setStatus(t.agentModalStatusSending);
     setLogs([]);
     setResult('');
     
     try {
-      const resp = await fetch(`${API_URL}/v1/agent/async`, {
+      const resp = await fetch(agentApiPath('/v1/agent/async'), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({message: prompt, model, tag: 'processmap'})
@@ -61,8 +78,8 @@ export const AgentModal: React.FC<{onClose: () => void}> = ({ onClose }) => {
       const {task_id} = await resp.json();
       setStatus(`Задача ${task_id.slice(0,8)}...`);
       pollRef.current = setInterval(() => checkTask(task_id), 3000);
-    } catch(e) {
-      setStatus(`Ошибка: ${e.message}`);
+    } catch(e: unknown) {
+      setStatus(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
       setLoading(false);
     }
   }, [prompt, model, checkTask]);
@@ -74,39 +91,51 @@ export const AgentModal: React.FC<{onClose: () => void}> = ({ onClose }) => {
   }, [onClose, stopPoll]);
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:99999,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-      <div style={{background:'#0f172a',border:'1px solid #334155',borderRadius:16,padding:24,width:560,maxWidth:'92vw',maxHeight:'85vh',overflow:'hidden',display:'flex',flexDirection:'column'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <h3 style={{margin:0,color:'#f8fafc'}}>🤖 AI Агент</h3>
-          <button onClick={onClose} style={{background:'none',border:'none',color:'#64748b',fontSize:20,cursor:'pointer'}}>×</button>
-        </div>
+    <div className="agent-processman-modal" role="dialog" aria-modal="true" aria-labelledby="agent-processman-title">
+      <div className="agent-processman-modal__shell">
+        <header className="agent-processman-modal__header">
+          <span className="agent-processman-modal__icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: processmanIconRaw }} />
+          <div className="agent-processman-modal__heading">
+            <h3 id="agent-processman-title">{t.agentModalTitle}</h3>
+            <p>{t.agentModalSubtitle}</p>
+          </div>
+          <button type="button" onClick={onClose} className="agent-processman-modal__close" aria-label={t.agentModalClose}>×</button>
+        </header>
         
-        <select value={model} onChange={e => setModel(e.target.value)} style={{marginBottom:12,padding:10,background:'#1e293b',border:'1px solid #334155',borderRadius:8,color:'#f1f5f9'}}>
-          {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
+        <label className="agent-processman-modal__field">
+          <span>{t.agentModalModel}</span>
+          <select value={model} onChange={e => setModel(e.target.value)}>
+            {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </label>
         
-        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} 
-          placeholder="Опиши задачу агенту..." 
-          style={{minHeight:140,padding:12,background:'#1e293b',border:'1px solid #334155',borderRadius:8,color:'#f1f5f9',resize:'vertical',fontFamily:'inherit',marginBottom:12}} />
+        <label className="agent-processman-modal__field agent-processman-modal__field--grow">
+          <span>{t.agentModalPrompt}</span>
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            placeholder={t.agentModalPromptPlaceholder}
+          />
+        </label>
         
-        <div style={{fontSize:12,color:'#94a3b8',marginBottom:8}}>{status}</div>
+        <div className={`agent-processman-modal__status${loading ? ' agent-processman-modal__status--active' : ''}`}>{status}</div>
         
         {logs.length > 0 && (
-          <div style={{background:'#020617',border:'1px solid #1e293b',borderRadius:8,padding:12,maxHeight:160,overflow:'auto',fontSize:11,fontFamily:'monospace',color:'#94a3b8',marginBottom:12}}>
+          <section className="agent-processman-modal__log" aria-label={t.agentModalLogs}>
             {logs.map((l,i) => <div key={i}>{l}</div>)}
-          </div>
+          </section>
         )}
         
         {result && (
-          <div style={{background:'#020617',border:'1px solid #1e293b',borderRadius:8,padding:16,fontSize:13,color:'#e2e8f0',whiteSpace:'pre-wrap',maxHeight:240,overflow:'auto',marginBottom:12}}>
+          <section className="agent-processman-modal__result" aria-label={t.agentModalResult}>
             {result}
-          </div>
+          </section>
         )}
         
-        <div style={{display:'flex',justifyContent:'flex-end',gap:10}}>
-          <button onClick={onClose} style={{padding:'8px 16px',background:'#334155',color:'#cbd5e1',border:'none',borderRadius:8,cursor:'pointer'}}>Закрыть</button>
-          <button onClick={run} disabled={loading} style={{padding:'8px 16px',background:'#2563eb',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>
-            {loading ? '...' : '▶ Запустить'}
+        <div className="agent-processman-modal__actions">
+          <button type="button" onClick={onClose} className="agent-processman-modal__secondary">{t.agentModalClose}</button>
+          <button type="button" onClick={run} disabled={loading || !prompt.trim()} className="agent-processman-modal__primary">
+            {loading ? t.agentModalRunning : t.agentModalRun}
           </button>
         </div>
       </div>

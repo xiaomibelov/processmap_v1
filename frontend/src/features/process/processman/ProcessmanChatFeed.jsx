@@ -129,10 +129,12 @@ function AgentCard({
       }}
       title={streaming && !done ? t.skipRevealAria : undefined}
     >
+      <div className="pm-processman-msg__rail" aria-hidden="true" />
       {/* карточка агента (прототип v3): header / body / meta */}
       <div className="pm-processman-msg__header">
         <span className="pm-processman-msg__avatar" aria-hidden="true"
           dangerouslySetInnerHTML={{ __html: processmanIconRaw }} />
+        <span className="pm-processman-msg__role">{t.processmanMission}</span>
         <span className="pm-processman-msg__agent-name">{t.buttonLabel}</span>
         {complete ? (
           <span
@@ -257,6 +259,7 @@ export default function ProcessmanChatFeed({
 
   return (
     <div className="pm-processman-feed" data-testid="processman-chat-feed" ref={feedRef} aria-live="polite">
+      <div className="pm-processman-feed__ambient" aria-hidden="true" />
       {messages.map((msg) => (msg.role === "user" ? (
         <div key={msg.id} className="pm-processman-msg pm-processman-msg--user" data-testid="processman-msg-user">
           <span className="pm-processman-msg__user-label">{t.youLabel}</span>

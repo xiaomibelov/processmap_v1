@@ -563,6 +563,9 @@ export const ru = {
   // спецификация» (ревизия 1). Парный словарь: shared/i18n/en.js.
   processman: {
     buttonLabel: "PROCESSMAN",
+    processmanMission: "Операционный чат агента по карте процесса",
+    processmanRunbook: "Контекст + ответ + действия",
+    processmanWorkbench: "Рабочее место агента",
     buttonTitle: "Процесс-менеджер: помощник, TO BE, анализ",
     buttonAriaLabel: "PROCESSMAN — ИИ-помощник по процессу",
     buttonDisabledNoKey: "Настройте LLM-провайдера в админ-панели (раздел LLM)",
@@ -650,6 +653,18 @@ export const ru = {
     noStepReplyText: "Выберите шаг на схеме и повторите вопрос — выдумывать ответ по всей карте не буду.",
     skipRevealAria: "Показать весь ответ сразу",
     youLabel: "Вы",
+    agentModalTitle: "PROCESSMAN",
+    agentModalSubtitle: "Отдельный запуск агента без привязки к выбранному шагу",
+    agentModalModel: "Модель",
+    agentModalPrompt: "Задача агенту",
+    agentModalPromptPlaceholder: "Опишите задачу PROCESSMAN...",
+    agentModalStatusReady: "Готов к запуску",
+    agentModalStatusSending: "Отправляю задачу...",
+    agentModalClose: "Закрыть",
+    agentModalRun: "Запустить",
+    agentModalRunning: "Выполняется...",
+    agentModalLogs: "Ход выполнения",
+    agentModalResult: "Ответ PROCESSMAN",
   },
   // UX-UPDATE — тост «Вышло обновление ProcessMap» (version.json + snooze 30 мин).
   // Парный словарь: shared/i18n/en.js.
