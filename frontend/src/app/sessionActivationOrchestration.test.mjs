@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applySnapshotRestorePutResult,
   buildSnapshotRestorePutOptions,
   shouldAttemptRequestedSessionRestore,
 } from "./useSessionActivationOrchestration.js";
+import {
+  __resetForTests as __resetTrackerForTests,
+  getVersion,
+  setVersion,
+} from "../lib/casVersionTracker.js";
+import {
+  __resetSaveDiagnosticsForTests,
+  getSaveDiagnosticsTrail,
+} from "../features/session/saveDiagnosticsTrail.js";
 
 test("requested session restore runs only when a requested backend session still needs activation", () => {
   assert.equal(
@@ -81,4 +91,63 @@ test("snapshot restore PUT options fall back to snapshot rev when session rev is
     baseDiagramStateVersion: 9,
     sourceAction: "snapshot_restore",
   });
+});
+
+test("snapshot restore PUT success adopts server diagram_state_version into CAS tracker", () => {
+  __resetTrackerForTests();
+  __resetSaveDiagnosticsForTests();
+  setVersion("sess_1", 202);
+
+  const outcome = applySnapshotRestorePutResult({
+    sessionId: "sess_1",
+    putRes: { ok: true, status: 200, diagramStateVersion: 203 },
+  });
+
+  assert.deepEqual(outcome, { applied: true, reason: "ok", serverVersion: 203 });
+  assert.equal(getVersion("sess_1"), 203);
+  const types = getSaveDiagnosticsTrail().map((event) => event.type);
+  assert.ok(types.includes("tracker_set"));
+  assert.ok(types.includes("snapshot_restore_ok"));
+});
+
+test("snapshot restore PUT 409 adopts server base instead of surfacing a self-conflict", () => {
+  __resetTrackerForTests();
+  __resetSaveDiagnosticsForTests();
+  setVersion("sess_1", 202);
+
+  const outcome = applySnapshotRestorePutResult({
+    sessionId: "sess_1",
+    putRes: {
+      ok: false,
+      status: 409,
+      error: "DIAGRAM_STATE_CONFLICT",
+      data: {
+        detail: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          client_base_version: 202,
+          server_current_version: 203,
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(outcome, { applied: true, reason: "conflict", serverVersion: 203 });
+  assert.equal(getVersion("sess_1"), 203);
+  const types = getSaveDiagnosticsTrail().map((event) => event.type);
+  assert.ok(types.includes("snapshot_restore_conflict"));
+});
+
+test("snapshot restore PUT failure keeps tracker base intact", () => {
+  __resetTrackerForTests();
+  __resetSaveDiagnosticsForTests();
+  setVersion("sess_1", 202);
+
+  const outcome = applySnapshotRestorePutResult({
+    sessionId: "sess_1",
+    putRes: { ok: false, status: 0, error: "network_error" },
+  });
+
+  assert.equal(outcome.applied, false);
+  assert.equal(outcome.reason, "error");
+  assert.equal(getVersion("sess_1"), 202);
 });

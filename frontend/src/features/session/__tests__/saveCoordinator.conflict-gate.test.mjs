@@ -7,9 +7,16 @@ import {
   setVersion as setTrackedDiagramStateVersion,
   __resetForTests as resetCasVersionTracker,
 } from "../../../lib/casVersionTracker.js";
+import {
+  __resetSaveDiagnosticsForTests,
+  getSaveDiagnosticsTrail,
+} from "../saveDiagnosticsTrail.js";
+import { __resetTelemetryForTests } from "../../telemetry/telemetryClient.js";
 
 test.beforeEach(() => {
   resetCasVersionTracker();
+  __resetSaveDiagnosticsForTests();
+  __resetTelemetryForTests();
 });
 
 test("409 does NOT adopt server version into tracked base and arms conflict gate", async () => {
@@ -127,4 +134,60 @@ test("clearSession clears the conflict gate", async () => {
   assert.ok(c.getConflict("s1"));
   c.clearSession("s1");
   assert.equal(c.getConflict("s1"), null);
+});
+
+test("409 arms conflict gate, records diagnostics trail and auto-reports to telemetry", async () => {
+  const sent = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    sent.push({ url: String(url), body: JSON.parse(String(options?.body || "{}")) });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  try {
+    const c = createSaveCoordinator();
+    setTrackedDiagramStateVersion("s1", 7);
+    c.registerPipeline("xml", {
+      debounceMs: 0,
+      retryCount: 0,
+      transport: async () => ({
+        ok: false,
+        status: 409,
+        error: "DIAGRAM_STATE_CONFLICT",
+        data: {
+          detail: {
+            code: "DIAGRAM_STATE_CONFLICT",
+            server_current_version: 9,
+            server_last_write: { actor_label: "u@x.ru", changed_keys: ["bpmn_xml"] },
+          },
+        },
+      }),
+      getBaseVersion: (sid) => getTrackedDiagramStateVersion(sid),
+    });
+
+    await c.execute("xml", { sessionId: "s1" });
+    // дождаться fire-and-forget авто-репорта
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const types = getSaveDiagnosticsTrail().map((entry) => entry.type);
+    assert.ok(types.includes("pipeline_start"), "trail must contain pipeline_start");
+    assert.ok(types.includes("pipeline_conflict"), "trail must contain pipeline_conflict");
+
+    assert.equal(sent.length, 1, "conflict must be auto-reported to telemetry");
+    const event = sent[0].body;
+    assert.equal(event.event_type, "save_conflict");
+    assert.equal(event.severity, "warn");
+    assert.equal(event.context_json.pipeline, "xml");
+    assert.equal(event.context_json.client_base_version, 7);
+    assert.equal(event.context_json.server_current_version, 9);
+    assert.equal(event.context_json.actor_label, "u@x.ru");
+    assert.equal(event.context_json.user_reported, false);
+    assert.ok(Array.isArray(event.context_json.trail));
+
+    // повторный save блокируется gate'ом и тоже попадает в трейл
+    await c.execute("xml", { sessionId: "s1" });
+    const typesAfter = getSaveDiagnosticsTrail().map((entry) => entry.type);
+    assert.ok(typesAfter.includes("gate_block"), "trail must contain gate_block");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

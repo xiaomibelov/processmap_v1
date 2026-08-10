@@ -22,6 +22,27 @@ const MAX_HISTORY = 8;
 
 const store = new Map();
 
+let diagnosticRecorder = null;
+
+/**
+ * Register a diagnostics recorder `(type, details) => void` that receives
+ * tracker mutations (tracker_set / tracker_bump / tracker_rollback /
+ * tracker_clear). Used by features/session/saveDiagnosticsTrail.js.
+ * Pass null to unregister.
+ */
+export function setVersionDiagnosticRecorder(recorder) {
+  diagnosticRecorder = typeof recorder === "function" ? recorder : null;
+}
+
+function recordDiagnostic(type, details) {
+  if (!diagnosticRecorder) return;
+  try {
+    diagnosticRecorder(type, details);
+  } catch {
+    // diagnostics must never break the tracker
+  }
+}
+
 function ensureEntry(sessionId) {
   if (!store.has(sessionId)) {
     store.set(sessionId, {
@@ -42,6 +63,7 @@ export function setVersion(sessionId, version) {
   const normalized = normalizeVersion(version);
   const entry = ensureEntry(sid);
   entry.history = normalized !== null ? [normalized] : [];
+  recordDiagnostic("tracker_set", { sid, version: normalized });
 }
 
 /**
@@ -55,6 +77,19 @@ export function getVersion(sessionId) {
   const entry = store.get(sid);
   if (!entry || !entry.history.length) return null;
   return entry.history[entry.history.length - 1];
+}
+
+/**
+ * Return a copy of the version history ring for a session (oldest first).
+ * @param {string} sessionId
+ * @returns {number[]}
+ */
+export function getVersionHistory(sessionId) {
+  const sid = normalizeSessionId(sessionId);
+  if (!sid) return [];
+  const entry = store.get(sid);
+  if (!entry) return [];
+  return entry.history.slice();
 }
 
 /**
@@ -74,6 +109,7 @@ export function bumpVersion(sessionId, newVersion) {
   if (entry.history.length > MAX_HISTORY) {
     entry.history.shift();
   }
+  recordDiagnostic("tracker_bump", { sid, version: normalized });
 }
 
 /**
@@ -91,7 +127,9 @@ export function rollbackVersion(sessionId) {
   if (entry.history.length > 1) {
     entry.history.pop();
   }
-  return entry.history.length ? entry.history[entry.history.length - 1] : null;
+  const current = entry.history.length ? entry.history[entry.history.length - 1] : null;
+  recordDiagnostic("tracker_rollback", { sid, version: current });
+  return current;
 }
 
 /**

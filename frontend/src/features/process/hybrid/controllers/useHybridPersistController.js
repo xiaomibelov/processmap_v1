@@ -199,7 +199,7 @@ export default function useHybridPersistController({
     setConflictNoticeOpen(false);
   }, []);
 
-  // P1: «Перезаписать мои изменения» для hybrid-документа — осознанный force:
+  // P1: «Оставить мою версию» для hybrid-документа — осознанный force:
   // снимаем conflict gate с явным принятием серверной базы и повторяем
   // отложенный черновик. Вызывается ТОЛЬКО из обработчика кнопки.
   const resolveConflictOverwrite = useCallback(async () => {
