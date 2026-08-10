@@ -97,6 +97,34 @@
   - Полный CRUD-цикл пройден через UI (write path: admin API → БД → инвалидация
     кэша резолва).
 
+## CI fix (после PR #707, 2026-08-10)
+
+CI красный по двум джобам — оба разобраны:
+
+1. **spec-drift** — пре-existing баг workflow: `pip install -r backend/requirements.txt
+   PyYAML` не ставил `httpx`, а `scripts/dump_openapi.py` требует TestClient →
+   `RuntimeError: starlette.testclient requires httpx`. Падало бы и на main.
+   Фикс: `.github/workflows/backend-contract.yml` += `httpx==0.27.2` (пин как в
+   requirements-dev.txt). Локально `dump_openapi.py` → OK (264 paths/336 ops).
+2. **contract (schemathesis fuzz)** — новые GET-ручки отдают доменный 403
+   (seed=org_owner, не platform admin), недокументированный в сырой спеке →
+   `UndefinedStatusCode`. Фикс по repo-паттерну: `tests/contract/exclusions.yaml`
+   spec_gap_status_operations += `admin_llm_list_models`, `admin_llm_list_feature_models`
+   (statuses [403]) — как у соседних admin_llm GET'ов.
+3. **docs/openapi.yaml** — снапшот обновлён секциями новых эндпоинтов
+   (сгенерировано из живой RU-спеки `/api/openapi_ru.json` тем же build_ru_openapi):
+   `/api/admin/llm/models` GET/POST, `/models/{model_id}` PATCH/DELETE,
+   `/models/{model_id}/set-default` POST, `/feature-models` GET,
+   `/feature-models/{feature}` PUT + схемы LlmModelBody/LlmModelPatchBody/
+   LlmFeatureModelBody. Коды: 401/403 (admin), 404 (path-param), **409 на delete
+   default** (задекларирован в роуте через `responses={...}` — попадает и в живую
+   спеку), 422 (валидация), bearerAuth.
+
+Контрактные тесты новых ручек — `test_admin_llm_api.py` (happy path CRUD,
+403 non-admin / 401, 404, конфликт is_default: «default ровно один» + 422/409).
+Contract fuzz (pr profile) локально: 139 passed + 1 flaky `GET /api/admin/audit`
+(в одиночном прогоне PASS, доменно не связан).
+
 ## Риски / заметки
 
 - In-memory кэш per-process: при нескольких uvicorn-workers рассинхрон ≤ TTL 60с
