@@ -27,7 +27,7 @@ import ProcessmanEmptyState from "./ProcessmanEmptyState";
 import ProcessmanQuickActions from "./ProcessmanQuickActions";
 
 // PROCESSMAN-REDESIGN (PR-1) — TO BE-контекст панели = лента диалога.
-// Экономика токенов (не меняется): LLM-вызов ТОЛЬКО по клику действия/↻/Стоп-retry;
+// Экономика токенов (не меняется): LLM-вызов ТОЛЬКО по клику действия/retry/Стоп;
 // открытие панели, смена контекста/шага — 0 вызовов; useEffect без apiLlm/fetch.
 // История — in-memory per sessionId (chat/processmanChatStore), переживает
 // закрытие панели. Ответы по-прежнему кэшируются в cacheRef (S3).
@@ -40,8 +40,8 @@ const ACTION_RUNNERS = {
 };
 
 const ACTION_USER_LABELS = {
-  suggest: () => `→ ${t.suggestLabel}`,
-  explain: () => `💡 ${t.explainLabel}`,
+  suggest: () => t.suggestLabel,
+  explain: () => t.explainLabel,
 };
 
 export default function ProcessmanTobe({
@@ -69,7 +69,7 @@ export default function ProcessmanTobe({
   const pending = hasPendingAgent(sid);
   const actionsDisabled = pending || !elementId || notConfigured || quotaExhausted;
 
-  // футер: последний РЕАЛЬНЫЙ ответ агента (бейдж кэша + 👍/👎)
+  // статус хранит последний реальный ответ агента; UI-фидбек живет под сообщением
   useEffect(() => {
     const history = getChatHistory(sid);
     let last = null;
@@ -206,11 +206,11 @@ export default function ProcessmanTobe({
       ) : (
         <ProcessmanChatFeed
           messages={messages}
+          sessionId={sid}
           nodes={diagramNodes}
           onNodeClick={(id) => onFocusElement?.(id)}
           onStop={handleStop}
           onRetry={handleRetry}
-          onRefresh={handleRetry}
         />
       )}
 

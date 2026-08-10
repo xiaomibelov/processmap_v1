@@ -67,12 +67,12 @@ test("source: компоненты панели без авто-LLM-вызово
   for (const effect of effects) {
     assert.ok(!/apiLlm|fetch\(/.test(effect), `useEffect без LLM-вызовов: ${effect.slice(0, 80)}…`);
   }
-  // ProcessmanPanel: apiLlmFeedback только по клику (в sendFeedback), useEffect — без api/fetch
+  // ProcessmanPanel: useEffect — без api/fetch; feedback живет в message-level UI.
   const panelEffects = panelSrc.match(/useEffect\(\(\)\s*=>[\s\S]*?\}, \[[^\]]*\]\)/g) || [];
   for (const effect of panelEffects) {
     assert.ok(!/apiLlm|fetch\(/.test(effect), `useEffect панели без сетевых вызовов: ${effect.slice(0, 80)}…`);
   }
-  // Новые чат-компоненты (PR-1): вообще без apiLlm/fetch — чистый UI
+  // Новые чат-компоненты: без LLM-вызовов/fetch; feedback не считается LLM-вызовом.
   for (const [name, src] of [
     ["ProcessmanChatFeed", chatFeedSrc],
     ["ProcessmanComposer", composerSrc],
@@ -84,10 +84,10 @@ test("source: компоненты панели без авто-LLM-вызово
     ["nodeMentions", mentionsSrc],
   ]) {
     const code = src.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
-    assert.ok(!/apiLlm[A-Za-z]*\(/.test(code), `${name}: нет LLM-вызовов`);
+    assert.ok(!/apiLlm(?!Feedback\b)[A-Za-z]*\(/.test(code), `${name}: нет LLM-вызовов`);
     assert.ok(!/\bfetch\(/.test(code), `${name}: нет fetch`);
   }
-  assert.ok(panelSrc.includes("apiLlmFeedback"), "feedback-вызов есть (по клику 👍/👎)");
+  assert.ok(chatFeedSrc.includes("apiLlmFeedback"), "feedback-вызов есть в message-level UI");
   assert.ok(!/apiLlm(SuggestNext|ExplainStep|StepQa|Analysis)\(/.test(panelSrc), "ProcessmanPanel не вызывает LLM-действия сам");
 });
 
