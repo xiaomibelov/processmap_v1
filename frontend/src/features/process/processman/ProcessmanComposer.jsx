@@ -5,6 +5,14 @@ import { ru } from "../../../shared/i18n/ru";
 // Дисклеймер остаётся в футере панели (существующий текст).
 const t = ru.processman;
 
+function IconSend() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 12h13M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 export default function ProcessmanComposer({
   value = "",
   onChange,
@@ -37,7 +45,7 @@ export default function ProcessmanComposer({
         disabled={disabled || !String(value || "").trim()}
         onClick={() => onSubmit?.()}
       >
-        ➤
+        <IconSend />
       </button>
     </div>
   );

@@ -88,7 +88,14 @@ test("mapActionResponse: ok → OK + data; ok:false → ERROR с человек�
 
 test("buildAnswerMeta: S8 fallback, confidence, open_questions, fromCache", () => {
   const meta = buildAnswerMeta(
-    { fallback: true, cached: true, confidence: 0.55, open_questions: [{ question: "q1" }], usage: { prompt_tokens: 5, completion_tokens: 7 } },
+    {
+      fallback: true,
+      cached: true,
+      confidence: 0.55,
+      open_questions: [{ question: "q1" }],
+      suggestions: { candidates: [{ code: "op_cook", rationale: "нагрев" }] },
+      usage: { prompt_tokens: 5, completion_tokens: 7 },
+    },
     { fromCache: true },
   );
   assert.equal(meta.fallback, true);
@@ -97,6 +104,7 @@ test("buildAnswerMeta: S8 fallback, confidence, open_questions, fromCache", () =
   assert.equal(meta.confidence, 0.55);
   assert.equal(meta.openQuestions.length, 1);
   assert.equal(meta.promptTokens, 5);
+  assert.equal(meta.suggestions.candidates[0].code, "op_cook");
   const noConf = buildAnswerMeta({}, {});
   assert.equal(noConf.confidence, null);
   assert.equal(noConf.fallback, false);

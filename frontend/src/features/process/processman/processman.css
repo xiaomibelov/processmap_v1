@@ -27,8 +27,8 @@
 }
 
 .pm-processman {
-  flex: 0 0 460px;
-  width: 460px;
+  flex: 0 0 440px;
+  width: 440px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -75,53 +75,40 @@
   }
 }
 
-/* --- шапка 56px: white surface, аватар + статус + действия --- */
 .pm-processman__header {
-  flex: 0 0 76px;
-  height: 76px;
+  flex: 0 0 56px;
+  height: 56px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
+  gap: 8px;
+  padding: 0 12px;
   background: var(--pm-tobe-surface);
   border-bottom: 1px solid var(--pm-tobe-border);
 }
 
-/* ✦-аватар ассистента: 28px SOLID-фиолетовая плашка radius 8 (видимый agent-цвет) */
 .pm-processman__icon {
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
 }
 
 .pm-processman__icon svg {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
 }
 
 .pm-processman__title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: 0;
   color: var(--pm-tobe-fg);
-}
-
-.pm-processman__mission {
-  display: block;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  line-height: 1.25;
-  color: var(--pm-tobe-muted-fg);
 }
 
 .pm-processman__context-badge {
@@ -143,12 +130,14 @@
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--pm-tobe-muted-fg);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+  padding: 0;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 .pm-processman__close:hover {
@@ -257,14 +246,13 @@
   word-break: break-word;
 }
 
-/* meta-футер agent-карточки: чипы + ghost-кнопка «Обновить» */
 .pm-processman__answer-meta {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  padding: 8px 12px;
-  border-top: 1px solid var(--pm-tobe-border);
+  padding: 0;
   font-size: 11px;
   color: var(--pm-tobe-muted-fg);
 }
@@ -382,13 +370,11 @@
   border: 1px solid var(--pm-tobe-accent);
 }
 
-/* --- футер 40px: white surface, дисклеймер + бейдж кэша + 👍/👎 --- */
 .pm-processman__footer {
-  flex: 0 0 40px;
-  height: 40px;
+  flex: 0 0 34px;
+  height: 34px;
   display: flex;
   align-items: center;
-  gap: 8px;
   padding: 0 12px;
   background: var(--pm-tobe-surface);
   border-top: 1px solid var(--pm-tobe-border);
@@ -486,6 +472,7 @@
 
 /* --- шапка: текстовый блок (название + статус) --- */
 .pm-processman__header-text {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -529,13 +516,13 @@
 
 .pm-processman__header-btn {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--pm-tobe-muted-fg);
   font-size: 13px;
@@ -543,6 +530,18 @@
   cursor: pointer;
   padding: 0;
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.pm-processman__header-btn svg,
+.pm-processman__close svg,
+.pm-processman__expand svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .pm-processman__header-btn:hover {
@@ -578,13 +577,13 @@
 }
 
 .pm-processman__expand {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--pm-tobe-border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--pm-tobe-muted-fg);
   font-size: 14px;
@@ -631,11 +630,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 28%, var(--pm-tobe-border));
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--pm-tobe-assistant-soft) 78%, var(--pm-tobe-surface)) 0 86px, var(--pm-tobe-surface) 86px 100%);
-  box-shadow: var(--pm-tobe-shadow-pop);
+  border: 1px solid var(--pm-tobe-border);
+  border-radius: 12px;
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
   overflow: hidden;
 }
 
@@ -669,9 +667,8 @@
 }
 
 .pm-processman-workbench .pm-processman__chat-wrap {
-  padding: 14px;
-  background:
-    linear-gradient(180deg, transparent 0 36px, color-mix(in srgb, var(--pm-tobe-bg) 72%, var(--pm-tobe-surface)) 36px 100%);
+  padding: 12px;
+  background: var(--pm-tobe-surface);
 }
 
 /* --- лента сообщений (тонкий стилизованный скроллбар) --- */
@@ -681,29 +678,14 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   position: relative;
   padding-right: 4px;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--pm-tobe-muted-fg) 45%, transparent) transparent;
 }
 
-.pm-processman-feed__ambient {
-  position: sticky;
-  top: 0;
-  z-index: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.pm-processman-feed__ambient::before {
-  content: "";
-  display: block;
-  height: 34px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 88%, var(--pm-tobe-surface));
-  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 24%, transparent);
-}
+.pm-processman-feed__ambient { display: none; }
 
 .pm-processman-feed::-webkit-scrollbar {
   width: 6px;
@@ -733,116 +715,78 @@
 /* user-пузырь: вправо, нейтральный (не agent-цвет) */
 .pm-processman-msg--user {
   align-self: flex-end;
-  max-width: 86%;
+  max-width: 85%;
   display: flex;
   flex-direction: column;
-  gap: 2px;
   padding: 10px 14px;
-  border-radius: 12px 12px 4px 12px;
-  background: #e7edf6;
-  border: 1px solid #d6deeb;
-}
-
-.pm-processman-msg__user-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--pm-tobe-muted-fg);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--pm-tobe-muted);
+  border: 1px solid var(--pm-tobe-border);
 }
 
 .pm-processman-msg__user-text {
   font-size: 13px;
+  line-height: 1.5;
   color: var(--pm-tobe-fg);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* agent-карточка (прототип v3): header (soft-violet) / body (surface) / meta-футер;
-   левая кромка 3px agent-цвета, белая surface, тень карточки */
 .pm-processman-msg--agent {
-  display: flex;
-  flex-direction: column;
-  border-radius: 14px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
   background: var(--pm-tobe-surface);
-  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 26%, var(--pm-tobe-border));
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.10);
-  overflow: hidden;
+  border: 1px solid var(--pm-tobe-border);
+  box-shadow: var(--pm-tobe-shadow-sm);
 }
 
-.pm-processman-msg__rail {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 5px;
-  background: var(--pm-tobe-assistant);
+.pm-processman-msg--error {
+  border-left: 3px solid var(--pm-tobe-destructive);
+  background: color-mix(in srgb, var(--pm-tobe-destructive) 6%, var(--pm-tobe-surface));
 }
 
 .pm-processman-msg--streaming {
   cursor: pointer;
 }
 
-.pm-processman-msg__header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px 10px 16px;
-  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 84%, var(--pm-tobe-surface));
-  border-bottom: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 18%, var(--pm-tobe-border));
-}
-
-.pm-processman-msg__role {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--pm-tobe-muted-fg);
+.pm-processman-msg__avatar-row {
+  grid-column: 1;
+  grid-row: 1 / span 3;
 }
 
 .pm-processman-msg__avatar {
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
 }
 
 .pm-processman-msg__avatar svg {
   display: block;
-  width: 14px;
-  height: 14px;
-}
-
-.pm-processman-msg__agent-name {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-  color: var(--pm-tobe-assistant);
-}
-
-.pm-processman-msg__time {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--pm-tobe-muted-fg);
+  width: 12px;
+  height: 12px;
 }
 
 .pm-processman-msg__body {
-  flex: 1 1 auto;
+  grid-column: 2;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 0;
 }
 
 .pm-processman-msg__text {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--pm-tobe-fg);
   white-space: pre-wrap;
@@ -850,7 +794,7 @@
 }
 
 .pm-processman-msg__stopped {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--pm-tobe-muted-fg);
 }
 
@@ -863,11 +807,18 @@
   to { visibility: hidden; }
 }
 
-/* --- индикатор этапов pending: компактный, с тонким анимированным треком --- */
-.pm-processman-stages {
+.pm-processman-generating {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.pm-processman-stages {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
 }
 
@@ -882,28 +833,24 @@
   font-weight: 600;
 }
 
+.pm-processman-generating__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.pm-processman-generating__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--pm-tobe-assistant);
+  animation: pm-processman-pulse 1.2s ease-in-out infinite;
+}
+
+.pm-processman-generating__dots span:nth-child(2) { animation-delay: 120ms; }
+.pm-processman-generating__dots span:nth-child(3) { animation-delay: 240ms; }
+
 .pm-processman-stages__item--done {
   opacity: 0.8;
-  text-decoration: line-through;
-}
-
-/* тонкий indeterminate-трек: solid-сегмент agent-цвета скользит по soft-полосе
-   (hard-stop linear-gradient — плоские сегменты, не градиент-эстетика) */
-.pm-processman-stages::after {
-  content: "";
-  display: block;
-  height: 2px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background-color: color-mix(in srgb, var(--pm-tobe-assistant) 16%, transparent);
-  background-image: linear-gradient(90deg, var(--pm-tobe-assistant) 0 25%, transparent 25% 100%);
-  background-size: 200% 100%;
-  animation: pm-processman-stages-slide 1.4s linear infinite;
-}
-
-@keyframes pm-processman-stages-slide {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
 }
 
 /* --- «Источники» (trace explain): светлый инсет внутри agent-карточки --- */
@@ -914,8 +861,20 @@
 
 .pm-processman-sources summary {
   cursor: pointer;
-  color: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-muted-fg);
   font-weight: 600;
+}
+
+.pm-processman-sources summary::before {
+  content: "[";
+  color: var(--pm-tobe-assistant);
+  margin-right: 3px;
+}
+
+.pm-processman-sources summary::after {
+  content: "]";
+  color: var(--pm-tobe-assistant);
+  margin-left: 3px;
 }
 
 .pm-processman-sources summary:hover {
@@ -925,9 +884,9 @@
 .pm-processman-sources__body {
   margin-top: 4px;
   padding: 6px 10px;
-  border-left: 2px solid var(--pm-tobe-assistant);
+  border-left: 2px solid var(--pm-tobe-border);
   background: var(--pm-tobe-muted);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 6px 6px 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -938,34 +897,47 @@
   color: var(--pm-tobe-fg);
 }
 
-/* --- кликабельные чипы узлов 📍 в ответах: pill-кнопки, mono-имя узла --- */
 .pm-processman-nodechip {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   padding: 1px 8px;
   margin: 0 1px;
   border-radius: 999px;
-  border: 1px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-surface);
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 28%, var(--pm-tobe-border));
+  background: var(--pm-tobe-assistant-soft);
   color: var(--pm-tobe-assistant);
   font-family: var(--pm-tobe-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.6;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.pm-processman-nodechip svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .pm-processman-nodechip:hover {
-  background: var(--pm-tobe-assistant);
-  color: var(--pm-tobe-on-primary);
+  border-color: var(--pm-tobe-assistant);
+  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 82%, var(--pm-tobe-surface));
 }
 
-/* --- кнопка «Стоп» --- */
 .pm-processman-stop {
   align-self: flex-start;
-  padding: 3px 12px;
-  border-radius: 8px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 6px;
   border: 1px solid var(--pm-tobe-border);
   background: var(--pm-tobe-bg);
   color: var(--pm-tobe-muted-fg);
@@ -975,10 +947,164 @@
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
+.pm-processman-stop svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
 .pm-processman-stop:hover {
   color: var(--pm-tobe-fg);
   background: var(--pm-tobe-muted);
   border-color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-msg__error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--pm-tobe-fg);
+}
+
+.pm-processman-msg__error .pm-processman__state-title {
+  color: var(--pm-tobe-destructive);
+}
+
+.pm-processman-msg__secondary {
+  align-self: flex-start;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  color: var(--pm-tobe-muted-fg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.pm-processman-msg__secondary:hover {
+  border-color: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+}
+
+.pm-processman-msg__secondary svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pm-processman-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pm-processman-candidate-card {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  color: var(--pm-tobe-fg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.pm-processman-candidate-card:hover {
+  border-color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-candidate-card--selected {
+  border: 2px solid var(--pm-tobe-assistant);
+  padding: 8px 9px;
+}
+
+.pm-processman-candidate-card__radio {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+}
+
+.pm-processman-candidate-card--selected .pm-processman-candidate-card__radio {
+  border: 4px solid var(--pm-tobe-assistant);
+}
+
+.pm-processman-candidate-card__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-processman-candidate-card__code {
+  font-family: var(--pm-tobe-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-candidate-card__rationale {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.pm-processman-msg__actions {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.pm-processman-msg__action {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.pm-processman-msg__action:hover,
+.pm-processman-msg__action--active {
+  border-color: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+}
+
+.pm-processman-msg__action svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* --- контекст-чип под шапкой: PILL (radius 999) soft-фиолетовый, имя узла mono --- */
@@ -1135,6 +1261,19 @@
   transition: background 160ms ease, color 160ms ease;
 }
 
+.pm-processman-quick__icon svg,
+.pm-processman-quick__chevron svg,
+.pm-processman-quick__more svg,
+.pm-processman-composer__send svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .pm-processman-quick__text {
   flex: 1 1 auto;
   display: flex;
@@ -1158,8 +1297,8 @@
 
 .pm-processman-quick__chevron {
   flex: 0 0 auto;
+  display: inline-flex;
   color: var(--pm-tobe-muted-fg);
-  font-size: 15px;
   transition: color 160ms ease;
 }
 
@@ -1169,8 +1308,12 @@
 
 .pm-processman-quick__more {
   align-self: flex-start;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 3px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--pm-tobe-border);
   background: transparent;
   color: var(--pm-tobe-muted-fg);
@@ -1252,11 +1395,6 @@
     right: 0;
   }
 
-  .pm-processman__mission,
-  .pm-processman__runbook {
-    display: none;
-  }
-
   .pm-processman-workbench .pm-processman__chat-wrap {
     padding: 10px;
   }
@@ -1308,8 +1446,8 @@
 
 .pm-processman-composer__send {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
