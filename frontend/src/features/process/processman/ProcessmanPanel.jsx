@@ -109,6 +109,7 @@ export default function ProcessmanPanel({
             <>
               <div className="pm-processman__header-text">
                 <span className="pm-processman__title">{t.buttonLabel}</span>
+                <span className="pm-processman__mission">{t.processmanMission}</span>
                 <span className={`pm-processman__status${assistantStatus !== "ready" ? " pm-processman__status--active" : ""}`} data-testid="processman-status">
                   {statusLabel}
                 </span>
@@ -164,23 +165,31 @@ export default function ProcessmanPanel({
         {!collapsed ? (
           <div className="pm-processman__body" data-testid="processman-body">
             {context === "tobe" ? (
-              <div className="pm-processman__chat-wrap">
-                <ProcessmanContextChip
-                  selectedElement={selectedBpmnElement}
-                  onFocus={onFocusElement}
-                  onReset={onClearSelection}
-                />
-                {showOnboarding ? <ProcessmanOnboarding onHide={handleHideOnboarding} /> : null}
-                <ProcessmanTobe
-                  sessionId={sessionId}
-                  selectedElement={selectedBpmnElement}
-                  llmStatus={llmStatus}
-                  cacheRef={cacheRef}
-                  onAnswerChange={handleAnswerChange}
-                  onStatusChange={handleStatusChange}
-                  diagramNodes={diagramNodes}
-                  onFocusElement={onFocusElement}
-                />
+              <div className="pm-processman-workbench" data-testid="processman-workbench">
+                <div className="pm-processman-workbench__bar" aria-hidden="true">
+                  <span className="pm-processman-workbench__dot" />
+                  <span className="pm-processman-workbench__dot" />
+                  <span className="pm-processman-workbench__dot" />
+                  <strong>{t.processmanWorkbench}</strong>
+                </div>
+                <div className="pm-processman__chat-wrap">
+                  <ProcessmanContextChip
+                    selectedElement={selectedBpmnElement}
+                    onFocus={onFocusElement}
+                    onReset={onClearSelection}
+                  />
+                  {showOnboarding ? <ProcessmanOnboarding onHide={handleHideOnboarding} /> : null}
+                  <ProcessmanTobe
+                    sessionId={sessionId}
+                    selectedElement={selectedBpmnElement}
+                    llmStatus={llmStatus}
+                    cacheRef={cacheRef}
+                    onAnswerChange={handleAnswerChange}
+                    onStatusChange={handleStatusChange}
+                    diagramNodes={diagramNodes}
+                    onFocusElement={onFocusElement}
+                  />
+                </div>
               </div>
             ) : null}
             {context === "analysis" ? (
@@ -197,6 +206,7 @@ export default function ProcessmanPanel({
         {!collapsed ? (
           <footer className="pm-processman__footer" data-testid="processman-footer">
             <span className="pm-processman__footer-disclaimer">{t.disclaimer}</span>
+            <span className="pm-processman__runbook">{t.processmanRunbook}</span>
             {answerInfo.hasAnswer ? (
               <span className="pm-processman__cache-badge" data-testid="processman-cache-badge">
                 {answerInfo.fromCache ? t.cacheCached : t.cacheFresh}
