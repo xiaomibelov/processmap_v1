@@ -199,6 +199,7 @@ import {
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
 import { saveCoordinator } from "../features/session/saveCoordinator";
+import { reportSaveConflictEvent } from "../features/session/saveDiagnosticsTrail.js";
 import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
 import {
   isDrawioXml,
@@ -665,6 +666,7 @@ function ProcessStage({
   // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
   const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
+  const [saveConflictReportKey, setSaveConflictReportKey] = useState("");
   const [propertySaveConflictOpen, setPropertySaveConflictOpen] = useState(false);
   const [propertySaveConflictFallback, setPropertySaveConflictFallback] = useState("");
   // Org-drift (fix presence-404): presence-404 подтверждён как смена org,
@@ -2368,7 +2370,7 @@ function ProcessStage({
         setGenErr(warning);
         return { ok: false, error: warning };
       }
-      // P1: конфликт разрешён пользователем («Обновить и продолжить») — снимаем gate.
+      // P1: конфликт разрешён пользователем («Загрузить версию с сервера») — снимаем gate.
       saveCoordinator.resolveConflict(sid, "refresh");
       return { ok: true };
     } catch (error) {
@@ -2384,11 +2386,7 @@ function ProcessStage({
     void reloadSessionAfterSaveConflict({ discardLocal: false });
   }, [reloadSessionAfterSaveConflict]);
 
-  const handleSaveConflictDiscardLocal = useCallback(() => {
-    void reloadSessionAfterSaveConflict({ discardLocal: true });
-  }, [reloadSessionAfterSaveConflict]);
-
-  // P1: осознанный force — «Перезаписать мои изменения». Единственный путь,
+  // P1: осознанный force — «Оставить мою версию». Единственный путь,
   // где база принудительно выставляется в серверную версию: вызывается ТОЛЬКО
   // из обработчика кнопки конфликт-модала, никогда автоматически. Действие
   // фиксируется на бэке через source_action=manual_save_overwrite_conflict
@@ -3847,6 +3845,63 @@ function ProcessStage({
         setSaveConflictActionBusy(false);
       });
   }, [hybridPersist, setGenErr, setInfoMsg]);
+  // «Сообщить об ошибке»: шлёт конфликт + диагностический трейл последних
+  // действий в телеметрию (user_reported=true), чтобы разобрать корень
+  // ложных single-tab конфликтов по данным со stage.
+  const saveConflictReportContextKey = [
+    toText(sid),
+    showSaveConflictModal ? "bpmn" : (hybridSaveConflictOpen ? "hybrid" : "property"),
+    toNonNegativeVersion(
+      saveUploadStatus?.conflict?.serverCurrentVersion
+        ?? hybridPersist.conflictNotice?.serverVersion
+        ?? 0,
+    ),
+  ].join(":");
+  const saveConflictReportSent = saveConflictReportKey !== ""
+    && saveConflictReportKey === saveConflictReportContextKey;
+  const handleSaveConflictReport = useCallback(() => {
+    if (!sid || saveConflictActionBusy) return;
+    const isHybridConflict = hybridSaveConflictOpen && !showSaveConflictModal;
+    const coordinatorConflict = saveCoordinator.getConflict(sid);
+    const conflictSnapshot = {
+      sessionId: sid,
+      clientBaseVersion: isHybridConflict
+        ? null
+        : (saveUploadStatus?.conflict?.clientBaseVersion ?? coordinatorConflict?.clientBaseVersion ?? null),
+      serverCurrentVersion: isHybridConflict
+        ? (hybridPersist.conflictNotice?.serverVersion ?? coordinatorConflict?.serverVersion ?? null)
+        : (saveUploadStatus?.conflict?.serverCurrentVersion ?? coordinatorConflict?.serverVersion ?? null),
+      serverLastWrite: saveUploadStatus?.conflict?.serverLastWrite || null,
+    };
+    setSaveConflictActionBusy(true);
+    void reportSaveConflictEvent({
+      sessionId: sid,
+      pipeline: isHybridConflict ? "hybrid" : (coordinatorConflict?.pipeline || "xml"),
+      conflict: conflictSnapshot,
+      userReported: true,
+    })
+      .then((result) => {
+        if (result?.ok || result?.skipped) {
+          setSaveConflictReportKey(saveConflictReportContextKey);
+          setInfoMsg("Спасибо! Отчёт об ошибке отправлен.");
+          return;
+        }
+        setGenErr("Не удалось отправить отчёт об ошибке. Попробуйте позже.");
+      })
+      .finally(() => {
+        setSaveConflictActionBusy(false);
+      });
+  }, [
+    hybridPersist.conflictNotice?.serverVersion,
+    hybridSaveConflictOpen,
+    saveConflictActionBusy,
+    saveConflictReportContextKey,
+    saveUploadStatus?.conflict,
+    setGenErr,
+    setInfoMsg,
+    showSaveConflictModal,
+    sid,
+  ]);
   const robotMetaListItems = useMemo(() => {
     const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
     const query = toText(robotMetaListSearch).toLowerCase();
@@ -7467,9 +7522,6 @@ function ProcessStage({
       saveConflictActions: {
         visible: showSaveConflictModal,
         busy: saveConflictActionBusy === true,
-        onRefreshSession: handleSaveConflictRefresh,
-        onStay: dismissSaveConflictNotice,
-        onDiscardLocalChanges: handleSaveConflictDiscardLocal,
       },
     },
     sid,
@@ -8190,17 +8242,8 @@ function ProcessStage({
           }
           dismissSaveConflictNotice();
         }}
-        onDiscardLocalChanges={() => {
-          setPropertySaveConflictOpen(false);
-          if (hybridSaveConflictOpen && !showSaveConflictModal) {
-            hybridPersist.dismissConflictNotice();
-            hybridPersist.discardDraft();
-          }
-          handleSaveConflictDiscardLocal();
-        }}
-        onCompare={(showSaveConflictModal || propertySaveConflictOpen)
-          ? () => void openMergePanel("save_conflict_modal")
-          : null}
+        onReport={handleSaveConflictReport}
+        reportSent={saveConflictReportSent}
       />
       <BpmnMergePanel
         open={mergePanelOpen}
