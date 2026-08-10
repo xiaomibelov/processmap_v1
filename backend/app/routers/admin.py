@@ -144,19 +144,21 @@ def _as_text(value: Any) -> str:
 
 def _as_int(value: Any, default: int = 0) -> int:
     try:
-        return int(value)
+        n = int(value)
     except Exception:
         return int(default)
+    # Клэмп в int64: значения за пределами bigint не представимы в БД и роняли
+    # запросы с OverflowError → 500 (contract-fuzz, PR #707).
+    return max(-(2**63), min(n, 2**63 - 1))
 
 
-# sqlite INTEGER — 64-бит signed; int query-параметры большего размера падают
-# с OverflowError на bind (баг из contract-фаззинга: limit/ts = 1.8e28 → 500).
-_MAX_SQLITE_INT = 2**62 - 1
+_SQL_INT64_MAX = 9_223_372_036_854_775_807
 
 
-def _as_ts(value: Any, default: int = 0) -> int:
-    """timestamp/int-фильтр, безопасный для sqlite-bind: [0, _MAX_SQLITE_INT]."""
-    return max(0, min(_as_int(value, default), _MAX_SQLITE_INT))
+def _clamp_sql_int(value: int) -> int:
+    """Зажим в int64: Python int > SQLite INTEGER при биндинге даёт OverflowError
+    (500 вместо пустой страницы; найдено contract-фаззингом: offset/ts ~2^66)."""
+    return max(-_SQL_INT64_MAX, min(int(value), _SQL_INT64_MAX))
 
 
 def _autopass_used_fallback(autopass_raw: Dict[str, Any], bpmn_meta_raw: Dict[str, Any]) -> bool:
@@ -936,10 +938,10 @@ def admin_ai_executions(
         workspace_id=workspace_id,
         project_id=project_id,
         session_id=session_id,
-        created_from=_as_ts(created_from),
-        created_to=_as_ts(created_to),
+        created_from=max(0, _clamp_sql_int(_as_int(created_from, 0))),
+        created_to=max(0, _clamp_sql_int(_as_int(created_to, 0))),
         limit=max(1, min(_as_int(limit, 50), 200)),
-        offset=max(0, _as_int(offset, 0)),
+        offset=max(0, _clamp_sql_int(_as_int(offset, 0))),
     )
 
 
@@ -963,7 +965,7 @@ def admin_ai_prompts(
             scope_level=scope_level,
             scope_id=scope_id,
             limit=max(1, min(_as_int(limit, 50), 200)),
-            offset=max(0, _as_int(offset, 0)),
+            offset=max(0, _clamp_sql_int(_as_int(offset, 0))),
         )
     except ValueError as exc:
         return _legacy_main._enterprise_error(422, "validation_error", str(exc))
@@ -1227,8 +1229,8 @@ def admin_sessions(
     off = max(0, _as_int(offset, 0))
     needs_attention_raw = _as_int(needs_attention, -1)
     needs_attention_value = None if needs_attention_raw < 0 else needs_attention_raw
-    updated_from_raw = _as_ts(updated_from)
-    updated_to_raw = _as_ts(updated_to)
+    updated_from_raw = _as_int(updated_from, 0)
+    updated_to_raw = _as_int(updated_to, 0)
     workspace, ws_err = _workspace_payload(
         request,
         q=q,
@@ -1724,10 +1726,10 @@ def admin_error_events(
         return _legacy_main._enterprise_error(422, "validation_error", "org_id is required")
 
     lim = max(1, min(_as_int(limit, 50), 100))
-    off = max(0, _as_int(offset, 0))
+    off = max(0, _clamp_sql_int(_as_int(offset, 0)))
     sort_order = "desc" if _as_text(order).lower() == "desc" else "asc"
-    from_ts_raw = _as_ts(occurred_from)
-    to_ts_raw = _as_ts(occurred_to)
+    from_ts_raw = _clamp_sql_int(_as_int(occurred_from, 0))
+    to_ts_raw = _clamp_sql_int(_as_int(occurred_to, 0))
     filters = {
         "session_id": _as_text(session_id) or None,
         "request_id": _as_text(request_id) or None,
@@ -1794,8 +1796,8 @@ def admin_audit(
     lim = max(1, min(_as_int(limit, 20), 50))
     off = max(0, _as_int(offset, 0))
     q_value = _as_text(q).lower() or None
-    updated_from_raw = _as_ts(updated_from)
-    updated_to_raw = _as_ts(updated_to)
+    updated_from_raw = _as_int(updated_from, 0)
+    updated_to_raw = _as_int(updated_to, 0)
     from_ts = updated_from_raw if updated_from_raw > 0 else None
     to_ts = updated_to_raw if updated_to_raw > 0 else None
     total = count_audit_log(

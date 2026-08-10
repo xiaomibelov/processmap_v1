@@ -8,8 +8,9 @@
 - B4: GET /api/enterprise/workspace → 500 AttributeError (_lm.get_enterprise_workspace)
 - B5: POST /api/sessions {"roles": true} → 500 TypeError вместо 422
 - B6: GET /api/audit-log с ≥1 событием → 500 AttributeError (sqlite3.Row.get)
-- B7: admin-эндпоинты с гигантскими int-параметрами (ts > 2^63) → 500 OverflowError
-  (sqlite bind); фикс — кламп к sqlite-safe диапазону
+- B7: GET /api/admin/ai/executions, /api/admin/ai/prompts,
+  /api/notifications/error_events → 500 OverflowError (int ~2^66 в offset/ts
+  не биндится в SQLite INTEGER; зажим в int64 на границе роутеров)
 """
 from __future__ import annotations
 
@@ -68,17 +69,6 @@ class ContractFuzzRegressionTest(unittest.TestCase):
         r = self.client.get("/api/enterprise/workspace", headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
 
-    def test_b7_admin_endpoints_huge_int_params_not_500(self):
-        huge = "18248248804317161151490775056384"
-        for path in (
-            f"/api/admin/ai/executions?created_to={huge}&created_from=19948282402",
-            f"/api/admin/error-events?occurred_from={huge}",
-            f"/api/admin/audit?updated_to={huge}&updated_from=833792517193",
-            f"/api/audit-log?date_from={huge}",
-        ):
-            r = self.client.get(path, headers=self.headers)
-            self.assertNotEqual(r.status_code, 500, f"{path}: {r.text[:200]}")
-
     def test_b6_audit_log_with_events_not_500(self):
         # Создаём событие аудита (project.create), затем читаем журнал —
         # на sqlite падало AttributeError: 'sqlite3.Row' object has no attribute 'get'.
@@ -108,6 +98,42 @@ class ContractFuzzRegressionTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json().get("roles"), ["operator"])
+
+    # ----------------------------------------------------------- B7 (PR #707)
+
+    def test_b7_admin_ai_executions_huge_offset_not_500(self):
+        # CI fuzz: offset ~2^66 → OverflowError при биндинге в SQLite → 500.
+        r = self.client.get(
+            "/api/admin/ai/executions?offset=474793763510629620476127739904",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_b7_admin_ai_prompts_huge_offset_not_500(self):
+        r = self.client.get(
+            "/api/admin/ai/prompts?offset=474793763510629620476127739904&scope_id=5d04dc4f73",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_b7_notifications_error_events_huge_ts_not_500(self):
+        # CI fuzz: occurred_from ~2^66 + мусорный order → 500 в fallback-репо.
+        r = self.client.get(
+            "/api/notifications/error_events?occurred_from=9299150674545163573215100928&order=%C3%B3&limit=500",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_b7_admin_audit_and_audit_log_huge_ts_not_500(self):
+        # Доп. покрытие того же класса (контур llm-testgen-admin, CI #703):
+        # admin/audit updated_to и /api/audit-log date_from с ts > 2^63.
+        huge = "18248248804317161151490775056384"
+        for path in (
+            f"/api/admin/audit?updated_to={huge}&updated_from=833792517193",
+            f"/api/audit-log?date_from={huge}",
+        ):
+            r = self.client.get(path, headers=self.headers)
+            self.assertNotEqual(r.status_code, 500, f"{path}: {r.text[:200]}")
 
 
 if __name__ == "__main__":

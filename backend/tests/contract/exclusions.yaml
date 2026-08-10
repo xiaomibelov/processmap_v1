@@ -148,6 +148,12 @@ spec_gap_status_operations:
   - id: admin_llm_usage_api_admin_llm_usage_get
     statuses: [403]
     reason: "Доменный 403 (platform admin); spec-gap."
+  - id: admin_llm_list_models_api_admin_llm_models_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap (feat/llm-model-config)."
+  - id: admin_llm_list_feature_models_api_admin_llm_feature_models_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap (feat/llm-model-config)."
   - id: list_deployment_notices_api_admin_deployment_notices_get
     statuses: [403]
     reason: "Доменный 403 (platform admin); spec-gap."
