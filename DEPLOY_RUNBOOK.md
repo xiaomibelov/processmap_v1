@@ -109,6 +109,10 @@ Success criteria:
 Docker daemon restart must be scheduled as a maintenance window because it
 temporarily interrupts all containers, including prod and stage.
 
+Open item: verify Docker daemon restart persistence in the next approved
+maintenance window. Until that window is complete, persistence is verified for
+boot/timer reapply and not yet for an explicit Docker daemon restart.
+
 ```bash
 sudo systemctl restart docker
 sudo systemctl start processmap-docker-egress.service
@@ -120,6 +124,11 @@ curl -fsS https://processmap.ru/api/health
 Success criteria: egress still works from both API containers after Docker
 daemon restart, both public health checks return 200, and container restart
 counts do not continue increasing after Docker comes back.
+
+The timer uses `OnUnitInactiveSec=5min`. This keeps the host self-healing after a
+UFW/firewall rule refresh while avoiding a noisy 30-second recurring systemd
+job. Worst-case automatic repair time after a non-Docker restart firewall event
+is about five minutes.
 
 ### Rollback
 

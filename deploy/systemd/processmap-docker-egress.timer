@@ -4,7 +4,7 @@ Documentation=/opt/processmap/app/DEPLOY_RUNBOOK.md
 
 [Timer]
 OnBootSec=30s
-OnUnitInactiveSec=30s
+OnUnitInactiveSec=5min
 Unit=processmap-docker-egress.service
 
 [Install]
