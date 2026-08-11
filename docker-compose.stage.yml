@@ -1,5 +1,6 @@
 services:
   api:
+    image: processmap_stage-api:${STAGE_IMAGE_TAG:-local}
     env_file:
       - .env.stage
     ports: !override []
@@ -15,12 +16,16 @@ services:
       - ./runtime/stage/postgres:/var/lib/postgresql/data
 
   frontend:
+    image: processmap_stage-frontend:${STAGE_IMAGE_TAG:-local}
     ports: !override []
     networks:
       default:
       edge_shared:
         aliases:
           - stage-gateway
+
+  notifications:
+    image: processmap_stage-notifications:${STAGE_IMAGE_TAG:-local}
 
 networks:
   edge_shared:
