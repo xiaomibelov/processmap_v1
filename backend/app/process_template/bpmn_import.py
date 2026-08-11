@@ -22,6 +22,7 @@ CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn"
 # (check_reachability=False: импорт исторически не проверяет достижимость —
 # это делает dry-run endpoint E6). Имена ре-экспортируются для совместимости
 # (transformation/pipeline импортирует их отсюда).
+from ..camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
 from ..validation.service import (  # noqa: E402
     ALLOWED_OPERATION_CODES,
     FORBIDDEN_OPERATION_CODES,
@@ -271,6 +272,70 @@ def _collect_di_layout(root: ET.Element) -> Tuple[Dict[str, Dict[str, float]], D
     return shapes, edges
 
 
+def _iter_process_flow_nodes(process: ET.Element) -> List[Tuple[ET.Element, str]]:
+    """Return all importable BPMN flow nodes, including nodes inside subProcess."""
+    out: List[Tuple[ET.Element, str]] = []
+
+    def walk(parent: ET.Element, parent_subprocess_id: str = "") -> None:
+        for child in parent:
+            if _ns(str(child.tag)) != BPMN_NS:
+                continue
+            local = _local_name(str(child.tag))
+            if local == "subProcess":
+                walk(child, child.get("id") or parent_subprocess_id)
+                continue
+            is_task_like = local == "task" or local in LEGACY_TASK_TYPES
+            if is_task_like or local in _EVENT_TYPES or local in _GATEWAY_TYPES:
+                out.append((child, parent_subprocess_id))
+            walk(child, parent_subprocess_id)
+
+    walk(process)
+    return out
+
+
+def _iter_process_sequence_flows(process: ET.Element) -> List[ET.Element]:
+    """Return sequence flows from the process and nested subprocesses."""
+    return [
+        el
+        for el in process.iter()
+        if _ns(str(el.tag)) == BPMN_NS and _local_name(str(el.tag)) == "sequenceFlow"
+    ]
+
+
+def _extract_bpmn_meta(raw_xml: str) -> Dict[str, Any]:
+    extensions = extract_camunda_extensions_from_bpmn_xml(raw_xml)
+    normalized: Dict[str, Any] = {}
+    for element_id, entry in extensions.items():
+        if not isinstance(entry, dict):
+            continue
+        next_entry = dict(entry)
+        props_block = dict(next_entry.get("properties") or {})
+        rows = []
+        for row in props_block.get("extensionProperties") or []:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key") or row.get("name") or "")
+            rows.append({**row, "key": key, "name": str(row.get("name") or key)})
+        props_block["extensionProperties"] = rows
+        next_entry["properties"] = props_block
+        normalized[element_id] = next_entry
+    if not normalized:
+        return {}
+    return {"camunda_extensions_by_element_id": normalized}
+
+
+def _extract_subprocess_meta(process: Optional[ET.Element]) -> List[Dict[str, str]]:
+    if process is None:
+        return []
+    out: List[Dict[str, str]] = []
+    for el in process.iter(f"{{{BPMN_NS}}}subProcess"):
+        element_id = el.get("id") or ""
+        if not element_id:
+            continue
+        out.append({"id": element_id, "name": el.get("name") or ""})
+    return out
+
+
 def _check_metadata_strings(
     metadata: Optional[Dict[str, Any]],
     element_id: str,
@@ -441,13 +506,9 @@ def parse_bpmn(xml_text: str) -> ImportResult:
 # --- flow nodes ----------------------------------------------------------
     nodes: List[Dict[str, Any]] = []
     if process is not None:
-        for el in process:
+        for el, parent_subprocess_id in _iter_process_flow_nodes(process):
             local = _local_name(str(el.tag))
-            if _ns(str(el.tag)) != BPMN_NS:
-                continue
             is_task_like = local == "task" or local in LEGACY_TASK_TYPES
-            if not (is_task_like or local in _EVENT_TYPES or local in _GATEWAY_TYPES):
-                continue
 
             element_id = el.get("id") or ""
             element_name = el.get("name") or ""
@@ -542,11 +603,13 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                     "height": bounds.get("height", 0.0),
                 }
             )
+            if parent_subprocess_id:
+                nodes[-1]["parent_subprocess_id"] = parent_subprocess_id
 
     # --- sequence flows -------------------------------------------------------
     flows: List[Dict[str, Any]] = []
     if process is not None:
-        for flow in process.findall(f"{{{BPMN_NS}}}sequenceFlow"):
+        for flow in _iter_process_sequence_flows(process):
             flow_id = flow.get("id") or ""
             flow_name = flow.get("name") or ""
             condition = ""
@@ -572,6 +635,12 @@ def parse_bpmn(xml_text: str) -> ImportResult:
         "participant": participant,
         "lanes": lanes,
     }
+    bpmn_meta = _extract_bpmn_meta(raw)
+    if bpmn_meta:
+        ui_model["bpmn_meta"] = bpmn_meta
+    subprocesses = _extract_subprocess_meta(process)
+    if subprocesses:
+        ui_model["subprocesses"] = subprocesses
     # E6.1: правила R1/R3/R5 — из validation service (импорт добавляет только
     # свои dialect/legacy findings выше). check_reachability=False: проверка
     # достижимости — ответственность dry-run endpoint'а (POST .../validate).
