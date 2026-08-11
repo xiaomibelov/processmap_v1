@@ -2,9 +2,22 @@ services:
   api:
     env_file:
       - .env.stage
+    network_mode: host
+    extra_hosts:
+      - "postgres:172.20.0.2"
+      - "redis:172.20.0.3"
     ports: !override []
     volumes:
       - ./runtime/stage/workspace:/app/workspace
+
+  celery-worker:
+    env_file:
+      - .env.stage
+    network_mode: host
+    extra_hosts:
+      - "postgres:172.20.0.2"
+      - "redis:172.20.0.3"
+    ports: !override []
 
   redis:
     ports: !override []
@@ -16,6 +29,8 @@ services:
 
   frontend:
     ports: !override []
+    volumes:
+      - ./deploy/nginx/frontend.stage.host-api.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       default:
       edge_shared:
