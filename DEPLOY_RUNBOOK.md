@@ -60,3 +60,77 @@ Query every 5 min:
 | `circuit_breaker_state` | 0 (closed) | Page on-call after 2 consecutive fails |
 
 If any metric violates for **2 consecutive checks** → page on-call immediately.
+
+## 5. Docker egress persistence
+
+### Context
+
+Prod and stage currently run on the same VM and share the same Docker daemon. A
+host firewall/UFW reload can leave Docker bridge NAT in place while removing the
+filter-chain forwarding rules needed for container egress. The observed symptom
+is DNS/TCP failure from containers while the host itself can resolve and connect.
+
+The current runtime rollback artifact from the incident is:
+
+```bash
+/opt/processmap/backup/network-20260811-124357/runtime-fix-rollback-20260811-132311.sh
+```
+
+### Install
+
+Run during an approved maintenance window. Enabling the service is low impact,
+but a Docker daemon restart affects both prod and stage on this host.
+
+```bash
+cd /opt/processmap/app
+sudo install -m 0755 deploy/scripts/processmap_docker_egress_persist.sh \
+  /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh
+sudo install -m 0644 deploy/systemd/processmap-docker-egress.service \
+  /etc/systemd/system/processmap-docker-egress.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now processmap-docker-egress.service
+sudo /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh verify
+```
+
+Success criteria:
+- `systemctl is-active processmap-docker-egress.service` returns `active`.
+- `iptables -L DOCKER-USER -n -v` shows bridge-to-default-interface ACCEPT rules.
+- `processmap_stage-api-1` and `app-api-1` resolve and connect to
+  `vvchat.vkusvill.ru:443` and `api.deepseek.com:443`.
+- `https://stage.processmap.ru/api/health` and
+  `https://processmap.ru/api/health` return HTTP 200.
+
+### Docker daemon restart verification
+
+Docker daemon restart must be scheduled as a maintenance window because it
+temporarily interrupts all containers, including prod and stage.
+
+```bash
+sudo systemctl restart docker
+sudo systemctl start processmap-docker-egress.service
+sudo /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh verify
+curl -fsS https://stage.processmap.ru/api/health
+curl -fsS https://processmap.ru/api/health
+```
+
+Success criteria: egress still works from both API containers after Docker
+daemon restart, both public health checks return 200, and container restart
+counts do not continue increasing after Docker comes back.
+
+### Rollback
+
+Rollback removes only rules owned by this service and disables the persistence
+hook:
+
+```bash
+sudo systemctl disable --now processmap-docker-egress.service
+sudo /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh rollback
+sudo systemctl daemon-reload
+```
+
+If rollback must exactly return to the incident-time runtime state, use the
+stored rollback artifact:
+
+```bash
+sudo /opt/processmap/backup/network-20260811-124357/runtime-fix-rollback-20260811-132311.sh
+```
