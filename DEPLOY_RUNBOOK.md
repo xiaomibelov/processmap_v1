@@ -87,13 +87,17 @@ sudo install -m 0755 deploy/scripts/processmap_docker_egress_persist.sh \
   /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh
 sudo install -m 0644 deploy/systemd/processmap-docker-egress.service \
   /etc/systemd/system/processmap-docker-egress.service
+sudo install -m 0644 deploy/systemd/processmap-docker-egress.timer \
+  /etc/systemd/system/processmap-docker-egress.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now processmap-docker-egress.service
+sudo systemctl enable --now processmap-docker-egress.timer
 sudo /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh verify
 ```
 
 Success criteria:
-- `systemctl is-active processmap-docker-egress.service` returns `active`.
+- `systemctl is-enabled processmap-docker-egress.service` returns `enabled`.
+- `systemctl is-active processmap-docker-egress.timer` returns `active`.
 - `iptables -L DOCKER-USER -n -v` shows bridge-to-default-interface ACCEPT rules.
 - `processmap_stage-api-1` and `app-api-1` resolve and connect to
   `vvchat.vkusvill.ru:443` and `api.deepseek.com:443`.
@@ -123,6 +127,7 @@ Rollback removes only rules owned by this service and disables the persistence
 hook:
 
 ```bash
+sudo systemctl disable --now processmap-docker-egress.timer
 sudo systemctl disable --now processmap-docker-egress.service
 sudo /opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh rollback
 sudo systemctl daemon-reload
