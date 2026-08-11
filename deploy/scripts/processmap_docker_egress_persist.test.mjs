@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 const scriptPath = new URL("./processmap_docker_egress_persist.sh", import.meta.url);
 const unitPath = new URL("../systemd/processmap-docker-egress.service", import.meta.url);
+const timerPath = new URL("../systemd/processmap-docker-egress.timer", import.meta.url);
 const runbookPath = new URL("../../DEPLOY_RUNBOOK.md", import.meta.url);
 
 test("docker egress persistence script encodes the safe DOCKER-USER contract", async () => {
@@ -35,9 +36,20 @@ test("systemd unit reapplies egress rules after Docker and UFW", async () => {
   assert.match(unit, /After=.*ufw\.service/);
   assert.match(unit, /After=.*network-online\.target/);
   assert.match(unit, /Type=oneshot/);
-  assert.match(unit, /RemainAfterExit=yes/);
+  assert.doesNotMatch(unit, /RemainAfterExit=yes/);
   assert.match(unit, /ExecStart=.*processmap_docker_egress_persist\.sh apply/);
-  assert.match(unit, /ExecStop=.*processmap_docker_egress_persist\.sh rollback/);
+  assert.match(unit, /WantedBy=.*docker\.service/);
+  assert.match(unit, /WantedBy=.*ufw\.service/);
+});
+
+test("systemd timer periodically reapplies idempotent egress rules", async () => {
+  const timer = await readFile(timerPath, "utf8");
+
+  assert.match(timer, /\[Timer\]/);
+  assert.match(timer, /OnBootSec=30s/);
+  assert.match(timer, /OnUnitInactiveSec=30s/);
+  assert.match(timer, /Unit=processmap-docker-egress\.service/);
+  assert.match(timer, /WantedBy=timers\.target/);
 });
 
 test("runbook documents install verification and rollback for Docker egress persistence", async () => {
@@ -47,7 +59,8 @@ test("runbook documents install verification and rollback for Docker egress pers
   assert.match(runbook, /processmap-docker-egress\.service/);
   assert.match(runbook, /daemon-reload/);
   assert.match(runbook, /systemctl enable --now processmap-docker-egress\.service/);
-  assert.match(runbook, /systemctl disable --now processmap-docker-egress\.service/);
+  assert.match(runbook, /systemctl enable --now processmap-docker-egress\.timer/);
+  assert.match(runbook, /systemctl disable --now processmap-docker-egress\.timer/);
   assert.match(runbook, /processmap_docker_egress_persist\.sh rollback/);
   assert.match(runbook, /network-20260811-124357\/runtime-fix-rollback-20260811-132311\.sh/);
   assert.match(runbook, /Docker daemon restart/);

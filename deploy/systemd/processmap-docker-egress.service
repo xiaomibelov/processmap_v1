@@ -6,9 +6,7 @@ After=docker.service ufw.service network-online.target
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 ExecStart=/opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh apply
-ExecStop=/opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh rollback
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=multi-user.target docker.service ufw.service
