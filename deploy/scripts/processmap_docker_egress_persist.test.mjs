@@ -47,7 +47,7 @@ test("systemd timer periodically reapplies idempotent egress rules", async () =>
 
   assert.match(timer, /\[Timer\]/);
   assert.match(timer, /OnBootSec=30s/);
-  assert.match(timer, /OnUnitInactiveSec=30s/);
+  assert.match(timer, /OnUnitInactiveSec=5min/);
   assert.match(timer, /Unit=processmap-docker-egress\.service/);
   assert.match(timer, /WantedBy=timers\.target/);
 });
@@ -65,4 +65,6 @@ test("runbook documents install verification and rollback for Docker egress pers
   assert.match(runbook, /network-20260811-124357\/runtime-fix-rollback-20260811-132311\.sh/);
   assert.match(runbook, /Docker daemon restart/);
   assert.match(runbook, /maintenance window/);
+  assert.match(runbook, /Open item: verify Docker daemon restart persistence/);
+  assert.match(runbook, /OnUnitInactiveSec=5min/);
 });
