@@ -8,7 +8,90 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Compute build metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          bundle_name="processmap-stage-images-${GITHUB_SHA}.tar.gz"
+          {
+            echo "build_time=${build_time}"
+            echo "bundle_name=${bundle_name}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build stage api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: processmap_stage-api:${{ github.sha }}
+          build-args: |
+            BUILD_ID=${{ github.sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            BUILD_BRANCH=main
+            BUILD_ENV=stage
+
+      - name: Build stage frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          load: true
+          tags: processmap_stage-frontend:${{ github.sha }}
+          build-args: |
+            VITE_BUILD_ID=${{ github.sha }}
+            VITE_BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            VITE_BUILD_BRANCH=main
+            VITE_BUILD_ENV=stage
+            VITE_DEPLOY_FINGERPRINT=processmap-stage-deploy-sha:${{ github.sha }}
+            VITE_DEPLOY_REQUESTED_REF=main
+            VITE_DEPLOY_RESOLVED_SHA=${{ github.sha }}
+
+      - name: Build stage notifications image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/services/notifications
+          file: ./backend/services/notifications/Dockerfile
+          load: true
+          tags: processmap_stage-notifications:${{ github.sha }}
+
+      - name: Pack stage images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect \
+            "processmap_stage-api:${GITHUB_SHA}" \
+            "processmap_stage-frontend:${GITHUB_SHA}" \
+            "processmap_stage-notifications:${GITHUB_SHA}" >/dev/null
+          docker save \
+            "processmap_stage-api:${GITHUB_SHA}" \
+            "processmap_stage-frontend:${GITHUB_SHA}" \
+            "processmap_stage-notifications:${GITHUB_SHA}" \
+            | gzip -1 > "${{ steps.meta.outputs.bundle_name }}"
+          gzip -t "${{ steps.meta.outputs.bundle_name }}"
+          ls -lh "${{ steps.meta.outputs.bundle_name }}"
+
+      - name: Copy stage images to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          source: ${{ steps.meta.outputs.bundle_name }}
+          target: /tmp
+          overwrite: true
+
       - name: Deploy to stage server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -21,23 +104,85 @@ jobs:
             cd /opt/processmap/app
 
             REQUESTED_REF="main"
+            EXPECTED_SHA="${{ github.sha }}"
+            IMAGE_BUNDLE="/tmp/${{ steps.meta.outputs.bundle_name }}"
+
+            echo "[deploy-stage] preflight: stage boundary"
+            test -f ".env.stage"
+            test -f "docker-compose.yml"
+            test -f "docker-compose.stage.yml"
+            stage_api_count="$(docker ps -q \
+              --filter label=com.docker.compose.project=processmap_stage \
+              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
+            prod_api_count="$(docker ps -q \
+              --filter label=com.docker.compose.project=app \
+              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
+            echo "[deploy-stage] stage api containers: ${stage_api_count}"
+            echo "[deploy-stage] prod api containers visible but not targeted: ${prod_api_count}"
+            [ "${stage_api_count}" -ge 1 ] || {
+              echo "[deploy-stage] ERROR: processmap_stage api container not found" >&2
+              exit 1
+            }
+            [ -s "${IMAGE_BUNDLE}" ] || {
+              echo "[deploy-stage] ERROR: image bundle missing or empty: ${IMAGE_BUNDLE}" >&2
+              exit 1
+            }
+
+            echo "[deploy-stage] preflight: stage egress diagnostic (non-blocking)"
+            STAGE_API_CID="$(docker ps -q \
+              --filter label=com.docker.compose.project=processmap_stage \
+              --filter label=com.docker.compose.service=api | head -n1)"
+            if timeout 4s docker exec "${STAGE_API_CID}" getent hosts vvchat.vkusvill.ru >/dev/null 2>&1; then
+              echo "[deploy-stage] stage container egress DNS: OK"
+            else
+              echo "::warning::[deploy-stage] stage container egress DNS failed; deploying prebuilt images anyway"
+            fi
 
             echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
+            echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
 
-            # Pull latest source code only, preserve server configs
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
             git fetch origin main
             DEPLOY_SHA="$(git rev-parse --verify origin/main)"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
+            [ "${DEPLOY_SHA}" = "${EXPECTED_SHA}" ] || {
+              echo "[deploy-stage] ERROR: origin/main ${DEPLOY_SHA} != workflow sha ${EXPECTED_SHA}" >&2
+              exit 1
+            }
 
-            # Ensure frontend source files are really updated even if marked assume-unchanged/skip-worktree
-            git update-index --no-assume-unchanged -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
-            git update-index --no-skip-worktree -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
-            git checkout -f "${DEPLOY_SHA}" -- backend backend/services/notifications frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
+            PRESERVE_DIR="$(mktemp -d /tmp/processmap-stage-preserve.XXXXXX)"
+            for path in \
+              .env \
+              .env.stage \
+              docker-compose.ssl.yml \
+              docker-compose.prod.yml \
+              docker-compose.prod.gateway.yml \
+              backend/alembic.stage.ini; do
+              if [ -e "${path}" ]; then
+                mkdir -p "${PRESERVE_DIR}/$(dirname "${path}")"
+                cp -a "${path}" "${PRESERVE_DIR}/${path}"
+              fi
+            done
+
+            # Full checkout makes the stage worktree consistent after a failed
+            # previous checkout; server-only config files are restored below.
+            git checkout -f "${DEPLOY_SHA}"
+
+            for path in \
+              .env \
+              .env.stage \
+              docker-compose.ssl.yml \
+              docker-compose.prod.yml \
+              docker-compose.prod.gateway.yml \
+              backend/alembic.stage.ini; do
+              if [ -e "${PRESERVE_DIR}/${path}" ]; then
+                mkdir -p "$(dirname "${path}")"
+                cp -a "${PRESERVE_DIR}/${path}" "${path}"
+              fi
+            done
 
             echo "[deploy-stage] source diagnostics:"
             git status --short
-            git diff --stat HEAD || true
             echo "[deploy-stage] file checksums after checkout:"
             sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
             echo "[deploy-stage] App.jsx sessions:"
@@ -53,15 +198,12 @@ jobs:
               --requested-ref "${REQUESTED_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
 
-            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            BUILD_TIME="${{ steps.meta.outputs.build_time }}"
 
-            # Pass accurate build metadata to the API container so /version tells the truth
             export BUILD_ID="${DEPLOY_SHA}"
             export BUILD_BRANCH="${REQUESTED_REF}"
             export BUILD_TIME="${BUILD_TIME}"
             export BUILD_ENV="stage"
-
-            # Pass accurate build metadata to the frontend container so buildInfo.js is correct
             export VITE_BUILD_ID="${DEPLOY_SHA}"
             export VITE_BUILD_BRANCH="${REQUESTED_REF}"
             export VITE_BUILD_TIME="${BUILD_TIME}"
@@ -71,11 +213,10 @@ jobs:
             export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
             export VITE_DEPLOY_REQUESTED_REF="${REQUESTED_REF}"
             export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+            export STAGE_IMAGE_TAG="${DEPLOY_SHA}"
 
-            # Persist accurate build metadata in the stage env file so the API
-            # container's runtime BUILD_* variables match the deployed SHA.
             ENV_FILE=".env.stage"
-            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d' "${ENV_FILE}"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d; /^STAGE_IMAGE_TAG=/d' "${ENV_FILE}"
             {
               echo ""
               echo "# Auto-injected by deploy-stage.yml at ${BUILD_TIME}"
@@ -90,36 +231,43 @@ jobs:
               echo "VITE_DEPLOY_FINGERPRINT=${DEPLOY_FINGERPRINT}"
               echo "VITE_DEPLOY_REQUESTED_REF=${REQUESTED_REF}"
               echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
+              echo "STAGE_IMAGE_TAG=${DEPLOY_SHA}"
             } >> "${ENV_FILE}"
 
-            # Rebuild api and frontend (frontend is baked into frontend image)
-            APP_ENV_FILE=.env.stage docker compose \
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              build --no-cache api frontend notifications
+              config --quiet
 
-            # Diagnostics: show current frontend mounts/assets before recreate
+            echo "[deploy-stage] loading GitHub-built images"
+            gzip -dc "${IMAGE_BUNDLE}" | docker load
+            docker image inspect \
+              "processmap_stage-api:${DEPLOY_SHA}" \
+              "processmap_stage-frontend:${DEPLOY_SHA}" \
+              "processmap_stage-notifications:${DEPLOY_SHA}" >/dev/null
+
             echo "[deploy-stage] current frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
             echo "[deploy-stage] current frontend assets:"
             docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
 
-            # Remove the old frontend container and any attached volumes so stale statics cannot survive
-            docker compose -p processmap_stage rm -fsv frontend 2>/dev/null || true
-            # Drop any project named volume that could be masking /usr/share/nginx/html
-            docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
-
-            # Start fresh containers (renew anonymous volumes to pull files from the new image)
-            APP_ENV_FILE=.env.stage docker compose \
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-deps --force-recreate -V api frontend notifications
+              rm -fsv frontend 2>/dev/null || true
+            docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
-            # Diagnostics after recreate
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              up -d --no-build --no-deps --force-recreate -V api frontend notifications
+
             echo "[deploy-stage] new frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
             echo "[deploy-stage] new frontend assets:"
