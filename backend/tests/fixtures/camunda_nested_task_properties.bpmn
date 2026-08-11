@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Defs_CamundaImport">
+  <bpmn:process id="Process_CamundaImport" isExecutable="true">
+    <bpmn:startEvent id="Start_1" name="Старт" />
+    <bpmn:task id="Task_Top" name="Измерить&#10;температуру">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ingredient" value="Крем" />
+          <camunda:property name="ingredient" value="Сливки" />
+          <camunda:property name="equipment" value="Термощуп" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:subProcess id="SubProcess_1" name="Контроль нагрева">
+      <bpmn:task id="Task_Sub_1" name="Изменить режим оборудования">
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="equipment" value="Печь №2" />
+            <camunda:property name="tara" value="Шпилька" />
+            <camunda:property name="target_temperature" value="82" />
+          </camunda:properties>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="mode">бережный</camunda:inputParameter>
+          </camunda:inputOutput>
+        </bpmn:extensionElements>
+      </bpmn:task>
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>
