@@ -162,6 +162,25 @@ def _legacy_node_props(node: Dict[str, Any]) -> List[Tuple[str, str]]:
     return props
 
 
+def _subprocess_specs(ui_model: Dict[str, Any], nodes: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    seen = set()
+    specs: List[Dict[str, str]] = []
+    for spec in ui_model.get("subprocesses") or []:
+        if not isinstance(spec, dict):
+            continue
+        sid = str(spec.get("id") or "")
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        specs.append({"id": sid, "name": str(spec.get("name") or "")})
+    for node in nodes:
+        sid = str(node.get("parent_subprocess_id") or "")
+        if sid and sid not in seen:
+            seen.add(sid)
+            specs.append({"id": sid, "name": ""})
+    return specs
+
+
 def _text_entities(ui_model: Dict[str, Any]) -> str:
     entities = ui_model.get("process_entities") or {}
     if not isinstance(entities, dict):
@@ -274,15 +293,23 @@ def generate_bpmn(
                 ref_el = ET.SubElement(lane_el, _b("flowNodeRef"))
                 ref_el.text = str(ref)
 
-    # --- flow nodes ----------------------------------------------------------
-    for node in nodes:
+    subprocess_specs = _subprocess_specs(ui_model, nodes)
+    subprocess_ids = {spec["id"] for spec in subprocess_specs}
+    subprocess_by_id: Dict[str, ET.Element] = {}
+    node_parent_by_id = {
+        str(node.get("id") or ""): str(node.get("parent_subprocess_id") or "")
+        for node in nodes
+        if str(node.get("id") or "")
+    }
+
+    def emit_node(container: ET.Element, node: Dict[str, Any]) -> None:
         node_id = str(node.get("id") or "")
         if not node_id:
-            continue
+            return
         bpmn_type = str(node.get("bpmn_type") or "task")
         if bpmn_type not in _FLOW_NODE_TYPES:
             bpmn_type = "task"
-        el = ET.SubElement(process, _b(bpmn_type), {"id": node_id, "name": str(node.get("name") or "")})
+        el = ET.SubElement(container, _b(bpmn_type), {"id": node_id, "name": str(node.get("name") or "")})
 
         if bpmn_type == "task":
             state = _camunda_extension_state(ui_model, node_id)
@@ -294,9 +321,9 @@ def generate_bpmn(
                 for fragment in preserved_fragments:
                     ext.append(fragment)
             if props:
-                container = ET.SubElement(ext, _q(CAMUNDA_NS, "properties"))
+                container_props = ET.SubElement(ext, _q(CAMUNDA_NS, "properties"))
                 for name, value in props:
-                    ET.SubElement(container, _q(CAMUNDA_NS, "property"), {"name": name, "value": value})
+                    ET.SubElement(container_props, _q(CAMUNDA_NS, "property"), {"name": name, "value": value})
 
         if bpmn_type in _EVENT_TYPES:
             defs = [d for d in (node.get("event_definitions") or []) if str(d) in _EVENT_DEFS]
@@ -313,11 +340,20 @@ def generate_bpmn(
             out = ET.SubElement(el, _b("outgoing"))
             out.text = fid
 
-    # --- sequence flows ------------------------------------------------------
-    for flow in flows:
+    def flow_container(flow: Dict[str, Any]) -> ET.Element:
+        source_id = str(flow.get("source_ref") or flow.get("sourceRef") or "")
+        target_id = str(flow.get("target_ref") or flow.get("targetRef") or "")
+        source_parent = node_parent_by_id.get(source_id, "")
+        target_parent = node_parent_by_id.get(target_id, "")
+        if source_parent and source_parent == target_parent:
+            container = subprocess_by_id.get(source_parent)
+            return container if container is not None else process
+        return process
+
+    def emit_flow(container: ET.Element, flow: Dict[str, Any]) -> None:
         flow_id = str(flow.get("id") or "")
         if not flow_id:
-            continue
+            return
         attrs = {
             "id": flow_id,
             "sourceRef": str(flow.get("source_ref") or flow.get("sourceRef") or ""),
@@ -326,7 +362,7 @@ def generate_bpmn(
         flow_name = str(flow.get("name") or "")
         if flow_name:
             attrs["name"] = flow_name
-        flow_el = ET.SubElement(process, _b("sequenceFlow"), attrs)
+        flow_el = ET.SubElement(container, _b("sequenceFlow"), attrs)
         condition = str(flow.get("condition") or "").strip()
         if condition:
             cond = ET.SubElement(
@@ -335,6 +371,21 @@ def generate_bpmn(
                 {_q(XSI_NS, "type"): "bpmn:tFormalExpression"},
             )
             cond.text = condition
+
+    # --- flow nodes ----------------------------------------------------------
+    for spec in subprocess_specs:
+        attrs = {"id": spec["id"]}
+        if spec.get("name"):
+            attrs["name"] = spec["name"]
+        subprocess_by_id[spec["id"]] = ET.SubElement(process, _b("subProcess"), attrs)
+    for node in nodes:
+        parent_id = str(node.get("parent_subprocess_id") or "")
+        target_container = subprocess_by_id.get(parent_id) if parent_id in subprocess_ids else process
+        emit_node(target_container if target_container is not None else process, node)
+
+    # --- sequence flows ------------------------------------------------------
+    for flow in flows:
+        emit_flow(flow_container(flow), flow)
 
     # --- DI ------------------------------------------------------------------
     node_by_id = {str(n.get("id") or ""): n for n in nodes if str(n.get("id") or "")}
@@ -393,6 +444,18 @@ def generate_bpmn(
             lx = _num(lane.get("x"), px + 30.0)
             ly = _num(lane.get("y"), py)
         add_shape(f"{lane_id}_di", lane_id, lx, ly, lw, lh, isHorizontal="true")
+
+    for spec in subprocess_specs:
+        children = [node for node in nodes if str(node.get("parent_subprocess_id") or "") == spec["id"]]
+        if children:
+            child_bounds = [_node_bounds(node) for node in children]
+            sx = min(b[0] for b in child_bounds) - 30.0
+            sy = min(b[1] for b in child_bounds) - 30.0
+            sw = max(b[0] + b[2] for b in child_bounds) - sx + 30.0
+            sh = max(b[1] + b[3] for b in child_bounds) - sy + 30.0
+        else:
+            sx, sy, sw, sh = px + 40.0, py + 40.0, 220.0, 140.0
+        add_shape(f"{spec['id']}_di", spec["id"], sx, sy, sw, sh, isExpanded="true")
 
     for node in nodes:
         node_id = str(node.get("id") or "")

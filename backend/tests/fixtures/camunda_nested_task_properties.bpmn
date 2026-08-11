@@ -8,6 +8,7 @@
       <bpmn:extensionElements>
         <camunda:properties>
           <camunda:property name="ingredient" value="Крем" />
+          <camunda:property name="ingredient" value="Крем" />
           <camunda:property name="ingredient" value="Сливки" />
           <camunda:property name="equipment" value="Термощуп" />
         </camunda:properties>

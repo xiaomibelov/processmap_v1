@@ -220,7 +220,7 @@ class TestExtractDedupAndStableId(unittest.TestCase):
             ],
         )
 
-    def test_preserves_multi_value_same_name_and_collapses_exact_duplicates(self):
+    def test_preserves_multi_value_same_name_and_exact_duplicates(self):
         xml = """<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">
   <bpmn:process id="Process_1" isExecutable="false">
@@ -239,8 +239,9 @@ class TestExtractDedupAndStableId(unittest.TestCase):
         props = result["Task_1"]["properties"]["extensionProperties"]
         self.assertEqual(
             [(prop["name"], prop["value"]) for prop in props],
-            [("equipment", "Весы"), ("equipment", "Миксер")],
+            [("equipment", "Весы"), ("equipment", "Миксер"), ("equipment", "Весы")],
         )
+        self.assertEqual(len(set(prop["id"] for prop in props)), len(props))
 
     def test_property_id_stable_across_reparses(self):
         first = extract_camunda_extensions_from_bpmn_xml(self.ZEEBE_CAMUNDA_DUP_XML)

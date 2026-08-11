@@ -324,6 +324,18 @@ def _extract_bpmn_meta(raw_xml: str) -> Dict[str, Any]:
     return {"camunda_extensions_by_element_id": normalized}
 
 
+def _extract_subprocess_meta(process: Optional[ET.Element]) -> List[Dict[str, str]]:
+    if process is None:
+        return []
+    out: List[Dict[str, str]] = []
+    for el in process.iter(f"{{{BPMN_NS}}}subProcess"):
+        element_id = el.get("id") or ""
+        if not element_id:
+            continue
+        out.append({"id": element_id, "name": el.get("name") or ""})
+    return out
+
+
 def _check_metadata_strings(
     metadata: Optional[Dict[str, Any]],
     element_id: str,
@@ -626,6 +638,9 @@ def parse_bpmn(xml_text: str) -> ImportResult:
     bpmn_meta = _extract_bpmn_meta(raw)
     if bpmn_meta:
         ui_model["bpmn_meta"] = bpmn_meta
+    subprocesses = _extract_subprocess_meta(process)
+    if subprocesses:
+        ui_model["subprocesses"] = subprocesses
     # E6.1: правила R1/R3/R5 — из validation service (импорт добавляет только
     # свои dialect/legacy findings выше). check_reachability=False: проверка
     # достижимости — ответственность dry-run endpoint'а (POST .../validate).
