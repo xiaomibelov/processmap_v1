@@ -66,12 +66,10 @@ def _is_managed_properties_node(child: ET.Element) -> bool:
     return ns in {_CAMUNDA_NS, _ZEEBE_NS}
 
 
-def _parse_property_id(name: Any = "", value: Any = "") -> str:
-    # Deterministic id derived from the exact (name, value) signature so that
-    # re-parsing the same XML yields stable ids. Multi-value rows (same name,
-    # different value) still get distinct ids; exact duplicates are collapsed
-    # by the (name, value) dedup in extract_camunda_extensions_from_bpmn_xml.
-    digest = hashlib.sha256(f"{name}\x00{value}".encode("utf-8")).hexdigest()
+def _parse_property_id(name: Any = "", value: Any = "", ordinal: int = 0) -> str:
+    # Deterministic id derived from position + exact row value so equal
+    # camunda:property rows can survive import without sharing editor ids.
+    digest = hashlib.sha256(f"{ordinal}\x00{name}\x00{value}".encode("utf-8")).hexdigest()
     return f"prop_{digest[:8]}"
 
 
@@ -109,7 +107,7 @@ def _parse_extension_properties(properties_node: ET.Element, expected_ns: str) -
             continue
         value = _normalize_property_value(child.get("value"))
         rows.append({
-            "id": _parse_property_id(name, value),
+            "id": _parse_property_id(name, value, len(rows)),
             "name": name,
             "value": value,
         })
@@ -315,19 +313,6 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
             raw_fragment = _serialize_child_to_preserved_raw(child)
             if raw_fragment:
                 preserved_raw.append(raw_fragment)
-
-        # Deduplicate managed properties by exact (name, value); order is
-        # preserved. Multi-value rows (same name, different value) are kept
-        # intentionally so legitimate repeated keys survive.
-        seen_props: set = set()
-        unique_props: List[Dict[str, Any]] = []
-        for prop in managed_properties:
-            key = (prop.get("name"), prop.get("value"))
-            if key in seen_props:
-                continue
-            seen_props.add(key)
-            unique_props.append(prop)
-        managed_properties = unique_props
 
         if not managed_properties and not managed_listeners and not preserved_raw:
             continue

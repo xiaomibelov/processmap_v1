@@ -1,5 +1,6 @@
 import os
 import sys
+import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -8,6 +9,8 @@ from app.process_template.bpmn_import import parse_bpmn
 from app.repositories import project_repo, session_repo
 from app.schemas.legacy_api import BpmnXmlIn
 from app.services.session_service import bpmn_save
+
+BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -46,10 +49,12 @@ def test_file_import_preserves_top_level_and_subprocess_task_names_and_camunda_p
     top_props = meta["Task_Top"]["properties"]["extensionProperties"]
     assert [(row["key"], row["value"]) for row in top_props] == [
         ("ingredient", "Крем"),
+        ("ingredient", "Крем"),
         ("ingredient", "Сливки"),
         ("equipment", "Термощуп"),
     ]
     assert [(row["name"], row["value"]) for row in top_props] == [
+        ("ingredient", "Крем"),
         ("ingredient", "Крем"),
         ("ingredient", "Сливки"),
         ("equipment", "Термощуп"),
@@ -67,6 +72,11 @@ def test_file_import_preserves_top_level_and_subprocess_task_names_and_camunda_p
     assert "бережный" in preserved
 
     generated = generate_bpmn(result.ui_model, template_name="Camunda import defects", template_id="camunda-defects")
+    root = ET.fromstring(generated.encode("utf-8"))
+    subprocess = root.find(f".//{{{BPMN_NS}}}subProcess[@id='SubProcess_1']")
+    assert subprocess is not None
+    assert subprocess.find(f".//{{{BPMN_NS}}}task[@id='Task_Sub_1']") is not None
+
     reparsed = parse_bpmn(generated)
     reparsed_nodes = {node["id"]: node for node in reparsed.ui_model["nodes"]}
     assert reparsed_nodes["Task_Top"]["name"] == "Измерить\nтемпературу"
@@ -75,6 +85,7 @@ def test_file_import_preserves_top_level_and_subprocess_task_names_and_camunda_p
         "extensionProperties"
     ]
     assert [(row["key"], row["value"]) for row in reparsed_props] == [
+        ("ingredient", "Крем"),
         ("ingredient", "Крем"),
         ("ingredient", "Сливки"),
         ("equipment", "Термощуп"),
