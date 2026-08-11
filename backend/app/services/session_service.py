@@ -509,18 +509,19 @@ def bpmn_save(
     if not out.get("ok"):
         return out
 
-    # Hybrid auto-subprocess: create up to 10 children on save.
-    # If more exist, the frontend shows a "load remaining" button.
+    # Hybrid auto-subprocess: an import/save must materialize every subprocess
+    # so the imported diagram does not silently lose older subprocess children.
     try:
         xml = str(getattr(inp, "xml", "") or "")
         elements = find_subprocess_elements(xml)
         if elements:
             s, oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
             if s:
-                summary = auto_create_subprocess_sessions(s, request, limit=10)
+                summary = auto_create_subprocess_sessions(s, request, limit=None)
                 total = summary["total"]
+                active = len(summary["created"]) + len(summary["restored"]) + len(summary["skipped_existing"])
                 created = len(summary["created"]) + len(summary["restored"])
-                has_more = created < total
+                has_more = active < total
                 meta = dict(getattr(s, "bpmn_meta", None) or {})
                 meta["subprocesses_total"] = total
                 meta["subprocesses_created"] = created
@@ -969,7 +970,7 @@ def _build_child_navigation_stack(parent_session: Session, element_id: str) -> L
 def auto_create_subprocess_sessions(
     parent_session: Session,
     request: Optional[Request] = None,
-    limit: int = 10,
+    limit: Optional[int] = 10,
 ) -> Dict[str, Any]:
     """Create or restore child sessions for top-level subprocess elements.
 
@@ -985,7 +986,8 @@ def auto_create_subprocess_sessions(
     restored = []
     skipped = []
 
-    for element in elements[:limit]:
+    selected = elements if limit is None else elements[:limit]
+    for element in selected:
         element_id = element["id"]
         title = element["name"] or f"Подпроцесс: {element_id}"
         child_xml = extract_subprocess_xml(xml, element_id) or ""
