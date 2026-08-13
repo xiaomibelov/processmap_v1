@@ -165,6 +165,75 @@ class TestSubprocessSessionCreation(unittest.TestCase):
             '</definitions>'
         )
 
+    def _bpmn_with_subprocess_task_properties(
+        self,
+        sub_id,
+        task_name,
+        camunda_props=None,
+        *,
+        zeebe_props=None,
+        preserved_extension="",
+        extra_ids=None,
+    ):
+        camunda_rows = "".join(
+            f'<camunda:property name="{name}" value="{value}" />'
+            for name, value in (camunda_props or [])
+        )
+        zeebe_rows = "".join(
+            f'<zeebe:property name="{name}" value="{value}" />'
+            for name, value in (zeebe_props or [])
+        )
+        extension_parts = []
+        if camunda_rows:
+            extension_parts.append(f"<camunda:properties>{camunda_rows}</camunda:properties>")
+        if zeebe_rows:
+            extension_parts.append(f"<zeebe:properties>{zeebe_rows}</zeebe:properties>")
+        if preserved_extension:
+            extension_parts.append(preserved_extension)
+        extension_xml = (
+            f"<bpmn:extensionElements>{''.join(extension_parts)}</bpmn:extensionElements>"
+            if extension_parts else ""
+        )
+        subs = [
+            f'<bpmn:subProcess id="{sub_id}" name="Sub {sub_id}">'
+            f'<bpmn:task id="{sub_id}_task" name="{task_name}">{extension_xml}</bpmn:task>'
+            f'</bpmn:subProcess>'
+        ]
+        for sid in extra_ids or []:
+            subs.append(
+                f'<bpmn:subProcess id="{sid}" name="Sub {sid}">'
+                f'<bpmn:task id="{sid}_task" name="Task {sid}" />'
+                f'</bpmn:subProcess>'
+            )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+            'xmlns:camunda="http://camunda.org/schema/1.0/bpmn" '
+            'xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" '
+            'id="defs" targetNamespace="ns">'
+            '<bpmn:process id="p1">'
+            '<bpmn:startEvent id="start"/>'
+            + "".join(subs)
+            + '<bpmn:endEvent id="end"/>'
+            '</bpmn:process>'
+            '</bpmn:definitions>'
+        )
+
+    def _load_child(self, parent_id, element_id, org_id):
+        row = self.st.find_by_parent_element(parent_id, element_id, org_id=org_id)
+        self.assertIsNotNone(row)
+        return self.st.load(row.id, org_id=org_id, is_admin=True)
+
+    def _child_extension_state(self, parent_id, sub_id, org_id):
+        child = self._load_child(parent_id, sub_id, org_id)
+        task_id = f"{sub_id}_task"
+        meta = child.bpmn_meta.get("camunda_extensions_by_element_id") or {}
+        return child, meta.get(task_id) or {}
+
+    def _extension_properties(self, state):
+        props = (state.get("properties") or {}).get("extensionProperties") or []
+        return [(row.get("name"), row.get("value")) for row in props]
+
     def _save_bpmn(self, sid, xml, user, org_id):
         # Use the legacy save directly so tests for create_subprocess_sessions
         # run in isolation from the hybrid auto-create-on-save behaviour.
@@ -460,7 +529,7 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         children = list_session_children("org_hybrid_1", "proj_1", sid, user_id=str(editor["id"]))
         self.assertEqual(len(children), 5)
 
-    def test_bpmn_save_hybrid_reports_has_more_when_more_than_ten(self):
+    def test_bpmn_save_hybrid_creates_all_when_more_than_ten(self):
         owner, editor = self._setup_org_and_editor(
             "owner_hybrid_2@local", "editor_hybrid_2@local", "org_hybrid_2"
         )
@@ -470,14 +539,15 @@ class TestSubprocessSessionCreation(unittest.TestCase):
 
         self.assertTrue(result.get("ok"))
         self.assertEqual(result.get("subprocesses_total"), 15)
-        self.assertEqual(result.get("subprocesses_created"), 10)
-        self.assertTrue(result.get("subprocesses_has_more"))
+        self.assertEqual(result.get("subprocesses_created"), 15)
+        self.assertFalse(result.get("subprocesses_has_more"))
         children = list_session_children("org_hybrid_2", "proj_1", sid, user_id=str(editor["id"]))
-        self.assertEqual(len(children), 10)
+        self.assertEqual(len(children), 15)
 
-        # Load the rest
+        # Loading all after import is idempotent because bpmn_save already
+        # materializes every subprocess.
         rest = self._create_subprocesses(sid, editor, "org_hybrid_2", load_all=True)
-        self.assertEqual(rest["created"], 5)
+        self.assertEqual(rest["created"], 0)
         self.assertEqual(rest["total"], 15)
         self.assertFalse(rest["has_more"])
         children = list_session_children("org_hybrid_2", "proj_1", sid, user_id=str(editor["id"]))
@@ -544,6 +614,98 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         child = self.st.load(child_row.id, org_id="org_refresh_2", is_admin=True)
         self.assertIn("Task B", child.bpmn_xml)
         self.assertNotIn("Task A", child.bpmn_xml)
+
+    def test_bpmn_save_overwrites_existing_child_camunda_properties(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_props_1@local", "editor_props_1@local", "org_props_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_props_1", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task_properties(
+            "sub_1",
+            "Task A",
+            camunda_props=[("temperature", "old"), ("delete_me", "gone")],
+        )
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml_a, editor, "org_props_1").get("ok"))
+
+        xml_b = self._bpmn_with_subprocess_task_properties(
+            "sub_1",
+            "Task B",
+            camunda_props=[("temperature", "new"), ("added", "yes")],
+        )
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml_b, editor, "org_props_1").get("ok"))
+
+        child, state = self._child_extension_state(sid, "sub_1", "org_props_1")
+        self.assertIn('name="Task B"', child.bpmn_xml)
+        self.assertNotIn('name="Task A"', child.bpmn_xml)
+        self.assertEqual(
+            self._extension_properties(state),
+            [("temperature", "new"), ("added", "yes")],
+        )
+
+    def test_bpmn_save_overwrites_existing_child_zeebe_properties_and_preserved_extensions(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_props_2@local", "editor_props_2@local", "org_props_2"
+        )
+        sid = self._create_session(str(owner["id"]), "org_props_2", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task_properties(
+            "sub_1",
+            "Task A",
+            zeebe_props=[("priority", "low"), ("delete_me", "gone")],
+            preserved_extension='<camunda:inputOutput><camunda:inputParameter name="mode">old</camunda:inputParameter></camunda:inputOutput>',
+        )
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml_a, editor, "org_props_2").get("ok"))
+
+        xml_b = self._bpmn_with_subprocess_task_properties(
+            "sub_1",
+            "Task A",
+            zeebe_props=[("priority", "high"), ("added", "yes")],
+            preserved_extension='<camunda:inputOutput><camunda:inputParameter name="mode">new</camunda:inputParameter></camunda:inputOutput>',
+        )
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml_b, editor, "org_props_2").get("ok"))
+
+        _child, state = self._child_extension_state(sid, "sub_1", "org_props_2")
+        self.assertEqual(
+            self._extension_properties(state),
+            [("priority", "high"), ("added", "yes")],
+        )
+        preserved = "\n".join(state.get("preservedExtensionElements") or [])
+        self.assertIn("camunda:inputOutput", preserved)
+        self.assertIn("new", preserved)
+        self.assertNotIn("old", preserved)
+
+    def test_bpmn_save_refreshes_properties_beyond_first_ten_subprocesses(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_props_3@local", "editor_props_3@local", "org_props_3"
+        )
+        sid = self._create_session(str(owner["id"]), "org_props_3", project_id="proj_1", title="root")
+        extra_ids = [f"sub_{i}" for i in range(1, 12)]
+        xml_a = self._bpmn_with_subprocess_task_properties(
+            "sub_12",
+            "Task A",
+            camunda_props=[("temperature", "old")],
+            extra_ids=extra_ids,
+        )
+        result_a = self._hybrid_save_bpmn(sid, xml_a, editor, "org_props_3")
+        self.assertTrue(result_a.get("ok"))
+        self.assertFalse(result_a.get("subprocesses_has_more"))
+        self.assertEqual(result_a.get("subprocesses_created"), 12)
+
+        xml_b = self._bpmn_with_subprocess_task_properties(
+            "sub_12",
+            "Task B",
+            camunda_props=[("temperature", "new")],
+            extra_ids=extra_ids,
+        )
+        result_b = self._hybrid_save_bpmn(sid, xml_b, editor, "org_props_3")
+        self.assertTrue(result_b.get("ok"))
+        rest = self._create_subprocesses(sid, editor, "org_props_3", load_all=True)
+        self.assertEqual(rest["created"], 0)
+        self.assertEqual(rest["total"], 12)
+        self.assertFalse(rest["has_more"])
+
+        child, state = self._child_extension_state(sid, "sub_12", "org_props_3")
+        self.assertIn('name="Task B"', child.bpmn_xml)
+        self.assertEqual(self._extension_properties(state), [("temperature", "new")])
 
 
 if __name__ == "__main__":
