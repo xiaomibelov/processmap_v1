@@ -12,9 +12,10 @@ from fastapi.exceptions import RequestValidationError
 from ..cache import session_cache
 from ..legacy.request_context import request_user_meta, request_active_org_id
 from ..redis_cache import explorer_invalidate_sessions
+from ..camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
 from ..models import Session
 from ..repositories import session_repo
-from ..storage import get_storage, list_session_presence
+from ..storage import get_storage, list_session_presence, _count_bpmn_activities
 from ..utils.authz import session_access_from_request
 from .._legacy_main import (
     _can_edit_workspace,
@@ -31,6 +32,34 @@ from ..services.bpmn_navigation import (
 from .session_recompute import _recompute_session
 
 logger = logging.getLogger(__name__)
+
+
+def _bpmn_meta_with_fresh_camunda_extensions(current_meta: Any, xml_text: str) -> Dict[str, Any]:
+    """Replace the BPMN-derived Camunda/Zeebe extension map from XML.
+
+    Other bpmn_meta keys may be user- or app-owned, so this helper only
+    overwrites camunda_extensions_by_element_id.
+    """
+    meta = dict(current_meta) if isinstance(current_meta, dict) else {}
+    meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(str(xml_text or ""))
+    return meta
+
+
+def _refresh_child_session_bpmn_from_xml(child: Session, child_xml: str) -> bool:
+    """Refresh child session XML plus BPMN-derived extension metadata."""
+    xml = str(child_xml or "")
+    changed = False
+    if xml and xml != str(getattr(child, "bpmn_xml", "") or ""):
+        child.bpmn_xml = xml
+        child.activity_count = _count_bpmn_activities(xml)
+        changed = True
+
+    next_meta = _bpmn_meta_with_fresh_camunda_extensions(getattr(child, "bpmn_meta", {}), xml)
+    if next_meta != (getattr(child, "bpmn_meta", {}) or {}):
+        child.bpmn_meta = next_meta
+        changed = True
+
+    return changed
 
 
 class SessionAccessDenied(HTTPException):
@@ -929,6 +958,9 @@ def _create_child_session(
         org_id=oid,
         is_admin=admin,
     )
+    if _refresh_child_session_bpmn_from_xml(child, child_xml):
+        child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
     if project_id:
         try:
             explorer_invalidate_sessions(project_id)
@@ -1003,9 +1035,7 @@ def auto_create_subprocess_sessions(
             # so parent re-saves (e.g. BPMN import into an existing session)
             # propagate into existing child sessions instead of leaving stale
             # content behind.
-            refreshed = bool(child_xml) and child_xml != str(getattr(existing, "bpmn_xml", "") or "")
-            if refreshed:
-                existing.bpmn_xml = child_xml
+            refreshed = _refresh_child_session_bpmn_from_xml(existing, child_xml)
             if getattr(existing, "deleted_at", 0):
                 existing.deleted_at = 0
                 existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
@@ -1028,6 +1058,9 @@ def auto_create_subprocess_sessions(
             org_id=oid,
             is_admin=admin,
         )
+        if _refresh_child_session_bpmn_from_xml(child, child_xml):
+            child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+            session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
         created.append(str(child.id))
 
     return {
@@ -1170,7 +1203,8 @@ def navigate_to_subprocess(
         child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
         if not _xml_has_definitions(child_xml) or not _xml_has_minimal_di(child_xml):
             child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
-            child.bpmn_xml = child_xml
+        if _refresh_child_session_bpmn_from_xml(child, child_xml):
+            child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
             session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
     else:
         child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
