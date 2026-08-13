@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 function cx(...items) {
@@ -17,6 +17,8 @@ export default function Modal({
   bodyClassName = "",
   footerClassName = "",
 }) {
+  const cardRef = useRef(null);
+
   useEffect(() => {
     if (!open) return;
 
@@ -24,7 +26,26 @@ export default function Modal({
     document.body.style.overflow = "hidden";
 
     function onKeyDown(e) {
-      if (e.key === "Escape") onClose?.();
+      if (e.key === "Escape") {
+        onClose?.();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(
+        cardRef.current?.querySelectorAll(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter((node) => !node.hasAttribute("disabled") && node.getAttribute("aria-hidden") !== "true");
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -46,7 +67,7 @@ export default function Modal({
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
-      <div className={cx("modalCard", cardClassName)}>
+      <div className={cx("modalCard", cardClassName)} ref={cardRef}>
         <div className={cx("modalHeader", headerClassName)}>
           <div className="modalTitle">{title || ""}</div>
           <button type="button" className="iconBtn" onClick={onClose} title="Закрыть">
