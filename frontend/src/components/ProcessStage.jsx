@@ -602,6 +602,7 @@ function ProcessStage({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const importInputRef = useRef(null);
+  const bpmnFileDragDepthRef = useRef(0);
   const processBodyRef = useRef(null);
   const toolbarMenuRef = useRef(null);
   const toolbarMenuButtonRef = useRef(null);
@@ -656,6 +657,7 @@ function ProcessStage({
   const bpmnVersionDetailRequestRef = useRef(new Map());
   const metaVersionHeadSeededRef = useRef(false);
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
+  const [bpmnFileDragActive, setBpmnFileDragActive] = useState(false);
   const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
     if (typeof window === "undefined") return false;
     return readOverlayPanVisibility();
@@ -6850,17 +6852,39 @@ function ProcessStage({
     }
   }
 
-  async function onImportPicked(e) {
-    const file = e?.target?.files?.[0];
-    if (e?.target) e.target.value = "";
-    if (!file) return;
+  function eventHasExternalFiles(event) {
+    const types = event?.dataTransfer?.types;
+    if (!types) return false;
+    if (typeof types.includes === "function") return types.includes("Files");
+    return Array.from(types).includes("Files");
+  }
 
+  function isBpmnImportFile(file) {
+    if (!file) return false;
+    const name = String(file.name || "").trim().toLowerCase();
+    const type = String(file.type || "").trim().toLowerCase();
+    const hasValidExtension = name.endsWith(".bpmn") || name.endsWith(".xml");
+    const hasValidMime = !type
+      || type === "text/xml"
+      || type === "application/xml"
+      || type === "application/bpmn+xml"
+      || type === "application/octet-stream"
+      || type.endsWith("+xml");
+    return hasValidExtension && hasValidMime;
+  }
+
+  async function importBpmnFile(file) {
+    if (!file) return;
     if (!hasSession) {
       setGenErr("Сначала выберите сессию.");
       return;
     }
     if (isInterview) {
       setGenErr("Переключитесь на Diagram/XML для импорта BPMN.");
+      return;
+    }
+    if (!isBpmnImportFile(file)) {
+      setGenErr("Можно импортировать только BPMN/XML файлы с расширением .bpmn или .xml.");
       return;
     }
 
@@ -6985,6 +7009,59 @@ function ProcessStage({
       setGenErr(shortErr(e2?.message || e2));
     }
   }
+
+  async function onImportPicked(e) {
+    const file = e?.target?.files?.[0];
+    if (e?.target) e.target.value = "";
+    await importBpmnFile(file);
+  }
+
+  function handleBpmnFileDragEnter(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    bpmnFileDragDepthRef.current += 1;
+    setBpmnFileDragActive(true);
+  }
+
+  function handleBpmnFileDragOver(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setBpmnFileDragActive(true);
+  }
+
+  function handleBpmnFileDragLeave(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    bpmnFileDragDepthRef.current = Math.max(0, bpmnFileDragDepthRef.current - 1);
+    if (bpmnFileDragDepthRef.current === 0) setBpmnFileDragActive(false);
+  }
+
+  function handleBpmnFileDrop(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    bpmnFileDragDepthRef.current = 0;
+    setBpmnFileDragActive(false);
+    const file = event.dataTransfer?.files?.[0];
+    void importBpmnFile(file);
+  }
+
+  useEffect(() => {
+    function preventExternalFileOpen(event) {
+      if (!eventHasExternalFiles(event)) return;
+      event.preventDefault();
+    }
+    window.addEventListener("dragover", preventExternalFileOpen);
+    window.addEventListener("drop", preventExternalFileOpen);
+    return () => {
+      window.removeEventListener("dragover", preventExternalFileOpen);
+      window.removeEventListener("drop", preventExternalFileOpen);
+    };
+  }, []);
 
   const {
     drawioEditorBridge,
@@ -7751,9 +7828,20 @@ function ProcessStage({
             {!isInterview && (
             <div className="absolute inset-0">
               <div
-                className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
+                className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""} ${bpmnFileDragActive ? "ring-2 ring-accent ring-inset" : ""}`}
                 ref={bpmnStageHostRefCallback}
+                onDragEnter={handleBpmnFileDragEnter}
+                onDragOver={handleBpmnFileDragOver}
+                onDragLeave={handleBpmnFileDragLeave}
+                onDrop={handleBpmnFileDrop}
               >
+                {bpmnFileDragActive ? (
+                  <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-accentSoft/70 backdrop-blur-[1px]" data-testid="bpmn-file-drop-overlay">
+                    <div className="rounded-xl border border-accent bg-panel px-4 py-3 text-sm font-semibold text-fg shadow-panel">
+                      Отпустите файл для импорта
+                    </div>
+                  </div>
+                ) : null}
                 {subprocessBreadcrumbs?.length > 1 && tab !== "xml" ? (
                   <div className="subprocessBreadcrumbsBar">
                     {subprocessBreadcrumbs.length > 1 ? (

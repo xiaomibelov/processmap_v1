@@ -15,6 +15,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import Button from "../../shared/ui/Button.jsx";
+import SharedModal from "../../shared/ui/Modal.jsx";
 import {
   apiRenameWorkspace,
   apiGetExplorerPage,
@@ -3148,46 +3150,70 @@ function SessionCreateModal({ sessions = [], onClose, onSubmit }) {
   const [derivedFrom, setDerivedFrom] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const inputRef = React.useRef(null);
+  const trimmedName = String(name || "").trim();
   const asisList = (Array.isArray(sessions) ? sessions : []).filter(
     (x) => String(x?.process_layer || "as_is") !== "to_be",
   );
 
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!String(name || "").trim() || busy) return;
+    if (busy) return;
+    if (!trimmedName) {
+      setError("Введите название сессии");
+      inputRef.current?.focus();
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       await onSubmit?.({
-        name: String(name || "").trim(),
+        name: trimmedName,
         processLayer,
         derivedFrom: processLayer === "to_be" ? derivedFrom : "",
       });
+      onClose?.();
     } catch (err) {
       setError(String(err?.message || err || "error"));
+    } finally {
       setBusy(false);
     }
   }
 
+  const footer = (
+    <>
+      <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+        Отмена
+      </Button>
+      <Button type="submit" variant="primary" form="session-create-form" data-testid="session-create-submit" disabled={busy || !trimmedName}>
+        {busy ? "Создаю…" : "Создать"}
+      </Button>
+    </>
+  );
+
   return (
-    <div className="modalOverlay" data-testid="session-create-modal" onClick={onClose}>
-      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
-        <div className="modalTitle">Новая сессия</div>
-        <div className="field">
-          <div className="label">Название сессии</div>
+    <SharedModal open title="Новая сессия" onClose={onClose} footer={footer} cardClassName="max-w-lg" bodyClassName="grid gap-4">
+      <form id="session-create-form" className="grid gap-4" data-testid="session-create-modal" onSubmit={handleSubmit}>
+        <label className="field">
+          <span className="label">Название сессии</span>
           <input
+            ref={inputRef}
             className="input"
             data-testid="session-create-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Название сессии"
-            autoFocus
+            aria-invalid={error && !trimmedName ? "true" : undefined}
           />
-        </div>
-        <div className="field">
-          <div className="label">Тип сессии</div>
-          <div style={{ display: "flex", gap: 10 }} data-testid="session-type-row">
-            <label className="secondaryBtn" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+        </label>
+        <fieldset className="field">
+          <legend className="label">Тип сессии</legend>
+          <div className="flex flex-wrap items-center gap-2" data-testid="session-type-row">
+            <label className={`secondaryBtn inline-flex items-center gap-2 ${processLayer === "as_is" ? "isActive" : ""}`}>
               <input
                 type="radio"
                 name="w4_process_layer"
@@ -3197,7 +3223,7 @@ function SessionCreateModal({ sessions = [], onClose, onSubmit }) {
               />
               AS IS (как есть)
             </label>
-            <label className="secondaryBtn" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <label className={`secondaryBtn inline-flex items-center gap-2 ${processLayer === "to_be" ? "isActive" : ""}`}>
               <input
                 type="radio"
                 name="w4_process_layer"
@@ -3208,10 +3234,10 @@ function SessionCreateModal({ sessions = [], onClose, onSubmit }) {
               TO BE (как будет)
             </label>
           </div>
-        </div>
+        </fieldset>
         {processLayer === "to_be" ? (
-          <div className="field" data-testid="session-asis-picker">
-            <div className="label">Из какой сессии AS IS? (можно выбрать позже)</div>
+          <label className="field" data-testid="session-asis-picker">
+            <span className="label">Из какой сессии AS IS? (можно выбрать позже)</span>
             <select
               className="input"
               data-testid="session-asis-select"
@@ -3225,19 +3251,11 @@ function SessionCreateModal({ sessions = [], onClose, onSubmit }) {
                 </option>
               ))}
             </select>
-          </div>
+          </label>
         ) : null}
         {error ? <div className="formError">{error}</div> : null}
-        <div className="modalFooter">
-          <button type="button" className="secondaryBtn" onClick={onClose} disabled={busy}>
-            Отмена
-          </button>
-          <button type="submit" className="primaryBtn" data-testid="session-create-submit" disabled={busy || !String(name || "").trim()}>
-            {busy ? "Создаю…" : "Создать"}
-          </button>
-        </div>
       </form>
-    </div>
+    </SharedModal>
   );
 }
 
