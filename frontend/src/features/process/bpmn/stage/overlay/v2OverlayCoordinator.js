@@ -3,7 +3,7 @@ import { filterRowsByHiddenFields } from "../../../../../components/sidebar/disp
 import { asArray, asObject, asText } from "./overlayUtils.js";
 import { resolveV2OverlayContent, mergeV2OverlaysWithPropertyPreview } from "./v2OverlayContentResolver.js";
 import { hasLegacyPropertyOverlay, shouldRenderV2Overlay } from "./v2OverlayVisibilityController.js";
-import { computeSequenceFlowMidpoint, createV2OverlayHost, setV2OverlayExpandedForElement } from "./v2OverlayRenderer.js";
+import { computeSequenceFlowMidpoint, computeSequenceFlowOverlayPlacement, createV2OverlayHost, setV2OverlayExpandedForElement } from "./v2OverlayRenderer.js";
 
 function setLegacyPropertyOverlayExpandedForElement(elementId, expanded) {
   if (typeof document === "undefined" || !elementId) return;
@@ -50,10 +50,56 @@ function uninstallCoordinatorHoverListeners(inst) {
   coordinatorHoverHandlers.delete(inst);
 }
 
-function computeContentSig(ovl, el) {
-  const isSequenceFlow = Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
+function isSequenceFlowElement(el) {
+  return Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
+}
+
+function computeContentSig(ovl, el, placement = null) {
+  const isSequenceFlow = isSequenceFlowElement(el);
   const geo = isSequenceFlow ? el.waypoints : { x: el.x, y: el.y, width: el.width, height: el.height };
-  return JSON.stringify({ ovl, geo });
+  const sig = { ovl, geo };
+  if (isSequenceFlow) {
+    // Sequence-flow cards are positioned by the anti-collision/viewport logic,
+    // so the sig must cover its OUTPUT: the computed placement. The raw viewbox
+    // is intentionally NOT part of the sig — it changes on every pan/zoom and
+    // would force a full DOM remove+re-add of every sequence overlay even when
+    // the placement is pixel-identical (flicker + churn). mount() recomputes
+    // placements on every canvas.viewbox.changed anyway, so a real placement
+    // change still flips the sig and re-renders; an unchanged one short-circuits.
+    sig.placement = placement
+      ? { top: placement.top, left: placement.left, width: placement.width, height: placement.height }
+      : null;
+  }
+  return JSON.stringify(sig);
+}
+
+// Bounding box of any diagram element: shapes use their frame, flows the
+// waypoint bbox. Returns null for elements without usable bounds.
+function elementBoundsBox(el) {
+  if (!el) return null;
+  if (Array.isArray(el.waypoints) && el.waypoints.length >= 2) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    el.waypoints.forEach((pt) => {
+      const px = Number(pt?.x || 0);
+      const py = Number(pt?.y || 0);
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      maxX = Math.max(maxX, px);
+      maxY = Math.max(maxY, py);
+    });
+    if (!Number.isFinite(minX)) return null;
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+  const x = Number(el.x);
+  const y = Number(el.y);
+  const width = Number(el.width);
+  const height = Number(el.height);
+  if (![x, y, width, height].every(Number.isFinite)) return null;
+  if (width <= 0 && height <= 0) return null;
+  return { x, y, width, height };
 }
 
 // Large overlay mounts are split into chunks of this size so each animation
@@ -221,25 +267,25 @@ export function createV2OverlayCoordinator({
     } catch {}
   }
 
-  function renderForElement(inst, el, ovl, expanded) {
+  function renderForElement(inst, el, ovl, expanded, placement = null) {
     removeExistingV2OverlaysForElement(inst, el.id);
-    const created = createV2OverlayHost(el, ovl, expanded);
+    const created = createV2OverlayHost(el, ovl, expanded, placement);
     if (!created) return null;
     const overlays = inst.get("overlays");
     const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
     return { overlayId, host: created.host };
   }
 
-  function mountEntry(inst, kind, elementId, ovl, el) {
+  function mountEntry(inst, kind, elementId, ovl, el, placement = null) {
     const overlays = inst.get("overlays");
     const map = elementOverlayMapRef.current[kind];
     const v2Expanded = expandedRef?.current ?? false;
     const globalEnabled = enabledRef?.current ?? false;
-    const contentSig = computeContentSig(ovl, el);
+    const contentSig = computeContentSig(ovl, el, placement);
     const existing = map.get(elementId);
 
     const elementState = {
-      isSequenceFlow: Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow",
+      isSequenceFlow: isSequenceFlowElement(el),
       width: Number(el.width || 0),
       height: Number(el.height || 0),
       hasLegacyOverlay: hasLegacyPropertyOverlay(inst, elementId),
@@ -257,7 +303,7 @@ export function createV2OverlayCoordinator({
 
     if (existing) {
       if (existing.contentSig !== contentSig) {
-        const result = renderForElement(inst, el, ovl, v2Expanded);
+        const result = renderForElement(inst, el, ovl, v2Expanded, placement);
         if (result) {
           map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
         }
@@ -268,7 +314,7 @@ export function createV2OverlayCoordinator({
       return;
     }
 
-    const result = renderForElement(inst, el, ovl, v2Expanded);
+    const result = renderForElement(inst, el, ovl, v2Expanded, placement);
     if (result) {
       map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
     }
@@ -304,10 +350,43 @@ export function createV2OverlayCoordinator({
       }
 
       const entries = Array.from(desired.entries());
+
+      // Anti-collision placement for sequence-flow overlays. Blockers are ALL
+      // diagram elements with bounds (shapes and flows), not only the ones
+      // that carry overlays; each flow's own bbox is excluded for its own
+      // placement, and already-placed sequence overlay boxes accumulate as
+      // blockers for the following ones.
+      const placements = new Map();
+      const sequenceEntries = entries.filter(([, { el }]) => isSequenceFlowElement(el));
+      if (sequenceEntries.length > 0) {
+        const registry = inst.get("elementRegistry");
+        const blockers = [];
+        try {
+          registry.getAll().forEach((other) => {
+            if (!other || String(other?.type || "").toLowerCase() === "label") return;
+            const box = elementBoundsBox(other);
+            if (box) blockers.push({ elementId: other.id, box });
+          });
+        } catch {}
+        for (const [elementId, { el }] of sequenceEntries) {
+          const ownBlockers = blockers
+            .filter((blocker) => blocker.elementId !== elementId)
+            .map((blocker) => blocker.box);
+          const placement = computeSequenceFlowOverlayPlacement(el, ownBlockers, viewbox);
+          if (placement) {
+            placements.set(elementId, placement);
+            blockers.push({
+              elementId,
+              box: { x: placement.left, y: placement.top, width: placement.width, height: placement.height },
+            });
+          }
+        }
+      }
+
       const epoch = ++mountEpochByKind[kind];
       if (entries.length <= MOUNT_CHUNK_SIZE) {
         for (const [elementId, { ovl, el }] of entries) {
-          mountEntry(inst, kind, elementId, ovl, el);
+          mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
         }
         return;
       }
@@ -318,8 +397,11 @@ export function createV2OverlayCoordinator({
       // supersedes the remaining chunks via the epoch check.
       const head = entries.slice(0, MOUNT_CHUNK_SIZE);
       const tail = entries.slice(MOUNT_CHUNK_SIZE);
+      // Both the head and the tail chunks must receive the computed placement
+      // — passing it only to the tail silently disabled anti-collision for
+      // the first MOUNT_CHUNK_SIZE entries.
       for (const [elementId, { ovl, el }] of head) {
-        mountEntry(inst, kind, elementId, ovl, el);
+        mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
       }
       void (async () => {
         for (let idx = 0; idx < tail.length; idx += MOUNT_CHUNK_SIZE) {
@@ -327,7 +409,7 @@ export function createV2OverlayCoordinator({
           if (epoch !== mountEpochByKind[kind]) return;
           const chunk = tail.slice(idx, idx + MOUNT_CHUNK_SIZE);
           for (const [elementId, { ovl, el }] of chunk) {
-            mountEntry(inst, kind, elementId, ovl, el);
+            mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
           }
         }
       })();
