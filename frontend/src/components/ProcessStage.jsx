@@ -56,6 +56,11 @@ import { isLlmNotConfigured } from "../features/process/processman/processmanVie
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
+import {
+  eventHasExternalFiles,
+  validateBpmnImportFile,
+  validateBpmnImportText,
+} from "../features/process/bpmn/import/bpmnFileDrop.js";
 import { deriveActorsFromBpmn, sameDerivedActors } from "../features/process/lib/deriveActorsFromBpmn";
 import {
   asArray,
@@ -6852,27 +6857,6 @@ function ProcessStage({
     }
   }
 
-  function eventHasExternalFiles(event) {
-    const types = event?.dataTransfer?.types;
-    if (!types) return false;
-    if (typeof types.includes === "function") return types.includes("Files");
-    return Array.from(types).includes("Files");
-  }
-
-  function isBpmnImportFile(file) {
-    if (!file) return false;
-    const name = String(file.name || "").trim().toLowerCase();
-    const type = String(file.type || "").trim().toLowerCase();
-    const hasValidExtension = name.endsWith(".bpmn") || name.endsWith(".xml");
-    const hasValidMime = !type
-      || type === "text/xml"
-      || type === "application/xml"
-      || type === "application/bpmn+xml"
-      || type === "application/octet-stream"
-      || type.endsWith("+xml");
-    return hasValidExtension && hasValidMime;
-  }
-
   async function importBpmnFile(file) {
     if (!file) return;
     if (!hasSession) {
@@ -6883,8 +6867,9 @@ function ProcessStage({
       setGenErr("Переключитесь на Diagram/XML для импорта BPMN.");
       return;
     }
-    if (!isBpmnImportFile(file)) {
-      setGenErr("Можно импортировать только BPMN/XML файлы с расширением .bpmn или .xml.");
+    const fileTypeError = validateBpmnImportFile(file);
+    if (fileTypeError) {
+      setGenErr(fileTypeError);
       return;
     }
 
@@ -6892,12 +6877,9 @@ function ProcessStage({
     setInfoMsg("");
     try {
       const text = (await readFileText(file)).trim();
-      if (!text) {
-        setGenErr("Файл пустой.");
-        return;
-      }
-      if (!text.includes("<") || (!text.includes("bpmn:") && !text.includes("definitions"))) {
-        setGenErr("Похоже, это не BPMN/XML файл.");
+      const textError = validateBpmnImportText(text);
+      if (textError) {
+        setGenErr(textError);
         return;
       }
 
