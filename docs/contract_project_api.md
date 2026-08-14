@@ -69,3 +69,21 @@ Body (same shape as `POST /api/sessions`, plus optional `mode`):
 - `mode` (optional): `quick_skeleton` or `deep_audit` (default `quick_skeleton`)
 
 Response: full session object.
+
+## Explorer item aggregates (projects-table-v2)
+
+`GET /api/explorer` возвращает `items` (folder/project) с агрегатными полями счётчиков сессий.
+Семантика полей прогресса (аддитивно, старые поля не меняются):
+
+| Поле | Кем возвращается | Семантика |
+| --- | --- | --- |
+| `sessions_count` (SQL) / `descendant_sessions_count` | project / folder и project | Сырый COUNT всех сессий проекта (включая архивные и мягко удалённые). Для folder — сумма по поддереву. Legacy, НЕ использовать для прогресс-бара. |
+| `trackable_sessions_count` | project | Число «активных» сессий проекта: исключены сессии со статусом `archived` (manual `interview.status`) и мягко удалённые (`deleted_at > 0`). Знаменатель прогресса. |
+| `descendant_trackable_sessions_count` | folder | Сумма `trackable_sessions_count` по поддереву раздела. |
+| `done_sessions_count` | project | Число сессий проекта со статусом `ready` (manual `interview.status="ready"` либо derived по `report_versions`). Числитель прогресса. |
+| `descendant_done_sessions_count` | folder | Сумма `done_sessions_count` по поддереву раздела. |
+
+Инварианты:
+- `done_sessions_count <= trackable_sessions_count <= sessions_count`.
+- Статус сессии вычисляется `app/session_status.py::derive_session_status` (зеркало `_workspace_session_status`): manual `interview.status` в приоритете, иначе derived (`ready` если есть `report_versions`; `in_progress` если `version>0`/`bpmn_xml_version>0`/непустой interview; иначе `draft`).
+- Прогресс-пара на фронте: `done / trackable` (fallback на legacy-поля для старых ответов API).
