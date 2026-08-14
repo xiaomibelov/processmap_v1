@@ -2052,8 +2052,16 @@ function ExplorerPane({
       ) : visibleSearchModel.active ? (
         <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
       ) : !isEmpty ? (
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full table-fixed text-left border-collapse">
+        // Сетка ширин таблицы «Проекты» (ТЗ п.8): «Название» — единственная
+        // колонка с гарантированным min-width (≥260px) и flex-растяжением;
+        // остальные колонки фиксированы: Тип 88 + Состав 210 + Ответственный 176
+        // + Статус 88 + Обновлено 190 + Действия 32 = 784 (+72 с сигнальными).
+        // Ниже 1044px (1116px) таблица скроллится горизонтально, а не давит «Название».
+        <div className="flex-1 overflow-auto">
+          <table
+            className="w-full table-fixed text-left border-collapse"
+            style={{ minWidth: treeColumnProfile.showSignalColumns ? 1116 : 1044 }}
+          >
             <colgroup>
               <col />
               <col className="w-[88px]" />
