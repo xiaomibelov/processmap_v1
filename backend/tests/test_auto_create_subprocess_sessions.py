@@ -762,6 +762,61 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         children = list_session_children("org_sd_2", "proj_1", sid, user_id=str(editor["id"]))
         self.assertEqual(len(children), 2)
 
+    def _bpmn_with_callactivity(self, sub_ids, call_ids):
+        parts = [f'<subProcess id="{s}" name="Sub {s}" />' for s in sub_ids]
+        parts += [f'<callActivity id="{c}" name="Call {c}" calledElement="p_ext" />' for c in call_ids]
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="ns">'
+            '<process id="p1">'
+            '<startEvent id="start"/>'
+            + "".join(parts)
+            + '<endEvent id="end"/>'
+            '</process>'
+            '</definitions>'
+        )
+
+    def test_bpmn_save_keeps_callactivity_child_sessions(self):
+        """Keep-list must cover callActivity children (they materialize lazily
+        via navigate_to_subprocess), not only subProcess children."""
+        owner, editor = self._setup_org_and_editor(
+            "owner_ca_1@local", "editor_ca_1@local", "org_ca_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_ca_1", project_id="proj_1", title="root")
+        xml = self._bpmn_with_callactivity(["sub_1"], ["call_1"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml, editor, "org_ca_1").get("ok"))
+
+        # Simulate lazy child-session creation for the callActivity (navigate path).
+        parent = self.st.load(sid, org_id="org_ca_1", is_admin=True)
+        call_child = self.st.find_or_create_child_session(
+            parent,
+            "call_1",
+            '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="d2"><process id="p_ext"/></definitions>',
+            [{"session_id": sid, "element_id": "call_1"}],
+            "Call call_1",
+            user_id=str(editor["id"]),
+            org_id="org_ca_1",
+            is_admin=False,
+        )
+        self.assertTrue(call_child.id)
+
+        # Reimport the SAME file: the callActivity child must survive.
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_ca_1")
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_soft_deleted"), 0)
+        row = self.st.find_by_parent_element(sid, "call_1", org_id="org_ca_1")
+        self.assertIsNotNone(row)
+        reloaded = self.st.load(row.id, org_id="org_ca_1", is_admin=True)
+        self.assertFalse(getattr(reloaded, "deleted_at", 0) > 0)
+
+        # Removing the callActivity from the file DOES soft-delete its child.
+        xml2 = self._bpmn_with_callactivity(["sub_1"], [])
+        result2 = self._hybrid_save_bpmn(sid, xml2, editor, "org_ca_1")
+        self.assertTrue(result2.get("ok"))
+        self.assertEqual(result2.get("subprocesses_soft_deleted"), 1)
+        reloaded2 = self.st.load(row.id, org_id="org_ca_1", is_admin=True)
+        self.assertTrue(getattr(reloaded2, "deleted_at", 0) > 0)
+
     def test_bpmn_save_unparseable_xml_deletes_nothing(self):
         owner, editor = self._setup_org_and_editor(
             "owner_sd_3@local", "editor_sd_3@local", "org_sd_3"
