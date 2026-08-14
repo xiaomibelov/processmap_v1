@@ -60,3 +60,44 @@ def validate_session_status_transition(
     if next_status == "archived" and not can_archive:
         raise HTTPException(status_code=403, detail={"code": "STATUS_FORBIDDEN", "message": "forbidden"})
     return next_status
+
+
+def count_report_versions(interview_raw: Any) -> int:
+    """Count report versions stored in interview.report_versions (dict of path -> list)."""
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    raw = interview.get("report_versions")
+    if not isinstance(raw, dict):
+        return 0
+    total = 0
+    for versions_raw in raw.values():
+        if not isinstance(versions_raw, list):
+            continue
+        total += sum(1 for item in versions_raw if isinstance(item, dict))
+    return int(total)
+
+
+def derive_session_status(
+    *,
+    version: Any = 0,
+    bpmn_xml_version: Any = 0,
+    interview_raw: Any = None,
+) -> str:
+    """Derive effective session status.
+
+    Mirrors the workspace-list derivation: manual interview.status wins,
+    otherwise ready when report versions exist, in_progress when the session
+    has any content, draft as the fallback.
+    """
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    manual = normalize_session_status(interview.get("status"))
+    if manual:
+        return manual
+    if count_report_versions(interview) > 0:
+        return "ready"
+    try:
+        has_version = int(version or 0) > 0 or int(bpmn_xml_version or 0) > 0
+    except Exception:
+        has_version = False
+    if has_version or interview:
+        return "in_progress"
+    return "draft"
