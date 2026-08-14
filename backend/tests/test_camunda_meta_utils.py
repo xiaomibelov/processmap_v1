@@ -251,6 +251,44 @@ class TestExtractDedupAndStableId(unittest.TestCase):
         self.assertEqual(ids_first, ids_second)
         self.assertEqual(len(set(ids_first)), len(ids_first))
 
+    LISTENER_XML = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">\n'
+        '  <bpmn:process id="Process_1" isExecutable="false">\n'
+        '    <bpmn:task id="Task_1">\n'
+        '      <bpmn:extensionElements>\n'
+        '        <camunda:executionListener event="start" class="com.example.StartListener" />\n'
+        '        <camunda:executionListener event="end" expression="${endExpr}" />\n'
+        '      </bpmn:extensionElements>\n'
+        '    </bpmn:task>\n'
+        '  </bpmn:process>\n'
+        '</bpmn:definitions>'
+    )
+
+    def test_listener_id_deterministic_across_reparses(self):
+        # Random listener ids used to defeat change detection: every reimport
+        # looked "changed" and triggered spurious saves. Parsing identical XML
+        # twice must now yield byte-identical extension maps.
+        first = extract_camunda_extensions_from_bpmn_xml(self.LISTENER_XML)
+        second = extract_camunda_extensions_from_bpmn_xml(self.LISTENER_XML)
+        self.assertEqual(first, second)
+        listeners = first["Task_1"]["properties"]["extensionListeners"]
+        self.assertEqual(len(listeners), 2)
+        ids = [row["id"] for row in listeners]
+        self.assertEqual(len(set(ids)), len(ids))
+        for row in listeners:
+            self.assertTrue(row["id"].startswith("listener_"))
+
+    def test_listener_id_changes_with_content(self):
+        changed = self.LISTENER_XML.replace("com.example.StartListener", "com.example.OtherListener")
+        first = extract_camunda_extensions_from_bpmn_xml(self.LISTENER_XML)
+        other = extract_camunda_extensions_from_bpmn_xml(changed)
+        self.assertNotEqual(
+            first["Task_1"]["properties"]["extensionListeners"][0]["id"],
+            other["Task_1"]["properties"]["extensionListeners"][0]["id"],
+        )
+
 class TestNamespacePriorityZeebeOverCamunda(unittest.TestCase):
     """Camunda Cloud exports carry parallel zeebe:/camunda: properties blocks
     that may diverge (the modeler writes only zeebe:). The live zeebe: block
