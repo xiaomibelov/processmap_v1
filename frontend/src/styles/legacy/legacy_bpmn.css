@@ -411,6 +411,11 @@
    overlap neighbouring elements. */
 .fpc-overlay-v2-host--sequence {
   pointer-events: none;
+  /* Dashed frame marks the anchor area of a flow overlay so it reads as
+     attached to the sequence flow, not as a floating shape badge. */
+  border: 1px dashed hsl(var(--diagram-badge-border) / 0.82);
+  border-radius: 6px;
+  box-sizing: border-box;
 }
 
 .fpc-overlay-v2-host--sequence .fpc-overlay-v2-badge {
