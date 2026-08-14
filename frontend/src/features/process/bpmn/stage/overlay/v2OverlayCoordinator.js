@@ -54,20 +54,20 @@ function isSequenceFlowElement(el) {
   return Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
 }
 
-function computeContentSig(ovl, el, placement = null, viewbox = null) {
+function computeContentSig(ovl, el, placement = null) {
   const isSequenceFlow = isSequenceFlowElement(el);
   const geo = isSequenceFlow ? el.waypoints : { x: el.x, y: el.y, width: el.width, height: el.height };
   const sig = { ovl, geo };
   if (isSequenceFlow) {
     // Sequence-flow cards are positioned by the anti-collision/viewport logic,
-    // so the sig must cover its inputs: otherwise a canvas.viewbox.changed
-    // remount would be swallowed by the short-circuit and the card would keep
-    // a stale (possibly colliding or off-viewport) position.
+    // so the sig must cover its OUTPUT: the computed placement. The raw viewbox
+    // is intentionally NOT part of the sig — it changes on every pan/zoom and
+    // would force a full DOM remove+re-add of every sequence overlay even when
+    // the placement is pixel-identical (flicker + churn). mount() recomputes
+    // placements on every canvas.viewbox.changed anyway, so a real placement
+    // change still flips the sig and re-renders; an unchanged one short-circuits.
     sig.placement = placement
       ? { top: placement.top, left: placement.left, width: placement.width, height: placement.height }
-      : null;
-    sig.vb = viewbox && Number.isFinite(viewbox.x)
-      ? { x: viewbox.x, y: viewbox.y, width: viewbox.width, height: viewbox.height }
       : null;
   }
   return JSON.stringify(sig);
@@ -276,12 +276,12 @@ export function createV2OverlayCoordinator({
     return { overlayId, host: created.host };
   }
 
-  function mountEntry(inst, kind, elementId, ovl, el, placement = null, viewbox = null) {
+  function mountEntry(inst, kind, elementId, ovl, el, placement = null) {
     const overlays = inst.get("overlays");
     const map = elementOverlayMapRef.current[kind];
     const v2Expanded = expandedRef?.current ?? false;
     const globalEnabled = enabledRef?.current ?? false;
-    const contentSig = computeContentSig(ovl, el, placement, viewbox);
+    const contentSig = computeContentSig(ovl, el, placement);
     const existing = map.get(elementId);
 
     const elementState = {
@@ -386,7 +386,7 @@ export function createV2OverlayCoordinator({
       const epoch = ++mountEpochByKind[kind];
       if (entries.length <= MOUNT_CHUNK_SIZE) {
         for (const [elementId, { ovl, el }] of entries) {
-          mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null, viewbox);
+          mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
         }
         return;
       }
@@ -401,7 +401,7 @@ export function createV2OverlayCoordinator({
       // — passing it only to the tail silently disabled anti-collision for
       // the first MOUNT_CHUNK_SIZE entries.
       for (const [elementId, { ovl, el }] of head) {
-        mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null, viewbox);
+        mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
       }
       void (async () => {
         for (let idx = 0; idx < tail.length; idx += MOUNT_CHUNK_SIZE) {
@@ -409,7 +409,7 @@ export function createV2OverlayCoordinator({
           if (epoch !== mountEpochByKind[kind]) return;
           const chunk = tail.slice(idx, idx + MOUNT_CHUNK_SIZE);
           for (const [elementId, { ovl, el }] of chunk) {
-            mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null, viewbox);
+            mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
           }
         }
       })();

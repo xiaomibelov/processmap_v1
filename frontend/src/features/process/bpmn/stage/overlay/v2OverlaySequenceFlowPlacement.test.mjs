@@ -298,6 +298,30 @@ test("coordinator: remount after viewbox change re-applies viewport adjustment (
   assert.equal(secondHost.style.top, "-2px", "clamped/adjusted placement re-applied after viewbox change");
 });
 
+test("coordinator: pan/zoom WITHOUT placement change does NOT remount the DOM node", () => {
+  setupMockDom();
+  const viewbox = { x: 0, y: 0, width: 1000, height: 1000 };
+  const elements = [fakeFlow("F1", { x: 100, y: 100, x2: 200 })];
+  const inst = fakeInst({ elements, viewbox });
+  const coordinator = makeCoordinator();
+
+  coordinator.mount(inst, "editor", flowOverlayList(["F1"]));
+  const firstHost = hostOf(inst, "F1");
+  assert.ok(firstHost);
+  assert.equal(firstHost.style.top, "-20px");
+
+  // Pan/zoom: the raw viewbox changes, but the placement stays pixel-identical
+  // (the base candidate still fits fully inside the viewbox).
+  viewbox.x = 5;
+  viewbox.y = 5;
+  viewbox.width = 2000;
+  viewbox.height = 2000;
+  coordinator.mount(inst, "editor", flowOverlayList(["F1"]));
+
+  assert.equal(inst._overlays.store.length, 1, "no duplicate overlay added");
+  assert.equal(hostOf(inst, "F1"), firstHost, "host must NOT be re-rendered when placement is unchanged (no DOM churn on pan/zoom)");
+});
+
 test("coordinator: blockers include diagram elements that carry no overlay", () => {
   setupMockDom();
   // The shape has no overlay entry of its own, yet it must still push the
