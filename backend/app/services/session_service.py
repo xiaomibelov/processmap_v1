@@ -29,6 +29,7 @@ from ..services.bpmn_navigation import (
     resolve_target_element_id,
     element_type,
     find_subprocess_elements,
+    find_child_session_element_ids,
 )
 from .session_recompute import _recompute_session
 
@@ -1099,8 +1100,13 @@ def auto_create_subprocess_sessions(
     if not elements:
         if parse_ok:
             # The file legitimately contains zero (top-level) subprocesses:
-            # every existing child is stale and must be soft-deleted.
-            deletion = soft_delete_removed_subprocess_sessions(parent_session, [], request)
+            # every existing subprocess child is stale. Keep-list still covers
+            # callActivity children (they materialize lazily via navigation).
+            deletion = soft_delete_removed_subprocess_sessions(
+                parent_session,
+                find_child_session_element_ids(xml),
+                request,
+            )
             empty_summary["soft_deleted"] = deletion["soft_deleted"]
         return empty_summary
 
@@ -1183,10 +1189,12 @@ def auto_create_subprocess_sessions(
 
     # Soft-delete children whose subprocess element disappeared from the file.
     # parse_ok is guaranteed True here (we returned early otherwise), so the
-    # element list is reliable and deletion is safe.
+    # element list is reliable and deletion is safe. The keep-list covers ALL
+    # element types that materialize child sessions (subProcess + callActivity)
+    # at any depth — conservative by design (may only ever delete less).
     deletion = soft_delete_removed_subprocess_sessions(
         parent_session,
-        [e["id"] for e in elements],
+        find_child_session_element_ids(xml),
         request,
     )
 
