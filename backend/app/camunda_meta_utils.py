@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import uuid
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
@@ -73,8 +72,14 @@ def _parse_property_id(name: Any = "", value: Any = "", ordinal: int = 0) -> str
     return f"prop_{digest[:8]}"
 
 
-def _parse_listener_id() -> str:
-    return f"listener_{uuid.uuid4().hex[:8]}"
+def _parse_listener_id(element_id: Any = "", event: Any = "", typ: Any = "", value: Any = "", ordinal: int = 0) -> str:
+    # Deterministic id derived from owning element id + listener content +
+    # position so re-parsing identical XML yields identical ids. Random ids
+    # would defeat change detection (every reimport would look "changed").
+    digest = hashlib.sha256(
+        f"{element_id}\x00{ordinal}\x00{event}\x00{typ}\x00{value}".encode("utf-8")
+    ).hexdigest()
+    return f"listener_{digest[:8]}"
 
 
 def _normalize_property_name(value: Any) -> str:
@@ -114,7 +119,11 @@ def _parse_extension_properties(properties_node: ET.Element, expected_ns: str) -
     return rows
 
 
-def _parse_execution_listener(listener_node: ET.Element) -> Optional[Dict[str, Any]]:
+def _parse_execution_listener(
+    listener_node: ET.Element,
+    element_id: str = "",
+    ordinal: int = 0,
+) -> Optional[Dict[str, Any]]:
     """Parse a <camunda:executionListener> element.
 
     Returns a normalized listener row if exactly one of class/expression/
@@ -139,7 +148,7 @@ def _parse_execution_listener(listener_node: ET.Element) -> Optional[Dict[str, A
 
     typ, val = candidates[0]
     return {
-        "id": _parse_listener_id(),
+        "id": _parse_listener_id(element_id, event, typ, val, ordinal),
         "event": event,
         "type": typ,
         "value": val,
@@ -305,7 +314,11 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
                     continue
 
             if ns == _CAMUNDA_NS and local == "executionlistener":
-                parsed = _parse_execution_listener(child)
+                parsed = _parse_execution_listener(
+                    child,
+                    element_id=element_id,
+                    ordinal=len(managed_listeners),
+                )
                 if parsed is not None:
                     managed_listeners.append(parsed)
                     continue

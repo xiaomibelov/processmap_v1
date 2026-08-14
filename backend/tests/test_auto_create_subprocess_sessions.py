@@ -707,6 +707,216 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         self.assertIn('name="Task B"', child.bpmn_xml)
         self.assertEqual(self._extension_properties(state), [("temperature", "new")])
 
+    def _bpmn_with_nested_subprocess_task(self, outer_id, inner_id, task_name):
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="ns">'
+            '<process id="p1">'
+            '<startEvent id="start"/>'
+            f'<subProcess id="{outer_id}" name="Outer {outer_id}">'
+            f'<subProcess id="{inner_id}" name="Inner {inner_id}">'
+            f'<task id="{inner_id}_task" name="{task_name}" />'
+            f'</subProcess>'
+            f'</subProcess>'
+            '<endEvent id="end"/>'
+            '</process>'
+            '</definitions>'
+        )
+
+    def test_bpmn_save_soft_deletes_removed_subprocess(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_sd_1@local", "editor_sd_1@local", "org_sd_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_sd_1", project_id="proj_1", title="root")
+        xml_with = self._bpmn_with_subprocesses(["sub_1", "sub_2"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml_with, editor, "org_sd_1").get("ok"))
+        self.assertEqual(len(list_session_children("org_sd_1", "proj_1", sid, user_id=str(editor["id"]))), 2)
+
+        xml_without = self._bpmn_with_subprocesses(["sub_2"])
+        result = self._hybrid_save_bpmn(sid, xml_without, editor, "org_sd_1")
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_soft_deleted"), 1)
+
+        children = list_session_children("org_sd_1", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 1)
+        self.assertEqual(children[0]["element_id_in_parent"], "sub_2")
+
+        # Data is kept in DB (soft delete only).
+        removed_row = self.st.find_by_parent_element(sid, "sub_1", org_id="org_sd_1")
+        self.assertIsNotNone(removed_row)
+        removed = self.st.load(removed_row.id, org_id="org_sd_1", is_admin=True)
+        self.assertTrue(getattr(removed, "deleted_at", 0) > 0)
+        self.assertTrue(removed.bpmn_xml)
+
+    def test_bpmn_save_keeps_children_when_nothing_removed(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_sd_2@local", "editor_sd_2@local", "org_sd_2"
+        )
+        sid = self._create_session(str(owner["id"]), "org_sd_2", project_id="proj_1", title="root")
+        xml = self._bpmn_with_subprocesses(["sub_1", "sub_2"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml, editor, "org_sd_2").get("ok"))
+
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_sd_2")
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_soft_deleted"), 0)
+        children = list_session_children("org_sd_2", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 2)
+
+    def _bpmn_with_callactivity(self, sub_ids, call_ids):
+        parts = [f'<subProcess id="{s}" name="Sub {s}" />' for s in sub_ids]
+        parts += [f'<callActivity id="{c}" name="Call {c}" calledElement="p_ext" />' for c in call_ids]
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="ns">'
+            '<process id="p1">'
+            '<startEvent id="start"/>'
+            + "".join(parts)
+            + '<endEvent id="end"/>'
+            '</process>'
+            '</definitions>'
+        )
+
+    def test_bpmn_save_keeps_callactivity_child_sessions(self):
+        """Keep-list must cover callActivity children (they materialize lazily
+        via navigate_to_subprocess), not only subProcess children."""
+        owner, editor = self._setup_org_and_editor(
+            "owner_ca_1@local", "editor_ca_1@local", "org_ca_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_ca_1", project_id="proj_1", title="root")
+        xml = self._bpmn_with_callactivity(["sub_1"], ["call_1"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml, editor, "org_ca_1").get("ok"))
+
+        # Simulate lazy child-session creation for the callActivity (navigate path).
+        parent = self.st.load(sid, org_id="org_ca_1", is_admin=True)
+        call_child = self.st.find_or_create_child_session(
+            parent,
+            "call_1",
+            '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="d2"><process id="p_ext"/></definitions>',
+            [{"session_id": sid, "element_id": "call_1"}],
+            "Call call_1",
+            user_id=str(editor["id"]),
+            org_id="org_ca_1",
+            is_admin=False,
+        )
+        self.assertTrue(call_child.id)
+
+        # Reimport the SAME file: the callActivity child must survive.
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_ca_1")
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_soft_deleted"), 0)
+        row = self.st.find_by_parent_element(sid, "call_1", org_id="org_ca_1")
+        self.assertIsNotNone(row)
+        reloaded = self.st.load(row.id, org_id="org_ca_1", is_admin=True)
+        self.assertFalse(getattr(reloaded, "deleted_at", 0) > 0)
+
+        # Removing the callActivity from the file DOES soft-delete its child.
+        xml2 = self._bpmn_with_callactivity(["sub_1"], [])
+        result2 = self._hybrid_save_bpmn(sid, xml2, editor, "org_ca_1")
+        self.assertTrue(result2.get("ok"))
+        self.assertEqual(result2.get("subprocesses_soft_deleted"), 1)
+        reloaded2 = self.st.load(row.id, org_id="org_ca_1", is_admin=True)
+        self.assertTrue(getattr(reloaded2, "deleted_at", 0) > 0)
+
+    def test_bpmn_save_unparseable_xml_deletes_nothing(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_sd_3@local", "editor_sd_3@local", "org_sd_3"
+        )
+        sid = self._create_session(str(owner["id"]), "org_sd_3", project_id="proj_1", title="root")
+        xml = self._bpmn_with_subprocesses(["sub_1"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml, editor, "org_sd_3").get("ok"))
+        self.assertEqual(len(list_session_children("org_sd_3", "proj_1", sid, user_id=str(editor["id"]))), 1)
+
+        garbage = "<<< this is not xml >>>"
+        result = self._hybrid_save_bpmn(sid, garbage, editor, "org_sd_3")
+        if result.get("ok"):
+            # Legacy save accepted the payload: the safety gate must have
+            # skipped the whole subprocess sync (no soft-delete possible).
+            self.assertNotIn("subprocesses_soft_deleted", result)
+        # Either way: nothing may be deleted when parsing failed.
+        children = list_session_children("org_sd_3", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 1)
+
+    def test_bpmn_save_sync_exception_sets_flag_and_deletes_nothing(self):
+        import unittest.mock as mock
+
+        owner, editor = self._setup_org_and_editor(
+            "owner_sd_4@local", "editor_sd_4@local", "org_sd_4"
+        )
+        sid = self._create_session(str(owner["id"]), "org_sd_4", project_id="proj_1", title="root")
+        xml = self._bpmn_with_subprocesses(["sub_1"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml, editor, "org_sd_4").get("ok"))
+        self.assertEqual(len(list_session_children("org_sd_4", "proj_1", sid, user_id=str(editor["id"]))), 1)
+
+        with mock.patch.object(svc, "auto_create_subprocess_sessions", side_effect=RuntimeError("boom")):
+            result = self._hybrid_save_bpmn(sid, xml, editor, "org_sd_4")
+        self.assertTrue(result.get("ok"))
+        self.assertTrue(result.get("subprocesses_sync_failed"))
+        self.assertGreaterEqual(result.get("subprocesses_sync_errors", 0), 1)
+        # Exception path: NO deletion may happen.
+        children = list_session_children("org_sd_4", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 1)
+
+    def test_bpmn_save_creates_nested_subprocess_sessions(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_nested_1@local", "editor_nested_1@local", "org_nested_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_nested_1", project_id="proj_1", title="root")
+        xml = self._bpmn_with_nested_subprocess_task("outer", "inner", "Inner Task A")
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_nested_1")
+        self.assertTrue(result.get("ok"))
+
+        outer_row = self.st.find_by_parent_element(sid, "outer", org_id="org_nested_1")
+        self.assertIsNotNone(outer_row)
+        inner_row = self.st.find_by_parent_element(outer_row.id, "inner", org_id="org_nested_1")
+        self.assertIsNotNone(inner_row)
+        inner = self.st.load(inner_row.id, org_id="org_nested_1", is_admin=True)
+        self.assertIn("Inner Task A", inner.bpmn_xml)
+
+        # Reimport with a changed nested property: grandchild must be updated.
+        xml_b = self._bpmn_with_nested_subprocess_task("outer", "inner", "Inner Task B")
+        result_b = self._hybrid_save_bpmn(sid, xml_b, editor, "org_nested_1")
+        self.assertTrue(result_b.get("ok"))
+
+        inner_row_b = self.st.find_by_parent_element(outer_row.id, "inner", org_id="org_nested_1")
+        self.assertIsNotNone(inner_row_b)
+        self.assertEqual(inner_row_b.id, inner_row.id)
+        inner_b = self.st.load(inner_row_b.id, org_id="org_nested_1", is_admin=True)
+        self.assertIn("Inner Task B", inner_b.bpmn_xml)
+        self.assertNotIn("Inner Task A", inner_b.bpmn_xml)
+
+    def test_bpmn_save_soft_deletes_removed_nested_subprocess(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_nested_2@local", "editor_nested_2@local", "org_nested_2"
+        )
+        sid = self._create_session(str(owner["id"]), "org_nested_2", project_id="proj_1", title="root")
+        xml = self._bpmn_with_nested_subprocess_task("outer", "inner", "Inner Task A")
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml, editor, "org_nested_2").get("ok"))
+        outer_row = self.st.find_by_parent_element(sid, "outer", org_id="org_nested_2")
+        self.assertIsNotNone(self.st.find_by_parent_element(outer_row.id, "inner", org_id="org_nested_2"))
+
+        # Reimport with the nested subprocess removed from the file.
+        xml_b = self._bpmn_with_subprocesses(["outer"])
+        self.assertTrue(self._hybrid_save_bpmn(sid, xml_b, editor, "org_nested_2").get("ok"))
+        inner_row = self.st.find_by_parent_element(outer_row.id, "inner", org_id="org_nested_2")
+        self.assertIsNotNone(inner_row)
+        inner = self.st.load(inner_row.id, org_id="org_nested_2", is_admin=True)
+        self.assertTrue(getattr(inner, "deleted_at", 0) > 0)
+
+    def test_refresh_child_skips_empty_xml(self):
+        child = SimpleNamespace(
+            bpmn_xml="<definitions/>",
+            bpmn_meta={"camunda_extensions_by_element_id": {"Task_1": {"properties": {}}}},
+            activity_count=3,
+        )
+        changed = svc._refresh_child_session_bpmn_from_xml(child, "")
+        self.assertFalse(changed)
+        self.assertEqual(child.bpmn_xml, "<definitions/>")
+        self.assertEqual(
+            child.bpmn_meta,
+            {"camunda_extensions_by_element_id": {"Task_1": {"properties": {}}}},
+        )
+        self.assertEqual(child.activity_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
