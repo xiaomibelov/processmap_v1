@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 
 from .db import get_db_runtime_config, redact_database_url
 from .models import Project, Session
+from .session_status import derive_session_status
 
 logger = logging.getLogger(__name__)
 
@@ -12397,7 +12398,7 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         ).fetchall()
         session_rows = con.execute(
             """
-            SELECT s.project_id, s.id, s.title, s.updated_at
+            SELECT s.project_id, s.id, s.title, s.updated_at, s.version, s.bpmn_xml_version, s.interview_json, s.deleted_at
             FROM sessions s
             JOIN projects p ON p.id = s.project_id
             WHERE p.org_id = ? AND p.workspace_id = ?
@@ -12426,15 +12427,38 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         )
 
     session_latest_by_project: Dict[str, Dict[str, Any]] = {}
+    done_sessions_by_project: Dict[str, int] = {}
+    trackable_sessions_by_project: Dict[str, int] = {}
     for row in session_rows:
         project_id = str(row["project_id"] or "")
-        if not project_id or project_id in session_latest_by_project:
+        if not project_id:
             continue
-        session_latest_by_project[project_id] = {
-            "id": str(row["id"] or ""),
-            "title": str(row["title"] or "") or "Сессия",
-            "updated_at": _safe_int(row["updated_at"], 0),
-        }
+        if project_id not in session_latest_by_project:
+            session_latest_by_project[project_id] = {
+                "id": str(row["id"] or ""),
+                "title": str(row["title"] or "") or "Сессия",
+                "updated_at": _safe_int(row["updated_at"], 0),
+            }
+        # Прогресс-пара done/total: архивные и мягко удалённые сессии
+        # исключаются из ОБОИХ чисел, иначе прогресс никогда не достигнет 100%.
+        if _safe_int(row["deleted_at"], 0) > 0:
+            continue
+        try:
+            interview = json.loads(str(row["interview_json"] or "{}"))
+            if not isinstance(interview, dict):
+                interview = {}
+        except Exception:
+            interview = {}
+        session_status = derive_session_status(
+            version=row["version"],
+            bpmn_xml_version=row["bpmn_xml_version"],
+            interview_raw=interview,
+        )
+        if session_status == "archived":
+            continue
+        trackable_sessions_by_project[project_id] = trackable_sessions_by_project.get(project_id, 0) + 1
+        if session_status == "ready":
+            done_sessions_by_project[project_id] = done_sessions_by_project.get(project_id, 0) + 1
 
     projects_by_folder: Dict[str, List[Dict[str, Any]]] = {}
     projects_by_id: Dict[str, Dict[str, Any]] = {}
@@ -12474,6 +12498,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "last_activity_source_id": source_id,
             "last_activity_source_title": source_title,
             "descendant_sessions_count": _safe_int(row["sessions_count"], 0),
+            "done_sessions_count": _safe_int(done_sessions_by_project.get(project_id), 0),
+            "trackable_sessions_count": _safe_int(trackable_sessions_by_project.get(project_id), 0),
             # Project-level canonical truth remains dod_percent.
             "rollup_dod_percent": dod_percent,
         }
@@ -12503,6 +12529,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
                 "last_activity_source_title": "",
                 "descendant_projects_count": 0,
                 "descendant_sessions_count": 0,
+                "descendant_done_sessions_count": 0,
+                "descendant_trackable_sessions_count": 0,
                 "dod_sum": 0.0,
                 "dod_count": 0,
             }
@@ -12515,6 +12543,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         best_title = str(folder.get("name") or "Папка")
         descendant_projects_count = 0
         descendant_sessions_count = 0
+        descendant_done_sessions_count = 0
+        descendant_trackable_sessions_count = 0
         dod_sum = 0.0
         dod_count = 0
 
@@ -12522,6 +12552,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             child_metrics = _compute_folder_metrics(child_folder_id)
             descendant_projects_count += _safe_int(child_metrics.get("descendant_projects_count"), 0)
             descendant_sessions_count += _safe_int(child_metrics.get("descendant_sessions_count"), 0)
+            descendant_done_sessions_count += _safe_int(child_metrics.get("descendant_done_sessions_count"), 0)
+            descendant_trackable_sessions_count += _safe_int(child_metrics.get("descendant_trackable_sessions_count"), 0)
             dod_sum += float(child_metrics.get("dod_sum") or 0.0)
             dod_count += _safe_int(child_metrics.get("dod_count"), 0)
             child_rollup_at = _safe_int(child_metrics.get("rollup_activity_at"), 0)
@@ -12534,6 +12566,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         for project in projects_by_folder.get(folder_id, []):
             descendant_projects_count += 1
             descendant_sessions_count += _safe_int(project.get("sessions_count"), 0)
+            descendant_done_sessions_count += _safe_int(project.get("done_sessions_count"), 0)
+            descendant_trackable_sessions_count += _safe_int(project.get("trackable_sessions_count"), 0)
             dod_sum += float(_safe_int(project.get("dod_percent"), 0))
             dod_count += 1
             project_rollup_at = _safe_int(project.get("rollup_activity_at"), 0)
@@ -12550,6 +12584,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "last_activity_source_title": best_title,
             "descendant_projects_count": descendant_projects_count,
             "descendant_sessions_count": descendant_sessions_count,
+            "descendant_done_sessions_count": descendant_done_sessions_count,
+            "descendant_trackable_sessions_count": descendant_trackable_sessions_count,
             "dod_sum": dod_sum,
             "dod_count": dod_count,
         }
@@ -12575,6 +12611,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "child_project_count": len(projects_by_folder.get(folder_id, [])),
             "descendant_projects_count": _safe_int(metrics.get("descendant_projects_count"), 0),
             "descendant_sessions_count": _safe_int(metrics.get("descendant_sessions_count"), 0),
+            "descendant_done_sessions_count": _safe_int(metrics.get("descendant_done_sessions_count"), 0),
+            "descendant_trackable_sessions_count": _safe_int(metrics.get("descendant_trackable_sessions_count"), 0),
             "self_activity_at": _safe_int(folder.get("updated_at"), 0),
             "rollup_activity_at": _safe_int(metrics.get("rollup_activity_at"), _safe_int(folder.get("updated_at"), 0)),
             "last_activity_source_type": str(metrics.get("last_activity_source_type") or "folder"),
