@@ -68,6 +68,32 @@ def find_subprocess_elements(xml_text: str) -> List[Dict[str, Optional[str]]]:
     return out
 
 
+def find_child_session_element_ids(xml_text: str) -> List[str]:
+    """Return ids of ALL elements for which child sessions can materialize.
+
+    Child sessions are created for bpmn:subProcess (import-time materialization)
+    AND bpmn:callActivity (lazy creation via navigate_to_subprocess), so a
+    soft-delete keep-list must cover both types. Ids are collected at ANY
+    depth (not only top-level) on purpose: the keep-list is a deletion guard,
+    and a conservative (superset) keep-list can only ever delete less.
+    Returns [] on empty/unparseable input — callers must gate on parseability
+    before using the result for deletion decisions.
+    """
+    if not xml_text:
+        return []
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return []
+    out = []
+    for el in root.iter():
+        if _local_tag(el.tag) in {"subprocess", "callactivity"}:
+            element_id = _element_id(el)
+            if element_id:
+                out.append(element_id)
+    return out
+
+
 def _ns(tag: str, ns: str = BPMN_NS) -> str:
     return f"{{{ns}}}{tag}"
 

@@ -71,3 +71,7 @@ frontend/public/build-info.json
 
 # E2E diagnostic screenshots
 scripts/e2e/diagnose/
+
+# Golden-report is rewritten by test_transformation_golden.py on every run
+# (non-deterministic ordering) — keep it out of the working tree diff.
+docs/e35/golden_report.json
