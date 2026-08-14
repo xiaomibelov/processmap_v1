@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import datetime
+import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
@@ -46,7 +47,19 @@ def _bpmn_meta_with_fresh_camunda_extensions(current_meta: Any, xml_text: str) -
 
 
 def _refresh_child_session_bpmn_from_xml(child: Session, child_xml: str) -> bool:
-    """Refresh child session XML plus BPMN-derived extension metadata."""
+    """Refresh child session XML plus BPMN-derived extension metadata.
+
+    PRODUCT DECISION (official): the BPMN file is the source of truth.
+    A reimport intentionally performs a FULL overwrite of the child
+    session's ``bpmn_xml`` (and of the derived ``camunda_extensions_by_element_id``
+    map). Manual UI edits made inside the subprocess — DI layout tweaks,
+    ``pm:RobotMeta`` rows, camunda/zeebe properties edited through the UI —
+    are LOST on the next reimport of the parent file. This is accepted and
+    documented behavior.
+
+    Guards: an empty ``child_xml`` never wipes anything (neither ``bpmn_xml``
+    nor the extension map) — we only overwrite from real file content.
+    """
     xml = str(child_xml or "")
     changed = False
     if xml and xml != str(getattr(child, "bpmn_xml", "") or ""):
@@ -54,12 +67,31 @@ def _refresh_child_session_bpmn_from_xml(child: Session, child_xml: str) -> bool
         child.activity_count = _count_bpmn_activities(xml)
         changed = True
 
-    next_meta = _bpmn_meta_with_fresh_camunda_extensions(getattr(child, "bpmn_meta", {}), xml)
-    if next_meta != (getattr(child, "bpmn_meta", {}) or {}):
-        child.bpmn_meta = next_meta
-        changed = True
+    if xml:
+        next_meta = _bpmn_meta_with_fresh_camunda_extensions(getattr(child, "bpmn_meta", {}), xml)
+        if next_meta != (getattr(child, "bpmn_meta", {}) or {}):
+            child.bpmn_meta = next_meta
+            changed = True
 
     return changed
+
+
+def _bpmn_xml_parseable(xml_text: str) -> bool:
+    """Return True only when the XML parses cleanly.
+
+    Used as a safety gate before soft-deleting subprocess children:
+    ``find_subprocess_elements`` swallows parse errors and returns [], so an
+    unparseable/empty file must never be interpreted as "all subprocesses
+    were removed".
+    """
+    raw = str(xml_text or "").strip()
+    if not raw:
+        return False
+    try:
+        ET.fromstring(raw)
+    except Exception:
+        return False
+    return True
 
 
 class SessionAccessDenied(HTTPException):
@@ -540,14 +572,29 @@ def bpmn_save(
 
     # Hybrid auto-subprocess: an import/save must materialize every subprocess
     # so the imported diagram does not silently lose older subprocess children.
+    #
+    # The BPMN file is the source of truth: this also soft-deletes child
+    # sessions whose subprocess element ids are absent from the imported file.
+    # SAFETY: deletion (and the whole sync) runs ONLY when the imported XML
+    # parses cleanly. If parsing fails or the subprocess list is unreliable
+    # (exception path), NO deletion happens.
+    #
+    # Import itself already succeeded (ok:true stays). Sync failures are
+    # logged at ERROR level and surfaced via out["subprocesses_sync_failed"]
+    # so API consumers can detect a partial sync.
     try:
         xml = str(getattr(inp, "xml", "") or "")
-        elements = find_subprocess_elements(xml)
-        if elements:
+        parse_ok = _bpmn_xml_parseable(xml)
+        if parse_ok:
             s, oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
             if s:
                 summary = auto_create_subprocess_sessions(s, request, limit=None)
                 total = summary["total"]
+                soft_deleted_count = len(summary.get("soft_deleted") or []) + int(summary.get("nested_soft_deleted") or 0)
+                if not total and not soft_deleted_count and not summary.get("nested_errors"):
+                    # No subprocesses in the file and nothing stale deleted:
+                    # keep legacy behavior (no meta writes, no response keys).
+                    return out
                 active = len(summary["created"]) + len(summary["restored"]) + len(summary["skipped_existing"])
                 created = len(summary["created"]) + len(summary["restored"])
                 has_more = active < total
@@ -566,13 +613,25 @@ def bpmn_save(
                 out["subprocesses_total"] = total
                 out["subprocesses_created"] = created
                 out["subprocesses_has_more"] = has_more
+                out["subprocesses_soft_deleted"] = soft_deleted_count
+                if summary.get("nested_errors"):
+                    out["subprocesses_sync_failed"] = True
+                    out["subprocesses_sync_errors"] = int(summary["nested_errors"])
+        else:
+            logger.warning(
+                "bpmn_save_auto_subprocess_skipped_unparseable: session_id=%s "
+                "(subprocess sync and soft-delete skipped; import itself ok)",
+                session_id,
+            )
     except Exception as exc:
-        logger.warning(
+        logger.error(
             "bpmn_save_auto_subprocess_failed: session_id=%s error=%s",
             session_id,
             exc,
             exc_info=True,
         )
+        out["subprocesses_sync_failed"] = True
+        out["subprocesses_sync_errors"] = 1
     return out
 
 
@@ -999,24 +1058,59 @@ def _build_child_navigation_stack(parent_session: Session, element_id: str) -> L
     ]
 
 
+# Maximum nesting depth for recursive subprocess session materialization.
+# Guards against pathological/cyclic BPMN structures.
+_SUBPROCESS_SYNC_MAX_DEPTH = 8
+
+
 def auto_create_subprocess_sessions(
     parent_session: Session,
     request: Optional[Request] = None,
     limit: Optional[int] = 10,
+    *,
+    _depth: int = 0,
 ) -> Dict[str, Any]:
     """Create or restore child sessions for top-level subprocess elements.
+
+    Nested subprocesses (a subprocess inside a subprocess) are materialized
+    recursively from each child's fresh XML so that EVERY subprocess in the
+    file gets a synced session ("BPMN file is the source of truth"), up to
+    ``_SUBPROCESS_SYNC_MAX_DEPTH`` levels deep.
+
+    Soft-delete safety: child sessions whose element ids are absent from the
+    current XML are soft-deleted ONLY when the XML parses cleanly. On any
+    parse problem nothing is deleted.
 
     Returns a summary dict with created/restored/skipped ids and total element count.
     """
     xml = str(getattr(parent_session, "bpmn_xml", "") or "")
-    elements = find_subprocess_elements(xml)
+    parse_ok = _bpmn_xml_parseable(xml)
+    elements = find_subprocess_elements(xml) if parse_ok else []
+    empty_summary = {
+        "created": [],
+        "restored": [],
+        "skipped_existing": [],
+        "total": 0,
+        "soft_deleted": [],
+        "nested_created": 0,
+        "nested_soft_deleted": 0,
+        "nested_errors": 0,
+    }
     if not elements:
-        return {"created": [], "restored": [], "skipped_existing": [], "total": 0}
+        if parse_ok:
+            # The file legitimately contains zero (top-level) subprocesses:
+            # every existing child is stale and must be soft-deleted.
+            deletion = soft_delete_removed_subprocess_sessions(parent_session, [], request)
+            empty_summary["soft_deleted"] = deletion["soft_deleted"]
+        return empty_summary
 
     uid, oid, admin = _subprocess_request_context(request)
     created = []
     restored = []
     skipped = []
+    nested_created = 0
+    nested_soft_deleted = 0
+    nested_errors = 0
 
     selected = elements if limit is None else elements[:limit]
     for element in selected:
@@ -1046,28 +1140,65 @@ def auto_create_subprocess_sessions(
                     existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                     session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
                 skipped.append(str(existing.id))
-            continue
+            child_session = existing
+        else:
+            child = session_repo.find_or_create_child_session(
+                parent_session,
+                element_id,
+                child_xml,
+                navigation_stack,
+                title,
+                user_id=uid,
+                org_id=oid,
+                is_admin=admin,
+            )
+            if _refresh_child_session_bpmn_from_xml(child, child_xml):
+                child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+                session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+            created.append(str(child.id))
+            child_session = child
 
-        child = session_repo.find_or_create_child_session(
-            parent_session,
-            element_id,
-            child_xml,
-            navigation_stack,
-            title,
-            user_id=uid,
-            org_id=oid,
-            is_admin=admin,
-        )
-        if _refresh_child_session_bpmn_from_xml(child, child_xml):
-            child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-            session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
-        created.append(str(child.id))
+        # Recurse: materialize/sync subprocesses nested inside this child
+        # (grandchildren), so a reimport syncs the whole subprocess tree.
+        if _depth + 1 < _SUBPROCESS_SYNC_MAX_DEPTH:
+            try:
+                nested = auto_create_subprocess_sessions(
+                    child_session,
+                    request,
+                    limit=None,
+                    _depth=_depth + 1,
+                )
+                nested_created += len(nested["created"]) + len(nested["restored"])
+                nested_created += nested.get("nested_created", 0)
+                nested_soft_deleted += len(nested.get("soft_deleted") or [])
+                nested_soft_deleted += nested.get("nested_soft_deleted", 0)
+                nested_errors += nested.get("nested_errors", 0)
+            except Exception:
+                nested_errors += 1
+                logger.exception(
+                    "auto_create_subprocess_sessions: nested sync failed parent=%s element=%s",
+                    getattr(parent_session, "id", ""),
+                    element_id,
+                )
+
+    # Soft-delete children whose subprocess element disappeared from the file.
+    # parse_ok is guaranteed True here (we returned early otherwise), so the
+    # element list is reliable and deletion is safe.
+    deletion = soft_delete_removed_subprocess_sessions(
+        parent_session,
+        [e["id"] for e in elements],
+        request,
+    )
 
     return {
         "created": created,
         "restored": restored,
         "skipped_existing": skipped,
         "total": len(elements),
+        "soft_deleted": deletion["soft_deleted"],
+        "nested_created": nested_created,
+        "nested_soft_deleted": nested_soft_deleted,
+        "nested_errors": nested_errors,
     }
 
 
@@ -1200,9 +1331,27 @@ def navigate_to_subprocess(
         if child_err:
             raise HTTPException(status_code=child_err.status_code, detail=child_err.body)
         child = child_check
-        child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
-        if not _xml_has_definitions(child_xml) or not _xml_has_minimal_di(child_xml):
-            child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
+        child_stored_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
+
+        # The BPMN file is the source of truth: re-extract the subprocess
+        # fragment from the PARENT session's stored XML (same helpers as at
+        # import time) and overwrite the child whenever it differs, so stale
+        # pre-fix child sessions are healed on navigation instead of only
+        # backfilling bpmn_meta from their own stale XML.
+        parent_fragment = None
+        try:
+            parent_fragment = _resolve_child_bpmn_xml(sess, element_id, called, request)
+        except HTTPException:
+            parent_fragment = None
+
+        if parent_fragment:
+            child_xml = parent_fragment
+        else:
+            child_xml = child_stored_xml
+            if not _xml_has_definitions(child_xml) or not _xml_has_minimal_di(child_xml):
+                # Preserve the legacy error path: no parent fragment AND no
+                # usable child XML -> 404.
+                child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
         if _refresh_child_session_bpmn_from_xml(child, child_xml):
             child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
             session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)

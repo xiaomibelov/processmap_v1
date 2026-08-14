@@ -224,3 +224,86 @@ def test_child_bpmn_save_syncs_back_to_parent_subprocess():
     assert 'id="sub_new_task"' in (parent.bpmn_xml or "")
     # The parent subprocess still contains the original wrapper element.
     assert '<subProcess id="sub_1"' in (parent.bpmn_xml or "") or '<bpmn:subProcess id="sub_1"' in (parent.bpmn_xml or "")
+
+
+BPMN_WITH_SUBPROCESS_PROPS = """<?xml version="1.0"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="defs">
+  <process id="Process_root">
+    <startEvent id="start" />
+    <subProcess id="sub_1">
+      <startEvent id="sub_start" />
+      <task id="sub_task">
+        <extensionElements>
+          <camunda:properties>
+            <camunda:property name="owner" value="ops" />
+          </camunda:properties>
+        </extensionElements>
+      </task>
+      <endEvent id="sub_end" />
+    </subProcess>
+    <endEvent id="end" />
+  </process>
+</definitions>"""
+
+STALE_CHILD_XML = """<?xml version="1.0"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="defs_stale">
+  <bpmn:process id="Process_stale">
+    <bpmn:task id="stale_task" name="STALE" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_stale">
+      <bpmndi:BPMNShape id="stale_task_di" bpmnElement="stale_task">
+        <dc:Bounds x="50" y="50" width="100" height="80" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>"""
+
+
+def test_navigate_heals_stale_child_xml_from_parent():
+    """Pre-fix stale child (valid-looking but outdated XML) must be synced
+    from the PARENT session's stored XML on navigation."""
+    owner = "owner_nav_heal_1"
+    org = "org_nav_heal_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_WITH_SUBPROCESS_PROPS
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    nav = navigate_to_subprocess(sid, "sub_1", request=req)
+    child_id = nav["subprocess_session_id"]
+    assert child_id
+
+    # Simulate the pre-fix state: child holds stale (but structurally valid)
+    # XML that differs from the parent file.
+    child = session_repo.load(child_id, user_id=owner, org_id=org, is_admin=True)
+    child.bpmn_xml = STALE_CHILD_XML
+    child.bpmn_meta = {
+        "camunda_extensions_by_element_id": {
+            "stale_task": {
+                "properties": {"extensionProperties": [], "extensionListeners": []},
+                "preservedExtensionElements": [],
+            }
+        }
+    }
+    session_repo.save(child, user_id=owner, org_id=org, is_admin=True)
+
+    nav2 = navigate_to_subprocess(sid, "sub_1", request=req)
+    assert nav2["subprocess_session_id"] == child_id
+    assert "stale_task" not in (nav2["bpmn_xml"] or "")
+    assert "sub_task" in (nav2["bpmn_xml"] or "")
+
+    healed = session_repo.load(child_id, user_id=owner, org_id=org, is_admin=True)
+    assert "sub_task" in (healed.bpmn_xml or "")
+    assert "stale_task" not in (healed.bpmn_xml or "")
+
+    # Camunda extensions must match the parent file content.
+    from app.camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
+
+    expected = extract_camunda_extensions_from_bpmn_xml(healed.bpmn_xml)
+    actual = (healed.bpmn_meta or {}).get("camunda_extensions_by_element_id") or {}
+    assert actual == expected
+    props = (actual.get("sub_task") or {}).get("properties", {}).get("extensionProperties") or []
+    assert [(p["name"], p["value"]) for p in props] == [("owner", "ops")]
