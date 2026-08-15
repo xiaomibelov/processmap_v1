@@ -9,6 +9,10 @@ from ..schemas.legacy_api import OrgInviteAcceptIn, OrgInviteCreateIn
 
 router = APIRouter()
 
+# 429 — легитимный ответ rate limiter'а в хендлерах _legacy_main;
+# документируем явно, иначе contract-фаззер падает с UndefinedStatusCode.
+_RATE_LIMIT_429 = {"description": "Превышен rate limit (too_many_requests)"}
+
 
 @router.get("/api/orgs/{org_id}/invites")
 @router.get("/api/admin/organizations/{org_id}/invites")
@@ -16,18 +20,18 @@ def list_org_invites_endpoint(org_id: str, request: Request) -> Any:
     return _svc.list_org_invites(org_id, request)
 
 
-@router.post("/api/orgs/{org_id}/invites")
-@router.post("/api/admin/organizations/{org_id}/invites")
+@router.post("/api/orgs/{org_id}/invites", responses={429: _RATE_LIMIT_429})
+@router.post("/api/admin/organizations/{org_id}/invites", responses={429: _RATE_LIMIT_429})
 def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Request) -> Any:
     return _svc.create_org_invite(org_id, inp, request)
 
 
-@router.post("/api/orgs/{org_id}/invites/accept")
+@router.post("/api/orgs/{org_id}/invites/accept", responses={429: _RATE_LIMIT_429})
 def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Request) -> Any:
     return _svc.accept_org_invite(org_id, inp, request)
 
 
-@router.post("/api/invites/accept")
+@router.post("/api/invites/accept", responses={429: _RATE_LIMIT_429})
 def accept_invite_endpoint(inp: OrgInviteAcceptIn, request: Request) -> Any:
     return _svc.accept_invite(inp, request)
 

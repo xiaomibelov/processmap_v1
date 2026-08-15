@@ -3188,14 +3188,17 @@ def metrics_endpoint():
 # re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes, methods,
 # registration order and endpoint objects as before the extraction.
 _AUTH_401 = {"description": "Невалидные/просроченные креды или отсутствующий refresh token"}
-app.post("/api/auth/login", response_model=AuthTokenOut, responses={401: _AUTH_401})(auth_login)
+# 429 — легитимный ответ rate limiter'а (RL_*_PER_MIN); документируем явно,
+# иначе contract-фаззер падает с UndefinedStatusCode (backend-contract nightly).
+_RATE_LIMIT_429 = {"description": "Превышен rate limit (too_many_requests)"}
+app.post("/api/auth/login", response_model=AuthTokenOut, responses={401: _AUTH_401, 429: _RATE_LIMIT_429})(auth_login)
 app.post("/api/auth/refresh", response_model=AuthTokenOut, responses={401: _AUTH_401})(auth_refresh)
 app.post("/api/auth/logout")(auth_logout)
 app.get("/api/auth/me", response_model=AuthMeOut)(auth_me)
 app.post("/api/invite/resolve")(auth_invite_preview)
 app.post("/api/auth/invite/preview")(auth_invite_preview)
-app.post("/api/invite/activate")(auth_invite_activate)
-app.post("/api/auth/invite/activate")(auth_invite_activate)
+app.post("/api/invite/activate", responses={429: _RATE_LIMIT_429})(auth_invite_activate)
+app.post("/api/auth/invite/activate", responses={429: _RATE_LIMIT_429})(auth_invite_activate)
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
@@ -5894,10 +5897,10 @@ app.patch("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")(patch_or
 app.delete("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")(delete_org_project_member)
 app.get("/api/admin/organizations/{org_id}/invites")(list_org_invites_endpoint)
 app.get("/api/orgs/{org_id}/invites")(list_org_invites_endpoint)
-app.post("/api/admin/organizations/{org_id}/invites")(create_org_invite_endpoint)
-app.post("/api/orgs/{org_id}/invites")(create_org_invite_endpoint)
-app.post("/api/orgs/{org_id}/invites/accept")(accept_org_invite_endpoint)
-app.post("/api/invites/accept")(accept_invite_endpoint)
+app.post("/api/admin/organizations/{org_id}/invites", responses={429: _RATE_LIMIT_429})(create_org_invite_endpoint)
+app.post("/api/orgs/{org_id}/invites", responses={429: _RATE_LIMIT_429})(create_org_invite_endpoint)
+app.post("/api/orgs/{org_id}/invites/accept", responses={429: _RATE_LIMIT_429})(accept_org_invite_endpoint)
+app.post("/api/invites/accept", responses={429: _RATE_LIMIT_429})(accept_invite_endpoint)
 app.post("/api/admin/organizations/{org_id}/invites/{invite_id}/revoke")(revoke_org_invite_endpoint)
 app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")(revoke_org_invite_endpoint)
 app.post("/api/orgs/{org_id}/invites/cleanup")(cleanup_org_invites_endpoint)
