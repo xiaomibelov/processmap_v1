@@ -102,7 +102,13 @@ def main() -> int:
     calls_path = Path(args.calls)
     calls = []
     if calls_path.exists():
-        for line in calls_path.read_text(encoding="utf-8").splitlines():
+        # split("\n") осознанно, НЕ splitlines(): recorder пишет записи через
+        # json.dumps(ensure_ascii=False), который не экранирует U+0085/U+2028/...,
+        # а splitlines() режет строки и по этим символам -> битая JSON-запись
+        # (nightly run 31881626132: Unterminated string на путях с %C2%85).
+        # json.dumps не генерирует сырой перевод строки внутри записи,
+        # так что "\n" -- единственный безопасный разделитель.
+        for line in calls_path.read_text(encoding="utf-8").split("\n"):
             line = line.strip()
             if line:
                 calls.append(json.loads(line))
