@@ -79,6 +79,8 @@ import {
   normalizeExplorerContextStatus,
 } from "./explorerContextStatusModel.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
+import TextBreadcrumbs from "../../components/TextBreadcrumbs.jsx";
+import { useWorkspaceMainNavSlot } from "../../components/workspaceMainNavSlot.js";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
 import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "../navigation/appLinkBehavior.js";
@@ -400,24 +402,6 @@ function LastActivityCell({ node, maxWidthClass = "max-w-[220px]", quiet = false
         {label}
       </div>
     </td>
-  );
-}
-
-function BreadcrumbChip({ children, active = false, onClick }) {
-  const className = active
-    ? "inline-flex max-w-[180px] items-center truncate rounded-full border border-accent/35 bg-accent/10 px-2.5 py-1 text-xs font-medium text-fg"
-    : "inline-flex max-w-[180px] items-center truncate rounded-full border border-border bg-panelAlt/50 px-2.5 py-1 text-xs text-muted transition-colors hover:border-border/80 hover:bg-panelAlt hover:text-fg";
-  if (typeof onClick === "function") {
-    return (
-      <button type="button" onClick={onClick} className={className}>
-        <span className="truncate">{children}</span>
-      </button>
-    );
-  }
-  return (
-    <span className={className}>
-      <span className="truncate">{children}</span>
-    </span>
   );
 }
 
@@ -1161,28 +1145,6 @@ function WorkspaceSidebar({
   );
 }
 
-// ─── Breadcrumb ───────────────────────────────────────────────────────────────
-
-function Breadcrumb({ crumbs, onNavigate }) {
-  return (
-    <nav className="flex items-center gap-1 text-sm text-muted overflow-x-auto whitespace-nowrap pb-0.5">
-      {crumbs.map((crumb, i) => (
-        <React.Fragment key={`${crumb.type}-${crumb.id}`}>
-          {i > 0 && <IcoChevron right className="text-muted/50 shrink-0" />}
-          <button
-            onClick={() => onNavigate(crumb)}
-            className={`hover:text-fg transition-colors truncate max-w-[160px] ${
-              i === crumbs.length - 1 ? "text-fg font-medium pointer-events-none" : "hover:underline"
-            }`}
-          >
-            {crumb.name}
-          </button>
-        </React.Fragment>
-      ))}
-    </nav>
-  );
-}
-
 // ─── Context Menu (dropdown actions) ──────────────────────────────────────────
 
 function ContextMenu({ items, onClose }) {
@@ -1550,6 +1512,7 @@ function ExplorerPane({
   onNavigateToBreadcrumb,
   onOpenSession,
   permissions,
+  portalHeader = true,
 }) {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1926,19 +1889,61 @@ function ExplorerPane({
     );
   }
 
-  return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="px-4 pt-3 pb-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <Breadcrumb
-            crumbs={page?.breadcrumbs || []}
-            onNavigate={(crumb) => {
-              if (crumb.type === "workspace") onNavigateToBreadcrumb(workspaceId, "");
-              else onNavigateToBreadcrumb(workspaceId, crumb.id);
-            }}
-          />
-          <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
+  const headerCrumbs = Array.isArray(page?.breadcrumbs) ? page.breadcrumbs : [];
+  const headerCrumbItems = headerCrumbs.map((crumb, index) => ({
+    key: `${crumb.type}-${crumb.id || "root"}`,
+    label: crumb.name,
+    onClick:
+      index < headerCrumbs.length - 1
+        ? () => {
+            if (crumb.type === "workspace") onNavigateToBreadcrumb(workspaceId, "");
+            else onNavigateToBreadcrumb(workspaceId, crumb.id);
+          }
+        : undefined,
+  }));
+  const sectionTitle = String(headerCrumbs[headerCrumbs.length - 1]?.name || "").trim();
+  const parentHeaderCrumb = headerCrumbs.length > 1 ? headerCrumbs[headerCrumbs.length - 2] : null;
+  const headerFolderCount = rootItems.filter((item) => item?.type === "folder").length;
+  const headerProjectCount = rootItems.filter((item) => item?.type === "project").length;
+
+  // Часть А: хедер раздела порталится в общий слот workspaceMain (пиксель-в-пиксель).
+  // Когда открыт проект, ExplorerPane остаётся смонтированным (скрытым) — портал глушим.
+  const navSlotEl = useWorkspaceMainNavSlot();
+  const headerSlotEl = portalHeader ? navSlotEl : null;
+  const explorerHeader = (
+      <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0 bg-panel">
+        <div className="flex flex-col items-start">
+          {folderId ? (
+            <button
+              type="button"
+              onClick={() =>
+                parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
+                  ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
+                  : onNavigateToBreadcrumb(workspaceId, "")
+              }
+              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              data-testid="explorer-back-sections"
+            >
+              ← Назад к разделам
+            </button>
+          ) : null}
+          <div className={`min-w-0 ${folderId ? "mt-1" : ""}`}>
+            <TextBreadcrumbs crumbs={headerCrumbItems} dataTestId="explorer-breadcrumbs" />
+          </div>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-col">
+            <h1 className="truncate text-lg font-semibold text-fg" data-testid="explorer-section-title">
+              {sectionTitle}
+            </h1>
+            <span className="mt-0.5 text-xs text-muted" data-testid="explorer-section-meta">
+              {folderId
+                ? `Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
+                : `Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
             <button
               type="button"
               onClick={() => setActiveTab("projects")}
@@ -1957,15 +1962,13 @@ function ExplorerPane({
             >
               Аналитика
             </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <ExplorerSearchBox
-            id="workspace-explorer-tree-search"
-            value={searchQuery}
-            onChange={setSearchQuery}
-            className="w-[260px]"
-          />
+            </div>
+            <ExplorerSearchBox
+              id="workspace-explorer-tree-search"
+              value={searchQuery}
+              onChange={setSearchQuery}
+              className="w-[260px]"
+            />
           {permissions?.canCreate ? (
             <button
               onClick={() => setCreatingFolder(true)}
@@ -1990,8 +1993,14 @@ function ExplorerPane({
               <IcoPlus className="opacity-50" /> Проект
             </span>
           ) : null}
+          </div>
         </div>
       </div>
+  );
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {headerSlotEl ? createPortal(explorerHeader, headerSlotEl) : explorerHeader}
 
       {error && (
         <div className="px-4 py-3 text-sm text-danger bg-danger/5 border-b border-border">{error}</div>
@@ -2875,7 +2884,17 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [onOpenSession, projectContext, projectId, workspaceId]);
 
   const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
+  const projectCrumbItems = projectBreadcrumbTrail.map((c) => ({
+    key: `${c.type}-${c.id || "project"}`,
+    label: c.name,
+    onClick: c.active ? undefined : () => onBack(c),
+  }));
+  const normalizedProjectStatus = String(proj?.status || "").trim().toLowerCase();
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
+  // Прямой переход по URL (без контекста explorer): назад — в раздел проекта
+  // (folder_id из карточки проекта) или в корень рабочей области.
+  const projectBackCrumb = parentCrumb
+    || (proj ? { type: proj.folder_id ? "folder" : "workspace", id: proj.folder_id || "" } : null);
   const sessionCount = Number(proj?.sessions_count || sessions.length || 0) || 0;
   const searchIndex = useMemo(
     () => buildProjectSessionSearchIndex({
@@ -2919,38 +2938,39 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     return <div className="flex-1 flex items-center justify-center p-8 text-danger text-sm">{error}</div>;
   }
 
-  return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {parentCrumb ? (
+  // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
+  const navSlotEl = useWorkspaceMainNavSlot();
+  const projectHeader = (
+      <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0 bg-panel">
+        <div className="flex flex-col items-start">
+          {projectBackCrumb ? (
             <button
               type="button"
-              onClick={() => onBack(parentCrumb)}
-              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium"
+              onClick={() => onBack(projectBackCrumb)}
+              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              data-testid="project-back-section"
             >
               ← Назад к разделу
             </button>
           ) : null}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted/70">Навигация</span>
-            {projectBreadcrumbTrail.map((c, i) => (
-              <React.Fragment key={`${c.type}-${c.id}`}>
-                {i > 0 && <IcoChevron right className="shrink-0 text-muted/35" />}
-                {c.active ? (
-                  <BreadcrumbChip active>{c.name}</BreadcrumbChip>
-                ) : (
-                  <BreadcrumbChip onClick={() => onBack(c)}>{c.name}</BreadcrumbChip>
-                )}
-              </React.Fragment>
-            ))}
+          <div className={`min-w-0 ${projectBackCrumb ? "mt-1" : ""}`}>
+            <TextBreadcrumbs crumbs={projectCrumbItems} dataTestId="project-breadcrumbs" />
           </div>
         </div>
 
         {proj && (
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-            <span>Сессии: {sessionCount}</span>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-col">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <h1 className="truncate text-lg font-semibold text-fg" data-testid="project-title">
+                  {proj.name}
+                </h1>
+                {normalizedProjectStatus && normalizedProjectStatus !== "active" ? (
+                  <StatusBadge status={proj.status} />
+                ) : null}
+              </div>
+              <span className="mt-0.5 text-xs text-muted">Сессии: {sessionCount}</span>
+            </div>
             <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
               <button
                 type="button"
@@ -2974,6 +2994,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
           </div>
         )}
       </div>
+  );
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {navSlotEl ? createPortal(projectHeader, navSlotEl) : projectHeader}
 
       {activeTab === "analytics" ? (
         <div className="flex-1 min-h-0 overflow-hidden">
@@ -3247,6 +3272,7 @@ export default function WorkspaceExplorer({
                 onNavigateToBreadcrumb={handleNavigateToBreadcrumb}
                 onOpenSession={onOpenSession}
                 permissions={permissions}
+                portalHeader={!currentProjectId}
               />
             </div>
 

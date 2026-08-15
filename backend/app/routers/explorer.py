@@ -153,6 +153,9 @@ class ProjectItem(BaseModel):
 class ContextFolder(BaseModel):
     id: str
     name: str
+    # Аддитивно (nav-headers part A): status ← workspace_folders.context_status.
+    status: str = "none"
+    updated_at: int = 0
 
 
 class ContextOut(BaseModel):
@@ -583,7 +586,12 @@ def get_explorer_page(
         breadcrumbs.append(BreadcrumbItem(type="folder", id=c["id"], name=c["name"]))
     if raw_crumbs:
         last = raw_crumbs[-1]
-        context_folder = ContextFolder(id=last["id"], name=last["name"])
+        context_folder = ContextFolder(
+            id=last["id"],
+            name=last["name"],
+            status=str(last.get("context_status") or "none"),
+            updated_at=int(last.get("updated_at") or 0),
+        )
 
     context = ContextOut(
         organization={"id": oid, "name": org_name},
