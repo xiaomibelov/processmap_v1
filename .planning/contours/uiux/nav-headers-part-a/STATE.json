@@ -3,11 +3,13 @@
   "type": "uiux",
   "branch": "uiux/nav-headers-part-a",
   "base": "origin/main@fa4ab25e",
-  "state": "implemented_pending_review",
-  "updated": "2026-08-15T09:55:00Z",
+  "state": "pr_opened_checks_green",
+  "updated": "2026-08-15T13:20:00Z",
   "checks": {
     "unit_suite": "3003 tests, 62 fail (delta vs origin/main = 0)",
     "build": "vite build EXIT=0 (27.7s, solo, heap 3072)",
     "acceptance_script": "scripts/e2e/nav_zone_part_a.mjs EXIT=0 (14/14)"
-  }
+  },
+  "pr": 730,
+  "review_followup": "ui-ux-pro-max: aria-current=page + focus-visible rings (в коммите)"
 }
