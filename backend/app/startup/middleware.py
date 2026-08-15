@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import quote
 from typing import Iterable
 
 from fastapi import FastAPI, Request
@@ -202,8 +203,21 @@ def _path_has_matching_route(app: FastAPI, path: str, method: str) -> bool:
     return False
 
 
+def _header_safe_canonical(path: str) -> str:
+    """Percent-encode anything non-ASCII so the canonical path is safe for
+    latin-1-encoded HTTP headers (Warning/Link/Location).
+
+    ``request.url.path`` is percent-DECODED: a fuzzed path param like
+    ``%C2%80`` arrives as U+0080 and would be raw-encoded to byte 0x80 in the
+    header, which is neither valid UTF-8 (breaks strict clients, see CI
+    backend-contract nightly) nor legal RFC 9110 field-content. Routing keeps
+    the raw decoded path; only header/redirect copies are sanitized.
+    """
+    return quote(str(path or ""), safe="/:?&=%-._~!$'()*+,;@")
+
+
 def _apply_deprecation_headers(response, canonical_path: str) -> None:
-    canonical = str(canonical_path or "").strip()
+    canonical = _header_safe_canonical(canonical_path).strip()
     response.headers["Deprecation"] = "true"
     response.headers["Warning"] = f'299 - "Deprecated endpoint, use {canonical}"'
     response.headers["Link"] = f"<{canonical}>; rel=\"alternate\""
@@ -234,7 +248,8 @@ def register_deprecated_alias_middleware(app: FastAPI) -> None:
             request_client_ip(request),
         )
         if method in {"GET", "HEAD"}:
-            redirect = RedirectResponse(url=canonical_url, status_code=308)
+            # Location header must be header-safe too (same latin-1 constraint).
+            redirect = RedirectResponse(url=_header_safe_canonical(canonical_url), status_code=308)
             _apply_deprecation_headers(redirect, canonical_path)
             return redirect
 
