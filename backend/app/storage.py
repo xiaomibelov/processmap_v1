@@ -12607,7 +12607,14 @@ def get_workspace_folder_breadcrumb(org_id: str, workspace_id: str, folder_id: s
             ).fetchone()
             if not row:
                 break
-            crumbs.append({"id": str(row["id"]), "name": str(row["name"]), "parent_id": str(row["parent_id"] or "")})
+            crumbs.append({
+                "id": str(row["id"]),
+                "name": str(row["name"]),
+                "parent_id": str(row["parent_id"] or ""),
+                # Аддитивно (nav-headers part A): статус/дата раздела для хедера explorer.
+                "context_status": str(row["context_status"] or "none"),
+                "updated_at": int(row["updated_at"] or 0),
+            })
             current_id = str(row["parent_id"] or "")
     crumbs.reverse()
     return crumbs

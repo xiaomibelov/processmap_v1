@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../features/auth/AuthProvider";
-import { getManualSessionStatusMeta } from "../features/workspace/workspacePermissions";
-import { normalizeManualSessionStatus } from "../features/workspace/sessionStatus.js";
 import {
   buildAccountDiscussionNotificationGroups,
   filterDiscussionNotificationGroups,
@@ -21,39 +19,6 @@ function asArray(x) {
 function toText(v) {
   return String(v || "").trim();
 }
-
-const STATUS_CHIP_STYLES = {
-  draft: {
-    dot: "#9CA3AF",
-    bg: "#F3F4F6",
-    text: "#4B5563",
-    border: "#E5E7EB",
-  },
-  in_progress: {
-    dot: "#3B82F6",
-    bg: "#EFF6FF",
-    text: "#1D4ED8",
-    border: "#BFDBFE",
-  },
-  review: {
-    dot: "#F59E0B",
-    bg: "#FFFBEB",
-    text: "#B45309",
-    border: "#FDE68A",
-  },
-  ready: {
-    dot: "#10B981",
-    bg: "#ECFDF5",
-    text: "#047857",
-    border: "#A7F3D0",
-  },
-  archived: {
-    dot: "#6B7280",
-    bg: "#F9FAFB",
-    text: "#6B7280",
-    border: "#E5E7EB",
-  },
-};
 
 function projectIdFrom(p) {
   return String((p && (p.id || p.project_id || p.slug)) || "").trim();
@@ -168,20 +133,12 @@ export default function TopBar({
   const draftSessionId = toText(draft?.session_id || draft?.id);
   const effectiveProjectId = toText(projectId || draftProjectId);
   const effectiveSessionId = toText(sessionId || draftSessionId);
-  const hasActiveSession = effectiveSessionId.length > 0;
   const [uiTheme, setUiTheme] = useState("dark");
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("unviewed");
   const [notificationActionPending, setNotificationActionPending] = useState("");
   const [notificationActionError, setNotificationActionError] = useState({ rowId: "", text: "" });
-  // UXF addendum-3: статус в верхнем хедере — информационный, без действий
-  // (смена статуса — в списке сессий); меню проекта/сессии убраны (дубли
-  // рабочих действий, живут в сайдбаре/списках).
-  const normalizedSessionStatus = useMemo(
-    () => normalizeManualSessionStatus(sessionStatus, "draft"),
-    [sessionStatus],
-  );
   const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
   const sessionAggregateIds = useMemo(
     () => ((accountMenuOpen || notificationCenterOpen) ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
@@ -280,7 +237,6 @@ export default function TopBar({
     [activeOrgId, currentOrg],
   );
   const hasMultiOrg = orgList.length > 1;
-  const sessionStatusMeta = getManualSessionStatusMeta(normalizedSessionStatus);
   const canOpenOrgSettings = canOpenOrgSettingsRole(user, orgList, String(activeOrgId || ""));
   // Точка входа в technologist-воркфлоу (E1–E9): роли analyst/admin (роль из /api/auth/me)
   const canOpenTechnologist = Boolean(user?.is_admin) || ["analyst", "admin"].includes(String(user?.role || "").trim().toLowerCase());
@@ -464,80 +420,6 @@ export default function TopBar({
         >
           <span className="bg-gradient-to-r from-fg via-fg to-accent bg-clip-text text-transparent [text-shadow:0_1px_0_rgba(0,0,0,.14)]">ProcessMap</span>
         </div>
-        <button
-          type="button"
-          className="secondaryBtn h-8 min-h-0 shrink-0 whitespace-nowrap px-2.5 py-0 text-xs"
-          onClick={() => onOpenWorkspace?.()}
-          title={hasActiveSession ? "Вернуться к проекту" : "Вернуться к списку проектов"}
-          data-testid="topbar-back-projects"
-        >
-          {hasActiveSession ? "← К проекту" : "← Проекты"}
-        </button>
-        {hasActiveSession ? (
-          <nav
-            className="topbarCrumbs flex min-w-0 items-center gap-0.5 text-xs"
-            aria-label="Контекст: проект и сессия"
-            data-testid="topbar-breadcrumbs"
-          >
-            <button
-              type="button"
-              className="min-w-0 max-w-[180px] truncate rounded-md px-1.5 py-1 font-semibold text-fg transition hover:bg-accentSoft hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              title={`Проект: ${selectedProjectTitle} — к списку сессий`}
-              onClick={() => onOpenWorkspace?.()}
-              data-testid="topbar-crumb-project"
-            >
-              {effectiveProjectId ? shortLabel(selectedProjectTitle, 48) : "Проект не выбран"}
-            </button>
-            <span className="shrink-0 text-muted" aria-hidden="true">/</span>
-            <span
-              className="min-w-0 max-w-[200px] truncate px-1.5 py-1 text-muted"
-              title={`Сессия: ${selectedSessionTitle}`}
-              data-testid="topbar-crumb-session"
-            >
-              {shortLabel(selectedSessionTitle, 36)}
-            </span>
-            {tobeActive === true ? (
-              <>
-                <span className="shrink-0 text-muted" aria-hidden="true">/</span>
-                <span
-                  className="shrink-0 px-1.5 py-1 font-semibold text-fg"
-                  title="Режим: рабочее место TO BE"
-                  data-testid="topbar-crumb-tobe"
-                >
-                  TO BE
-                </span>
-              </>
-            ) : null}
-          </nav>
-        ) : null}
-      </div>
-
-      <div className="topCenter flex shrink-0 items-center justify-center">
-        {hasActiveSession ? (
-          <span
-            className="statusComboPill inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium"
-            style={{
-              backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.bg || "#F3F4F6",
-              color: STATUS_CHIP_STYLES[normalizedSessionStatus]?.text || "#4B5563",
-              borderColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.border || "#E5E7EB",
-            }}
-            title="Статус сессии"
-            data-testid="topbar-session-status"
-          >
-            {isChangingSessionStatus ? (
-              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.dot || "#9CA3AF" }}
-              />
-            )}
-            <span className="whitespace-nowrap">{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
-          </span>
-        ) : null}
       </div>
 
       <div className="topbarNavRight relative flex min-w-0 shrink-0 items-center justify-end gap-1.5 overflow-visible whitespace-nowrap">
