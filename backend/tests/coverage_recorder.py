@@ -35,7 +35,10 @@ def _record(method: str, url, status_code: int) -> None:
             if _out_file is None:
                 _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
                 _out_file = (_OUTPUT_DIR / "calls.jsonl").open("a", encoding="utf-8")
-            _out_file.write(json.dumps(row, ensure_ascii=False) + "\n")
+            # ensure_ascii=True: путь может содержать non-ASCII (напр. U+0085 NEL
+            # из фаззинга alias-роутов). Сырой NEL в JSONL ломает чтение через
+            # splitlines() в scripts/api_coverage_report.py (Unterminated string).
+            _out_file.write(json.dumps(row, ensure_ascii=True) + "\n")
             _out_file.flush()
     except Exception:
         # Регистратор не имеет права ломать тесты.
