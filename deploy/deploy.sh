@@ -51,6 +51,13 @@ else
   docker compose build --no-cache api frontend
 fi
 
+# 4b. Build agent/notifications: аддитивно, БЕЗ --no-cache (кэш слоёв сохраняем —
+# stage-машина слабая, сервисы меняются редко). Фатально при падении (set -e):
+# нельзя поднимать старый образ с виду успешного деплоя. Отличие от
+# health-ожидания agent (не фатально) осознанно: собрать код обязаны,
+# подняться контейнеру даём шанс с WARNING.
+docker compose build agent notifications
+
 # 5. Deprecate old running containers (rename so compose can create new ones)
 deprecate_old() {
   local svc="$1"
