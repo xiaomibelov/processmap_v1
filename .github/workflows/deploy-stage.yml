@@ -1,4 +1,4 @@
-name: Deploy to Stage
+name: Deploy to Legacy Host
 
 on:
   push:
@@ -11,6 +11,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # ДИСКЛЕЙМЕР: этот workflow деплоит НЕ на stage clearvestnic.ru:5177.
+      - name: Deploy target disclaimer
+        shell: bash
+        run: |
+          echo "::warning::This workflow deploys to /opt/processmap/app via STAGE_HOST secret — NOT to stage clearvestnic.ru:5177."
+          echo "::warning::Stage clearvestnic.ru:5177 обновляется только вручную через deploy/deploy.sh на сервере."
+
       - name: Checkout source
         uses: actions/checkout@v4
         with:

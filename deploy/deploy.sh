@@ -72,7 +72,9 @@ deprecate_old frontend
 # NB: миграции БД + сиды — в entrypoint api-контейнера (backend/docker-entrypoint.sh),
 # единая точка для любого пути деплоя. Здесь НЕ дублировать: прямой вызов
 # `alembic -c backend/alembic.ini` не работает (в ini placeholder fpc:***@postgres).
-docker compose up -d api frontend
+# agent/notifications включены в up: иначе они теряются при редеплое
+# (раньше поднимались ручным `docker compose up -d`).
+docker compose up -d api frontend agent notifications
 
 # 7. Healthcheck: wait for /version 200
 HEALTH_URL="http://localhost:${HOST_PORT:-8011}/version"
@@ -91,12 +93,45 @@ until curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; do
         docker start "${COMPOSE_PROJECT}-${svc}-1" || true
       fi
     done
-    docker compose up -d api frontend || true
+    docker compose up -d api frontend agent notifications || true
     exit 1
   fi
   sleep 2
 done
 echo "[DEPLOY] Healthcheck passed (${HEALTH_URL})"
+
+# 7b. Agent health (НЕ фатально): fallback — монолит с LLM_VIA_AGENT_SVC=0 рабочий,
+# поэтому нездоровый agent = warning, а не rollback.
+wait_svc_health() {
+  local svc="$1"
+  local container="${COMPOSE_PROJECT}-${svc}-1"
+  local tries=0
+  local status
+  while [ "$tries" -lt 15 ]; do
+    status=$(docker inspect -f '{{.State.Health.Status}}' "${container}" 2>/dev/null || echo "missing")
+    if [ "$status" = "healthy" ]; then
+      return 0
+    fi
+    if [ "$status" = "missing" ]; then
+      return 1
+    fi
+    tries=$((tries + 1))
+    sleep 2
+  done
+  return 1
+}
+
+if wait_svc_health agent; then
+  AGENT_HEALTH_BODY=$(docker exec "${COMPOSE_PROJECT}-agent-1" \
+    python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/health').read().decode())" 2>/dev/null || echo "")
+  if echo "${AGENT_HEALTH_BODY}" | grep -q '"service":"agent"'; then
+    echo "[DEPLOY] Agent healthcheck passed (${AGENT_HEALTH_BODY})"
+  else
+    echo "[DEPLOY] WARNING: agent healthy, но /health вернул неожиданное тело: ${AGENT_HEALTH_BODY:-<empty>}"
+  fi
+else
+  echo "[DEPLOY] WARNING: agent container НЕ healthy — продолжаю (монолит работает с LLM_VIA_AGENT_SVC=0)"
+fi
 
 # 8. Reload nginx
 docker exec "${COMPOSE_PROJECT}-frontend-1" nginx -s reload 2>/dev/null || true
@@ -115,3 +150,10 @@ done
 
 echo "[DEPLOY] Done. Active containers:"
 docker ps --filter "label=status=active" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# 11. Явный итог по здоровью всех сервисов контура деплоя
+echo "[DEPLOY] Health summary:"
+for svc in api frontend agent notifications; do
+  svc_health=$(docker inspect -f '{{.State.Health.Status}}' "${COMPOSE_PROJECT}-${svc}-1" 2>/dev/null || echo "not-running")
+  echo "[DEPLOY]   ${svc}: ${svc_health}"
+done
