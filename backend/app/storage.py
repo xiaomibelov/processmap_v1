@@ -1069,6 +1069,17 @@ def _column_exists(con: Any, table: str, column: str) -> bool:
 
 
 def _table_exists(con: Any, table: str) -> bool:
+    if isinstance(con, _PgCompatConnection):
+        # PG: нельзя probing-запросом `SELECT 1 FROM <table>` — на отсутствующей
+        # таблице он бросает UndefinedTable и abort'ит всю транзакцию
+        # (свежая БД: _ensure_schema падал с InFailedSqlTransaction, crash-loop api).
+        # information_schema-запрос безопасен: не бросает на missing table.
+        rows = con.execute(
+            "SELECT 1 FROM information_schema.tables"
+            " WHERE table_schema = current_schema() AND table_name = %s LIMIT 1",
+            [table],
+        ).fetchall()
+        return bool(rows)
     try:
         con.execute(f"SELECT 1 FROM {table} LIMIT 1")
         return True
