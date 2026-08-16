@@ -41,6 +41,7 @@ from .transformation import router as transformation_router
 from .kitchens import router as kitchens_router
 from .sku_bindings import router as sku_bindings_router
 from .audit_log import router as audit_log_router
+from .agent_chat import router as agent_chat_router
 
 # (router, openapi_tags).  Routers that already set their own tags keep them;
 # the tuple provides a fallback/default tag for Swagger UI grouping.
@@ -88,4 +89,5 @@ ROUTERS = (
     (sku_bindings_router, ["sku-bindings"]),
     (audit_log_router, ["audit-log"]),
     (health_router, ["health"]),
+    (agent_chat_router, ["agent"]),
 )
