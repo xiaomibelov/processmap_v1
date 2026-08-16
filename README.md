@@ -6,6 +6,9 @@ Food Process Copilot (MVP)
 - backend API: http://localhost:${HOST_PORT}
 - если ранее использовался сервис `app`, запустить один раз: `docker compose up -d --remove-orphans`
 
+Деплой:
+- stage clearvestnic.ru:5177 обновляется только вручную через deploy/deploy.sh на сервере (CI-workflow «Deploy to Legacy Host» деплоит на другой хост).
+
 Сценарий:
 - Новая сессия
 - Вставляешь заметки
