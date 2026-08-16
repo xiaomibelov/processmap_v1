@@ -15,6 +15,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { explorerPageQueryKey, explorerPageQueryOptions } from "./explorerPageQuery.js";
 import SessionCreateModal from "./SessionCreateModal.jsx";
 import {
   apiRenameWorkspace,
@@ -1127,6 +1129,11 @@ function WorkspaceSidebar({
 }) {
   const [creating, setCreating] = useState(false);
   const [renamingWorkspace, setRenamingWorkspace] = useState(null);
+  const queryClient = useQueryClient();
+  const prefetchWorkspace = (wsId) => {
+    if (!wsId || wsId === activeWorkspaceId) return;
+    queryClient.prefetchQuery(explorerPageQueryOptions(wsId, ""));
+  };
   return (
     <div className="h-full flex flex-col border-r border-border bg-panel2 select-none">
       <div className="px-3 pt-3 pb-2 flex items-center justify-between">
@@ -1156,6 +1163,8 @@ function WorkspaceSidebar({
         {workspaces.map((ws) => (
           <div
             key={ws.id}
+            onMouseEnter={() => prefetchWorkspace(ws.id)}
+            onFocus={() => prefetchWorkspace(ws.id)}
             className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors rounded-none
               ${ws.id === activeWorkspaceId
                 ? "bg-accentSoft text-accent font-medium"
@@ -1551,9 +1560,22 @@ function ExplorerPane({
   permissions,
   portalHeader = true,
 }) {
-  const [page, setPage] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
+  // P5 [В]: explorer page payload lives in react-query cache. On workspace
+  // switch keepPreviousData keeps the previous page rendered (no skeleton,
+  // header DOM node is preserved); hover-prefetch in WorkspaceSidebar makes
+  // the target workspace resolve instantly from cache.
+  const pageQuery = useQuery({
+    ...explorerPageQueryOptions(workspaceId, folderId || ""),
+    enabled: Boolean(workspaceId),
+    placeholderData: keepPreviousData,
+  });
+  const page = pageQuery.data || null;
+  const loading = !page && pageQuery.isPending;
+  const [actionError, setActionError] = useState("");
+  const error = pageQuery.error
+    ? String(pageQuery.error?.message || "Ошибка загрузки")
+    : actionError;
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [movingFolder, setMovingFolder] = useState(null);
@@ -1612,20 +1634,11 @@ function ExplorerPane({
         loadErrorByFolder: {},
       }));
     }
-    setLoading(true);
-    setError("");
-    try {
-      const resp = await apiGetExplorerPage(workspaceId, folderId || "");
-      if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки");
-      setPage(resp?.data || resp);
-    } catch (e) {
-      setError(String(e?.message || "Ошибка загрузки"));
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, folderId, setTreeStateForContext]);
-
-  useEffect(() => { load(); }, [load]);
+    await queryClient.invalidateQueries({
+      queryKey: explorerPageQueryKey(workspaceId, folderId || ""),
+      refetchType: "active",
+    });
+  }, [workspaceId, folderId, queryClient, setTreeStateForContext]);
 
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
@@ -1814,7 +1827,7 @@ function ExplorerPane({
     const normalizedStatus = normalizeExplorerContextStatus(nextStatus);
     const folderIdToUpdate = String(folder?.id || "").trim();
     if (!workspaceId || !folderIdToUpdate) return false;
-    setError("");
+    setActionError("");
     setMoveNotice("");
     try {
       const resp = await apiUpdateFolder(workspaceId, folderIdToUpdate, { context_status: normalizedStatus });
@@ -1823,7 +1836,7 @@ function ExplorerPane({
       setMoveNotice("Статус обновлён.");
       return true;
     } catch (e) {
-      setError(String(e?.message || e || "Не удалось обновить статус"));
+      setActionError(String(e?.message || e || "Не удалось обновить статус"));
       return false;
     }
   }, [load, workspaceId]);
@@ -1855,7 +1868,7 @@ function ExplorerPane({
       }));
     } catch (e) {
       const message = String(e?.message || "Ошибка загрузки вложенной папки");
-      setError(message);
+      setActionError(message);
       setTreeStateForContext((prev) => ({
         ...prev,
         loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: message },
