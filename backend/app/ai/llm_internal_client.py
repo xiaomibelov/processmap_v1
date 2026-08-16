@@ -47,8 +47,10 @@ def _post(path: str, body: Dict[str, Any], timeout_sec: int) -> Dict[str, Any]:
 
     # запас над timeout_sec: внутри сервиса gateway делает до 2 попыток на провайдера.
     http_timeout = max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)) * 2 + 10
+    # AGENT-SVC: internal endpoints сервиса требуют общий секрет (X-Internal-Token).
+    headers = {"X-Internal-Token": str(os.environ.get("AGENT_SVC_INTERNAL_TOKEN") or "").strip()}
     try:
-        resp = httpx.post(f"{base}{path}", json=body, timeout=http_timeout)
+        resp = httpx.post(f"{base}{path}", json=body, headers=headers, timeout=http_timeout)
     except Exception as exc:
         return _error_result(f"agent-svc unreachable: {exc.__class__.__name__}: {exc}", started)
     if resp.status_code != 200:
