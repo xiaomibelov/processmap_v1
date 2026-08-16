@@ -10,6 +10,7 @@ import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
 import AnalyticsPage from "../features/analytics/AnalyticsPage.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
+import { ExplorerQueryProvider } from "../features/explorer/ExplorerQueryProvider.jsx";
 import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
@@ -7726,6 +7727,7 @@ function ProcessStage({
               )}
             </div>
           ) : (
+            <ExplorerQueryProvider>
             <WorkspaceExplorer
               activeOrgId={workspaceActiveOrgId}
               requestProjectId={activeProjectId}
@@ -7734,6 +7736,7 @@ function ProcessStage({
               onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
               onClearRequestedProject={onClearWorkspaceProject}
             />
+            </ExplorerQueryProvider>
           )
         ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active || dashboardsRoute.active ? (
           <div className="analyticsSurfaceLayout">
