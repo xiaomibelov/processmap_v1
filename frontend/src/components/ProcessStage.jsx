@@ -7627,7 +7627,9 @@ function ProcessStage({
 
   return (
     <ProcessStageShell className={shellClassName}>
-      <ProcessStageHeader view={headerView} />
+      {/* Часть А: в explorer-режиме (без сессии) тулбар-хедер с табами сессии
+          скрыт — навигационная зона живёт в общем слоте workspaceMain. */}
+      {hasSession ? <ProcessStageHeader view={headerView} /> : null}
       {/* FIX-V (блок 2, U1/U2): единый toast-viewport — стек под тулбаром,
           не перекрывает контролы, pointer-events только у карточек. */}
       <ProcessToastViewport

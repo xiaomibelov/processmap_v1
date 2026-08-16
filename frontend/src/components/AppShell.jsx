@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
 import {
@@ -6,6 +6,8 @@ import {
   buildAnalyticsPath,
 } from "../app/processMapRouteModel.js";
 import SidebarHandle from "./sidebar/SidebarHandle";
+import SessionNavStrip from "./SessionNavStrip.jsx";
+import { WorkspaceMainNavSlotContext } from "./workspaceMainNavSlot.js";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
 import { appVersionInfo } from "../config/appVersion.js";
 import AppUpdateBanner from "../features/appUpdate/AppUpdateBanner.jsx";
@@ -16,6 +18,10 @@ import useSidebarWidth from "./sidebar/useSidebarWidth.js";
 function isUpdatesHash() {
   if (typeof window === "undefined") return false;
   return String(window.location.hash || "").trim().toLowerCase() === "#updates";
+}
+
+function toText(v) {
+  return String(v || "").trim();
 }
 
 function normalizeChangelogLink(raw) {
@@ -169,6 +175,27 @@ export default function AppShell({
   tobeEntry = null,  // UXF: точка входа «Создать/Открыть TO BE» в тулбаре диаграммы
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
+  // Часть А (nav-zone): заголовки для полосы сессии над ProcessStageHeader.
+  const stripProjectTitle = useMemo(() => {
+    const fromContext = toText(projectRouteContext?.projectTitle);
+    if (fromContext) return fromContext;
+    const pid = toText(projectId || draft?.project_id || draft?.projectId);
+    if (!pid) return "";
+    const found = (Array.isArray(projects) ? projects : []).find(
+      (item) => toText(item?.id || item?.project_id) === pid,
+    );
+    return toText(found?.name || found?.title || found?.project_name);
+  }, [projectRouteContext, projectId, draft, projects]);
+  const stripSessionTitle = useMemo(() => {
+    const fromDraft = toText(draft?.title || draft?.name);
+    if (fromDraft) return fromDraft;
+    const sid = toText(shellSessionId || sessionId);
+    if (!sid) return "";
+    const found = (Array.isArray(sessions) ? sessions : []).find(
+      (item) => toText(item?.id || item?.session_id) === sid,
+    );
+    return toText(found?.title || found?.name);
+  }, [draft, shellSessionId, sessionId, sessions]);
   // W4: в режиме TO BE (stageOverride) панель рабочего места живёт в левом
   // сайдбаре — его нельзя прятать, иначе панель становится невидимой.
   const effectiveLeftHidden = stageOverride ? false : (hasActiveSession ? !!leftHidden : true);
@@ -182,6 +209,7 @@ export default function AppShell({
     ? String(latestChangeEntry.changes[0] || "").trim()
     : "";
   const [updatesOpen, setUpdatesOpen] = useState(() => isUpdatesHash());
+  const [navSlotEl, setNavSlotEl] = useState(null);
   const [isAnalyticsActive, setIsAnalyticsActive] = useState(() => {
     if (typeof window === "undefined") return false;
     return String(window.location.pathname || "").startsWith("/analytics");
@@ -344,7 +372,22 @@ export default function AppShell({
           ) : null}
         </div>
         <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
-          {stageOverride ? (
+          <WorkspaceMainNavSlotContext.Provider value={navSlotEl}>
+            <div ref={setNavSlotEl} data-testid="workspace-main-nav">
+              {hasActiveSession ? (
+                <SessionNavStrip
+                  breadcrumbBase={projectRouteContext?.breadcrumbBase || []}
+                  projectTitle={stripProjectTitle}
+                  sessionTitle={stripSessionTitle}
+                  tobeActive={!!stageOverride}
+                  sessionStatus={sessionStatus}
+                  isChangingStatus={isChangingSessionStatus}
+                  onBackToProject={() => onReturnToSessionList?.()}
+                  onOpenWorkspace={() => onProjectChange?.("")}
+                />
+              ) : null}
+            </div>
+            {stageOverride ? (
             stageOverride
           ) : updatesOpen ? (
             <AppUpdatesPage onClose={closeUpdatesPage} />
@@ -405,6 +448,7 @@ export default function AppShell({
               modeSwitch={modeSwitch}
             />
           )}
+          </WorkspaceMainNavSlotContext.Provider>
         </div>
       </div>
 
