@@ -13,6 +13,9 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          # полная история нужна шагу "Detect agent service changes" (git diff before..sha)
+          fetch-depth: 0
 
       - name: Compute build metadata
         id: meta
@@ -28,6 +31,27 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      # AGENT-SVC: agent-образ собираем только при изменении backend/services/agent/**
+      # (решение владельца). Если before-sha недоступен — считаем изменённым (safe).
+      - name: Detect agent service changes
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [ -z "${before}" ] || [ "${before}" = "0000000000000000000000000000000000000000" ]; then
+            echo "[changes] before-sha unavailable; assuming agent changed"
+            echo "agent=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if git diff --name-only "${before}" "${GITHUB_SHA}" | grep -q '^backend/services/agent/'; then
+            echo "[changes] backend/services/agent changed"
+            echo "agent=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "[changes] backend/services/agent unchanged"
+            echo "agent=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Build stage api image
         uses: docker/build-push-action@v6
@@ -66,18 +90,29 @@ jobs:
           load: true
           tags: processmap_stage-notifications:${{ github.sha }}
 
+      - name: Build stage agent image
+        if: steps.changes.outputs.agent == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/services/agent
+          file: ./backend/services/agent/Dockerfile
+          load: true
+          tags: processmap_stage-agent:${{ github.sha }}
+
       - name: Pack stage images
         shell: bash
         run: |
           set -euo pipefail
-          docker image inspect \
-            "processmap_stage-api:${GITHUB_SHA}" \
-            "processmap_stage-frontend:${GITHUB_SHA}" \
-            "processmap_stage-notifications:${GITHUB_SHA}" >/dev/null
-          docker save \
-            "processmap_stage-api:${GITHUB_SHA}" \
-            "processmap_stage-frontend:${GITHUB_SHA}" \
-            "processmap_stage-notifications:${GITHUB_SHA}" \
+          images=(
+            "processmap_stage-api:${GITHUB_SHA}"
+            "processmap_stage-frontend:${GITHUB_SHA}"
+            "processmap_stage-notifications:${GITHUB_SHA}"
+          )
+          if [ "${{ steps.changes.outputs.agent }}" = "true" ]; then
+            images+=("processmap_stage-agent:${GITHUB_SHA}")
+          fi
+          docker image inspect "${images[@]}" >/dev/null
+          docker save "${images[@]}" \
             | gzip -1 > "${{ steps.meta.outputs.bundle_name }}"
           gzip -t "${{ steps.meta.outputs.bundle_name }}"
           ls -lh "${{ steps.meta.outputs.bundle_name }}"
@@ -248,6 +283,15 @@ jobs:
               "processmap_stage-frontend:${DEPLOY_SHA}" \
               "processmap_stage-notifications:${DEPLOY_SHA}" >/dev/null
 
+            # AGENT-SVC: agent-образ собран только если менялся backend/services/agent/**.
+            # Иначе running agent-контейнер (если есть) остаётся на прежнем образе.
+            AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
+            if [ "${AGENT_CHANGED}" = "true" ]; then
+              docker image inspect "processmap_stage-agent:${DEPLOY_SHA}" >/dev/null
+            else
+              echo "[deploy-stage] agent unchanged; skipping agent image inspect/restart"
+            fi
+
             echo "[deploy-stage] current frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
             echo "[deploy-stage] current frontend assets:"
@@ -261,12 +305,16 @@ jobs:
               rm -fsv frontend 2>/dev/null || true
             docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
+            UP_SERVICES="api frontend notifications"
+            if [ "${AGENT_CHANGED}" = "true" ]; then
+              UP_SERVICES="${UP_SERVICES} agent"
+            fi
             STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-build --no-deps --force-recreate -V api frontend notifications
+              up -d --no-build --no-deps --force-recreate -V ${UP_SERVICES}
 
             echo "[deploy-stage] new frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true

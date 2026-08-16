@@ -42,7 +42,9 @@ def _post(path: str, body: Dict[str, Any], timeout_sec: int) -> Dict[str, Any]:
     base = _base_url()
     if not base:
         return _error_result("AGENT_SVC_URL is not set", started)
-    # lazy import: httpx пока dev-зависимость (requirements-dev.txt), прод-пин — Phase 3.
+    # lazy import: модуль импортируется даже при выключенном флаге
+    # (LLM_VIA_AGENT_SVC=0); httpx запинован в requirements.txt (Phase 3),
+    # lazy import оставлен, чтобы импорт модуля не требовал httpx зря.
     import httpx
 
     # запас над timeout_sec: внутри сервиса gateway делает до 2 попыток на провайдера.
