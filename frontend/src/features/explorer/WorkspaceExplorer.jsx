@@ -1573,6 +1573,13 @@ function ExplorerPane({
   const page = pageQuery.data || null;
   const loading = !page && pageQuery.isPending;
   const [actionError, setActionError] = useState("");
+  // Успешный refetch сбрасывает action-ошибку (раньше это делал setError("")
+  // в начале load()). Зависимость от dataUpdatedAt — срабатывает только на
+  // новые данные, без эффект-петли; query-error не затирается, т.к. имеет
+  // приоритет в `error` ниже.
+  useEffect(() => {
+    if (pageQuery.isSuccess) setActionError("");
+  }, [pageQuery.dataUpdatedAt, pageQuery.isSuccess]);
   const error = pageQuery.error
     ? String(pageQuery.error?.message || "Ошибка загрузки")
     : actionError;
