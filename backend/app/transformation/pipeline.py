@@ -206,13 +206,18 @@ def _default_llm_call(system_prompt: str, user_prompt: str) -> str:
     Промт (system) — из llm_prompts(feature=as_is_transform, active), сид v1 —
     миграция 014; текст совпадает с LLM_SYSTEM_PROMPT.
     """
-    from ..ai.gateway import complete
+    from ..ai import llm_internal_client
+
+    if llm_internal_client.enabled():
+        complete_fn = llm_internal_client.complete
+    else:
+        from ..ai.gateway import complete as complete_fn
 
     try:
         payload = json.loads(user_prompt)
     except Exception:
         payload = {"input": user_prompt}
-    result = complete(LLM_FEATURE, payload, max_tokens=LLM_MAX_TOKENS)
+    result = complete_fn(LLM_FEATURE, payload, max_tokens=LLM_MAX_TOKENS)
     if not result.get("ok"):
         raise RuntimeError(f"llm gateway {result.get('status')}: {result.get('error')}")
     return str(result.get("text") or "")
