@@ -56,9 +56,9 @@ test("T2: styled-модал отрендерен в App и использует 
   assert.doesNotMatch(modal, /Сохранить и выйти|Выйти без сохранения/); // строки — только из словарей
 });
 
-test("T2: крошка «TO BE» в TopBar и транзит из AppShell", () => {
-  const topbar = readFileSync(new URL("../../../components/TopBar.jsx", import.meta.url), "utf8");
-  assert.match(topbar, /data-testid="topbar-crumb-tobe"/);
+test("T2: крошка «TO BE» в полосе сессии и транзит из AppShell", () => {
+  const strip = readFileSync(new URL("../../../components/SessionNavStrip.jsx", import.meta.url), "utf8");
+  assert.match(strip, /data-testid="topbar-crumb-tobe"|testId: "topbar-crumb-tobe"/);
   const shell = readFileSync(new URL("../../../components/AppShell.jsx", import.meta.url), "utf8");
   assert.match(shell, /tobeActive=\{!!stageOverride\}/);
 });
