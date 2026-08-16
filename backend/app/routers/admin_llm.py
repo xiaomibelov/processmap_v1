@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from .. import _legacy_main
 from ..ai import llm_store
-from ..ai.deepseek_questions import _deepseek_chat_request
+from ..ai.llm_http_client import _deepseek_chat_request
 from .admin import _platform_admin_context
 
 router = APIRouter()

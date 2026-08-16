@@ -27,6 +27,7 @@ from ..sessions_graph import _request_context
 from ..utils.session_helpers import raise_session_not_found
 from ..validation.service import FORBIDDEN_OPERATION_CODES, load_catalog_from_db
 from .gateway import complete, complete_cached
+from . import llm_internal_client
 from .process_analysis import _extract_json
 from .process_projection import build_process_projection, projection_digest
 
@@ -34,6 +35,13 @@ FEATURE = "schema_assistant"
 MAX_TOKENS = 800  # LLM3 (решение владельца: жёсткий лимит ≤800)
 
 _SUGGEST_TAIL = 8  # хвост проекции в контексте suggest_next (экономия токенов)
+
+
+def _llm_backend():
+    """LLM_VIA_AGENT_SVC=1 → agent-сервис (internal API); иначе монолитный gateway (дефолт)."""
+    if llm_internal_client.enabled():
+        return llm_internal_client.complete, llm_internal_client.complete_cached
+    return complete, complete_cached
 
 
 def _canonical(payload: Any) -> str:
@@ -69,11 +77,12 @@ def _call_llm(payload: Dict[str, Any], digest: str, sess: Any, ctx: Dict[str, An
         "org_id": org_id,
         "max_tokens": MAX_TOKENS,
     }
+    complete_fn, complete_cached_fn = _llm_backend()
     if int(force or 0) == 1:
-        result = complete(FEATURE, payload, **kwargs)
+        result = complete_fn(FEATURE, payload, **kwargs)
         result["cached"] = False
         return result
-    return complete_cached(FEATURE, digest, payload, **kwargs)
+    return complete_cached_fn(FEATURE, digest, payload, **kwargs)
 
 
 def _usage_extra(result: Dict[str, Any]) -> Dict[str, Any]:
