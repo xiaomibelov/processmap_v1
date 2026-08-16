@@ -8,6 +8,7 @@ Food Process Copilot (MVP)
 
 Деплой:
 - stage clearvestnic.ru:5177 обновляется только вручную через deploy/deploy.sh на сервере (CI-workflow «Deploy to Legacy Host» деплоит на другой хост).
+- deploy.sh собирает и поднимает api, frontend, agent, notifications.
 
 Сценарий:
 - Новая сессия
