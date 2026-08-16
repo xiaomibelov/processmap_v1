@@ -36,8 +36,9 @@ def _parse_date(value: Optional[str], *, end_of_day: bool = False) -> int:
     src = str(value or "").strip()
     if not src:
         return 0
-    if src.isdigit():
+    if src.isascii() and src.isdigit():
         # sqlite INTEGER — 64-бит; гигантские ts падают OverflowError на bind.
+        # isascii(): "¹".isdigit() == True, но int("¹") -> ValueError (contract-fuzz 500).
         return min(int(src), 2**62 - 1)
     if _DATE_RE.match(src):
         try:
