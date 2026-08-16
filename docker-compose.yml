@@ -16,6 +16,10 @@ services:
       - FPC_DB_POOL_MAX_SIZE=${FPC_DB_POOL_MAX_SIZE:-8}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REDIS_REQUIRED=${REDIS_REQUIRED:-1}
+      # AGENT-SVC: трафик LLM через agent-сервис выключен по умолчанию (0).
+      - AGENT_SVC_URL=${AGENT_SVC_URL:-http://agent:8000}
+      - AGENT_SVC_INTERNAL_TOKEN=${AGENT_SVC_INTERNAL_TOKEN:-change_me_internal}
+      - LLM_VIA_AGENT_SVC=${LLM_VIA_AGENT_SVC:-0}
     ports:
       - "${HOST_PORT:-8011}:8000"
     volumes:
@@ -149,6 +153,38 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # AGENT-SVC: отдельный agent-сервис. Без внешних ports — доступен только
+  # из docker-сети (nginx внутри сети и монолит api). Трафик монолита на него
+  # не переключён: LLM_VIA_AGENT_SVC=0 по умолчанию.
+  agent:
+    build:
+      context: ./backend/services/agent
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://fpc:fpc@postgres:5432/processmap}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET:-dev-insecure-change-me}
+      - MONOLITH_INTERNAL_URL=${MONOLITH_INTERNAL_URL:-http://api:8000}
+      - AGENT_SVC_INTERNAL_TOKEN=${AGENT_SVC_INTERNAL_TOKEN:-change_me_internal}
+      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 volumes:
   postgres_data:
   kanboard_data:
