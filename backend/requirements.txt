@@ -4,6 +4,10 @@ pydantic==2.6.4
 PyYAML==6.0.1
 python-multipart==0.0.9
 requests==2.31.0
+# AGENT-SVC: internal LLM-клиент монолита (llm_internal_client) ходит в
+# agent-сервис по httpx. Пин <0.28: starlette<0.37 несовместим с httpx 0.28
+# (AsyncClient.__init__() got an unexpected keyword argument 'app').
+httpx==0.27.2
 redis==5.0.4
 psycopg[binary]==3.2.12
 psycopg_pool==3.2.6

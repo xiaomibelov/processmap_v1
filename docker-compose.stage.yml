@@ -27,6 +27,9 @@ services:
   notifications:
     image: processmap_stage-notifications:${STAGE_IMAGE_TAG:-local}
 
+  agent:
+    image: processmap_stage-agent:${STAGE_IMAGE_TAG:-local}
+
 networks:
   edge_shared:
     name: ${EDGE_NETWORK_NAME:?EDGE_NETWORK_NAME is required}
