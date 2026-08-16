@@ -1,0 +1,35 @@
+name: Agent Service Guard
+
+# AGENT-SVC: lint-гейт запрета импортов монолита (backend.app.*/app.*) в
+# agent-сервисе. Решение владельца 2026-08-16 — жёсткое правило без исключений.
+# AST-вариант того же правила: backend/services/agent/tests/test_no_monolith_imports.py.
+
+on:
+  pull_request:
+    paths:
+      - "backend/services/agent/**"
+      - ".github/workflows/agent-svc-guard.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/services/agent/**"
+      - ".github/workflows/agent-svc-guard.yml"
+
+jobs:
+  no-monolith-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Forbid monolith imports in agent service
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -rnE '^[[:space:]]*(from|import)[[:space:]]+(app|backend)(\.|[[:space:]])' \
+              backend/services/agent --include='*.py'; then
+            echo "::error::backend/services/agent must not import the monolith (app.*/backend.*)"
+            exit 1
+          fi
+          echo "OK: no monolith imports under backend/services/agent"
