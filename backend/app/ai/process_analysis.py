@@ -26,6 +26,7 @@ from ..sessions_graph import _request_context
 from ..utils.session_helpers import raise_session_not_found
 from ..validation.service import ALLOWED_OPERATION_CODES, FORBIDDEN_OPERATION_CODES
 from .gateway import complete, complete_cached
+from . import llm_internal_client
 from .process_projection import build_process_projection, projection_digest
 
 FEATURE = "process_analysis"
@@ -130,6 +131,13 @@ def _empty_analysis() -> Dict[str, Any]:
     return {"bottlenecks": [], "robotization_candidates": [], "risks": [], "open_questions": []}
 
 
+def _llm_backend():
+    """LLM_VIA_AGENT_SVC=1 → agent-сервис (internal API); иначе монолитный gateway (дефолт)."""
+    if llm_internal_client.enabled():
+        return llm_internal_client.complete, llm_internal_client.complete_cached
+    return complete, complete_cached
+
+
 def llm_process_analysis(session_id: str, request: Request = None, force: int = 0) -> Dict[str, Any]:
     """POST /api/sessions/{session_id}/llm/analysis (?force=1 — обход кэша)."""
     ctx = _request_context(request)
@@ -156,11 +164,12 @@ def llm_process_analysis(session_id: str, request: Request = None, force: int = 
         "max_tokens": MAX_TOKENS,
     }
 
+    complete_fn, complete_cached_fn = _llm_backend()
     if int(force or 0) == 1:
-        result = complete(FEATURE, projection, **call_kwargs)
+        result = complete_fn(FEATURE, projection, **call_kwargs)
         result["cached"] = False
     else:
-        result = complete_cached(FEATURE, digest, projection, **call_kwargs)
+        result = complete_cached_fn(FEATURE, digest, projection, **call_kwargs)
 
     base: Dict[str, Any] = {
         "session_id": sid,
