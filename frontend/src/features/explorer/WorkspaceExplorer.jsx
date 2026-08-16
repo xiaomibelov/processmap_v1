@@ -85,6 +85,17 @@ import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
 import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "../navigation/appLinkBehavior.js";
 import AnalyticsPage from "../analytics/AnalyticsPage.jsx";
+import {
+  avatarColorFromName,
+  compositionProjectsText,
+  firstName,
+  formatAbsoluteDateTime,
+  formatRelativeTime,
+  initialsFromName,
+  sessionsCounterText,
+  sessionsProgressPercent,
+  sessionsTooltipText,
+} from "./explorerTableFormat.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
@@ -174,15 +185,7 @@ function IcoMove({ className = "" }) {
 // ─── Small helpers ─────────────────────────────────────────────────────────────
 
 function ts(epoch) {
-  if (!epoch) return "";
-  const d = new Date(epoch * 1000);
-  const now = Date.now();
-  const diff = now - d.getTime();
-  if (diff < 60_000) return "только что";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин назад`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч назад`;
-  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} д назад`;
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" });
+  return formatRelativeTime(epoch);
 }
 
 function activitySourceLabel(node) {
@@ -505,17 +508,71 @@ function ConfirmModal({ title, message, actionLabel = "Удалить", danger =
 }
 
 function AssigneeCell({ item }) {
-  const label = getExplorerBusinessAssigneeLabel(item);
-  const empty = label === "—";
   const user = getExplorerBusinessAssignee(item);
-  const title = empty ? "Не назначен" : formatExplorerUserDisplay(user);
+  const fullName = formatExplorerUserDisplay(user);
+  if (!fullName) {
+    return <span className="text-[12.5px] text-muted/80">Не назначен</span>;
+  }
+  const jobTitle = String(user?.job_title || user?.role || "").trim();
+  const tooltip = jobTitle ? `${fullName} · ${jobTitle}` : fullName;
   return (
-    <span
-      className={`block max-w-[150px] truncate text-[11px] ${empty ? "text-muted/70" : "text-fg/70"}`}
-      title={title || label}
-    >
-      {label}
+    <span className="flex min-w-0 items-center gap-2" title={tooltip}>
+      <span
+        className="inline-flex h-[26px] w-[26px] shrink-0 select-none items-center justify-center rounded-full text-[10.5px] font-semibold tracking-[0.02em] text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)]"
+        style={{ backgroundColor: avatarColorFromName(fullName) }}
+        aria-hidden
+      >
+        {initialsFromName(fullName)}
+      </span>
+      <span className="truncate text-[12.5px] text-muted">{firstName(fullName)}</span>
     </span>
+  );
+}
+
+function CompositionCell({ item }) {
+  const isFolder = String(item?.type || "").trim().toLowerCase() === "folder";
+  // Знаменатель прогресса — только «активные» сессии (без архивных/удалённых).
+  // Fallback на общий sessions_count для старых ответов API без trackable-полей.
+  const total = isFolder
+    ? (item?.descendant_trackable_sessions_count ?? item?.descendant_sessions_count)
+    : (item?.trackable_sessions_count ?? item?.descendant_sessions_count ?? item?.sessions_count);
+  const done = isFolder ? item?.descendant_done_sessions_count : item?.done_sessions_count;
+  const pct = sessionsProgressPercent(done, total);
+  return (
+    <div className="flex min-w-0 items-center gap-3 text-[12.5px] text-muted">
+      {isFolder ? (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title="Проектов в разделе">
+          <IcoFolder className="h-3.5 w-3.5 shrink-0 text-muted/70" />
+          <span className="font-semibold tabular-nums text-fg">{compositionProjectsText(item?.descendant_projects_count)}</span>
+        </span>
+      ) : null}
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={sessionsTooltipText(done, total)}>
+        <span className="inline-block h-1 w-11 shrink-0 overflow-hidden rounded-full bg-border">
+          <span
+            className="block h-full rounded-full bg-emerald-600 transition-[width] duration-300"
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+        <span className="font-mono text-[11.5px] tabular-nums">{sessionsCounterText(done, total)}</span>
+      </span>
+    </div>
+  );
+}
+
+function UpdatedCell({ node }) {
+  const epoch = node?.rollup_activity_at || node?.updated_at;
+  const rel = formatRelativeTime(epoch);
+  const label = activitySourceLabel(node);
+  const hasLabel = Boolean(label) && label !== "—";
+  const abs = formatAbsoluteDateTime(epoch);
+  const title = [abs, hasLabel ? label : ""].filter(Boolean).join(" · ");
+  return (
+    <td className="px-2 py-2.5" title={title || undefined}>
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        <span className="whitespace-nowrap text-[12.5px] font-semibold tabular-nums text-fg">{rel || "—"}</span>
+        {hasLabel ? <span className="truncate text-xs text-muted/90">{label}</span> : null}
+      </div>
+    </td>
   );
 }
 
@@ -1202,7 +1259,6 @@ function FolderRow({
   const [deleting, setDeleting] = useState(false);
   const expandable = hasFolderChildren(folder);
   const leftPadding = 8 + depth * 18;
-  const dodPercent = normalizeDodPercent(folder.rollup_dod_percent);
   const folderLabel = folderDisplayLabel({ folder, depth, currentFolderId });
   const folderLabelAccusative = folderLabel === "Раздел" ? "раздел" : "папку";
   const folderLabelGenitive = folderLabel === "Раздел" ? "раздела" : "папки";
@@ -1251,16 +1307,8 @@ function FolderRow({
           </div>
         </td>
         <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" label={folderLabel} /></td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">
-          {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
-        </td>
-        <td className="px-2 py-2.5 text-xs text-muted text-center">
-          <span className="text-[11px] text-fg/60">Проектов: {folder.descendant_projects_count ?? 0}</span>
-        </td>
+        <td className="px-2 py-2.5"><CompositionCell item={folder} /></td>
         <td className="px-2 py-2.5"><AssigneeCell item={folder} /></td>
-        <td className="px-2 py-2.5">
-          {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
-        </td>
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -1274,8 +1322,7 @@ function FolderRow({
             <ContextStatusBadge value={folder.context_status} />
           )}
         </td>
-        <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
-        <LastActivityCell node={folder} maxWidthClass="max-w-[180px]" quiet />
+        <UpdatedCell node={folder} />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
@@ -1346,7 +1393,6 @@ function ProjectRow({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const leftPadding = 8 + depth * 18;
-  const dodPercent = normalizeDodPercent(project.dod_percent);
   const normalizedStatus = String(project.status || "").trim().toLowerCase();
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const assigneeActionLabel = getExplorerAssigneeActionLabel(project);
@@ -1379,16 +1425,8 @@ function ProjectRow({
           </div>
         </td>
         <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="project" /></td>
-        <td className="px-2 py-2.5 text-center">
-          <span className="text-xs text-muted">{project.descendant_sessions_count ?? project.sessions_count ?? 0} сессий</span>
-        </td>
-        <td className="px-2 py-2.5">
-          <span className="text-xs text-muted/70">—</span>
-        </td>
+        <td className="px-2 py-2.5"><CompositionCell item={project} /></td>
         <td className="px-2 py-2.5"><AssigneeCell item={project} /></td>
-        <td className="px-2 py-2.5">
-          {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
-        </td>
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
         <td className="px-2 py-2.5">
@@ -1396,8 +1434,7 @@ function ProjectRow({
             ? <span className="text-xs text-muted/70">—</span>
             : <StatusBadge status={project.status} />}
         </td>
-        <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
-        <LastActivityCell node={project} maxWidthClass="max-w-[180px]" quiet />
+        <UpdatedCell node={project} />
         <td className="px-2 py-2.5 text-right relative" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1.5">
             <AppRouteLink
@@ -1593,9 +1630,7 @@ function ExplorerPane({
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
-  const inlineColSpan = treeColumnProfile.showSignalColumns ? 11 : 9;
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
-  const folderCountHeader = folderId ? "Папки / Сессии" : "Разделы / Сессии";
   const contextHeaderTitle = folderId
     ? "Для папок: количество проектов"
     : "Для разделов: количество проектов";
@@ -1623,6 +1658,7 @@ function ExplorerPane({
     }),
     [sortedRootItems, treeState.expandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
+  const inlineColSpan = treeColumnProfile.showSignalColumns ? 9 : 7;
   const searchIndex = useMemo(
     () => buildExplorerSearchIndex({
       rootItems,
@@ -2016,20 +2052,25 @@ function ExplorerPane({
       ) : visibleSearchModel.active ? (
         <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
       ) : !isEmpty ? (
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full table-fixed text-left border-collapse">
+        // Сетка ширин таблицы «Проекты» (ТЗ п.8): «Название» — единственная
+        // колонка с гарантированным min-width (≥260px) и flex-растяжением;
+        // остальные колонки фиксированы: Тип 88 + Состав 210 + Ответственный 176
+        // + Статус 88 + Обновлено 190 + Действия 32 = 784 (+72 с сигнальными).
+        // Ниже 1044px (1116px) таблица скроллится горизонтально, а не давит «Название».
+        <div className="flex-1 overflow-auto">
+          <table
+            className="w-full table-fixed text-left border-collapse"
+            style={{ minWidth: treeColumnProfile.showSignalColumns ? 1116 : 1044 }}
+          >
             <colgroup>
               <col />
               <col className="w-[88px]" />
-              <col className="w-[108px]" />
-              <col className="w-[112px]" />
-              <col className="w-[136px]" />
-              <col className="w-[92px]" />
+              <col className="w-[210px]" />
+              <col className="w-[176px]" />
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               <col className="w-[88px]" />
-              <col className="w-[96px]" />
-              <col className="w-[180px]" />
+              <col className="w-[190px]" />
               <col className="w-8" />
             </colgroup>
             <thead>
@@ -2040,23 +2081,20 @@ function ExplorerPane({
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "type" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Тип" sortKey="type" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
-                <th className="px-2 py-2 text-center">{folderCountHeader}</th>
                 <th className="px-2 py-2" title={contextHeaderTitle}>
-                  Контекст
+                  Состав
                 </th>
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "assignee" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Ответственный / Исполнитель" sortKey="assignee" sort={explorerSort} onSort={handleExplorerSort} title="Сортирует разделы и папки по ответственному, проекты — по исполнителю." />
                 </th>
-                <th className="px-2 py-2">DoD</th>
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "status" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Статус" sortKey="status" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
-                <th className="px-2 py-2 text-right" aria-sort={explorerSort?.key === "updatedAt" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Обновлён" sortKey="updatedAt" sort={explorerSort} onSort={handleExplorerSort} align="right" />
+                <th className="px-2 py-2" aria-sort={explorerSort?.key === "updatedAt" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Обновлено" sortKey="updatedAt" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
-                <th className="px-2 py-2">Последнее изменение</th>
                 <th className="px-2 py-2 w-8" />
               </tr>
             </thead>

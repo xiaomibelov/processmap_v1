@@ -1,0 +1,29 @@
+{
+  "contour": "feat/projects-table-v2",
+  "type": "feat",
+  "phase": "phase-1-quick-wins",
+  "status": "READY_FOR_REVIEW",
+  "branch": "feat/projects-table-v2",
+  "worktree": "/opt/processmap-test-worktrees/feat-projects-table-v2",
+  "base": "origin/main@f838ecc3710f9edfa5cfd58d891cd09e44a72014",
+  "committed": true,
+  "commits": ["6e7a8c0b (code)", "99b216bf (planning docs)"],
+  "review_fixes_2026_08_14": {
+    "test_failures_artifact": "test-failures.diff empty; IDENTICAL_FAILURE_SETS (62=62 pre-existing)",
+    "dod_column": "removed entirely (user confirmed original decision); DodCell/showDodColumn/conditional cols deleted, DodBar in ProjectPane untouched",
+    "counters_consistency": "archived/deleted excluded from done AND total via trackable_sessions_count fields",
+    "screenshots": "phase1-{1440,1100,880,640}.png regenerated: no DoD column, trackable totals (12/56, 2/9); live checklist on :5199 passed"
+  },
+  "verification": {
+    "backend_pytest": "31 passed (-k 'explorer or session_status'), incl. updated test_explorer_done_sessions_count.py",
+    "frontend_unit": "explorer suites 111 pass / 1 fail (pre-existing SessionRow source test, identical to baseline)",
+    "vite_build": "ok",
+    "visual": "shots phase1-{1440,1100,880,640}.png vs mockup; 1440 ok, <1100 name column squeeze deferred to Phase 2"
+  },
+  "pending_user_approval": [
+    "Phase 1 screenshots review -> atomic commit backend+frontend",
+    "Phase 2 contract: PHASE2_USER_PREFERENCES_CONTRACT.md (GET/PATCH /api/users/me/preferences)",
+    "worktrees cleanup list (19 items, 5.5GB) - per-item approval"
+  ],
+  "next_gate": "user confirmation -> Phase 2 (status popover, adaptive container queries, marquee, tree persistence)"
+}

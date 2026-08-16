@@ -1,0 +1,62 @@
+admin llm section is visible in admin navigation and route metadata
+app guards popstate and project/session navigation with same leave confirmation
+C1: resize handle is always-visible accent with boundary shadow
+canonical XML-first writer path remains intact
+chip «＋ в справочник» renders only for custom values and calls onAddDictionaryValue
+clear ✕ button renders only for non-empty values and clears via updateSchemaPropertyValue
+closeAnalyticsHub returns to /app preserving context
+closeProductActionsRegistry returns to /app
+contextual AI actions remain in session create, analysis, timeline and reports
+dark theme contrast guard covers sidebar properties and selection states
+docs badge emission keeps unrelated drilldown overlays intact
+existing task with XML documentation gets docs badge
+FE/src/features/process/stage/hooks/useDiagramOverlayTransform.test.mjs
+FE/src/features/technologist/audit/AuditHistory.test.mjs
+FE/src/features/technologist/constructor/ConstructorCheck.test.mjs
+FE/src/features/technologist/constructor/Constructor.test.mjs
+FE/src/features/technologist/graph/OverlayGraphCanvas.test.mjs
+FE/src/features/technologist/graph/overlay.test.mjs
+FE/src/features/technologist/i18n/i18n.test.mjs
+FE/src/features/technologist/import/ImportBpmn.test.mjs
+FE/src/features/technologist/pilots/Pilots.test.mjs
+FE/src/features/technologist/recipes/Recipes.test.mjs
+FE/src/features/technologist/transform/TransformReview.test.mjs
+FE/src/features/technologist/workspace/LegacyRedirect.test.mjs
+FE/src/features/technologist/workspace/stepStates.test.mjs
+FE/src/features/technologist/workspace/WorkspacePanel.test.mjs
+FE/src/lib/processSummary.test.mjs
+finalize preserves guarded template-insert managed properties when state map has not caught up
+getRuntimeXmlSnapshot prefers live modeler saveXML before runtime.getXml fallback
+integration: duplicate element keeps semantic data and regenerates editor-only ids on import
+NotesPanel does not show a misleading numeric badge for the mixed templates/actors section
+openAnalyticsHub navigates to backend-driven analytics path
+openProductActionsRegistry navigates to actions module path
+openProductActionsRegistry respects explicit session scope
+openPropertiesRegistry navigates to properties module path
+operation params render as vertical cards: label+key line, full-width input, no table head
+ProcessStage wires analytics hub route and component
+process workbench top-level labels match product terminology
+properties overlay preview includes imported BPMN properties in fallback mode
+properties registry only reads confirmed session bpmn_meta source
+properties registry page exposes required foundation structure
+properties registry uses the product actions registry page pattern
+properties table keeps fixed/ellipsized columns on sidebar resize
+reload-like rerender preserves docs badge visibility
+required-empty state class applies only when required value is empty
+resize handle flush to sidebar + expanded shell not visually shrunk
+revision dialogs align empty state text with filtered technical history
+revision dialogs use RU labels for metadata surface
+revision dialogs use server-backed user-facing count for partial windows
+route model exposes process properties registry surface
+selected object ux model resolves runtime text controls and advanced note
+selected object ux model resolves shape controls without text controls
+SessionRow shows load subprocesses button for root sessions
+stale previous overlay id forces docs badge re-emission
+SubprocessBreadcrumbs exposes clickable parents and a non-clickable current segment
+template-inserted task with BO documentation gets docs badge
+TopBar disables status control while a change is in flight
+TopBar filters status options by allowed transitions
+TopBar profile menu keeps account actions separate from notifications
+unchanged docs signature keeps live overlay without duplicates
+version changelog records analytics properties registry foundation
+WorkspaceExplorer exposes analytics hub navigation
