@@ -125,6 +125,37 @@ class ProjectSessionsSummaryTests(unittest.TestCase):
         self.assertEqual(root_row.get("parent_session_id"), "")
         self.assertEqual(root_row.get("is_subprocess"), False)
 
+    def test_summary_derives_real_status_and_stage(self):
+        """P2 [Б]: summary отдаёт реальный status/stage для StatusBadge дерева
+        explorer (derive через derive_session_status: manual interview.status
+        > report_versions > контент > draft), interview в payload не попадает."""
+        rows = self.list_project_sessions(self.project_id, view="summary")
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        # setUp: interview.status="review", stage="audit" — manual status побеждает
+        self.assertEqual(row.get("status"), "review")
+        self.assertEqual(row.get("stage"), "audit")
+        self.assertNotIn("interview", row)
+
+        # без manual status, но с report_versions → ready
+        storage = self.get_storage()
+        session = storage.load(self.session_id, org_id=self.org_id, is_admin=True)
+        session.interview = {"report_versions": {"Path_1": [{"report_markdown": "r"}]}}
+        storage.save(session, org_id=self.org_id, is_admin=True)
+        rows2 = self.list_project_sessions(self.project_id, view="summary")
+        self.assertEqual(rows2[0].get("status"), "ready")
+
+        # свежая quick_skeleton-сессия без manual status/report_versions —
+        # derive от контента (skeleton инициализирует version/interview)
+        empty_id = storage.create(
+            "Empty session", roles=["cook"], project_id=self.project_id,
+            mode="quick_skeleton", org_id=self.org_id, is_admin=True,
+        )
+        rows3 = self.list_project_sessions(self.project_id, view="summary")
+        by_id = {str(r.get("id") or ""): r for r in rows3}
+        self.assertIn(by_id[empty_id].get("status"), ("draft", "in_progress"))
+        self.assertNotEqual(by_id[empty_id].get("status"), "ready")
+
     def test_invalid_summary_view_is_rejected(self):
         with self.assertRaises(HTTPException) as ctx:
             self.list_project_sessions(self.project_id, view="tiny")
