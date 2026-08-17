@@ -4980,6 +4980,7 @@ class Storage:
                   updated_by,
                   created_at,
                   updated_at,
+                  interview_json,
                   LENGTH(COALESCE(bpmn_xml, '')) AS bpmn_xml_length
                 FROM sessions
                 {where}
@@ -5001,6 +5002,13 @@ class Storage:
             except Exception:
                 xml_len = 0
             parent_session_id = str(_row_value(row, "parent_session_id") or "").strip()
+            # P2 [Б]: реальный статус для StatusBadge в дереве explorer —
+            # derive как в workspace-листе (manual interview.status > report_versions
+            # > контент > draft). interview_json читается только для derive и
+            # в summary-payload НЕ попадает.
+            interview = _json_loads(_row_value(row, "interview_json"), {})
+            if not isinstance(interview, dict):
+                interview = {}
             out.append({
                 "id": sid,
                 "session_id": sid,
@@ -5026,8 +5034,12 @@ class Storage:
                 "created_at": int(_row_value(row, "created_at") or 0),
                 "updated_at": int(_row_value(row, "updated_at") or 0),
                 "has_bpmn_xml": xml_len > 0,
-                "status": "draft",
-                "stage": "",
+                "status": derive_session_status(
+                    version=_row_value(row, "version"),
+                    bpmn_xml_version=_row_value(row, "bpmn_xml_version"),
+                    interview_raw=interview,
+                ),
+                "stage": str(interview.get("stage") or ""),
             })
         return out
 
