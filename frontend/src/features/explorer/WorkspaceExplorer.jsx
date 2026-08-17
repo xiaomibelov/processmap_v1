@@ -17,6 +17,13 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { createPortal } from "react-dom";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { explorerPageQueryKey, explorerPageQueryOptions } from "./explorerPageQuery.js";
+import {
+  EXPLORER_TREE_COLLAPSED_KEY,
+  USER_PREFERENCES_QUERY_KEY,
+  createExplorerTreeSaver,
+  expandedIdsFromMap,
+  fetchUserPreferences,
+} from "./explorerTreePersistence.js";
 import SessionCreateModal from "./SessionCreateModal.jsx";
 import {
   apiRenameWorkspace,
@@ -1610,6 +1617,47 @@ function ExplorerPane({
   const inFlightFolderLoadsRef = useRef(new Set());
   const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
 
+  // P1 [А]: свернутость дерева переживает reload — Preferences API.
+  // Значение ключа explorer.tree.collapsed = Record<workspaceId, string[] ЯВНО
+  // раскрытых узлов> (дефолт дерева — «всё свёрнуто»). persistedExpandedRef —
+  // fallback-карта {fid: true} из GET-снапшота; явные toggle'ы в
+  // treeState.expandedByFolder (включая false) имеют приоритет при merge.
+  const prefsQuery = useQuery({
+    queryKey: USER_PREFERENCES_QUERY_KEY,
+    queryFn: fetchUserPreferences,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const [persistTick, setPersistTick] = useState(0);
+  const persistedExpandedRef = useRef({});
+  const treeSaverRef = useRef(null);
+  if (!treeSaverRef.current) {
+    treeSaverRef.current = createExplorerTreeSaver({
+      onSnapshot: (doc) => {
+        const collapsed = doc?.preferences?.[EXPLORER_TREE_COLLAPSED_KEY] || {};
+        persistedExpandedRef.current = Object.fromEntries(
+          Object.entries(collapsed).map(([ws, ids]) => [
+            ws,
+            Object.fromEntries((Array.isArray(ids) ? ids : []).map((id) => [String(id), true])),
+          ]),
+        );
+        setPersistTick((t) => t + 1);
+      },
+    });
+  }
+  useEffect(() => {
+    if (prefsQuery.data) treeSaverRef.current.attach(prefsQuery.data);
+  }, [prefsQuery.data]);
+
+  const mergedExpandedByFolder = useMemo(
+    () => ({
+      ...(persistedExpandedRef.current[String(workspaceId || "").trim()] || {}),
+      ...treeStateByContext[contextKey]?.expandedByFolder,
+    }),
+    // persistTick — пересчёт после применения серверного снапшота (ref не триггерит render)
+    [workspaceId, contextKey, treeStateByContext, persistTick],
+  );
+
   const treeState = treeStateByContext[contextKey] || {
     expandedByFolder: {},
     childItemsByFolder: {},
@@ -1670,13 +1718,13 @@ function ExplorerPane({
   const visibleRows = useMemo(
     () => buildVisibleRows({
       rootItems: sortedRootItems,
-      expandedByFolder: treeState.expandedByFolder,
+      expandedByFolder: mergedExpandedByFolder,
       childItemsByFolder: sortedChildItemsByFolder,
       loadingByFolder: treeState.loadingByFolder,
       loadErrorByFolder: treeState.loadErrorByFolder,
       preserveItemOrder: Boolean(explorerSort),
     }),
-    [sortedRootItems, treeState.expandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
+    [sortedRootItems, mergedExpandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
   const inlineColSpan = treeColumnProfile.showSignalColumns ? 9 : 7;
   const searchIndex = useMemo(
@@ -1892,15 +1940,21 @@ function ExplorerPane({
   const handleToggleExpand = useCallback((folder) => {
     const fid = String(folder?.id || "").trim();
     if (!fid || !hasFolderChildren(folder)) return;
-    const nextExpanded = !Boolean(treeState.expandedByFolder?.[fid]);
+    // merge с persisted-fallback: persisted-раскрытый узел без явного toggle
+    // считается раскрытым; первый toggle его сворачивает (nextExpanded=false).
+    const nextExpanded = !Boolean(mergedExpandedByFolder?.[fid]);
     setTreeStateForContext((prev) => ({
       ...prev,
       expandedByFolder: { ...prev.expandedByFolder, [fid]: nextExpanded },
     }));
+    treeSaverRef.current?.schedule(
+      workspaceId,
+      expandedIdsFromMap({ ...mergedExpandedByFolder, [fid]: nextExpanded }),
+    );
     if (nextExpanded) {
       void ensureFolderChildrenLoaded(fid);
     }
-  }, [treeState.expandedByFolder, setTreeStateForContext, ensureFolderChildrenLoaded]);
+  }, [mergedExpandedByFolder, workspaceId, setTreeStateForContext, ensureFolderChildrenLoaded]);
 
   const handleOpenSearchResult = useCallback((result) => {
     const target = result?.target || {};
