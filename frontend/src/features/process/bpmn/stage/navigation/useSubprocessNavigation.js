@@ -41,7 +41,7 @@ export default function useSubprocessNavigation({
       const list = Array.isArray(prev) ? prev : [];
       const childCrumb = {
         session_id: res.subprocessSessionId,
-        name: res.subprocessTitle || "Подпроцесс",
+        name: res.subprocessTitle || "Без названия",
         element_id: elementId,
       };
       if (list.length === 0) {

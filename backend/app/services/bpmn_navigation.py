@@ -32,6 +32,38 @@ def find_bpmn_element(xml_text: str, element_id: str) -> Optional[ET.Element]:
     return None
 
 
+def get_element_name(xml_text: str, element_id: str) -> Optional[str]:
+    """Return the BPMN element's human-readable name (attrib['name'])."""
+    if not xml_text or not element_id:
+        return None
+    try:
+        el = find_bpmn_element(xml_text, element_id)
+    except Exception:
+        return None
+    if el is None:
+        return None
+    name = str(el.attrib.get("name") or "").strip()
+    return name or None
+
+
+def assert_unique_element_id(xml_text: str, element_id: str) -> None:
+    """Raise ValueError if element_id occurs more than once in the XML.
+
+    BPMN requires globally unique element ids. Duplicate ids break drill-in
+    navigation because the viewer and the backend may resolve the same id to
+    different elements.
+    """
+    if not xml_text or not element_id:
+        return
+    root = ET.fromstring(xml_text)
+    count = sum(1 for el in root.iter() if _element_id(el) == element_id)
+    if count > 1:
+        raise ValueError(
+            f"BPMN element id {element_id!r} is not unique ({count} occurrences); "
+            "subprocess navigation requires unique ids."
+        )
+
+
 def element_type(xml_text: str, element_id: str) -> Optional[str]:
     el = find_bpmn_element(xml_text, element_id)
     return _local_tag(el.tag) if el is not None else None

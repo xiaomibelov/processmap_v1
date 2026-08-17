@@ -5,6 +5,7 @@ import AdminApp from "./features/admin/AdminApp";
 import ApiDocsPage from "./features/apiDocs/ApiDocsPage";
 import { AuthProvider, useAuth } from "./features/auth/AuthProvider";
 import { FeatureFlagsProvider } from "./features/config/featureFlagsContext";
+import { ExplorerQueryProvider } from "./features/explorer/ExplorerQueryProvider.jsx";
 import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
@@ -615,7 +616,9 @@ export default function RootApp() {
   return (
     <AuthProvider>
       <FeatureFlagsProvider>
-        <AppRoutes />
+        <ExplorerQueryProvider>
+          <AppRoutes />
+        </ExplorerQueryProvider>
       </FeatureFlagsProvider>
     </AuthProvider>
   );

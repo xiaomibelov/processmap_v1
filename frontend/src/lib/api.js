@@ -548,6 +548,7 @@ export async function apiNavigateToSubprocess(sessionId, elementId, targetElemen
         ok: true,
         status: r.status,
         subprocessSessionId: r.data?.subprocess_session_id,
+        subprocessTitle: r.data?.subprocess_title,
         targetElementId: r.data?.target_element_id,
         breadcrumbs: r.data?.breadcrumbs,
         bpmnXml: r.data?.bpmn_xml,

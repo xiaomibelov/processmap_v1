@@ -416,6 +416,7 @@ class OrgReportBuildIn(CreatePathReportVersionIn):
 
 class SubprocessNavigateOut(BaseModel):
     subprocess_session_id: str
+    subprocess_title: str = "Без названия"
     target_element_id: Optional[str] = None
     breadcrumbs: List[Dict[str, Any]] = []
     bpmn_xml: Optional[str] = None

@@ -573,6 +573,7 @@ function ProcessStage({
   subprocessBreadcrumbs = [],
   onBreadcrumbNavigate = null,
   onReturnToParent = null,
+  onBpmnSaved = null,
   bpmnStageRef = null,
   bpmnXmlCacheRef = null,
   focusElementId = "",
@@ -2449,6 +2450,7 @@ function ProcessStage({
       setSaveDirtyHint(false);
       setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
       setInfoMsg("Ваша версия сохранена поверх серверной. Действие зафиксировано в истории (overwrite).");
+      onBpmnSaved?.(sid, activeProjectId);
     } catch (error) {
       setGenErr(shortErr(error?.message || error || "Не удалось сохранить версию поверх серверной."));
     } finally {
@@ -2466,6 +2468,8 @@ function ProcessStage({
     setGenErr,
     setInfoMsg,
     toText,
+    onBpmnSaved,
+    activeProjectId,
   ]);
 
   const closeMergePanel = useCallback(() => {
@@ -2539,6 +2543,7 @@ function ProcessStage({
       setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
       setInfoMsg("Ваша версия сохранена поверх серверной. Создана новая версия в истории.");
       closeMergePanel();
+      onBpmnSaved?.(sid, activeProjectId);
     } catch (error) {
       setGenErr(shortErr(error?.message || error || "Не удалось сохранить версию поверх серверной."));
     } finally {
@@ -2558,6 +2563,8 @@ function ProcessStage({
     closeMergePanel,
     setGenErr,
     setInfoMsg,
+    onBpmnSaved,
+    activeProjectId,
   ]);
 
   const handleMergeCompare = useCallback(() => {
@@ -2840,6 +2847,7 @@ function ProcessStage({
       if (selectedElementId) {
         bpmnRef.current?.flashNode?.(selectedElementId, "sync", { label: "Synced" });
       }
+      onBpmnSaved?.(sid, activeProjectId);
       const successOutcomeUi = resolveManualSaveOutcomeUi({
         primarySaveOk: true,
         primarySavePending: saved?.pending === true,
@@ -7727,7 +7735,6 @@ function ProcessStage({
               )}
             </div>
           ) : (
-            <ExplorerQueryProvider>
             <WorkspaceExplorer
               activeOrgId={workspaceActiveOrgId}
               requestProjectId={activeProjectId}
@@ -7736,7 +7743,6 @@ function ProcessStage({
               onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
               onClearRequestedProject={onClearWorkspaceProject}
             />
-            </ExplorerQueryProvider>
           )
         ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active || dashboardsRoute.active ? (
           <div className="analyticsSurfaceLayout">
