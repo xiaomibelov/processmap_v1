@@ -51,10 +51,8 @@ import {
 } from "./explorerApi.js";
 import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
-  MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
-import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../workspace/sessionStatus.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
 import { buildVisibleRows, hasFolderChildren, projectHasSessions } from "./work3TreeState.js";
@@ -110,7 +108,10 @@ import "./explorerAdaptive.css";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import TextBreadcrumbs from "../../components/TextBreadcrumbs.jsx";
 import useElementWidth from "../../components/useElementWidth.js";
-import { getNavSingleLineLayout } from "../../components/navSingleLineLayout.js";
+import {
+  getNavSingleLineLayout,
+  getWorkspaceHeaderLayout,
+} from "../../components/navSingleLineLayout.js";
 import { useWorkspaceMainNavSlot } from "../../components/workspaceMainNavSlot.js";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -1651,16 +1652,16 @@ function ProjectRow({
           <StatusDotBadge domain="project" value={project.status} />
         </td>
         {layout.showUpdated ? <UpdatedCell node={project} /> : null}
-        <td className="px-2 py-2.5 text-right relative" onClick={(e) => e.stopPropagation()}>
+        <td className={`px-2 py-2.5 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1.5">
             {layout.compact ? null : (
-            <AppRouteLink
-              className="secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg"
-              href={projectHref}
-              onNavigate={() => onClick(project)}
-            >
-              Открыть проект
-            </AppRouteLink>
+              <AppRouteLink
+                className="secondaryBtn h-7 min-h-0 px-2 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg"
+                href={projectHref}
+                onNavigate={() => onClick(project)}
+              >
+                Открыть проект
+              </AppRouteLink>
             )}
             <button
               onClick={() => setMenuOpen((v) => !v)}
@@ -1708,10 +1709,17 @@ function ProjectRow({
 function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange, columnLayout }) {
   const layout = columnLayout || getExplorerColumnLayout(0);
   const leftPadding = 8 + depth * 18;
+  const isSubprocess = Boolean(session?.is_subprocess) || Boolean(session?.parent_session_id);
   const sessionHref = buildAppWorkspaceHref({
     projectId: session?.project_id || project?.id,
     sessionId: session?.id || session?.session_id,
   });
+  const parentSessionHref = isSubprocess
+    ? buildAppWorkspaceHref({
+        projectId: session?.project_id || project?.id,
+        sessionId: session?.parent_session_id,
+      })
+    : sessionHref;
   function handleRowOpen(event) {
     const target = event?.target;
     if (target instanceof Element && target.closest("a[href],button,select,input,textarea,label")) {
@@ -1721,18 +1729,18 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
     onOpen?.(session);
   }
   return (
-    <tr className="group hover:bg-accentSoft/30 transition-colors cursor-pointer" onClick={handleRowOpen}>
+    <tr className={`group transition-colors cursor-pointer ${isSubprocess ? "opacity-90" : "hover:bg-accentSoft/30"}`} onClick={handleRowOpen}>
       <td className="px-2 py-2 text-sm font-medium text-fg">
         <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
           <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
-          <IcoSession className="shrink-0 text-muted" />
+          <IcoSession className={`shrink-0 ${isSubprocess ? "text-muted/60" : "text-muted"}`} />
           <AppRouteLink
             className="block min-w-0 flex-1 text-left"
-            href={sessionHref}
+            href={isSubprocess ? parentSessionHref : sessionHref}
             onNavigate={() => onOpen?.(session)}
             title={session.name || session.title}
           >
-            <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className="font-normal hover:underline" />
+            <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className={`font-normal hover:underline ${isSubprocess ? "text-fg/70" : ""}`} />
           </AppRouteLink>
         </div>
         {layout.compact ? (
@@ -1748,11 +1756,22 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
         <StatusPopoverControl
           domain="session"
           value={session.status}
+          disabled={isSubprocess}
           onChange={(nextStatus) => onStatusChange?.(session, nextStatus)}
         />
       </td>
       {layout.showUpdated ? <UpdatedCell node={session} /> : null}
-      <td className="px-2 py-2 w-8" />
+      <td className={`px-2 py-2 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
+        {!layout.compact && !isSubprocess ? (
+          <AppRouteLink
+            className="secondaryBtn h-7 min-h-0 px-2 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg opacity-0 group-hover:opacity-100"
+            href={sessionHref}
+            onNavigate={() => onOpen?.(session)}
+          >
+            Открыть
+          </AppRouteLink>
+        ) : null}
+      </td>
     </tr>
   );
 }
@@ -2573,16 +2592,25 @@ function ExplorerPane({
   // Когда открыт проект, ExplorerPane остаётся смонтированным (скрытым) — портал глушим.
   const navSlotEl = useWorkspaceMainNavSlot();
   const headerSlotEl = portalHeader ? navSlotEl : null;
+  const explorerHeaderLayout = getWorkspaceHeaderLayout(explorerNavWidth);
+  const createFolderLabel = explorerHeaderLayout.shortCreateLabels
+    ? folderCopy.createLabel.replace(/^Создать\s+/, "")
+    : folderCopy.createLabel;
+  const explorerCountersFull = folderId
+    ? `Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
+    : `Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`;
+  const explorerCountersShort = `${headerFolderCount} · ${headerProjectCount}`;
   const explorerHeader = (
-      <div className="px-4 border-b border-border flex-shrink-0 bg-panel">
+      <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
         {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
-            (текущий сегмент = заголовок), мета справа. Без переносов; жертвы
-            по ширине контейнера: мета → крошки «…» → кнопка иконкой. */}
+            (текущий сегмент = заголовок), табы, поиск, создание, мета справа.
+            Без переносов; жертвы по ширине контейнера: счётчики → короткие счётчики
+            → кнопки/поиск сжимаются → крошки «…» → кнопка «назад» иконкой. */}
         <div
           ref={explorerNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
-          data-nav-meta={explorerNavLayout.showMeta ? "1" : "0"}
+          data-nav-meta={explorerHeaderLayout.showCounters ? "full" : explorerHeaderLayout.shortCounters ? "short" : "0"}
         >
           {folderId ? (
             <button
@@ -2593,82 +2621,84 @@ function ExplorerPane({
                   : onNavigateToBreadcrumb(workspaceId, "")
               }
               className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
-                explorerNavLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
+                explorerHeaderLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
               }`}
               title="Назад к разделам"
               aria-label="Назад к разделам"
               data-testid="explorer-back-sections"
             >
-              {explorerNavLayout.backIconOnly ? "←" : "← Назад к разделам"}
+              {explorerHeaderLayout.backIconOnly ? "←" : "← Назад к разделам"}
             </button>
           ) : null}
           <TextBreadcrumbs
             crumbs={headerCrumbItems}
             dataTestId="explorer-breadcrumbs"
             singleLine
-            forceCollapse={explorerNavLayout.collapseCrumbs}
+            forceCollapse={explorerHeaderLayout.collapseCrumbs}
             currentClassName="text-[15px] font-semibold"
           />
-          {explorerNavLayout.showMeta ? (
-            <span className="ml-auto shrink-0 text-xs text-muted" data-testid="explorer-section-meta">
-              {folderId
-                ? `· Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
-                : `· Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex h-9 items-center justify-end gap-1.5 pb-1.5">
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
             <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
-            <button
-              type="button"
-              onClick={() => setActiveTab("projects")}
-              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                activeTab === "projects" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-              }`}
-            >
-              Проекты
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("analytics")}
-              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-              }`}
-            >
-              Аналитика
-            </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("projects")}
+                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                  activeTab === "projects" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+                }`}
+              >
+                Проекты
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("analytics")}
+                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                  activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+                }`}
+              >
+                Аналитика
+              </button>
             </div>
             <ExplorerSearchBox
               id="workspace-explorer-tree-search"
               value={searchQuery}
               onChange={setSearchQuery}
-              className="w-[260px]"
+              className={explorerHeaderLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
             />
-          {permissions?.canCreate ? (
-            <button
-              onClick={() => setCreatingFolder(true)}
-              className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-            >
-              <IcoPlus className="opacity-70" /> {folderCopy.createLabel}
-            </button>
-          ) : null}
-          {/* Project can only be created inside a folder, not at workspace root */}
-          {folderId && permissions?.canCreate ? (
-            <button
-              onClick={() => setCreatingProject(true)}
-              className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-            >
-              <IcoPlus /> Проект
-            </button>
-          ) : permissions?.canCreate ? (
-            <span
-              className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
-              title="Войдите в папку, чтобы создать проект"
-            >
-              <IcoPlus className="opacity-50" /> Проект
-            </span>
-          ) : null}
+            {permissions?.canCreate ? (
+              <button
+                onClick={() => setCreatingFolder(true)}
+                className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+              >
+                <IcoPlus className="opacity-70" /> {createFolderLabel}
+              </button>
+            ) : null}
+            {/* Project can only be created inside a folder, not at workspace root */}
+            {folderId && permissions?.canCreate ? (
+              <button
+                onClick={() => setCreatingProject(true)}
+                className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+              >
+                <IcoPlus /> Проект
+              </button>
+            ) : permissions?.canCreate ? (
+              <span
+                className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
+                title="Войдите в папку, чтобы создать проект"
+              >
+                <IcoPlus className="opacity-50" /> Проект
+              </span>
+            ) : null}
+            {explorerHeaderLayout.showCounters || explorerHeaderLayout.shortCounters ? (
+              <span
+                className="shrink-0 text-xs text-muted"
+                title={explorerHeaderLayout.shortCounters ? explorerCountersFull : undefined}
+                data-testid="explorer-section-meta"
+              >
+                {explorerHeaderLayout.showCounters
+                  ? `· ${explorerCountersFull}`
+                  : `· ${explorerCountersShort}`}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2719,7 +2749,7 @@ function ExplorerPane({
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               <col className="w-[88px]" />
               {explorerColumnLayout.showUpdated ? <col className="w-[190px]" /> : null}
-              <col className="w-8" />
+              <col className={explorerColumnLayout.compact ? "w-8" : "w-[88px]"} />
             </colgroup>
             {explorerColumnLayout.compact ? null : (
             <thead>
@@ -2981,6 +3011,7 @@ function SessionRow({
   isOpening = false,
   onReload,
   onSessionPatched,
+  onSessionStatusChange,
   canRename = false,
   canDelete = false,
   canChangeStatus = false,
@@ -2996,28 +3027,12 @@ function SessionRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [creatingSubprocesses, setCreatingSubprocesses] = useState(false);
-  const [pendingStatus, setPendingStatus] = useState(String(session.status || "draft"));
-  const sessionStatusMeta = getManualSessionStatusMeta(pendingStatus);
+  const sessionStatusMeta = getManualSessionStatusMeta(session.status || "draft");
   const hasChildren = Boolean(session?.has_children);
   const showChevron = treeMode && hasChildren;
   const titleSizeClass = treeMode ? (depth > 0 ? "text-sm" : "text-[15px]") : "text-sm";
   const rowBgClass = treeMode && depth > 0 ? "bg-gray-50 border-l-2 border-gray-200" : "";
   const leftPadding = treeMode ? 8 + depth * 18 : undefined;
-  const normalizedSessionStatus = useMemo(
-    () => normalizeManualSessionStatus(session.status, "draft"),
-    [session.status],
-  );
-  const allowedNextStatuses = useMemo(
-    () => getAllowedNextStatuses(normalizedSessionStatus),
-    [normalizedSessionStatus],
-  );
-  const statusOptions = useMemo(
-    () => MANUAL_SESSION_STATUSES.filter((s) => allowedNextStatuses.has(s.value)),
-    [allowedNextStatuses],
-  );
-  useEffect(() => {
-    setPendingStatus(String(session.status || "draft"));
-  }, [session.status]);
 
   function openSession(options = {}) {
     if (isOpening) return;
@@ -3150,53 +3165,11 @@ function SessionRow({
         </td>
         <td className="px-2 py-2">
           {canChangeStatus ? (
-            <select
-              className={`h-8 min-h-0 w-[138px] rounded-full border px-3 text-xs font-medium outline-none transition-colors ${sessionStatusMeta.selectClass}`}
-              value={String(session.status || "draft")}
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseUp={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-              onFocus={(e) => e.stopPropagation()}
-              onChange={async (e) => {
-                e.stopPropagation();
-                const next = String(e.target.value || "").trim();
-                if (!next || next === String(session.status || "draft")) return;
-                setPendingStatus(next);
-
-                const sessionSnapshot = await apiGetSession(session.id);
-                const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
-                if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
-                  setPendingStatus(String(session.status || "draft"));
-                  window.alert(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
-                  return;
-                }
-
-                const resp = await apiPatchSession(session.id, {
-                  status: next,
-                  base_diagram_state_version: baseVersion,
-                });
-                if (!resp?.ok) {
-                  setPendingStatus(String(session.status || "draft"));
-                  const message = resp?.status === 409
-                    ? "Переход в выбранный статус недоступен для текущего состояния сессии."
-                    : formatSessionPatchError(resp);
-                  window.alert(message);
-                  return;
-                }
-                onSessionPatched?.(session.id, {
-                  status: String(resp?.session?.interview?.status || next),
-                  updated_at: Number(resp?.session?.updated_at || Math.floor(Date.now() / 1000)),
-                });
-                onReload?.();
-              }}
-              disabled={pendingStatus !== String(session.status || "draft")}
-            >
-              {statusOptions.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
+            <StatusPopoverControl
+              domain="session"
+              value={session.status}
+              onChange={(nextStatus) => onSessionStatusChange?.(session, nextStatus)}
+            />
           ) : (
             <StatusBadge status={session.status} />
           )}
@@ -3233,10 +3206,10 @@ function SessionRow({
           </td>
         ) : null}
         <td className="px-2 py-2 text-[11px] text-fg/65 text-right">{ts(session.updated_at)}</td>
-        <td className="px-2 py-2 text-right">
+        <td className="px-2 py-2 text-right w-[88px]">
           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <AppRouteLink
-              className={`secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors ${isOpening ? "cursor-progress" : "hover:border-accent/40 hover:text-fg"}`}
+              className={`secondaryBtn h-7 min-h-0 px-2 text-xs whitespace-nowrap transition-colors ${isOpening ? "cursor-progress" : "hover:border-accent/40 hover:text-fg"}`}
               href={sessionHref}
               onNavigate={() => openSession({ source: "workspace_explorer_session_cta" })}
               aria-busy={isOpening ? "true" : undefined}
@@ -3327,6 +3300,7 @@ function SessionTreeRows({
   isOpening,
   onReload,
   onSessionPatched,
+  onSessionStatusChange,
   canRename,
   canDelete,
   canChangeStatus,
@@ -3356,6 +3330,7 @@ function SessionTreeRows({
           isOpening={isOpening === sid}
           onReload={onReload}
           onSessionPatched={onSessionPatched}
+          onSessionStatusChange={onSessionStatusChange}
           canRename={canRename}
           canDelete={canDelete}
           canChangeStatus={canChangeStatus}
@@ -3408,6 +3383,7 @@ function SessionTreeRows({
               isOpening={isOpening}
               onReload={onReload}
               onSessionPatched={onSessionPatched}
+              onSessionStatusChange={onSessionStatusChange}
               canRename={canRename}
               canDelete={canDelete}
               canChangeStatus={canChangeStatus}
@@ -3561,6 +3537,51 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     });
   }, []);
 
+  const handleSessionStatusChange = useCallback(async (session, nextStatus) => {
+    const sid = String(session?.id || session?.session_id || "").trim();
+    const normalizedStatus = String(nextStatus || "").trim();
+    if (!sid || !normalizedStatus) return false;
+    try {
+      const sessionSnapshot = await apiGetSession(sid);
+      const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
+      if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
+        window.alert(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
+        return false;
+      }
+      const resp = await apiPatchSession(sid, {
+        status: normalizedStatus,
+        base_diagram_state_version: baseVersion,
+      });
+      if (!resp?.ok) {
+        const message = resp?.status === 409
+          ? "Переход в выбранный статус недоступен для текущего состояния сессии."
+          : formatSessionPatchError(resp);
+        window.alert(message);
+        return false;
+      }
+      handleSessionPatched(sid, {
+        status: String(resp?.session?.interview?.status || normalizedStatus),
+        updated_at: Number(resp?.session?.updated_at || Math.floor(Date.now() / 1000)),
+      });
+      await load();
+      return true;
+    } catch (e) {
+      window.alert(String(e?.message || "Не удалось обновить статус сессии"));
+      return false;
+    }
+  }, [handleSessionPatched, load]);
+
+  const handleProjectStatusChange = useCallback(async (nextStatus) => {
+    if (!projectId || !nextStatus) return false;
+    const resp = await apiPatchProject(projectId, { status: nextStatus });
+    if (!resp?.ok) {
+      window.alert?.(String(resp?.error || "Не удалось обновить статус проекта"));
+      return false;
+    }
+    await load();
+    return true;
+  }, [projectId, load]);
+
   const loadSessionChildren = useCallback(async (sessionId) => {
     const sid = String(sessionId || "").trim();
     if (!sid || loadingSessionChildren.has(sid)) return;
@@ -3687,7 +3708,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }));
   // Часть А-2 (nav-zone): однострочная полоса — адаптив по ширине контейнера.
   const [projectNavRef, projectNavWidth] = useElementWidth();
-  const projectNavLayout = getNavSingleLineLayout(projectNavWidth);
+  const projectNavLayout = getWorkspaceHeaderLayout(projectNavWidth);
   const normalizedProjectStatus = String(proj?.status || "").trim().toLowerCase();
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
   // Прямой переход по URL (без контекста explorer): назад — в раздел проекта
@@ -3737,17 +3758,21 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     return <div className="flex-1 flex items-center justify-center p-8 text-danger text-sm">{error}</div>;
   }
 
+  const createSessionLabel = projectNavLayout.shortCreateLabels ? "Сессия" : "Новая сессия";
+  const sessionCountersFull = `Сессии: ${sessionCount}`;
+  const sessionCountersShort = String(sessionCount);
+
   // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
   const navSlotEl = useWorkspaceMainNavSlot();
   const projectHeader = (
-      <div className="px-4 border-b border-border flex-shrink-0 bg-panel">
+      <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
         {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
-            (текущий сегмент = заголовок), статус-бейдж, мета справа. */}
+            (текущий сегмент = заголовок), статус, табы, поиск, создание, мета справа. */}
         <div
           ref={projectNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(projectNavWidth)}
-          data-nav-meta={projectNavLayout.showMeta ? "1" : "0"}
+          data-nav-meta={projectNavLayout.showCounters ? "full" : projectNavLayout.shortCounters ? "short" : "0"}
         >
           {projectBackCrumb ? (
             <button
@@ -3770,18 +3795,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             forceCollapse={projectNavLayout.collapseCrumbs}
             currentClassName="text-[15px] font-semibold"
           />
-          {proj && normalizedProjectStatus && normalizedProjectStatus !== "active" ? (
-            <StatusBadge status={proj.status} dotOnly={projectNavLayout.statusDotOnly} />
+          {proj ? (
+            <StatusPopoverControl
+              domain="project"
+              value={proj.status}
+              onChange={handleProjectStatusChange}
+            />
           ) : null}
-          {proj && projectNavLayout.showMeta ? (
-            <span className="ml-auto shrink-0 text-xs text-muted" data-testid="project-meta">
-              · Сессии: {sessionCount}
-            </span>
-          ) : null}
-        </div>
-
-        {proj && (
-          <div className="flex h-9 items-center justify-end gap-2 pb-1.5">
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
             <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
               <button
                 type="button"
@@ -3802,8 +3823,30 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 Аналитика
               </button>
             </div>
+            <ExplorerSearchBox
+              id="workspace-explorer-project-search"
+              value={searchQuery}
+              onChange={setSearchQuery}
+              className={projectNavLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
+            />
+            {permissions?.canCreate ? (
+              <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
+                <IcoPlus /> {createSessionLabel}
+              </button>
+            ) : null}
+            {projectNavLayout.showCounters || projectNavLayout.shortCounters ? (
+              <span
+                className="shrink-0 text-xs text-muted"
+                title={projectNavLayout.shortCounters ? sessionCountersFull : undefined}
+                data-testid="project-meta"
+              >
+                {projectNavLayout.showCounters
+                  ? `· ${sessionCountersFull}`
+                  : `· ${sessionCountersShort}`}
+              </span>
+            ) : null}
           </div>
-        )}
+        </div>
       </div>
   );
 
@@ -3816,22 +3859,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
           <AnalyticsPage scope="project" scopeId={projectId} module="overview" orgId={activeOrgId} embedded />
         </div>
       ) : null}
-
-      {/* Sessions */}
-      <div className={`px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0 ${activeTab === "analytics" ? "hidden" : ""}`}>
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии</span>
-        <ExplorerSearchBox
-          id="workspace-explorer-project-search"
-          value={searchQuery}
-          onChange={setSearchQuery}
-          className="ml-auto w-[260px]"
-        />
-        {permissions?.canCreate ? (
-          <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
-            <IcoPlus /> Новая сессия
-          </button>
-        ) : null}
-      </div>
 
       {searchModel.active ? (
         <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
@@ -3878,7 +3905,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               {sessionColumnProfile.showSignalColumns ? <col className="w-[76px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
               <col className="w-[104px]" />
-              <col className="w-[124px]" />
+              <col className="w-[88px]" />
             </colgroup>
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-border/80 bg-panelAlt/95 text-[11px] uppercase tracking-wide text-fg/65 backdrop-blur-sm">
@@ -3942,6 +3969,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                   isOpening={openingSessionId}
                   onReload={load}
                   onSessionPatched={handleSessionPatched}
+                  onSessionStatusChange={handleSessionStatusChange}
                   canRename={!!permissions?.canRenameSession}
                   canDelete={!!permissions?.canDeleteSession}
                   canChangeStatus={!!permissions?.canChangeStatus}
@@ -3964,6 +3992,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                         }, options)}
                     onReload={load}
                     onSessionPatched={handleSessionPatched}
+                    onSessionStatusChange={handleSessionStatusChange}
                     canRename={!!permissions?.canRenameSession}
                     canDelete={!!permissions?.canDeleteSession}
                     canChangeStatus={!!permissions?.canChangeStatus}
