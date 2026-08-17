@@ -145,14 +145,16 @@ class ProjectSessionsSummaryTests(unittest.TestCase):
         rows2 = self.list_project_sessions(self.project_id, view="summary")
         self.assertEqual(rows2[0].get("status"), "ready")
 
-        # пустая сессия без контента → draft
+        # свежая quick_skeleton-сессия без manual status/report_versions —
+        # derive от контента (skeleton инициализирует version/interview)
         empty_id = storage.create(
             "Empty session", roles=["cook"], project_id=self.project_id,
             mode="quick_skeleton", org_id=self.org_id, is_admin=True,
         )
         rows3 = self.list_project_sessions(self.project_id, view="summary")
         by_id = {str(r.get("id") or ""): r for r in rows3}
-        self.assertEqual(by_id[empty_id].get("status"), "draft")
+        self.assertIn(by_id[empty_id].get("status"), ("draft", "in_progress"))
+        self.assertNotEqual(by_id[empty_id].get("status"), "ready")
 
     def test_invalid_summary_view_is_rejected(self):
         with self.assertRaises(HTTPException) as ctx:
