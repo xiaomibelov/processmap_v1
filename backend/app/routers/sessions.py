@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Request, Query, Path, HTTPException, Body
+from fastapi import APIRouter, Request, Query, Path, HTTPException, Body, UploadFile, File
 from fastapi.responses import JSONResponse
 
 from ..services import session_service as _svc
@@ -226,6 +226,12 @@ def session_overlays(session_id: str):
 @router.put('/api/sessions/{session_id}/bpmn')
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None):
     return _svc.bpmn_save(session_id, inp, request)
+
+# P6 [Г]: multipart upload .bpmn/.xml (ревизия: не «create → PUT bpmn»).
+# Общий внутренний путь сохранения с PUT (bpmn_save), PUT не меняется.
+@router.post('/api/sessions/{session_id}/bpmn-upload')
+async def session_bpmn_upload(session_id: str, request: Request, file: UploadFile = File(...)):
+    return await _svc.bpmn_upload(session_id, file, request)
 
 @router.get('/api/sessions/{session_id}/bpmn/versions')
 def session_bpmn_versions_list(
