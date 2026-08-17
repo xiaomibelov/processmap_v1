@@ -8,8 +8,9 @@ export const appVersionInfo = {
       changes: [
         "Хедеры Explorer и Project свёрнуты в одну строку с адаптивной раскладкой.",
         "Добавлены выделенные колонки действий для проектов и сессий.",
-        "В списке сессий используется StatusPopoverControl.",
-        "API SessionItem получил поле is_subprocess.",
+        "В списке сессий и на странице проекта используется StatusPopoverControl.",
+        "API SessionItem получил поле is_subprocess; подпроцессы отделены от корневых сессий.",
+        "Раскрытие проекта в Explorer загружает только корневые сессии (root_only).",
       ],
     },
     {
