@@ -636,6 +636,76 @@ def bpmn_save(
     return out
 
 
+# ─── P6 [Г]: multipart upload BPMN-файла в сессию ────────────────────────────
+# Ревизия ранее принятого решения: вместо «POST create → PUT bpmn» отдельный
+# endpoint POST /api/sessions/{id}/bpmn-upload с серверной проверкой
+# расширения/Content-Type и лимитом 20МБ. Внутри — ТОТ ЖЕ путь сохранения,
+# что и PUT /api/sessions/{id}/bpmn (bpmn_save → _legacy_main.session_bpmn_save);
+# сам PUT не трогаем (он для canvas-save). CAS: upload — доверенный путь
+# «импорт файла в свежесозданную сессию», поэтому base_diagram_state_version
+# подставляется сервером из текущего состояния сессии.
+BPMN_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20 МБ
+BPMN_UPLOAD_ALLOWED_EXTENSIONS = (".bpmn", ".xml")
+
+
+def _bpmn_upload_422(detail: str) -> HTTPException:
+    return HTTPException(status_code=422, detail=detail)
+
+
+async def bpmn_upload(
+    session_id: str,
+    file: Any,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Multipart upload .bpmn/.xml в сессию. Валидация до парсинга:
+    расширение, Content-Type, размер ≤20МБ, UTF-8, well-formed XML, BPMN root.
+    Ошибки — явные 422 (RU detail) / 413, а не generic 500."""
+    filename = str(getattr(file, "filename", "") or "").strip()
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if ext not in BPMN_UPLOAD_ALLOWED_EXTENSIONS:
+        raise _bpmn_upload_422(
+            f"Недопустимый тип файла «{filename or "без имени"}». Загрузите файл .bpmn или .xml."
+        )
+    content_type = str(getattr(file, "content_type", "") or "").split(";")[0].strip().lower()
+    if content_type and "xml" not in content_type and content_type != "application/octet-stream":
+        raise _bpmn_upload_422(
+            f"Недопустимый Content-Type «{content_type}». Ожидается XML-файл (.bpmn/.xml)."
+        )
+
+    data = await file.read(BPMN_UPLOAD_MAX_BYTES + 1)
+    if len(data) > BPMN_UPLOAD_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Файл превышает лимит 20 МБ (получено {len(data)} байт).",
+        )
+    if not data or not data.strip():
+        raise _bpmn_upload_422("Файл пустой.")
+    try:
+        xml_text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise _bpmn_upload_422("Файл не является текстовым XML (требуется кодировка UTF-8).")
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise _bpmn_upload_422(f"Файл не является корректным XML: {exc}.")
+    root_tag = str(getattr(root, "tag", "") or "").lower()
+    if "bpmn" not in root_tag and "definitions" not in root_tag:
+        raise _bpmn_upload_422("XML не похож на BPMN: отсутствует корневой элемент bpmn:definitions.")
+
+    import app._legacy_main as _lm
+    from ..schemas.legacy_api import BpmnXmlIn
+
+    sess, _oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
+    base_version = int(getattr(sess, "diagram_state_version", 0) or 0) if sess else None
+    inp = BpmnXmlIn(
+        xml=xml_text,
+        source_action="bpmn_upload",
+        import_note=f"Загружен файл {filename}",
+        base_diagram_state_version=base_version,
+    )
+    return bpmn_save(session_id, inp, request)
+
+
 def bpmn_versions_list(
     session_id: str,
     *,
