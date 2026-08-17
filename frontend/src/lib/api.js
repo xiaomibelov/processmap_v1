@@ -1,8 +1,9 @@
-import { isPlainObject } from "./apiClient.js";
+import { isPlainObject, joinUrl } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
 import {
   apiRequest as request,
   fnv1aHex,
+  getAccessToken,
   getActiveOrgId,
   normalizeNotes,
   okOrError,
@@ -1147,6 +1148,98 @@ export async function apiLlmFeedback({ rating, sessionId = "", action = "" } = {
     signal: options?.signal,
   }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+// AGENT-1 — PROCESSMAN диалог (chat/history). Только по явному действию пользователя.
+export async function apiAgentChat(sessionId, payload = {}, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.agent.chat(sid), {
+    method: "POST",
+    body,
+    signal: options?.signal,
+  }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+export async function apiAgentHistory(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.agent.history(sid), { signal: options?.signal }));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return { ok: true, status: r.status, turns: Array.isArray(data.turns) ? data.turns : [] };
+}
+
+/**
+ * AGENT-1 — SSE streaming chat.
+ * Возвращает { ok: true, response, reader, abort() } или { ok: false, error }.
+ * Caller должен читать reader и вызывать abort() для «Стоп».
+ */
+export async function apiAgentStream(sessionId, payload = {}, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+
+  const url = joinUrl(apiRoutes.agent.stream(sid));
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = String(getAccessToken() || "").trim();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(isPlainObject(payload) ? payload : {}),
+      credentials: "include",
+      signal: options?.signal,
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      error: String(err?.message || err || "network error"),
+      aborted: String(err?.name || "") === "AbortError",
+    };
+  }
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = await response.text();
+    } catch {
+      detail = "";
+    }
+    return {
+      ok: false,
+      status: Number(response.status || 0),
+      error: detail || `HTTP ${response.status}`,
+    };
+  }
+
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    return { ok: false, status: 0, error: "streaming not supported" };
+  }
+
+  return {
+    ok: true,
+    response,
+    reader,
+    abort: () => {
+      try {
+        options?.signal?.abort?.();
+      } catch {
+        // ignore
+      }
+      try {
+        reader.cancel("stop").catch(() => {});
+      } catch {
+        // ignore
+      }
+    },
+  };
 }
 
 function resolveReportOrgId(options = {}) {

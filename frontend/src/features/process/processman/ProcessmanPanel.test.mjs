@@ -49,6 +49,31 @@ function jsonResponse(data, { status = 200, delayMs = 0 } = {}) {
   };
 }
 
+function streamResponse(events, { delayMs = 0 } = {}) {
+  const encoder = new TextEncoder();
+  const chunks = events.map((ev) => encoder.encode(`event: ${ev.event}\ndata: ${JSON.stringify(ev.data)}\n\n`));
+  return async () => {
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+    let i = 0;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (k) => (String(k).toLowerCase() === "content-type" ? "text/event-stream" : null) },
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (i >= chunks.length) return { done: true, value: undefined };
+            const value = chunks[i];
+            i += 1;
+            return { done: false, value };
+          },
+          cancel: async () => {},
+        }),
+      },
+    };
+  };
+}
+
 function setupDom({ fetchImpl } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true, url: "http://localhost/" });
   const previous = {
@@ -72,6 +97,9 @@ function setupDom({ fetchImpl } = {}) {
   globalThis.Element = dom.window.Element;
   globalThis.HTMLElement = dom.window.HTMLElement;
   globalThis.Node = dom.window.Node;
+  // React input polyfill использует старые IE-методы на activeElement
+  if (!dom.window.HTMLElement.prototype.attachEvent) dom.window.HTMLElement.prototype.attachEvent = () => {};
+  if (!dom.window.HTMLElement.prototype.detachEvent) dom.window.HTMLElement.prototype.detachEvent = () => {};
   globalThis.Event = dom.window.Event;
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.KeyboardEvent = dom.window.KeyboardEvent;
@@ -532,6 +560,68 @@ test("Esc внутри панели закрывает её (onClose)", async ()
     });
     await flush();
     assert.equal(closed, true, "Esc вызвал onClose");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+// ------------------------------------------------------------------ AGENT-1 streaming chat
+test("AGENT-1: свободный вопрос → POST /agent/stream, токены накапливаются, done → ответ", async () => {
+  const mod = await loadPanel();
+  await resetChat();
+  const events = [
+    { event: "start", data: { turn_id: "t1" } },
+    { event: "token", data: { delta: "Перв" } },
+    { event: "token", data: { delta: "ый " } },
+    { event: "token", data: { delta: "ответ." } },
+    { event: "done", data: { usage: { prompt_tokens: 10, completion_tokens: 3 } } },
+  ];
+  const env = setupDom({
+    fetchImpl: async (url) => {
+      if (String(url).includes("/agent/stream")) return streamResponse(events)();
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  try {
+    const doc = await renderPanel(env, mod);
+    await click(doc, env.dom.window, "processman-example-q1");
+    await click(doc, env.dom.window, "processman-action-qa");
+    const streamCalls = env.calls.filter((c) => c.url.includes("/agent/stream"));
+    assert.equal(streamCalls.length, 1, "1 POST /agent/stream");
+    assert.equal(String(streamCalls[0].opts?.method || "GET").toUpperCase(), "POST");
+    const body = JSON.parse(streamCalls[0].opts?.body || "{}");
+    assert.equal(body.question, "Что происходит на этом шаге?");
+    assert.equal(body.selected_node_id, "Act_1");
+    // ждём появления agent-сообщения и финального текста
+    assert.equal(await waitFor(doc, "processman-msg-agent"), true, "agent-сообщение появилось");
+    await flush(200);
+    const answer = doc.querySelector('[data-testid="processman-answer-text"]');
+    assert.notEqual(answer, null, "ответ отрендерен");
+    assert.equal(answer.textContent, "Первый ответ.", "текст собран из токенов");
+    const userMsg = doc.querySelector('[data-testid="processman-msg-user"]');
+    assert.equal(userMsg?.textContent, "Что происходит на этом шаге?", "вопрос пользователя в ленте");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("AGENT-1: streaming error event → S6 с [Повторить]", async () => {
+  const mod = await loadPanel();
+  await resetChat();
+  const env = setupDom({
+    fetchImpl: async (url) => {
+      if (String(url).includes("/agent/stream")) {
+        return streamResponse([{ event: "error", data: { status: "no_provider", error: "no provider" } }])();
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  try {
+    const doc = await renderPanel(env, mod);
+    await click(doc, env.dom.window, "processman-example-q1");
+    await click(doc, env.dom.window, "processman-action-qa");
+    assert.equal(await waitFor(doc, "processman-answer-error"), true, "S6 показан");
+    assert.ok(/провайдер не настроен/i.test(doc.querySelector('[data-testid="processman-answer-error"]')?.textContent || ""), "человекочитаемая ошибка");
   } finally {
     await env.cleanup();
   }
