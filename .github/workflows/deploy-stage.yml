@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -30,14 +31,9 @@ jobs:
         run: |
           set -euo pipefail
           build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          bundle_name="processmap-stage-images-${GITHUB_SHA}.tar.gz"
           {
             echo "build_time=${build_time}"
-            echo "bundle_name=${bundle_name}"
           } >> "${GITHUB_OUTPUT}"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       # AGENT-SVC: agent-образ собираем только при изменении backend/services/agent/**
       # (решение владельца). Если before-sha недоступен — считаем изменённым (safe).
@@ -60,94 +56,21 @@ jobs:
             echo "agent=false" >> "${GITHUB_OUTPUT}"
           fi
 
-      - name: Build stage api image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          load: true
-          tags: processmap_stage-api:${{ github.sha }}
-          build-args: |
-            BUILD_ID=${{ github.sha }}
-            BUILD_TIME=${{ steps.meta.outputs.build_time }}
-            BUILD_BRANCH=main
-            BUILD_ENV=stage
-
-      - name: Build stage frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          load: true
-          tags: processmap_stage-frontend:${{ github.sha }}
-          build-args: |
-            VITE_BUILD_ID=${{ github.sha }}
-            VITE_BUILD_TIME=${{ steps.meta.outputs.build_time }}
-            VITE_BUILD_BRANCH=main
-            VITE_BUILD_ENV=stage
-            VITE_DEPLOY_FINGERPRINT=processmap-stage-deploy-sha:${{ github.sha }}
-            VITE_DEPLOY_REQUESTED_REF=main
-            VITE_DEPLOY_RESOLVED_SHA=${{ github.sha }}
-
-      - name: Build stage notifications image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend/services/notifications
-          file: ./backend/services/notifications/Dockerfile
-          load: true
-          tags: processmap_stage-notifications:${{ github.sha }}
-
-      - name: Build stage agent image
-        if: steps.changes.outputs.agent == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend/services/agent
-          file: ./backend/services/agent/Dockerfile
-          load: true
-          tags: processmap_stage-agent:${{ github.sha }}
-
-      - name: Pack stage images
-        shell: bash
-        run: |
-          set -euo pipefail
-          images=(
-            "processmap_stage-api:${GITHUB_SHA}"
-            "processmap_stage-frontend:${GITHUB_SHA}"
-            "processmap_stage-notifications:${GITHUB_SHA}"
-          )
-          if [ "${{ steps.changes.outputs.agent }}" = "true" ]; then
-            images+=("processmap_stage-agent:${GITHUB_SHA}")
-          fi
-          docker image inspect "${images[@]}" >/dev/null
-          docker save "${images[@]}" \
-            | gzip -1 > "${{ steps.meta.outputs.bundle_name }}"
-          gzip -t "${{ steps.meta.outputs.bundle_name }}"
-          ls -lh "${{ steps.meta.outputs.bundle_name }}"
-
-      - name: Copy stage images to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.STAGE_HOST }}
-          username: ${{ secrets.STAGE_USER }}
-          key: ${{ secrets.STAGE_SSH_KEY }}
-          source: ${{ steps.meta.outputs.bundle_name }}
-          target: /tmp
-          overwrite: true
-
       - name: Deploy to stage server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.STAGE_HOST }}
           username: ${{ secrets.STAGE_USER }}
           key: ${{ secrets.STAGE_SSH_KEY }}
-          command_timeout: 15m
+          command_timeout: 20m
           script: |
             set -euo pipefail
             cd /opt/processmap/app
 
             REQUESTED_REF="main"
             EXPECTED_SHA="${{ github.sha }}"
-            IMAGE_BUNDLE="/tmp/${{ steps.meta.outputs.bundle_name }}"
+            AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
+            BUILD_TIME="${{ steps.meta.outputs.build_time }}"
 
             echo "[deploy-stage] preflight: stage boundary"
             test -f ".env.stage"
@@ -165,27 +88,13 @@ jobs:
               echo "[deploy-stage] ERROR: processmap_stage api container not found" >&2
               exit 1
             }
-            [ -s "${IMAGE_BUNDLE}" ] || {
-              echo "[deploy-stage] ERROR: image bundle missing or empty: ${IMAGE_BUNDLE}" >&2
-              exit 1
-            }
-
-            echo "[deploy-stage] preflight: stage egress diagnostic (non-blocking)"
-            STAGE_API_CID="$(docker ps -q \
-              --filter label=com.docker.compose.project=processmap_stage \
-              --filter label=com.docker.compose.service=api | head -n1)"
-            if timeout 4s docker exec "${STAGE_API_CID}" getent hosts vvchat.vkusvill.ru >/dev/null 2>&1; then
-              echo "[deploy-stage] stage container egress DNS: OK"
-            else
-              echo "::warning::[deploy-stage] stage container egress DNS failed; deploying prebuilt images anyway"
-            fi
 
             echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
             echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
 
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
-            git fetch origin main
-            DEPLOY_SHA="$(git rev-parse --verify origin/main)"
+            git fetch origin "${REQUESTED_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify origin/${REQUESTED_REF})"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
             [ "${DEPLOY_SHA}" = "${EXPECTED_SHA}" ] || {
               echo "[deploy-stage] ERROR: origin/main ${DEPLOY_SHA} != workflow sha ${EXPECTED_SHA}" >&2
@@ -228,10 +137,10 @@ jobs:
             echo "[deploy-stage] file checksums after checkout:"
             sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
             echo "[deploy-stage] App.jsx sessions:"
-            grep -n "const \[sessions" frontend/src/App.jsx || echo "NOT FOUND"
+            grep -n "const \\[sessions" frontend/src/App.jsx || echo "NOT FOUND"
             grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
             echo "[deploy-stage] NotesMvpPanel sessions prop:"
-            grep -n "sessions = \[\]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
+            grep -n "sessions = \\[]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
 
             STAGE_FRESHNESS_SOURCE_FILE="/tmp/processmap-stage-deploy-fingerprint-${REQUESTED_REF//[^A-Za-z0-9._-]/_}-${DEPLOY_SHA:0:12}.json"
             export STAGE_FRESHNESS_SOURCE_FILE
@@ -239,8 +148,6 @@ jobs:
             deploy/scripts/stage_freshness_proof.sh prepare-source \
               --requested-ref "${REQUESTED_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
-
-            BUILD_TIME="${{ steps.meta.outputs.build_time }}"
 
             export BUILD_ID="${DEPLOY_SHA}"
             export BUILD_BRANCH="${REQUESTED_REF}"
@@ -283,21 +190,17 @@ jobs:
               -p processmap_stage \
               config --quiet
 
-            echo "[deploy-stage] loading GitHub-built images"
-            gzip -dc "${IMAGE_BUNDLE}" | docker load
-            docker image inspect \
-              "processmap_stage-api:${DEPLOY_SHA}" \
-              "processmap_stage-frontend:${DEPLOY_SHA}" \
-              "processmap_stage-notifications:${DEPLOY_SHA}" >/dev/null
-
-            # AGENT-SVC: agent-образ собран только если менялся backend/services/agent/**.
-            # Иначе running agent-контейнер (если есть) остаётся на прежнем образе.
-            AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
+            echo "[deploy-stage] building images on server"
+            BUILD_SERVICES="api frontend notifications"
             if [ "${AGENT_CHANGED}" = "true" ]; then
-              docker image inspect "processmap_stage-agent:${DEPLOY_SHA}" >/dev/null
-            else
-              echo "[deploy-stage] agent unchanged; skipping agent image inspect/restart"
+              BUILD_SERVICES="${BUILD_SERVICES} agent"
             fi
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              build ${BUILD_SERVICES}
 
             echo "[deploy-stage] current frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
@@ -321,7 +224,7 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-build --no-deps --force-recreate -V ${UP_SERVICES}
+              up -d --no-deps --force-recreate -V ${UP_SERVICES}
 
             echo "[deploy-stage] new frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
