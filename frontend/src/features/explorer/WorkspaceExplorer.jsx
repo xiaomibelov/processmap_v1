@@ -3145,7 +3145,8 @@ function SessionRow({
             <StatusBadge status={session.status} />
           )}
         </td>
-        <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">{session.stage || "—"}</td>
+        {/* P6 [Г]: стадия — без вечного «—»: fallback на derived-статус */}
+        <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">{session.stage || sessionStatusMeta.label || "—"}</td>
         <td className="hidden md:table-cell px-2 py-2">
           {session.owner
             ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
