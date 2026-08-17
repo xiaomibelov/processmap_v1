@@ -32,8 +32,8 @@ test("session row open hint is part of the session link", () => {
   assert.match(sessionRow, /openTab:\s*"diagram"/);
 });
 
-test("app version records explorer open affordance update", () => {
+test("app version records explorer header and affordance update", () => {
   const versionSource = readFileSync(new URL("../../config/appVersion.js", import.meta.url), "utf8");
-  assert.match(versionSource, /version:\s*"v1\.0\.105"/);
-  assert.match(versionSource, /"В Explorer различены проекты и сессии при открытии\."/);
+  assert.match(versionSource, /version:\s*"v1\.0\.142"/);
+  assert.match(versionSource, /"Хедеры Explorer и Project свёрнуты в одну строку с адаптивной раскладкой\./);
 });
