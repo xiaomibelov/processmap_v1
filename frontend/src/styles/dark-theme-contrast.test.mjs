@@ -4,6 +4,7 @@ import test from "node:test";
 
 const tailwindSource = fs.readFileSync(new URL("./tailwind.css", import.meta.url), "utf8");
 const topBarSource = fs.readFileSync(new URL("../components/TopBar.jsx", import.meta.url), "utf8");
+const navZoneSource = fs.readFileSync(new URL("../components/NavZone.jsx", import.meta.url), "utf8");
 const sessionNavStripSource = fs.readFileSync(new URL("../components/SessionNavStrip.jsx", import.meta.url), "utf8");
 const notesPanelSource = fs.readFileSync(new URL("../components/NotesMvpPanel.jsx", import.meta.url), "utf8");
 const elementSettingsSource = fs.readFileSync(new URL("../components/sidebar/ElementSettingsControls.jsx", import.meta.url), "utf8");
@@ -18,7 +19,7 @@ test("dark theme contrast guard covers sidebar properties and selection states",
   assert.match(tailwindSource, /\.dark \.sidebarInlineTabs/);
   assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle \{/);
   assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle \{[\s\S]*color: #D7E3F9;[\s\S]*\}/);
-  assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle input\[type="checkbox"\] \{[\s\S]*accent-color: #7EB0FF;[\s\S]*\}/);
+  assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle input\[type="checkbox"\] \{[\s\S]*accent-color: hsl\(var\(--accent\)\);[\s\S]*\}/);
   assert.match(tailwindSource, /\.dark \.sidebarPropertiesDisplaySettings/);
   assert.match(tailwindSource, /\.dark \.sidebarStatusPill\.is-attention/);
   assert.match(tailwindSource, /\.dark \.sidebarEmptyHint/);
@@ -28,8 +29,9 @@ test("dark theme contrast guard covers sidebar properties and selection states",
 
 test("dark theme topbar and discussions use semantic colors instead of white status fills", () => {
   assert.match(workspacePermissionsSource, /draft:[\s\S]*dark:border-borderStrong dark:bg-panel2 dark:text-fg/);
-  // часть А: статус-пилюля переехала из TopBar в полосу сессии (SessionNavStrip)
-  assert.match(sessionNavStripSource, /statusComboPill/);
+  // часть А: статус-пилюля переехала из TopBar в однострочную полосу (NavZone / SessionNavStrip)
+  assert.match(navZoneSource, /className="nav-zone-status inline-flex[^"]*text-fg/);
+  assert.doesNotMatch(navZoneSource, /bg-white/);
   assert.match(topBarSource, /border-danger\/55 bg-danger\/15 text-danger/);
   assert.match(topBarSource, /hover:border-info\/35 hover:bg-panel2\/55/);
   assert.doesNotMatch(topBarSource, /bg-rose-50 text-rose-900/);

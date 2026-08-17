@@ -1,0 +1,32 @@
+/* NavZone: однострочная навигационная полоса ProcessMap.
+   Контейнерная адаптивность — пороги привязаны к ширине самой полосы,
+   а не viewport, т.к. слева может быть раскрыта боковая панель. */
+
+.nav-zone {
+  container-type: inline-size;
+}
+
+.nav-zone-row {
+  height: 36px;
+}
+
+/* Ширина < 1100px — мета скрывается первой. */
+@container (max-width: 1099px) {
+  .nav-zone-meta {
+    display: none;
+  }
+}
+
+/* Ширина < 760px — кнопка «Назад» остаётся только иконкой. */
+@container (max-width: 759px) {
+  .nav-zone-back-label {
+    display: none;
+  }
+}
+
+/* Узкие контейнеры — у статуса остаётся только точка с тултипом. */
+@container (max-width: 639px) {
+  .nav-zone-status-label {
+    display: none;
+  }
+}
