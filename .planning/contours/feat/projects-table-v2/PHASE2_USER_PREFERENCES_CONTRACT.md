@@ -118,5 +118,10 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 3. **Whitelist ключей**: `explorer.tree.collapsed`, `explorer.columns`, `explorer.density`, `explorer.saved_views` заводятся в схему сразу (пустыми), заполняются по мере Фаз 2–3.
 4. **saved_views**:
    - Лимиты: ≤ 20 видов на user+org; имя ≤ 80 символов; суммарный payload preferences ≤ 64 KB; превышение → `422`.
-   - Валидация фильтров вида против whitelist допустимых filter-ключей и значений; неизвестные ключи фильтра → `422`.
+   - Валидация фильтров вида против whitelist допустимых filter-ключей и значений; неизвестные ключи фильтра → `422`. *(Уточнение 2026-08-16: whitelist фильтров будет зафиксирован в Фазе 3 вместе с фронтом saved_views; в Фазе 2 валидируется только структура: id/name ≤ 80, filters/sort — объекты.)*
    - Шаринг: **только через URL-сериализацию** (параметры в ссылке; при открытии клиент валидирует и может предложить «Сохранить как мой вид»). Shared-сущность с owner/ACL — вне рамок Фазы 2.
+
+## Уточнения при реализации (2026-08-16, ветка uiux/preferences-tree-v1)
+
+5. **Хранилище — PostgreSQL/SQLite через общий storage-слой** (вместо «sqlite» из раздела «Хранение»): primary DB проекта — PostgreSQL (`DATABASE_URL`), dev/tests — SQLite; DDL idempotent при старте в `backend/app/storage.py`, значения — `value_json TEXT` (JSON-строка), как остальные `*_json` колонки. `version` документа (user+org) — в отдельной таблице `user_preferences_docs`, чтобы счётчик переживал удаление всех ключей.
+6. **Семантика `explorer.tree.collapsed`**: дефолт дерева в UI — «всё свёрнуто» (`expandedByFolder = {}`), поэтому collapsed-список был бы избыточен. Значение ключа хранит **ID явно раскрытых пользователем узлов** (`Record<workspaceId, string[]>`). Лимит ≤ 500 ID на workspace сохраняется.

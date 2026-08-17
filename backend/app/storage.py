@@ -2120,6 +2120,35 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_org_action ON audit_log(org_id, action)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
+            # P1 [А]: per-user+per-org UI preferences (PHASE2_USER_PREFERENCES_CONTRACT).
+            # Значения храним как TEXT (JSON-строка), как остальные *_json колонки —
+            # слой _translate_sql_for_postgres прозрачно переносит это на Postgres.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                  user_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL,
+                  key TEXT NOT NULL,
+                  value_json TEXT NOT NULL DEFAULT '{}',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (user_id, org_id, key)
+                )
+                """
+            )
+            # Монотонный version одного preferences-документа (user+org) для
+            # optimistic concurrency (base_version/409) — отдельно от ключей,
+            # чтобы счётчик не терялся при unset всех ключей.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_preferences_docs (
+                  user_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL,
+                  version INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (user_id, org_id)
+                )
+                """
+            )
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS ai_execution_log (
@@ -9075,6 +9104,106 @@ def append_audit_log(
             "meta": meta if isinstance(meta, dict) else {},
         }
     return _audit_row_to_dict(row)
+
+
+# ─── User preferences (P1 [А], PHASE2_USER_PREFERENCES_CONTRACT) ─────────────
+
+
+def get_user_preferences(user_id: str, org_id: str) -> Dict[str, Any]:
+    """Снапшот preferences-документа (user+org). Нет записей → version 0, {}."""
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        raise ValueError("user_id and org_id are required")
+    _ensure_schema()
+    with _connect() as con:
+        doc = con.execute(
+            "SELECT version, updated_at FROM user_preferences_docs WHERE user_id = ? AND org_id = ? LIMIT 1",
+            [uid, oid],
+        ).fetchone()
+        rows = con.execute(
+            "SELECT key, value_json FROM user_preferences WHERE user_id = ? AND org_id = ?",
+            [uid, oid],
+        ).fetchall()
+    preferences: Dict[str, Any] = {}
+    for row in rows:
+        r = _row_to_dict(row)
+        preferences[str(r.get("key") or "")] = _json_loads(r.get("value_json"), None)
+    doc_d = _row_to_dict(doc) if doc else {}
+    return {
+        "user_id": uid,
+        "version": int(doc_d.get("version") or 0),
+        "updated_at": int(doc_d.get("updated_at") or 0),
+        "preferences": preferences,
+    }
+
+
+def apply_user_preferences_patch(
+    user_id: str,
+    org_id: str,
+    *,
+    base_version: Any,
+    set_values: Optional[Dict[str, Any]] = None,
+    unset_keys: Optional[List[str]] = None,
+) -> Tuple[Dict[str, Any], bool]:
+    """Атомарный merge-patch с optimistic concurrency.
+
+    Возвращает (snapshot, conflict). conflict=True → base_version не совпал,
+    ничего не записано, snapshot — актуальное состояние (для 409/LWW).
+    """
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        raise ValueError("user_id and org_id are required")
+    set_map = dict(set_values or {})
+    unset_list = [str(k or "").strip() for k in (unset_keys or []) if str(k or "").strip()]
+    now = _now_ts()
+    _ensure_schema()
+    conflict = False
+    with _connect() as con:
+        doc = con.execute(
+            "SELECT version FROM user_preferences_docs WHERE user_id = ? AND org_id = ? LIMIT 1",
+            [uid, oid],
+        ).fetchone()
+        current_version = int(_row_to_dict(doc).get("version") or 0) if doc else 0
+        if int(base_version) != current_version:
+            conflict = True
+        else:
+            next_version = current_version + 1
+            for key, value in set_map.items():
+                if value is None:
+                    con.execute(
+                        "DELETE FROM user_preferences WHERE user_id = ? AND org_id = ? AND key = ?",
+                        [uid, oid, key],
+                    )
+                else:
+                    con.execute(
+                        """
+                        INSERT INTO user_preferences (user_id, org_id, key, value_json, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, org_id, key) DO UPDATE SET
+                            value_json=excluded.value_json,
+                            updated_at=excluded.updated_at
+                        """,
+                        [uid, oid, key, _json_dumps(value, None), now],
+                    )
+            for key in unset_list:
+                con.execute(
+                    "DELETE FROM user_preferences WHERE user_id = ? AND org_id = ? AND key = ?",
+                    [uid, oid, key],
+                )
+            con.execute(
+                """
+                INSERT INTO user_preferences_docs (user_id, org_id, version, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, org_id) DO UPDATE SET
+                    version=excluded.version,
+                    updated_at=excluded.updated_at
+                """,
+                [uid, oid, next_version, now],
+            )
+        con.commit()
+    return get_user_preferences(uid, oid), conflict
 
 
 def _build_audit_log_where(
