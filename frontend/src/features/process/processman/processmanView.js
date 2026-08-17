@@ -195,3 +195,93 @@ export function formatClock(ts) {
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
 }
+
+// ---------------------------------------------------------------- AGENT-1 SSE
+// Парсер Server-Sent Events из fetch() ReadableStream.
+// Контракт бэкенда: event: start|token|action|done|error; data: JSON.
+
+export const SSE_EVENT = Object.freeze({
+  START: "start",
+  TOKEN: "token",
+  ACTION: "action",
+  DONE: "done",
+  ERROR: "error",
+});
+
+function safeJson(text) {
+  try {
+    return JSON.parse(String(text || "{}"));
+  } catch {
+    return {};
+  }
+}
+
+/** Разобрать накопленный буфер на SSE-сообщения. */
+export function parseSseBuffer(buffer) {
+  const text = String(buffer || "");
+  const blocks = text.split("\n\n");
+  const events = [];
+  // Последний кусок может быть незавершённым — оставляем в leftover.
+  for (let i = 0; i < blocks.length - 1; i += 1) {
+    const block = blocks[i].trim();
+    if (!block) continue;
+    const lines = block.split("\n");
+    let event = "";
+    let data = "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        event = line.slice("event: ".length).trim();
+      } else if (line.startsWith("event:")) {
+        event = line.slice("event:".length).trim();
+      } else if (line.startsWith("data: ")) {
+        data = line.slice("data: ".length);
+      } else if (line.startsWith("data:")) {
+        data = line.slice("data:".length).trimStart();
+      }
+    }
+    if (event) events.push({ event, data: safeJson(data) });
+  }
+  return { events, leftover: blocks[blocks.length - 1] };
+}
+
+/** Асинхронный генератор событий из fetch reader. */
+export async function* readSseEvents(reader) {
+  if (!reader) return;
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const { events, leftover } = parseSseBuffer(buffer);
+      for (const ev of events) yield ev;
+      buffer = leftover;
+    }
+  } finally {
+    const final = buffer.trim();
+    if (final) {
+      const { events } = parseSseBuffer(final + "\n\n");
+      for (const ev of events) yield ev;
+    }
+  }
+}
+
+/** Преобразовать SSE-событие в patch для сообщения панели. */
+export function mapStreamEventToMessage(event, data) {
+  if (event === SSE_EVENT.TOKEN) {
+    return { type: "text", delta: String(data?.delta || "") };
+  }
+  if (event === SSE_EVENT.ACTION) {
+    const payload = data?.payload && typeof data.payload === "object" ? data.payload : {};
+    return { type: "action", action: String(data?.action || ""), actionPayload: payload };
+  }
+  if (event === SSE_EVENT.DONE) {
+    const usage = data?.usage && typeof data.usage === "object" ? data.usage : {};
+    return { type: "done", usage };
+  }
+  if (event === SSE_EVENT.ERROR) {
+    return { type: "error", errorStatus: String(data?.status || "error"), errorText: String(data?.error || "") };
+  }
+  return { type: "noop" };
+}

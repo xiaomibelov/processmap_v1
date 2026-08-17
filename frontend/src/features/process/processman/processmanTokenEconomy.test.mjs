@@ -140,6 +140,31 @@ function setupDom() {
   const calls = [];
   globalThis.fetch = async (url, opts = {}) => {
     calls.push({ url: String(url), method: String(opts?.method || "GET") });
+    // AGENT-1: свободный вопрос → SSE streaming (/agent/stream)
+    if (String(url).includes("/agent/stream")) {
+      const encoder = new TextEncoder();
+      const chunks = [
+        encoder.encode('event: token\ndata: {"delta":"ответ"}\n\n'),
+        encoder.encode('event: done\ndata: {"usage":{}}\n\n'),
+      ];
+      let i = 0;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (k) => (String(k).toLowerCase() === "content-type" ? "text/event-stream" : null) },
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (i >= chunks.length) return { done: true };
+              const value = chunks[i];
+              i += 1;
+              return { done: false, value };
+            },
+            cancel: async () => {},
+          }),
+        },
+      };
+    }
     return new Response(JSON.stringify({ ok: true, status: "ok", suggestions: { candidates: [], note: "" } }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -248,7 +273,7 @@ test("behavior: только клик действия = ровно 1 вызов
     await flush();
     doc = env.dom.window.document;
 
-    // composer: пример вопроса → отправка = ровно 1 вызов /step-qa
+    // composer: пример вопроса → отправка = ровно 1 вызов /agent/stream (AGENT-1 SSE)
     // (клик по чипу-примеру подставляет текст без сети; send активен при выбранном шаге)
     const example = doc.querySelector('[data-testid="processman-example-q1"]');
     assert.notEqual(example, null, "чип-пример вопроса (empty state)");
@@ -265,11 +290,11 @@ test("behavior: только клик действия = ровно 1 вызов
     });
     await flush();
     assert.equal(env.calls.length, 1, "отправка вопроса = ровно 1 вызов");
-    assert.ok(env.calls[0].url.includes("/step-qa"), `URL step-qa: ${env.calls[0].url}`);
+    assert.ok(env.calls[0].url.includes("/agent/stream"), `URL agent/stream: ${env.calls[0].url}`);
     assert.equal(env.calls[0].method, "POST");
 
-    // ждём завершения typewriter предыдущего ответа (пока reveal — действия disabled)
-    assert.equal(await waitFor(doc, "processman-answer-ok"), true, "ответ qa доиграл");
+    // ждём завершения streaming-ответа (пока reveal — действия disabled)
+    assert.equal(await waitFor(doc, "processman-answer-ok"), true, "ответ chat доиграл");
 
     // TO BE-контекст: клик suggest (quick actions свернуты под «⋯» после первого сообщения)
     const more = doc.querySelector('[data-testid="processman-actions-more"]');

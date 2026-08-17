@@ -203,6 +203,12 @@ export const apiRoutes = {
     ),
     subprocessReturn: (sessionId) => `/api/sessions/${encode(sessionId)}/return`,
   },
+  agent: {
+    // AGENT-1 — диалоговый агент PROCESSMAN (chat/history/stream).
+    chat: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/chat`,
+    history: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/history`,
+    stream: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/stream`,
+  },
   clipboard: {
     bpmn: () => "/api/clipboard/bpmn",
     bpmnCopy: () => "/api/clipboard/bpmn/copy",

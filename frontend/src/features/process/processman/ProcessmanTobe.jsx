@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ru } from "../../../shared/i18n/ru";
-import { apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
+import { apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
 import {
   answerCacheKey,
   buildAnswerMeta,
   extractAnswerText,
   mapActionResponse,
+  mapStreamEventToMessage,
   readElementId,
+  readSseEvents,
   resolveLlmStatusView,
 } from "./processmanView";
 import {
   AGENT_STATUS,
   appendAgentPending,
+  appendStreamingDelta,
   appendUserMessage,
   failAgentMessage,
   finishAgentMessage,
@@ -20,6 +23,7 @@ import {
   lastAgentMessage,
   resolveAgentMessage,
   stopAgentMessage,
+  updateAgentMessage,
 } from "./chat/processmanChatStore";
 import ProcessmanChatFeed from "./ProcessmanChatFeed";
 import ProcessmanComposer from "./ProcessmanComposer";
@@ -104,14 +108,77 @@ export default function ProcessmanTobe({
     if (!sid) return;
     const q = String(qRaw || "").trim();
     if (action === "qa" && !q) return;
+    if (action === "chat" && !q) return;
 
     // пользовательское сообщение в ленту
-    appendUserMessage(sid, action === "qa" ? q : (ACTION_USER_LABELS[action]?.() || action));
+    appendUserMessage(sid, action === "qa" || action === "chat" ? q : (ACTION_USER_LABELS[action]?.() || action));
     bump();
 
-    // qa без выбранного шага — честный локальный ответ (0 LLM-вызовов, API не трогаем)
+    // qa/chat без выбранного шага — честный локальный ответ (0 LLM-вызовов, API не трогаем)
     if (!elementId) {
       appendLocalNote(t.noStepReplyTitle, t.noStepReplyText);
+      return;
+    }
+
+    // AGENT-1 — свободный вопрос через SSE streaming (/agent/stream).
+    if (action === "chat") {
+      const pendingMsg = appendAgentPending(sid, { action: "chat", stepId: elementId, question: q });
+      bump();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      try {
+        const stream = await apiAgentStream(sid, { question: q, selected_node_id: elementId, force: force ? 1 : 0 }, { signal: controller.signal });
+        if (!stream.ok) {
+          failAgentMessage(sid, pendingMsg.id, { errorText: stream.error });
+          bump();
+          return;
+        }
+        resolveAgentMessage(sid, pendingMsg.id, { text: "" });
+        bump();
+        for await (const { event, data } of readSseEvents(stream.reader)) {
+          const patch = mapStreamEventToMessage(event, data);
+          if (patch.type === "text") {
+            appendStreamingDelta(sid, pendingMsg.id, patch.delta);
+            bump();
+          } else if (patch.type === "action") {
+            const mapped = mapActionResponse({ ok: true, result: patch.actionPayload });
+            if (mapped.status === "ok") {
+              const text = extractAnswerText(patch.action, mapped.data) || "";
+              updateAgentMessage(sid, pendingMsg.id, {
+                text,
+                meta: { ...buildAnswerMeta(mapped.data, { fromCache: false }), fromCache: false },
+              });
+            } else {
+              failAgentMessage(sid, pendingMsg.id, { errorText: mapped.errorText, errorStatus: mapped.errorStatus });
+            }
+            bump();
+          } else if (patch.type === "done") {
+            if (patch.usage) {
+              updateAgentMessage(sid, pendingMsg.id, {
+                meta: { ...(pendingMsg.meta || {}), usage: patch.usage },
+              });
+            }
+            finishAgentMessage(sid, pendingMsg.id);
+            bump();
+          } else if (patch.type === "error") {
+            const mapped = mapActionResponse({ ok: false, data: { status: patch.errorStatus, error: patch.errorText } });
+            failAgentMessage(sid, pendingMsg.id, { errorText: mapped.errorText, errorStatus: patch.errorStatus });
+            bump();
+          }
+        }
+        // если бэк закрыл поток без done — финализируем вручную
+        const current = lastAgentMessage(sid);
+        if (current?.id === pendingMsg.id && current?.status === AGENT_STATUS.STREAMING) {
+          finishAgentMessage(sid, pendingMsg.id);
+          bump();
+        }
+      } catch (err) {
+        if (String(err?.name || "") === "AbortError") return;
+        failAgentMessage(sid, pendingMsg.id, { errorText: String(err?.message || err || t.errorTitle) });
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+        bump();
+      }
       return;
     }
 
@@ -168,7 +235,7 @@ export default function ProcessmanTobe({
     const q = String(question || "").trim();
     if (!q || pending || notConfigured || quotaExhausted) return;
     setQuestion("");
-    void run("qa", { question: q });
+    void run("chat", { question: q });
   }, [question, pending, notConfigured, quotaExhausted, run]);
 
   const handleStop = useCallback((msg, visibleText) => {

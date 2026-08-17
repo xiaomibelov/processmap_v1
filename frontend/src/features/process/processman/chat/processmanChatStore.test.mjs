@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   AGENT_STATUS,
   appendAgentPending,
+  appendStreamingDelta,
   appendUserMessage,
   failAgentMessage,
   finishAgentMessage,
@@ -18,6 +19,7 @@ import {
   typewriterDone,
   typewriterProgress,
   TYPEWRITER_CHARS_PER_TICK,
+  updateAgentMessage,
 } from "./processmanChatStore.js";
 
 test.beforeEach(() => resetChatHistories());
@@ -75,4 +77,30 @@ test("typewriter: монотонный прогресс порциями + done"
   assert.equal(typewriterDone(text, 3), false);
   assert.equal(typewriterDone(text, 4), true);
   assert.equal(typewriterProgress(text, 100), text.length, "кап = длина текста");
+});
+
+test("appendStreamingDelta: pending → streaming, delta накапливается", () => {
+  const pending = appendAgentPending("s1", { action: "chat" });
+  appendStreamingDelta("s1", pending.id, "первая ");
+  assert.equal(lastAgentMessage("s1").status, AGENT_STATUS.STREAMING);
+  assert.equal(lastAgentMessage("s1").text, "первая ");
+  appendStreamingDelta("s1", pending.id, "вторая");
+  assert.equal(lastAgentMessage("s1").text, "первая вторая");
+});
+
+test("appendStreamingDelta игнорирует delta после stop/error", () => {
+  const pending = appendAgentPending("s1", { action: "chat" });
+  stopAgentMessage("s1", pending.id, { visibleText: "обор" });
+  appendStreamingDelta("s1", pending.id, "ван");
+  assert.equal(lastAgentMessage("s1").text, "обор");
+  assert.equal(lastAgentMessage("s1").status, AGENT_STATUS.STOPPED);
+});
+
+test("updateAgentMessage: текст/meta/статус", () => {
+  const pending = appendAgentPending("s1", { action: "chat" });
+  updateAgentMessage("s1", pending.id, { text: "action text", meta: { usage: { tokens: 1 } }, status: AGENT_STATUS.STREAMING });
+  const msg = lastAgentMessage("s1");
+  assert.equal(msg.text, "action text");
+  assert.equal(msg.meta.usage.tokens, 1);
+  assert.equal(msg.status, AGENT_STATUS.STREAMING);
 });
