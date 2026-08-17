@@ -7,7 +7,7 @@ const displayLabelSource = readFileSync(new URL("./workspaceDisplayLabels.js", i
 
 test("ProjectPane keeps breadcrumb trail and only compact session count in header", () => {
   assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.name\s*\|\|\s*""\)/);
-  assert.match(explorerSource, /Сессии:\s*\{sessionCount\}/);
+  assert.match(explorerSource, /Сессии:\s*(\$\{sessionCount\}|\{sessionCount\})/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Owner"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Активность"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="DoD"/);

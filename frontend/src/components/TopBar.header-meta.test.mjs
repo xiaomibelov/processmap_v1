@@ -27,14 +27,14 @@ test("TopBar no longer exposes the global AI entry", () => {
   assert.equal(source.includes("aiToolsOpen"), false);
 });
 
-test("TopBar filters status options by allowed transitions", () => {
-  assert.match(source, /import\s*\{[^}]*getAllowedNextStatuses[^}]*\}\s*from\s*"\.\.\/features\/workspace\/sessionStatus\.js"/);
-  assert.match(source, /statusOptions\s*=\s*useMemo\s*\(\s*\(\)\s*=>\s*MANUAL_SESSION_STATUSES\.filter\s*\(\s*\(\s*s\s*\)\s*=>\s*allowedNextStatuses\.has\s*\(\s*s\.value\s*\)\s*\)/);
-  assert.match(source, /statusOptions\.map/);
+test("TopBar no longer owns session status control UI", () => {
+  assert.doesNotMatch(source, /import\s*\{[^}]*getAllowedNextStatuses[^}]*\}\s*from\s*"\.\.\/features\/workspace\/sessionStatus\.js"/);
+  assert.doesNotMatch(source, /MANUAL_SESSION_STATUSES/);
+  assert.doesNotMatch(source, /statusOptions/);
+  assert.doesNotMatch(source, /hasStatusAlternatives/);
 });
 
-test("TopBar disables status control while a change is in flight", () => {
-  assert.match(source, /isChangingSessionStatus\s*=/);
-  assert.match(source, /disabled=\{\s*isChangingSessionStatus\s*\|\|\s*!hasStatusAlternatives\s*\}/);
-  assert.match(source, /isChangingSessionStatus\s*\?\s*"Сохранение…"/);
+test("TopBar keeps status change callback prop for downstream wiring", () => {
+  assert.match(source, /onChangeSessionStatus,/);
+  assert.match(source, /isChangingSessionStatus\s*=\s*false/);
 });

@@ -2,34 +2,26 @@ import React, { useState } from "react";
 import { collapseBreadcrumbTrail } from "./textBreadcrumbs.js";
 
 // Текстовые хлебные крошки (часть А, nav-zone): родители — приглушённые
-// текстовые ссылки (hover: underline), текущий сегмент — обычный текст
+// текстовые ссылки (hover: underline), текущий сегмент — полужирный текст
 // основным цветом, без чипов/пилюль/фонов. Длинные пути сворачиваются в «…».
 
 export { collapseBreadcrumbTrail };
 
-export default function TextBreadcrumbs({
-  crumbs = [],
-  dataTestId = "text-breadcrumbs",
-  singleLine = false,
-  currentClassName = "",
-  forceCollapse = false,
-}) {
+export default function TextBreadcrumbs({ crumbs = [], dataTestId = "text-breadcrumbs" }) {
   const [expanded, setExpanded] = useState(false);
   const list = (Array.isArray(crumbs) ? crumbs : []).filter(
     (crumb) => crumb && String(crumb.label || "").trim(),
   );
   if (!list.length) return null;
 
-  const model = expanded && !forceCollapse
+  const model = expanded
     ? { collapsed: false, items: list.map((crumb) => ({ type: "crumb", crumb })) }
-    : collapseBreadcrumbTrail(list, forceCollapse ? 3 : 4);
+    : collapseBreadcrumbTrail(list);
   const lastKey = list[list.length - 1].key;
 
   return (
     <nav
-      className={`flex min-w-0 items-center gap-x-1 text-[13px] leading-5 ${
-        singleLine ? "flex-nowrap overflow-hidden whitespace-nowrap" : "flex-wrap"
-      }`}
+      className="flex min-w-0 flex-nowrap items-center gap-x-1 text-[13px] leading-5 h-9"
       aria-label="Путь"
       data-testid={dataTestId}
     >
@@ -63,7 +55,7 @@ export default function TextBreadcrumbs({
             {separator}
             {isCurrent || typeof crumb.onClick !== "function" ? (
               <span
-                className={`truncate ${isCurrent ? `text-fg ${currentClassName}`.trim() : "text-muted"}`}
+                className={`truncate ${isCurrent ? "font-semibold text-fg" : "text-muted"}`}
                 aria-current={isCurrent ? "page" : undefined}
                 data-current={isCurrent ? "true" : undefined}
                 data-testid={crumb.testId}
