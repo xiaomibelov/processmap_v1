@@ -32,6 +32,7 @@ export const EXPLORER_STATUS_CATALOG = {
   ready: { id: "ready", label: "Готово", tone: "green" },
   archived: { id: "archived", label: "Архив", tone: "muted" },
   on_hold: { id: "on_hold", label: "Пауза", tone: "orange" },
+  active: { id: "active", label: "Активен", tone: "gray" },
 };
 
 export const EXPLORER_STATUS_ORDER = [
@@ -44,6 +45,7 @@ export const EXPLORER_STATUS_ORDER = [
   "ready",
   "on_hold",
   "archived",
+  "active",
 ];
 
 // tone → классы точки 7px (и мягкого фона бейджа)
@@ -68,14 +70,25 @@ export function mapSessionStatusToCatalog(valueRaw) {
   return normalizeManualSessionStatus(valueRaw, "draft") || "draft";
 }
 
-// project passport.status free-form: покрываем известные значения, остальное — «—».
+// project passport.status: маппинг на единый каталог без потери API-значений.
 export function mapProjectStatusToCatalog(valueRaw) {
   const v = String(valueRaw || "").trim().toLowerCase();
-  if (!v || v === "active") return "none";
+  if (v === "active") return "active";
   if (v === "on_hold") return "on_hold";
   if (v === "done" || v === "completed") return "ready";
   if (v === "archived" || v === "archive") return "archived";
   return "none";
+}
+
+// Обратный маппинг: выбор в поповере → значение для PATCH /api/projects/{id}.
+export function mapCatalogStatusToProjectApi(catalogId) {
+  const map = {
+    active: "active",
+    on_hold: "on_hold",
+    ready: "done",
+    archived: "archived",
+  };
+  return map[catalogId] || String(catalogId || "active");
 }
 
 export function mapStatusToCatalog(domain, valueRaw) {
@@ -96,7 +109,7 @@ export function getExplorerStatusEntry(domain, valueRaw) {
 
 /**
  * Опции поповера. folder: полный контекстный набор. session: текущий статус +
- * разрешённые переходы (transition-матрица). project: [] (read-only).
+ * разрешённые переходы (transition-матрица). project: полный набор статусов паспорта.
  */
 export function getExplorerStatusOptions(domain, currentValueRaw) {
   if (domain === "folder") {
@@ -109,11 +122,14 @@ export function getExplorerStatusOptions(domain, currentValueRaw) {
       (id) => allowed.has(id) && ["draft", "in_progress", "review", "ready", "archived"].includes(id),
     ).map((id) => ({ ...EXPLORER_STATUS_CATALOG[id] }));
   }
+  if (domain === "project") {
+    return ["active", "on_hold", "ready", "archived"].map((id) => ({ ...EXPLORER_STATUS_CATALOG[id] }));
+  }
   return [];
 }
 
 export function isExplorerStatusEditable(domain) {
-  return domain === "folder" || domain === "session";
+  return domain === "folder" || domain === "session" || domain === "project";
 }
 
 // ─── Optimistic change (pure reducer) ────────────────────────────────────────

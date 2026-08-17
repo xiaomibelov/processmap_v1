@@ -1,8 +1,18 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.141",
+  currentVersion: "v1.0.142",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.142",
+      changes: [
+        "Хедеры Explorer и Project свёрнуты в одну строку с адаптивной раскладкой.",
+        "Добавлены выделенные колонки действий для проектов и сессий.",
+        "В списке сессий и на странице проекта используется StatusPopoverControl.",
+        "API SessionItem получил поле is_subprocess; подпроцессы отделены от корневых сессий.",
+        "Раскрытие проекта в Explorer загружает только корневые сессии (root_only).",
+      ],
+    },
     {
       version: "v1.0.141",
       changes: [
