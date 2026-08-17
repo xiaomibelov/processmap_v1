@@ -15,8 +15,9 @@ __pycache__/
 
 workspace/.session_store/
 workspace/.session_store/**
-backend/workspace/.session_store/
-backend/workspace/.session_store/**
+backend/workspace/
+workspace/.session_store/
+workspace/.session_store/**
 
 node_modules/
 dist/
@@ -34,6 +35,7 @@ test-results/
 frontend/test-results/
 workspace/projects/*.json
 .env
+.env.*
 .local/*
 !.local/processmap/
 .local/processmap/*
