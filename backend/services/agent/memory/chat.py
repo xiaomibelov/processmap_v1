@@ -14,7 +14,7 @@ import re
 import uuid
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from gateway.gateway import complete, complete_stream
+from gateway.gateway import complete, complete_cached, complete_stream
 from runners.action_runners import run_explain_step, run_step_qa, run_suggest_next
 from runners.monolith_client import search_rag
 from schemas import AgentChatIn, AgentChatOut
@@ -123,8 +123,9 @@ def route_intent(
         )
     }
     try:
-        result = complete(
+        result = complete_cached(
             ROUTER_FEATURE,
+            cache_digest=_router_digest(question, projection_digest, selected_node_id),
             payload=payload,
             user_id=user_id,
             project_id=project_id,
