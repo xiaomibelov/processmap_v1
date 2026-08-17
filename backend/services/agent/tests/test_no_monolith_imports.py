@@ -53,7 +53,7 @@ def test_no_unknown_local_top_level_modules():
         for root in _iter_import_roots(tree):
             if root in ALLOWED_LOCAL_ROOTS or root in stdlib:
                 continue
-            if root in {"fastapi", "pydantic", "httpx", "jwt", "requests", "redis", "psycopg", "psycopg_pool", "pytest", "uvicorn", "unittest"}:
+            if root in {"fastapi", "pydantic", "httpx", "jwt", "requests", "redis", "psycopg", "psycopg_pool", "pytest", "uvicorn", "unittest", "fakeredis"}:
                 continue
             unknown.append(f"{py_file.relative_to(SERVICE_ROOT)}: '{root}'")
     assert not unknown, "нераспознанные top-level imports (проверь, что это не монолит):\n" + "\n".join(unknown)
