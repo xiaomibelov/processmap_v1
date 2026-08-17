@@ -637,7 +637,7 @@ function ExplorerMarqueeText({ text, className = "" }) {
 function StatusDotBadge({ domain, value }) {
   const entry = getExplorerStatusEntry(domain, value);
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium" title={entry.label}>
+    <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium" title={entry.label}>
       <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${entry.dotClass}`} aria-hidden />
       <span className={entry.textClass}>{entry.label}</span>
     </span>
@@ -717,7 +717,7 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
         type="button"
         disabled={disabled || state.saving}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full px-1.5 py-1 text-xs font-medium transition-colors hover:bg-accentSoft/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait disabled:opacity-70"
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1 py-1 text-xs font-medium transition-colors hover:bg-accentSoft/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait disabled:opacity-70"
         title={`Статус: ${entry.label}`}
         aria-label={`Статус: ${entry.label}`}
         aria-haspopup="menu"
@@ -1596,6 +1596,7 @@ function ProjectRow({
         {layout.showUpdated ? <UpdatedCell node={project} /> : null}
         <td className="px-2 py-2.5 text-right relative" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1.5">
+            {layout.compact ? null : (
             <AppRouteLink
               className="secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg"
               href={projectHref}
@@ -1603,6 +1604,7 @@ function ProjectRow({
             >
               Открыть проект
             </AppRouteLink>
+            )}
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="opacity-55 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
@@ -1976,17 +1978,31 @@ function ExplorerPane({
   // P4 [А]: адаптив по ширине КОНТЕЙНЕРА таблицы (сайдбар схлопывается —
   // media queries по viewport не подходят). ResizeObserver + чистая функция
   // getExplorerColumnLayout (пороги/приоритеты — explorerColumnVisibility.js).
+  // Callback ref: таблица монтируется условно (после загрузки данных), поэтому
+  // effect с [] не подходит — RO подключаем в момент появления контейнера.
   const explorerTableContainerRef = useRef(null);
+  const explorerTableRORef = useRef(null);
   const [explorerTableWidth, setExplorerTableWidth] = useState(0);
-  useEffect(() => {
-    const el = explorerTableContainerRef.current;
-    if (!el) return undefined;
+  const explorerTableContainerCallbackRef = useCallback((el) => {
+    if (explorerTableRORef.current) {
+      explorerTableRORef.current.disconnect();
+      explorerTableRORef.current = null;
+    }
+    explorerTableContainerRef.current = el;
+    if (!el) return;
+    setExplorerTableWidth(Math.round(el.clientWidth || 0));
     const ro = new ResizeObserver((entries) => {
       const w = Math.round(entries[0]?.contentRect?.width || 0);
       setExplorerTableWidth((prev) => (prev === w ? prev : w));
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    explorerTableRORef.current = ro;
+  }, []);
+  useEffect(() => () => {
+    if (explorerTableRORef.current) {
+      explorerTableRORef.current.disconnect();
+      explorerTableRORef.current = null;
+    }
   }, []);
   const explorerColumnLayout = useMemo(
     () => getExplorerColumnLayout(explorerTableWidth, { signalColumns: treeColumnProfile.showSignalColumns }),
@@ -2486,7 +2502,13 @@ function ExplorerPane({
         // ширине контейнера (ResizeObserver + getExplorerColumnLayout): колонки
         // скрываются по приоритету Обновлено → Ответственный → Состав; <680px —
         // двухстрочные строки без шапки. Горизонтального скролла нет нигде.
-        <div className="flex-1 overflow-auto" ref={explorerTableContainerRef} data-testid="explorer-table-container">
+        <div
+          className="flex-1 overflow-auto"
+          ref={explorerTableContainerCallbackRef}
+          data-testid="explorer-table-container"
+          data-layout-width={explorerTableWidth}
+          data-layout-compact={explorerColumnLayout.compact ? "1" : "0"}
+        >
           <table
             className="w-full table-fixed text-left border-collapse"
           >
