@@ -1,12 +1,17 @@
 import React, { useMemo } from "react";
 import TextBreadcrumbs from "./TextBreadcrumbs.jsx";
+import useElementWidth from "./useElementWidth.js";
+import { getNavSingleLineLayout } from "./navSingleLineLayout.js";
 import { getManualSessionStatusMeta } from "../features/workspace/workspacePermissions";
 import { normalizeManualSessionStatus } from "../features/workspace/sessionStatus.js";
 
-// Часть А (nav-zone): полоса сессии над ProcessStageHeader.
-// Кнопка «← Назад к проекту» + текстовые крошки под ней, H1 сессии со
-// статус-пилюлей рядом, мета-строка. Тот же текстовый стиль, что и в
-// explorer-заголовках; testid'ы сохранены для совместимости с e2e.
+// Часть А-2 (nav-zone): однострочная полоса сессии над ProcessStageHeader
+// (хедер не трогаем). Кнопка «← Назад к проекту» + текстовые крошки в той же
+// строке; текущий сегмент (полужирный) заменяет H1; статус-бейдж (точка +
+// подпись) сразу после него; мета — справа через «·», приглушённо.
+// Строка никогда не переносится; жертвы по ширине контейнера:
+// мета → крошки через «…» → статус точкой → кнопка иконкой.
+// testid'ы сохранены для совместимости с e2e.
 
 const STATUS_CHIP_STYLES = {
   draft: { dot: "#9CA3AF", bg: "#F3F4F6", text: "#4B5563", border: "#E5E7EB" },
@@ -33,6 +38,8 @@ export default function SessionNavStrip({
   const normalizedStatus = normalizeManualSessionStatus(sessionStatus, "draft");
   const statusMeta = getManualSessionStatusMeta(normalizedStatus);
   const statusStyle = STATUS_CHIP_STYLES[normalizedStatus] || STATUS_CHIP_STYLES.draft;
+  const [stripRef, stripWidth] = useElementWidth();
+  const layout = getNavSingleLineLayout(stripWidth);
 
   const crumbItems = useMemo(() => {
     const items = [];
@@ -59,7 +66,8 @@ export default function SessionNavStrip({
     items.push({
       key: "session",
       label: toText(sessionTitle) || "Сессия",
-      testId: "topbar-crumb-session",
+      // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
+      testId: "session-nav-title",
     });
     if (tobeActive) {
       items.push({ key: "tobe", label: "TO BE", testId: "topbar-crumb-tobe" });
@@ -70,54 +78,66 @@ export default function SessionNavStrip({
 
   return (
     <div
-      className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0"
+      className="border-b border-border px-4 flex-shrink-0"
       data-testid="session-nav-strip"
     >
-      <div className="flex flex-col items-start">
+      <div
+        ref={stripRef}
+        className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+        data-nav-width={Math.round(stripWidth)}
+        data-nav-meta={layout.showMeta ? "1" : "0"}
+      >
         <button
           type="button"
-          className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+            layout.backIconOnly ? "w-7 px-0" : "px-2.5"
+          }`}
           onClick={() => onBackToProject?.()}
           title="Вернуться к проекту"
+          aria-label="Назад к проекту"
           data-testid="topbar-back-projects"
         >
-          ← Назад к проекту
+          {layout.backIconOnly ? "←" : "← Назад к проекту"}
         </button>
-        <div className="mt-1 min-w-0">
-          <TextBreadcrumbs crumbs={crumbItems} dataTestId="topbar-breadcrumbs" />
-        </div>
-      </div>
-      <div className="mt-1.5 flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-col">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <h1 className="truncate text-lg font-semibold text-fg" data-testid="session-nav-title">
-              {toText(sessionTitle) || "Сессия"}
-            </h1>
-            <span
-              className="statusComboPill inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium"
-              style={{
-                backgroundColor: statusStyle.bg,
-                color: statusStyle.text,
-                borderColor: statusStyle.border,
-              }}
-              title="Статус сессии"
-              data-testid="topbar-session-status"
-            >
-              {isChangingStatus ? (
-                <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-                  <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-              ) : (
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusStyle.dot }} />
-              )}
-              <span className="whitespace-nowrap">{isChangingStatus ? "Сохранение…" : statusMeta.label}</span>
-            </span>
-          </div>
-          <span className="mt-0.5 text-xs text-muted" data-testid="session-nav-meta">
-            Тип: {tobeActive ? "TO BE" : "AS IS"}
+        <TextBreadcrumbs
+          crumbs={crumbItems}
+          dataTestId="topbar-breadcrumbs"
+          singleLine
+          forceCollapse={layout.collapseCrumbs}
+          currentClassName="text-[15px] font-semibold"
+        />
+        <span
+          className={`statusComboPill inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border text-xs font-medium ${
+            layout.statusDotOnly ? "w-6 justify-center px-0" : "px-2.5"
+          }`}
+          style={{
+            backgroundColor: statusStyle.bg,
+            color: statusStyle.text,
+            borderColor: statusStyle.border,
+          }}
+          title={`Статус сессии: ${isChangingStatus ? "Сохранение…" : statusMeta.label}`}
+          data-testid="topbar-session-status"
+        >
+          {isChangingStatus ? (
+            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+              <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusStyle.dot }} />
+          )}
+          {layout.statusDotOnly ? null : (
+            <span className="whitespace-nowrap">{isChangingStatus ? "Сохранение…" : statusMeta.label}</span>
+          )}
+        </span>
+        {layout.showMeta ? (
+          <span
+            className="ml-auto shrink-0 text-xs text-muted"
+            data-testid="session-nav-meta"
+          >
+            · Тип: {tobeActive ? "TO BE" : "AS IS"}
           </span>
-        </div>
+        ) : null}
       </div>
     </div>
   );

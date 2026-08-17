@@ -7,21 +7,29 @@ import { collapseBreadcrumbTrail } from "./textBreadcrumbs.js";
 
 export { collapseBreadcrumbTrail };
 
-export default function TextBreadcrumbs({ crumbs = [], dataTestId = "text-breadcrumbs" }) {
+export default function TextBreadcrumbs({
+  crumbs = [],
+  dataTestId = "text-breadcrumbs",
+  singleLine = false,
+  currentClassName = "",
+  forceCollapse = false,
+}) {
   const [expanded, setExpanded] = useState(false);
   const list = (Array.isArray(crumbs) ? crumbs : []).filter(
     (crumb) => crumb && String(crumb.label || "").trim(),
   );
   if (!list.length) return null;
 
-  const model = expanded
+  const model = expanded && !forceCollapse
     ? { collapsed: false, items: list.map((crumb) => ({ type: "crumb", crumb })) }
-    : collapseBreadcrumbTrail(list);
+    : collapseBreadcrumbTrail(list, forceCollapse ? 3 : 4);
   const lastKey = list[list.length - 1].key;
 
   return (
     <nav
-      className="flex min-w-0 flex-wrap items-center gap-x-1 text-[13px] leading-5"
+      className={`flex min-w-0 items-center gap-x-1 text-[13px] leading-5 ${
+        singleLine ? "flex-nowrap overflow-hidden whitespace-nowrap" : "flex-wrap"
+      }`}
       aria-label="Путь"
       data-testid={dataTestId}
     >
@@ -55,7 +63,7 @@ export default function TextBreadcrumbs({ crumbs = [], dataTestId = "text-breadc
             {separator}
             {isCurrent || typeof crumb.onClick !== "function" ? (
               <span
-                className={`truncate ${isCurrent ? "text-fg" : "text-muted"}`}
+                className={`truncate ${isCurrent ? `text-fg ${currentClassName}`.trim() : "text-muted"}`}
                 aria-current={isCurrent ? "page" : undefined}
                 data-current={isCurrent ? "true" : undefined}
                 data-testid={crumb.testId}
