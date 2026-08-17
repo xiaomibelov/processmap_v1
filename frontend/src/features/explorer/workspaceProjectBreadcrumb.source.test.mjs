@@ -23,8 +23,7 @@ test("controller restores project breadcrumbBase from route context", () => {
 
 test("ProjectPane renders a safe project breadcrumb trail", () => {
   assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.name\s*\|\|\s*""\)/);
-  assert.match(explorerSource, /<NavZone[\s\S]*?crumbs=\{projectCrumbItems\}/);
-  assert.match(explorerSource, /<NavZone[\s\S]*?breadcrumbsTestId="project-breadcrumbs"/);
+  assert.match(explorerSource, /<TextBreadcrumbs\s+crumbs=\{projectCrumbItems\}\s+dataTestId="project-breadcrumbs"/);
 });
 
 test("direct project restore clears breadcrumbBase instead of showing stale path", () => {
