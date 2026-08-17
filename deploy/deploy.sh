@@ -13,7 +13,10 @@ BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 BUILD_ENV="${BUILD_ENV:-prod}"
 
 # 2. Inject into .env (remove old keys first, then append)
-sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d' .env
+# Портируемо GNU/BSD: `sed -i` без суффикса не работает в BSD sed (macOS),
+# поэтому in-place через .bak + rm (одинаково на сервере и на Mac).
+sed -i.bak '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d' .env
+rm -f .env.bak
 {
   echo ""
   echo "# Auto-injected by deploy.sh at ${BUILD_TIME}"
