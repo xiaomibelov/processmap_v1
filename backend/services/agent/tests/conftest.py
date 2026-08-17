@@ -13,6 +13,7 @@ import tempfile
 import time
 import uuid
 from types import SimpleNamespace
+from unittest import mock
 
 import jwt
 import pytest
@@ -21,6 +22,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("AGENT_SVC_INTERNAL_TOKEN", "test-internal-token")
+
+# Imported before autouse mock so tests can restore the real router when needed.
+from memory.chat import route_intent as _real_route_intent  # noqa: E402
 
 DEFAULT_ORG = "org_default"
 
@@ -113,6 +117,20 @@ CREATE TABLE IF NOT EXISTS llm_feature_models (
     updated_at INTEGER NOT NULL DEFAULT 0,
     UNIQUE(org_id, feature)
 );
+CREATE TABLE IF NOT EXISTS agent_schema_memory (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL DEFAULT 'org_default',
+    session_id TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    facts_json TEXT NOT NULL DEFAULT '{}',
+    decisions_json TEXT NOT NULL DEFAULT '{}',
+    projection_digest TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    UNIQUE(org_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_schema_memory_session
+ON agent_schema_memory(org_id, session_id);
 """
 
 
@@ -208,3 +226,14 @@ def member_user(seed):
 @pytest.fixture
 def session_id(seed, member_user):
     return seed.make_session(org_id=seed.DEFAULT_ORG, owner_user_id=member_user["id"])
+
+
+@pytest.fixture(autouse=True)
+def mock_route_intent_smalltalk():
+    """AGENT-1: keep AGENT-0 regression tests on the free-answer path.
+
+    New intent/branch tests can restore the real router via
+    `mock_route_intent_smalltalk.side_effect = _real_route_intent`.
+    """
+    with mock.patch("memory.chat.route_intent", return_value="smalltalk") as m:
+        yield m
