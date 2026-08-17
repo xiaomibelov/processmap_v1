@@ -7,15 +7,22 @@ const displayLabelSource = readFileSync(new URL("./workspaceDisplayLabels.js", i
 
 test("ProjectPane keeps breadcrumb trail and only compact session count in header", () => {
   assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.name\s*\|\|\s*""\)/);
-  assert.match(explorerSource, /Сессии:\s*\{sessionCount\}/);
+  assert.match(explorerSource, /sessionCountersFull\s*=\s*`Сессии: \$\{sessionCount\}`/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Owner"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Активность"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="DoD"/);
 });
 
-test("project session list still renders below the cleaned header", () => {
-  assert.match(explorerSource, /<span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии<\/span>/);
+test("project header is single-line and sessions table renders directly below it", () => {
+  assert.match(explorerSource, /data-testid="project-header"/);
+  assert.doesNotMatch(explorerSource, /<span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии<\/span>/);
   assert.match(explorerSource, /sortedSessions\.map\(\(s\) =>/);
+});
+
+test("explorer header is single-line", () => {
+  assert.match(explorerSource, /data-testid="explorer-header"/);
+  assert.match(explorerSource, /getWorkspaceHeaderLayout\(explorerNavWidth\)/);
+  assert.match(explorerSource, /getWorkspaceHeaderLayout\(projectNavWidth\)/);
 });
 
 test("workspace root create copy is section while nested copy remains folder", () => {

@@ -37,3 +37,8 @@ test("SessionTreeRows recursively renders child sessions", () => {
   assert.match(explorerSource, /function SessionTreeRows\(/);
   assert.match(explorerSource, /<SessionTreeRows\s*\n?\s*sessions=\{children\}/s);
 });
+
+test("SessionTreeRow detects subprocess rows and reserves action column width", () => {
+  assert.match(explorerSource, /isSubprocess\s*=\s*Boolean\(session\?\.is_subprocess\)\s*\|\|\s*Boolean\(session\?\.parent_session_id\)/);
+  assert.match(explorerSource, /className=\{\`px-2 py-2 text-right \$\{layout\.compact \? "w-8" : "w-\[88px\]"\}\`\}/);
+});

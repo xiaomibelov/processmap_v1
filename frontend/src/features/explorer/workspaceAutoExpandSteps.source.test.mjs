@@ -46,5 +46,5 @@ test("SessionRow shows empty template icon for child sessions with small BPMN XM
 test("SessionRow shows load subprocesses button for root sessions", () => {
   assert.match(explorerSource, /session\?\.subprocesses_count/);
   assert.match(explorerSource, /apiCreateSubprocessSessions/);
-  assert.match(explorerSource, /Загрузить .* подпроцессов/);
+  assert.match(explorerSource, /Загрузить остальные/);
 });
