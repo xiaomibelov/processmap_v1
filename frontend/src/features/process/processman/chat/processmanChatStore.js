@@ -102,6 +102,26 @@ export function finishAgentMessage(sessionId, messageId) {
   return msg;
 }
 
+/** Добавить delta к тексту streaming-сообщения (token event). */
+export function appendStreamingDelta(sessionId, messageId, delta) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT) return null;
+  if (msg.status === AGENT_STATUS.STOPPED || msg.status === AGENT_STATUS.ERROR) return msg;
+  if (msg.status === AGENT_STATUS.PENDING) msg.status = AGENT_STATUS.STREAMING;
+  msg.text = String(msg.text || "") + String(delta || "");
+  return msg;
+}
+
+/** Обновить текст/meta/статус агент-сообщения (action/done event). */
+export function updateAgentMessage(sessionId, messageId, { text, meta, status } = {}) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT) return null;
+  if (text !== undefined) msg.text = String(text || "");
+  if (meta !== undefined) msg.meta = meta || null;
+  if (status !== undefined && Object.values(AGENT_STATUS).includes(status)) msg.status = status;
+  return msg;
+}
+
 export function lastAgentMessage(sessionId) {
   const history = getChatHistory(sessionId);
   for (let i = history.length - 1; i >= 0; i -= 1) {
