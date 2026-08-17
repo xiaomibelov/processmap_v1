@@ -20,3 +20,26 @@ export function getNavSingleLineLayout(width) {
     backIconOnly: w > 0 && w <= NAV_BACK_ICON_MAX,
   };
 }
+
+// Пороги для рабочего хедера ExplorerPane / ProjectPane.
+export const WORKSPACE_COUNTERS_FULL_MIN = 1200;
+export const WORKSPACE_COUNTERS_SHORT_MIN = 1100;
+export const WORKSPACE_SEARCH_ICON_MAX = 900;
+export const WORKSPACE_CREATE_SHORT_MAX = 760;
+
+/**
+ * Раскладка рабочего хедера Explorer/Project по ширине контейнера.
+ * @param {number} width
+ * @returns {{ showCounters: boolean, shortCounters: boolean, searchIconOnly: boolean, shortCreateLabels: boolean, backIconOnly: boolean, collapseCrumbs: boolean }}
+ */
+export function getWorkspaceHeaderLayout(width) {
+  const w = Number.isFinite(width) ? width : 0;
+  return {
+    showCounters: w >= WORKSPACE_COUNTERS_FULL_MIN,
+    shortCounters: w > 0 && w >= WORKSPACE_COUNTERS_SHORT_MIN && w < WORKSPACE_COUNTERS_FULL_MIN,
+    searchIconOnly: w > 0 && w <= WORKSPACE_SEARCH_ICON_MAX,
+    shortCreateLabels: w > 0 && w <= WORKSPACE_CREATE_SHORT_MAX,
+    backIconOnly: w > 0 && w <= NAV_BACK_ICON_MAX,
+    collapseCrumbs: w > 0 && w <= NAV_CRUMBS_COLLAPSE_MAX,
+  };
+}
