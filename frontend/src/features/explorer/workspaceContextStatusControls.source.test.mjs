@@ -52,6 +52,6 @@ test("Project and session status surfaces remain separate", () => {
 
   assert.match(projectRowSource, /<StatusDotBadge domain="project" value=\{project\.status\} \/>/);
   assert.doesNotMatch(projectRowSource, /<StatusBadge status=\{project\.status\} \/>/);
-  assert.match(sessionRowSource, /MANUAL_SESSION_STATUSES/);
-  assert.match(sessionRowSource, /apiPatchSession/);
+  assert.match(sessionRowSource, /StatusPopoverControl/);
+  assert.match(sessionRowSource, /onSessionStatusChange/);
 });

@@ -181,6 +181,7 @@ class SessionItem(BaseModel):
     name: str
     project_id: str = ""
     parent_session_id: str = ""
+    is_subprocess: bool = False
     has_children: bool = False
     children_count: int = 0
     subprocesses_count: int = 0
@@ -267,11 +268,13 @@ def _owner_out(user_id: str) -> Optional[OwnerOut]:
 
 
 def _session_item_from_row(row: Dict[str, Any]) -> SessionItem:
+    parent_session_id = str(row.get("parent_session_id") or "").strip()
     return SessionItem(
         id=row["id"],
         name=row.get("title", ""),
         project_id=row.get("project_id", ""),
-        parent_session_id=str(row.get("parent_session_id") or ""),
+        parent_session_id=parent_session_id,
+        is_subprocess=bool(parent_session_id),
         has_children=bool(row.get("has_children")),
         children_count=int(row.get("children_count") or 0),
         subprocesses_count=int(row.get("subprocesses_count") or 0),
@@ -1118,6 +1121,7 @@ def list_session_children(
             name=s.get("title", ""),
             project_id=s.get("project_id", ""),
             parent_session_id=str(s.get("parent_session_id") or ""),
+            is_subprocess=True,
             has_children=bool(s.get("has_children")),
             owner=_owner_out(s.get("owner_user_id", "")),
             status=s.get("status", "draft"),

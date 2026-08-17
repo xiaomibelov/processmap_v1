@@ -82,7 +82,8 @@ test("Saving responsible and executor uses existing API payloads only", () => {
 test("Session row, search and move surfaces remain wired", () => {
   const sessionRowSource = between("function SessionRow(", "// ─── Project Pane");
 
-  assert.match(sessionRowSource, /MANUAL_SESSION_STATUSES/);
+  assert.match(sessionRowSource, /StatusPopoverControl/);
+  assert.match(sessionRowSource, /onSessionStatusChange/);
   assert.doesNotMatch(sessionRowSource, /AssigneeDialog|responsible_user_id|executor_user_id/);
   assert.match(explorerSource, /ExplorerSearchResults model=\{searchModel\}/);
   assert.match(explorerSource, /apiMoveFolder\(workspaceId,\s*folder\.id,\s*selectedTarget\.id\)/);

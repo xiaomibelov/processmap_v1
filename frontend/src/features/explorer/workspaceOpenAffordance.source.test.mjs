@@ -12,16 +12,17 @@ function between(start, end) {
   return source.slice(startIndex, endIndex);
 }
 
-test("project rows have explicit project-open affordances", () => {
+test("project rows have explicit project-open affordances in action column", () => {
   const projectRow = between("function ProjectRow(", "function InlineLoadingRow(");
-  assert.match(projectRow, /<span>Открыть проект<\/span>/);
+  assert.doesNotMatch(projectRow, /<span>Открыть проект<\/span>/);
   assert.match(projectRow, />\s*Открыть проект\s*<\/AppRouteLink>/);
   assert.match(projectRow, /<EntityTypePill type="project" \/>/);
 });
 
-test("session row open hint is part of the session link", () => {
+test("session row open CTA lives in dedicated action column", () => {
   const sessionRow = between("function SessionRow(", "// ─── Project Pane");
-  assert.match(sessionRow, /<AppRouteLink[\s\S]*href=\{sessionHref\}[\s\S]*Открыть сессию[\s\S]*<\/AppRouteLink>/);
+  // Hint больше не внутри title-ссылки — он в колонке действий w-[88px].
+  assert.match(sessionRow, /w-\[88px\][\s\S]*<AppRouteLink[\s\S]*Открыть сессию[\s\S]*<\/AppRouteLink>/);
   assert.match(sessionRow, /Открыть сессию/);
   assert.doesNotMatch(sessionRow, /:\s*\(\s*"Открыть"\s*\)/);
   assert.match(sessionRow, /onClick=\{handleRowOpen\}/);
@@ -32,8 +33,8 @@ test("session row open hint is part of the session link", () => {
   assert.match(sessionRow, /openTab:\s*"diagram"/);
 });
 
-test("app version records explorer open affordance update", () => {
+test("app version records explorer header and affordance update", () => {
   const versionSource = readFileSync(new URL("../../config/appVersion.js", import.meta.url), "utf8");
-  assert.match(versionSource, /version:\s*"v1\.0\.105"/);
-  assert.match(versionSource, /"В Explorer различены проекты и сессии при открытии\."/);
+  assert.match(versionSource, /version:\s*"v1\.0\.142"/);
+  assert.match(versionSource, /"Хедеры Explorer и Project свёрнуты в одну строку с адаптивной раскладкой\./);
 });

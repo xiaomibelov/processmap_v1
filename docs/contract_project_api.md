@@ -70,6 +70,44 @@ Body (same shape as `POST /api/sessions`, plus optional `mode`):
 
 Response: full session object.
 
+### GET /api/projects/{project_id}/explorer
+
+Explorer page for a project. Returns `{ project, sessions }` where `sessions` is a
+list of `SessionItem` objects.
+
+`SessionItem` contract (representative fields):
+
+```json
+{
+  "id": "sess_123",
+  "name": "Сырники",
+  "project_id": "proj_456",
+  "parent_session_id": "",
+  "is_subprocess": false,
+  "has_children": false,
+  "children_count": 0,
+  "subprocesses_count": 0,
+  "activity_count": 0,
+  "status": "draft",
+  "stage": "",
+  "dod_percent": 0,
+  "attention_count": 0,
+  "reports_count": 0,
+  "updated_at": 1700000000,
+  "created_at": 1700000000
+}
+```
+
+Field semantics:
+
+| Поле | Семантика |
+| --- | --- |
+| `parent_session_id` | ID родительской сессии; пусто для корневых сессий. |
+| `is_subprocess` | `true` если сессия является подпроцессом (имеет `parent_session_id`). |
+| `has_children` | `true` если у сессии есть дочерние подпроцессы. |
+| `children_count` | Число загруженных дочерних сессий. |
+| `subprocesses_count` | Число подпроцессов в BPMN (может быть больше `children_count`). |
+
 ### POST /api/sessions/{session_id}/bpmn-upload  (P6 [Г], ревизия bpmn-upload)
 
 Multipart upload BPMN-файла в существующую сессию. **Ревизия ранее принятого

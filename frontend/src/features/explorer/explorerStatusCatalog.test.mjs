@@ -11,6 +11,7 @@ import {
   isExplorerStatusEditable,
   mapFolderContextStatusToCatalog,
   mapProjectStatusToCatalog,
+  mapCatalogStatusToProjectApi,
   mapSessionStatusToCatalog,
 } from "./explorerStatusCatalog.js";
 
@@ -51,17 +52,25 @@ test("session domain mapping: manual statuses + aliases + fallback draft", () =>
   assert.equal(getExplorerStatusEntry("session", "ready").label, "Готово");
 });
 
-test("project domain mapping: active/пусто → «—», done/completed → Готово, archived → Архив", () => {
-  assert.equal(mapProjectStatusToCatalog("active"), "none");
+test("project domain mapping: active → Активен, пусто → «—», done/completed → Готово, archived → Архив", () => {
+  assert.equal(mapProjectStatusToCatalog("active"), "active");
   assert.equal(mapProjectStatusToCatalog(""), "none");
   assert.equal(mapProjectStatusToCatalog("on_hold"), "on_hold");
   assert.equal(mapProjectStatusToCatalog("done"), "ready");
   assert.equal(mapProjectStatusToCatalog("completed"), "ready");
   assert.equal(mapProjectStatusToCatalog("archived"), "archived");
   assert.equal(mapProjectStatusToCatalog("unknown_freeform"), "none");
+  assert.equal(getExplorerStatusEntry("project", "active").label, "Активен");
 });
 
-test("editable options: folder полный набор; session по transition-матрице; project read-only", () => {
+test("catalog status maps back to project API values", () => {
+  assert.equal(mapCatalogStatusToProjectApi("active"), "active");
+  assert.equal(mapCatalogStatusToProjectApi("on_hold"), "on_hold");
+  assert.equal(mapCatalogStatusToProjectApi("ready"), "done");
+  assert.equal(mapCatalogStatusToProjectApi("archived"), "archived");
+});
+
+test("editable options: folder полный набор; session по transition-матрице; project полный набор", () => {
   assert.deepEqual(
     getExplorerStatusOptions("folder", "none").map((o) => o.id),
     ["none", "as_is", "to_be"],
@@ -76,10 +85,13 @@ test("editable options: folder полный набор; session по transition-
     getExplorerStatusOptions("session", "in_progress").map((o) => o.id),
     ["draft", "in_progress", "review", "ready", "archived"],
   );
-  assert.deepEqual(getExplorerStatusOptions("project", "active"), []);
+  assert.deepEqual(
+    getExplorerStatusOptions("project", "active").map((o) => o.id),
+    ["active", "on_hold", "ready", "archived"],
+  );
   assert.equal(isExplorerStatusEditable("folder"), true);
   assert.equal(isExplorerStatusEditable("session"), true);
-  assert.equal(isExplorerStatusEditable("project"), false);
+  assert.equal(isExplorerStatusEditable("project"), true);
 });
 
 test("optimistic reducer: select → pending сразу, success фиксирует, failure откатывает", () => {
