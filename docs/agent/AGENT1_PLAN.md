@@ -1,6 +1,6 @@
 # AGENT-1: диалоговый агент PROCESSMAN с роутером intent, памятью схемы и RAG
 
-> **СТАТУС: ПЛАН, требует апрува владельца. Реализацию не начинать.**  
+> **СТАТУС: ПЛАН, редакция 2, решения владельца внесены. Требует апрува. Реализацию не начинать.**  
 > Дата: 2026-08-17. Ветка: `docs/agent-1-plan` от `origin/main` @ `e34c5986`.  
 > База: `backend/services/agent/` (AGENT-SVC Phase 2–5, уже в `main`), монолитный `backend/app/agent/` и флаг `LLM_VIA_AGENT_SVC` **не трогаются** (soak на боевом).
 
@@ -274,7 +274,7 @@ location ~ ^/api/sessions/[^/]+/agent/(chat|history|stream)$ {
 - `gateway/gateway.py`: добавить `complete_stream(feature, payload, ...)` — генератор токенов.
 - `memory/chat.py`: добавить `run_turn_stream(...)` — выполняет роутер/ветку и yield'ит события.
 - `routers/agent_stream.py`: FastAPI `StreamingResponse` с `media_type="text/event-stream"`.
-- Фронт: `ProcessmanTobe` переходит на `EventSource` для chat-вызовов; сохраняются состояния S1–S8 (`processmanView.js:55`).
+- **Фронт:** `ProcessmanTobe` использует `fetch()` + `ReadableStream` (`response.body.getReader()`), НЕ `EventSource`, т.к. endpoint — `POST` с телом запроса (`message`, `selected_step_id`, `client_turn_id`). `AbortController` прерывает соединение по кнопке «Стоп». Состояния S1–S8 сохраняются (`processmanView.js:55`).
 
 ### 5.4 Fallback если streaming не поддерживается
 
@@ -326,11 +326,10 @@ location ~ ^/api/sessions/[^/]+/agent/(chat|history|stream)$ {
 
 Текущий gateway (`gateway/gateway.py:141`) фолбэкается **по провайдерам**, но не по `model_class`. Если `agent_chat` настроен на primary (`claude-opus-4-6`), а primary недоступен, gateway может уйти на следующего enabled-провайдера, который может быть cheap (`deepseek-chat`).
 
-⚠️ **Открытый вопрос владельцу** (см. раздел 10): нужно ли запрещать cross-class fallback для feature? Варианты:
+**Решение владельца (2026-08-17):**
 
-- (а) оставить как есть — проще, но метрика `llm_usage.model` может показывать cheap при вызове chat;
-- (б) добавить в gateway признак `model_class` и фильтровать провайдерскую цепочку по совместимости модели;
-- (в) алерт по `llm_usage.model` для `processman_agent`, если model != ожидаемый primary.
+- **AGENT-1:** вариант (в) — алерт по `llm_usage.model` для `processman_agent`, если фактическая модель отличается от ожидаемой primary. Gateway не усложняем.
+- **После AGENT-1 (отдельная задача):** вариант (б) — добавить в gateway признак `model_class` и фильтровать провайдерскую цепочку по совместимости модели, если потребуется.
 
 ### 7.3 Провайдеры (актуальные)
 
@@ -461,21 +460,25 @@ deploy/nginx/default.conf                  # аналогично
 | `frontend/src/lib/apiRoutes.js` | `agent.chat`, `agent.history`, `agent.stream` | frontend |
 | `frontend/src/lib/api.js` | `apiAgentChat`, `apiAgentStream` | frontend |
 | `frontend/src/features/process/processman/chat/processmanChatStore.js` | streaming-статусы | frontend |
-| `frontend/src/features/process/processman/ProcessmanTobe.jsx` | EventSource, стоп | frontend |
+| `frontend/src/features/process/processman/ProcessmanTobe.jsx` | fetch + ReadableStream + AbortController | frontend |
 | `frontend/src/features/process/processman/processmanView.js` | маппинг SSE-событий | frontend |
 | `docs/agent/AGENT1_PLAN.md` | этот документ | docs |
 
 ---
 
-## 12. Открытые вопросы владельцу
+## 12. Решения владельца (2026-08-17)
 
-1. **Рантайм графа:** остаёмся на своём рантайме для AGENT-1, langgraph откладываем до AGENT-3 — ОК?
-2. **Cross-class fallback:** как запрещать fallback primary → cheap при недоступности primary? Варианты (а)/(б)/(в) из раздела 7.2.
-3. **Фоновый worker:** in-process thread в контейнере `agent` или отдельный контейнер `agent-worker`? Предлагаем in-process thread.
-4. **RAG source_type для doc_qa:** ограничивать `bpmn_xml` + `product_action` или добавить новый `agent_doc`? Сейчас монолит разрешает только `{bpmn_xml, product_action}` (`routers/rag.py:19`).
-5. **Промпт `processman_agent v2`:** активировать сразу после мержа AGENT-1 или оставить `draft` до настройки на stage?
-6. **Feature flags:** согласны с лимитами `agent_router=100k`, `agent_chat=300k`, `agent_memory=100k`?
-7. **SSE приоритет:** обязательно для AGENT-1 или можно отдельным PR? Предлагаем включить в AGENT-1, т.к. влияет на архитектуру роутера.
+Все открытые вопросы закрыты; отклонения от изначального плана зафиксированы.
+
+1. **Рантайм графа:** остаёмся на своём рантайме для AGENT-1. Пересмотр в пользу LangGraph — триггер = старт AGENT-3 (interrupt/HITL).
+2. **Cross-class fallback:**
+   - **Сейчас (AGENT-1):** вариант (в) — алерт по `llm_usage.model` для `processman_agent`, если фактическая модель отличается от ожидаемой primary. Gateway не усложняем.
+   - **Отдельной задачей:** вариант (б) — добавить в gateway фильтрацию провайдерской цепочки по `model_class` (только если владелец инициирует после AGENT-1).
+3. **Фоновый worker:** in-process thread в контейнере `agent`. Отдельный `agent-worker` — не в AGENT-1.
+4. **RAG source_type для doc_qa:** использовать только существующие `bpmn_xml` и `product_action`; новый `agent_doc` не добавлять.
+5. **Промпт `processman_agent v2`:** seed-миграция со статусом `draft`; активирует владелец после тюнинга с живым ключом на stage.
+6. **Feature flags:** лимиты утверждены — `agent_router=100k`, `agent_chat=300k`, `agent_memory=100k`.
+7. **SSE:** в scope AGENT-1; реализация фронта — `fetch()` + `ReadableStream` + `AbortController` (не `EventSource`).
 
 ---
 
@@ -497,7 +500,7 @@ deploy/nginx/default.conf                  # аналогично
 
 1. **PR-1:** миграции 019 + seed-промпты 020–022 + `db_bootstrap.py`.
 2. **PR-2:** сервисная часть — `schema_memory`, роутер intent, ветки, SSE (`backend/services/agent/` + nginx + тесты).
-3. **PR-3 (опционально):** frontend — интеграция `/agent/stream`, EventSource, сохранение S1–S8.
+3. **PR-3 (опционально):** frontend — интеграция `/agent/stream` через `fetch()` + `ReadableStream` + `AbortController`, сохранение S1–S8.
 
 Или, если владелец хочет меньше PR: PR-1 (миграции+сервис), PR-2 (frontend). В плане предлагается разделение по доменам.
 
