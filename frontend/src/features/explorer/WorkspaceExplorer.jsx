@@ -13,7 +13,7 @@
  *   • Session cannot be in folder directly — always inside project
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useReducer, useRef } from "react";
 import { createPortal } from "react-dom";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { explorerPageQueryKey, explorerPageQueryOptions } from "./explorerPageQuery.js";
@@ -51,7 +51,7 @@ import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../workspa
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
 import { buildVisibleRows, hasFolderChildren, projectHasSessions } from "./work3TreeState.js";
-import { projectSessionsQueryOptions } from "./projectSessionsQuery.js";
+import { projectSessionsQueryKey, projectSessionsQueryOptions } from "./projectSessionsQuery.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
 import {
@@ -83,8 +83,12 @@ import {
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
 import {
-  getExplorerContextStatusLabel,
-  getExplorerContextStatusOptions,
+  getExplorerStatusEntry,
+  getExplorerStatusOptions,
+  explorerStatusChangeReducer,
+  mapStatusToCatalog,
+} from "./explorerStatusCatalog.js";
+import {
   isExplorerContextStatusEditable,
   normalizeExplorerContextStatus,
 } from "./explorerContextStatusModel.js";
@@ -586,67 +590,129 @@ function UpdatedCell({ node }) {
   );
 }
 
-function contextStatusClass(value) {
-  const normalized = normalizeExplorerContextStatus(value);
-  if (normalized === "as_is") return "border-cyan-300/70 bg-cyan-500/12 text-fg/85";
-  if (normalized === "to_be") return "border-amber-300/75 bg-amber-400/15 text-fg/85";
-  return "border-border/80 bg-panelAlt/45 text-muted";
-}
+// ─── P3 [А]: единый статус-контрол explorer (точка 7px + подпись + поповер) ──
+// Заменяет прежний <select>: случайная смена при wheel/scroll невозможна —
+// поповер открывается только явным кликом по бейджу.
 
-function ContextStatusBadge({ value }) {
-  const normalized = normalizeExplorerContextStatus(value);
+function StatusDotBadge({ domain, value }) {
+  const entry = getExplorerStatusEntry(domain, value);
   return (
-    <span
-      className={`inline-flex h-7 min-w-[62px] items-center justify-center rounded-full border px-2 text-xs font-semibold ${contextStatusClass(normalized)}`}
-      title={getExplorerContextStatusLabel(normalized)}
-    >
-      {getExplorerContextStatusLabel(normalized)}
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium" title={entry.label}>
+      <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${entry.dotClass}`} aria-hidden />
+      <span className={entry.textClass}>{entry.label}</span>
     </span>
   );
 }
 
-function ContextStatusControl({ item, disabled = false, onChange }) {
-  const normalized = normalizeExplorerContextStatus(item?.context_status);
-  const [pendingStatus, setPendingStatus] = useState(normalized);
-  const [saving, setSaving] = useState(false);
-  const options = useMemo(() => getExplorerContextStatusOptions(), []);
+function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
+  const catalogValue = mapStatusToCatalog(domain, value);
+  const [state, dispatch] = useReducer(explorerStatusChangeReducer, {
+    current: catalogValue,
+    pending: catalogValue,
+    saving: false,
+  });
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
 
+  // синхронизация с серверным значением, пока не летит optimistic-запрос
   useEffect(() => {
-    setPendingStatus(normalized);
-  }, [normalized]);
+    if (!state.saving) {
+      const next = mapStatusToCatalog(domain, value);
+      dispatch({ type: "success", value: next });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain, value]);
 
-  const handleChange = async (event) => {
-    const nextStatus = normalizeExplorerContextStatus(event.target.value);
-    setPendingStatus(nextStatus);
-    if (nextStatus === normalized) return;
-    setSaving(true);
+  // закрытие по клику вне и по Escape
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const options = getExplorerStatusOptions(domain, state.current);
+  const entry = getExplorerStatusEntry(domain, state.pending);
+
+  const handleSelect = async (nextId) => {
+    setOpen(false);
+    if (nextId === state.current) return;
+    dispatch({ type: "select", value: nextId });
+    // catalog id == API value в обоих редактируемых доменах (folder context_status,
+    // session manual status) — маппинг тождественный, см. explorerStatusCatalog.js.
     try {
-      const ok = await onChange?.(item, nextStatus);
-      if (ok === false) setPendingStatus(normalized);
+      const ok = await onChange?.(nextId);
+      if (ok === false) dispatch({ type: "failure" });
+      else dispatch({ type: "success", value: nextId });
     } catch {
-      setPendingStatus(normalized);
-    } finally {
-      setSaving(false);
+      dispatch({ type: "failure" });
+    }
+  };
+
+  // клавиатурная навигация по пунктам: ↑/↓ — фокус, Enter/Space — выбор, Esc — закрыть
+  const handleMenuKeyDown = (event) => {
+    const items = Array.from(rootRef.current?.querySelectorAll('[role="menuitemradio"]') || []);
+    const index = items.indexOf(document.activeElement);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      (items[index + 1] || items[0])?.focus();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      (items[index - 1] || items[items.length - 1])?.focus();
     }
   };
 
   return (
-    <select
-      value={pendingStatus}
-      onChange={handleChange}
-      onClick={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-      disabled={disabled || saving}
-      className={`h-7 w-[86px] rounded-full border px-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-60 ${contextStatusClass(pendingStatus)}`}
-      title="Статус контекста"
-      aria-label="Статус контекста"
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    <span ref={rootRef} className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        disabled={disabled || state.saving}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-full px-1.5 py-1 text-xs font-medium transition-colors hover:bg-accentSoft/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait disabled:opacity-70"
+        title={`Статус: ${entry.label}`}
+        aria-label={`Статус: ${entry.label}`}
+        aria-haspopup="menu"
+        aria-expanded={open ? "true" : "false"}
+      >
+        <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${entry.dotClass}`} aria-hidden />
+        <span className={entry.textClass}>{state.saving ? `${entry.label}…` : entry.label}</span>
+      </button>
+      {open ? (
+        <span
+          role="menu"
+          className="absolute left-0 top-full z-30 mt-1 min-w-[132px] rounded-lg border border-border bg-panel py-1 shadow-panel"
+          onKeyDown={handleMenuKeyDown}
+        >
+          {options.map((option) => {
+            const optionEntry = getExplorerStatusEntry(domain, option.id);
+            const selected = option.id === state.current;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected ? "true" : "false"}
+                onClick={() => handleSelect(option.id)}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accentSoft/40 focus:outline-none focus-visible:bg-accentSoft/50 ${selected ? "font-semibold text-fg" : "text-fg/85"}`}
+              >
+                <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${optionEntry.dotClass}`} aria-hidden />
+                <span className="flex-1">{option.label}</span>
+                <span className="w-3 text-accent" aria-hidden>{selected ? "✓" : ""}</span>
+              </button>
+            );
+          })}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -1330,13 +1396,14 @@ function FolderRow({
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
           {canEdit && isExplorerContextStatusEditable(folder) ? (
-            <ContextStatusControl
-              item={folder}
+            <StatusPopoverControl
+              domain="folder"
+              value={folder.context_status}
               disabled={loading}
-              onChange={onContextStatusChange}
+              onChange={(nextStatus) => onContextStatusChange(folder, nextStatus)}
             />
           ) : (
-            <ContextStatusBadge value={folder.context_status} />
+            <StatusDotBadge domain="folder" value={folder.context_status} />
           )}
         </td>
         <UpdatedCell node={folder} />
@@ -1414,7 +1481,6 @@ function ProjectRow({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const leftPadding = 8 + depth * 18;
-  const normalizedStatus = String(project.status || "").trim().toLowerCase();
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const assigneeActionLabel = getExplorerAssigneeActionLabel(project);
   const menuItems = [
@@ -1469,9 +1535,7 @@ function ProjectRow({
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
         <td className="px-2 py-2.5">
-          {!normalizedStatus || normalizedStatus === "active"
-            ? <span className="text-xs text-muted/70">—</span>
-            : <StatusBadge status={project.status} />}
+          <StatusDotBadge domain="project" value={project.status} />
         </td>
         <UpdatedCell node={project} />
         <td className="px-2 py-2.5 text-right relative" onClick={(e) => e.stopPropagation()}>
@@ -1526,7 +1590,7 @@ function ProjectRow({
 
 // ─── P2 [Б]: Session rows под раскрытым проектом (3-й уровень дерева) ────────
 
-function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen }) {
+function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange }) {
   const leftPadding = 8 + depth * 18;
   const sessionHref = buildAppWorkspaceHref({
     projectId: session?.project_id || project?.id,
@@ -1561,7 +1625,13 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
       <td className="px-2 py-2" />
       {showSignalColumns ? <td className="px-2 py-2" /> : null}
       {showSignalColumns ? <td className="px-2 py-2" /> : null}
-      <td className="px-2 py-2"><StatusBadge status={session.status} /></td>
+      <td className="px-2 py-2">
+        <StatusPopoverControl
+          domain="session"
+          value={session.status}
+          onChange={(nextStatus) => onStatusChange?.(session, nextStatus)}
+        />
+      </td>
       <UpdatedCell node={session} />
       <td className="px-2 py-2 w-8" />
     </tr>
@@ -1580,6 +1650,7 @@ function ProjectSessionsRows({
   showSignalColumns = false,
   colSpan = 7,
   onOpenSession,
+  onSessionStatusChange,
 }) {
   const projectId = String(project?.id || "").trim();
   const sessionsQuery = useQuery({
@@ -1627,6 +1698,7 @@ function ProjectSessionsRows({
       depth={depth}
       showSignalColumns={showSignalColumns}
       onOpen={openSession}
+      onStatusChange={onSessionStatusChange}
     />
   ));
 }
@@ -2026,7 +2098,11 @@ function ExplorerPane({
     setMoveNotice("");
     try {
       const resp = await apiUpdateFolder(workspaceId, folderIdToUpdate, { context_status: normalizedStatus });
-      if (!resp?.ok) throw new Error(resp?.error || "Не удалось обновить статус");
+      if (!resp?.ok) {
+        throw new Error(resp?.status === 0
+          ? "Не удалось обновить статус. Проверьте соединение и повторите."
+          : resp?.error || "Не удалось обновить статус");
+      }
       await load({ resetInlineChildren: true });
       setMoveNotice("Статус обновлён.");
       return true;
@@ -2035,6 +2111,43 @@ function ExplorerPane({
       return false;
     }
   }, [load, workspaceId]);
+
+  const handleTreeSessionStatusChange = useCallback(async (session, nextStatus) => {
+    const sessionId = String(session?.id || session?.session_id || "").trim();
+    const normalizedStatus = String(nextStatus || "").trim();
+    if (!sessionId || !normalizedStatus) return false;
+    setActionError("");
+    setMoveNotice("");
+    try {
+      const sessionSnapshot = await apiGetSession(sessionId);
+      const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
+      if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
+        throw new Error(sessionSnapshot?.status === 0
+          ? "Не удалось получить актуальную версию сессии. Проверьте соединение и повторите."
+          : formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
+      }
+      const resp = await apiPatchSession(sessionId, {
+        status: normalizedStatus,
+        base_diagram_state_version: baseVersion,
+      });
+      if (!resp?.ok) {
+        throw new Error(resp?.status === 0
+          ? "Не удалось обновить статус. Проверьте соединение и повторите."
+          : resp?.status === 409
+            ? "Переход в выбранный статус недоступен для текущего состояния сессии."
+            : formatSessionPatchError(resp));
+      }
+      await queryClient.invalidateQueries({
+        queryKey: projectSessionsQueryKey(session?.project_id),
+        refetchType: "active",
+      });
+      setMoveNotice("Статус обновлён.");
+      return true;
+    } catch (e) {
+      setActionError(String(e?.message || e || "Не удалось обновить статус"));
+      return false;
+    }
+  }, [queryClient]);
 
   const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
     const fid = String(targetFolderId || "").trim();
@@ -2390,6 +2503,7 @@ function ExplorerPane({
                       showSignalColumns={treeColumnProfile.showSignalColumns}
                       colSpan={inlineColSpan}
                       onOpenSession={onOpenSession}
+                      onSessionStatusChange={handleTreeSessionStatusChange}
                     />
                   );
                 }

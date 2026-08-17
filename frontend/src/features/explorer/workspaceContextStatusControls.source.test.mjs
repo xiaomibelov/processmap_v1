@@ -12,14 +12,16 @@ function between(start, end) {
   return explorerSource.slice(startIndex, endIndex);
 }
 
-test("Explorer renders editable context status only for section and folder rows", () => {
+test("Explorer renders editable status popover only for section/folder and tree session rows", () => {
   const folderRowSource = between("function FolderRow(", "// ─── Project Row");
   const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
   const sessionRowSource = between("function SessionRow(", "// ─── Project Pane");
 
-  assert.match(folderRowSource, /ContextStatusControl/);
+  assert.match(folderRowSource, /StatusPopoverControl/);
   assert.match(folderRowSource, /folder\.context_status/);
   assert.match(folderRowSource, /isExplorerContextStatusEditable\(folder\)/);
+  assert.match(projectRowSource, /<StatusDotBadge domain="project" value=\{project\.status\} \/>/);
+  assert.match(projectRowSource, /<StatusPopoverControl\s+domain="session"/);
   assert.doesNotMatch(projectRowSource, /ContextStatusControl|context_status|as_is|to_be/);
   assert.doesNotMatch(sessionRowSource, /ContextStatusControl|context_status|as_is|to_be/);
 });
@@ -34,11 +36,22 @@ test("Context status save uses existing folder update API with context_status on
   assert.doesNotMatch(explorerPaneSource, /apiPatchProject\(.*context_status/);
 });
 
+test("Tree session status change uses apiPatchSession with base version and invalidates project sessions", () => {
+  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
+
+  assert.match(explorerPaneSource, /handleTreeSessionStatusChange/);
+  assert.match(explorerPaneSource, /apiGetSession\(sessionId\)/);
+  assert.match(explorerPaneSource, /base_diagram_state_version:\s*baseVersion/);
+  assert.match(explorerPaneSource, /projectSessionsQueryKey\(session\?\.project_id\)/);
+  assert.doesNotMatch(explorerPaneSource, /window\.alert/);
+});
+
 test("Project and session status surfaces remain separate", () => {
   const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
   const sessionRowSource = between("function SessionRow(", "// ─── Project Pane");
 
-  assert.match(projectRowSource, /<StatusBadge status=\{project\.status\} \/>/);
+  assert.match(projectRowSource, /<StatusDotBadge domain="project" value=\{project\.status\} \/>/);
+  assert.doesNotMatch(projectRowSource, /<StatusBadge status=\{project\.status\} \/>/);
   assert.match(sessionRowSource, /MANUAL_SESSION_STATUSES/);
   assert.match(sessionRowSource, /apiPatchSession/);
 });
