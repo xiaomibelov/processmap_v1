@@ -25,6 +25,15 @@ export function hasFolderChildren(folder) {
   return directFolders + directProjects > 0;
 }
 
+// P2 [Б]: шеврон раскрытия у проекта — по агрегату сессий из explorer-страницы
+// (fallback на sessions_count для старых ответов без trackable-полей).
+export function projectHasSessions(project) {
+  const count = Number(
+    project?.trackable_sessions_count ?? project?.sessions_count ?? 0,
+  ) || 0;
+  return count > 0;
+}
+
 export function buildVisibleRows({
   rootItems,
   expandedByFolder,
@@ -86,10 +95,26 @@ export function buildVisibleRows({
   };
 
   const appendProject = (project, depth) => {
+    // P2 [Б]: проекты раскрываются в таблице (сессии 3-м уровнем). Expanded-map
+    // общая с папками — id проектов лежат в том же preferences-списке (P1).
+    const projectId = String(project?.id || "").trim();
+    const expanded = Boolean(expandedByFolder?.[projectId]);
+    const expandable = projectHasSessions(project);
     rows.push({
       rowType: "project",
       node: project,
       depth,
+      expanded,
+      expandable,
+    });
+    if (!expandable || !expanded) return;
+    // Сами сессии подгружает ProjectSessionsRows (lazy react-query) — здесь
+    // только placeholder-строка, монтирующая запрос.
+    rows.push({
+      rowType: "project-sessions",
+      parentId: projectId,
+      node: project,
+      depth: depth + 1,
     });
   };
 

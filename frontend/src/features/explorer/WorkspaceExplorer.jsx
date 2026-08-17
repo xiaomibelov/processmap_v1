@@ -50,7 +50,8 @@ import {
 import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../workspace/sessionStatus.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
-import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
+import { buildVisibleRows, hasFolderChildren, projectHasSessions } from "./work3TreeState.js";
+import { projectSessionsQueryOptions } from "./projectSessionsQuery.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
 import {
@@ -1395,6 +1396,10 @@ function FolderRow({
 function ProjectRow({
   project,
   depth = 0,
+  expanded = false,
+  expandable = false,
+  sessionsLoading = false,
+  onToggleExpand,
   onClick,
   onMove,
   onAssign,
@@ -1424,7 +1429,25 @@ function ProjectRow({
       <tr className="group hover:bg-accentSoft/30 transition-colors">
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
           <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
-            <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+            {expandable ? (
+              <button
+                type="button"
+                onClick={() => onToggleExpand?.(project)}
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${sessionsLoading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
+                disabled={sessionsLoading}
+                title={expanded ? "Скрыть сессии проекта" : "Показать сессии проекта"}
+                aria-label={expanded ? `Скрыть сессии проекта ${project.name}` : `Показать сессии проекта ${project.name}`}
+                aria-expanded={expanded ? "true" : "false"}
+              >
+                {sessionsLoading ? (
+                  <IcoSpinner className="animate-spin" />
+                ) : (
+                  <IcoChevron right className={`transition-transform duration-150 ${expanded ? "rotate-90" : ""}`} />
+                )}
+              </button>
+            ) : (
+              <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+            )}
             <IcoProject className="shrink-0 text-accent" />
             <AppRouteLink
               className="block min-w-0 flex-1 text-left"
@@ -1501,6 +1524,113 @@ function ProjectRow({
   );
 }
 
+// ─── P2 [Б]: Session rows под раскрытым проектом (3-й уровень дерева) ────────
+
+function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen }) {
+  const leftPadding = 8 + depth * 18;
+  const sessionHref = buildAppWorkspaceHref({
+    projectId: session?.project_id || project?.id,
+    sessionId: session?.id || session?.session_id,
+  });
+  function handleRowOpen(event) {
+    const target = event?.target;
+    if (target instanceof Element && target.closest("a[href],button,select,input,textarea,label")) {
+      return;
+    }
+    if (!shouldHandleClientNavigation(event)) return;
+    onOpen?.(session);
+  }
+  return (
+    <tr className="group hover:bg-accentSoft/30 transition-colors cursor-pointer" onClick={handleRowOpen}>
+      <td className="px-2 py-2 text-sm font-medium text-fg">
+        <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
+          <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+          <IcoSession className="shrink-0 text-muted" />
+          <AppRouteLink
+            className="block min-w-0 flex-1 text-left"
+            href={sessionHref}
+            onNavigate={() => onOpen?.(session)}
+            title={session.name || session.title}
+          >
+            <span className="block truncate font-normal hover:underline">{session.name || session.title || "Сессия"}</span>
+          </AppRouteLink>
+        </div>
+      </td>
+      <td className="px-2 py-2 text-xs text-muted">—</td>
+      <td className="px-2 py-2" />
+      <td className="px-2 py-2" />
+      {showSignalColumns ? <td className="px-2 py-2" /> : null}
+      {showSignalColumns ? <td className="px-2 py-2" /> : null}
+      <td className="px-2 py-2"><StatusBadge status={session.status} /></td>
+      <UpdatedCell node={session} />
+      <td className="px-2 py-2 w-8" />
+    </tr>
+  );
+}
+
+// Строки сессий раскрытого проекта: lazy react-query (модуль монтируется только
+// при expanded → запрос уходит один раз, дальше cache 5 мин). Ошибка — строка
+// с retry (refetch).
+function ProjectSessionsRows({
+  project,
+  depth = 0,
+  workspaceId,
+  folderId = "",
+  breadcrumbBase = [],
+  showSignalColumns = false,
+  colSpan = 7,
+  onOpenSession,
+}) {
+  const projectId = String(project?.id || "").trim();
+  const sessionsQuery = useQuery({
+    ...projectSessionsQueryOptions(projectId),
+    enabled: Boolean(projectId),
+  });
+  const sessions = Array.isArray(sessionsQuery.data) ? sessionsQuery.data : [];
+  const projectContext = {
+    projectId,
+    workspaceId,
+    folderId: folderId || "",
+    breadcrumbBase,
+    projectTitle: project?.name || project?.title || "",
+  };
+  const openSession = (session) => {
+    void onOpenSession?.({
+      ...session,
+      project_id: session?.project_id || projectId,
+      workspace_id: workspaceId,
+      projectContext,
+    }, { openTab: "diagram", source: "workspace_explorer_tree_session" });
+  };
+
+  if (sessionsQuery.isPending) {
+    return <InlineLoadingRow depth={depth} colSpan={colSpan} />;
+  }
+  if (sessionsQuery.isError) {
+    return (
+      <InlineErrorRow
+        depth={depth}
+        colSpan={colSpan}
+        message={String(sessionsQuery.error?.message || "Не удалось загрузить сессии проекта.")}
+        onRetry={() => sessionsQuery.refetch()}
+      />
+    );
+  }
+  if (sessions.length === 0) {
+    return <InlineEmptyRow depth={depth} colSpan={colSpan} text="В проекте нет сессий" />;
+  }
+  return sessions.map((session) => (
+    <SessionTreeRow
+      key={`session-${session.id || session.session_id}`}
+      session={session}
+      project={project}
+      depth={depth}
+      showSignalColumns={showSignalColumns}
+      onOpen={openSession}
+    />
+  ));
+}
+
 function InlineLoadingRow({ depth = 0, colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   return (
@@ -1519,7 +1649,7 @@ function InlineLoadingRow({ depth = 0, colSpan = 8 }) {
   );
 }
 
-function InlineEmptyRow({ depth = 0, colSpan = 8 }) {
+function InlineEmptyRow({ depth = 0, colSpan = 8, text = "В папке нет вложенных папок или проектов" }) {
   const leftPadding = 8 + depth * 18;
   return (
     <tr>
@@ -1527,7 +1657,7 @@ function InlineEmptyRow({ depth = 0, colSpan = 8 }) {
         <div style={{ paddingLeft: `${leftPadding}px` }} className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
           <span className="h-4 w-4 shrink-0" />
-          <span className="truncate">В папке нет вложенных папок или проектов</span>
+          <span className="truncate">{text}</span>
         </div>
       </td>
       <td colSpan={colSpan} className="px-2 py-2.5" />
@@ -1535,7 +1665,7 @@ function InlineEmptyRow({ depth = 0, colSpan = 8 }) {
   );
 }
 
-function InlineErrorRow({ depth = 0, message = "", colSpan = 8 }) {
+function InlineErrorRow({ depth = 0, message = "", colSpan = 8, onRetry = null }) {
   const leftPadding = 8 + depth * 18;
   const text = String(message || "").trim() || "Не удалось загрузить вложенные элементы.";
   return (
@@ -1545,6 +1675,16 @@ function InlineErrorRow({ depth = 0, message = "", colSpan = 8 }) {
           <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-danger/30 bg-danger/5" aria-hidden />
           <span className="h-4 w-4 shrink-0" />
           <span className="truncate">{text}</span>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="secondaryBtn h-6 min-h-0 px-2 text-xs shrink-0"
+              title="Повторить загрузку"
+            >
+              Повторить
+            </button>
+          ) : null}
         </div>
       </td>
       <td colSpan={colSpan} className="px-2 py-2.5" />
@@ -1956,6 +2096,23 @@ function ExplorerPane({
     }
   }, [mergedExpandedByFolder, workspaceId, setTreeStateForContext, ensureFolderChildrenLoaded]);
 
+  // P2 [Б]: раскрытие проекта — тот же expanded-map и saver (id проекта
+  // добавляется в тот же preferences-список expanded-ids). Дочерние сессии
+  // грузит ProjectSessionsRows через react-query (lazy), здесь только toggle.
+  const handleToggleProjectExpand = useCallback((project) => {
+    const pid = String(project?.id || "").trim();
+    if (!pid || !projectHasSessions(project)) return;
+    const nextExpanded = !Boolean(mergedExpandedByFolder?.[pid]);
+    setTreeStateForContext((prev) => ({
+      ...prev,
+      expandedByFolder: { ...prev.expandedByFolder, [pid]: nextExpanded },
+    }));
+    treeSaverRef.current?.schedule(
+      workspaceId,
+      expandedIdsFromMap({ ...mergedExpandedByFolder, [pid]: nextExpanded }),
+    );
+  }, [mergedExpandedByFolder, workspaceId, setTreeStateForContext]);
+
   const handleOpenSearchResult = useCallback((result) => {
     const target = result?.target || {};
     if (target.kind === "folder" && target.folderId) {
@@ -2221,11 +2378,29 @@ function ExplorerPane({
                   );
                 }
                 const project = row.node;
+                if (row.rowType === "project-sessions") {
+                  return (
+                    <ProjectSessionsRows
+                      key={`project-sessions-${row.parentId}`}
+                      project={project}
+                      depth={row.depth}
+                      workspaceId={workspaceId}
+                      folderId={folderId || ""}
+                      breadcrumbBase={page?.breadcrumbs || []}
+                      showSignalColumns={treeColumnProfile.showSignalColumns}
+                      colSpan={inlineColSpan}
+                      onOpenSession={onOpenSession}
+                    />
+                  );
+                }
                 return (
                   <ProjectRow
                     key={`project-${project.id}`}
                     project={project}
                     depth={row.depth}
+                    expanded={row.expanded}
+                    expandable={row.expandable}
+                    onToggleExpand={handleToggleProjectExpand}
                     onClick={() => onNavigateToProject(project.id, { breadcrumbBase: page?.breadcrumbs || [] })}
                     onMove={() => {
                       setMoveNotice("");
