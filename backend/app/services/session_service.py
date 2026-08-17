@@ -664,7 +664,7 @@ async def bpmn_upload(
     ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
     if ext not in BPMN_UPLOAD_ALLOWED_EXTENSIONS:
         raise _bpmn_upload_422(
-            f"Недопустимый тип файла «{filename or "без имени"}». Загрузите файл .bpmn или .xml."
+            f"Недопустимый тип файла «{filename or 'без имени'}». Загрузите файл .bpmn или .xml."
         )
     content_type = str(getattr(file, "content_type", "") or "").split(";")[0].strip().lower()
     if content_type and "xml" not in content_type and content_type != "application/octet-stream":
