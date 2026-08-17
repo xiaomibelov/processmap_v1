@@ -70,6 +70,35 @@ Body (same shape as `POST /api/sessions`, plus optional `mode`):
 
 Response: full session object.
 
+### POST /api/sessions/{session_id}/bpmn-upload  (P6 [Г], ревизия bpmn-upload)
+
+Multipart upload BPMN-файла в существующую сессию. **Ревизия ранее принятого
+решения:** вместо связки «POST create → PUT /api/sessions/{id}/bpmn» клиент
+использует отдельный multipart endpoint. Сам `PUT /api/sessions/{id}/bpmn`
+НЕ меняется (он для canvas-save); внутри upload переиспользует тот же путь
+сохранения (`session_service.bpmn_save` → `_legacy_main.session_bpmn_save`),
+параллельного пайплайна нет. Отдельного jsonb-столбца нет.
+
+Request: `multipart/form-data`, поле `file`.
+
+Валидация (до парсинга, явные ошибки, RU-detail):
+- расширение `.bpmn`/`.xml` — иначе **422**;
+- Content-Type: `*xml*` или `application/octet-stream`/пустой — иначе **422**;
+- размер ≤ 20 МБ — иначе **413**;
+- тело — непустой текстовый UTF-8 XML, well-formed, с корнем `bpmn:definitions` —
+  иначе **422** (бинарник/битый XML не превращается в generic 500
+  «Unparseable BPMN XML»).
+
+CAS: upload — доверенный путь «импорт файла в свежесозданную сессию»;
+`base_diagram_state_version` подставляется сервером из текущего
+`diagram_state_version` сессии, клиент версию не передаёт.
+
+Auth/права: как у `PUT bpmn` (auth + edit-право на workspace сессии);
+без токена — 401, чужая/отсутствующая сессия — 404/403.
+
+Response: как у `PUT bpmn` (`{ok: true, ...}` + опциональные ключи
+subprocess-sync).
+
 ## Explorer item aggregates (projects-table-v2)
 
 `GET /api/explorer` возвращает `items` (folder/project) с агрегатными полями счётчиков сессий.
