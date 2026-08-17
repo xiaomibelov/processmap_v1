@@ -14,8 +14,8 @@ test("projectSessionsQueryKey is stable and normalizes id to string", () => {
   assert.deepEqual(projectSessionsQueryKey(""), ["project-sessions", ""]);
 });
 
-test("projectSessionsQueryOptions carries staleTime so re-expand renders from cache", () => {
-  const opts = projectSessionsQueryOptions("proj_1");
+test("projectSessionsQueryOptions carries staleTime and captures workspaceId in queryFn", () => {
+  const opts = projectSessionsQueryOptions("ws_1", "proj_1");
   assert.deepEqual(opts.queryKey, ["project-sessions", "proj_1"]);
   assert.equal(typeof opts.queryFn, "function");
   assert.equal(opts.staleTime, PROJECT_SESSIONS_STALE_TIME_MS);
@@ -24,7 +24,7 @@ test("projectSessionsQueryOptions carries staleTime so re-expand renders from ca
 
 test("fetchProjectSessions throws on non-ok responses so react-query surfaces an error row", async () => {
   await assert.rejects(
-    () => fetchProjectSessions({ queryKey: ["project-sessions", ""] }),
+    () => fetchProjectSessions("ws_1", ""),
     /Ошибка|error|missing|fetch|Failed/i,
   );
 });

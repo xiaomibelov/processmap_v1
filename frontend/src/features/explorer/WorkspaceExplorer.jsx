@@ -92,6 +92,7 @@ import {
   getExplorerStatusOptions,
   explorerStatusChangeReducer,
   mapStatusToCatalog,
+  mapCatalogStatusToProjectApi,
 } from "./explorerStatusCatalog.js";
 import {
   isExplorerContextStatusEditable,
@@ -1621,12 +1622,6 @@ function ProjectRow({
               title={project.name}
             >
               <ExplorerMarqueeText text={project.name} className="hover:underline" />
-              {layout.compact ? null : (
-                <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-muted transition-colors group-hover:text-accent">
-                  <span>Открыть проект</span>
-                  <IcoChevron right className="text-[10px]" />
-                </span>
-              )}
             </AppRouteLink>
           </div>
           {layout.compact ? (
@@ -1721,6 +1716,7 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
       })
     : sessionHref;
   function handleRowOpen(event) {
+    if (isSubprocess) return; // подпроцесс: переход к родительской сессии через ссылку
     const target = event?.target;
     if (target instanceof Element && target.closest("a[href],button,select,input,textarea,label")) {
       return;
@@ -1729,19 +1725,29 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
     onOpen?.(session);
   }
   return (
-    <tr className={`group transition-colors cursor-pointer ${isSubprocess ? "opacity-90" : "hover:bg-accentSoft/30"}`} onClick={handleRowOpen}>
+    <tr className={`group transition-colors ${isSubprocess ? "opacity-90 cursor-default" : "cursor-pointer hover:bg-accentSoft/30"}`} onClick={handleRowOpen}>
       <td className="px-2 py-2 text-sm font-medium text-fg">
         <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
           <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
           <IcoSession className={`shrink-0 ${isSubprocess ? "text-muted/60" : "text-muted"}`} />
-          <AppRouteLink
-            className="block min-w-0 flex-1 text-left"
-            href={isSubprocess ? parentSessionHref : sessionHref}
-            onNavigate={() => onOpen?.(session)}
-            title={session.name || session.title}
-          >
-            <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className={`font-normal hover:underline ${isSubprocess ? "text-fg/70" : ""}`} />
-          </AppRouteLink>
+          {isSubprocess ? (
+            <a
+              className="block min-w-0 flex-1 text-left text-fg/70"
+              href={parentSessionHref}
+              title={session.name || session.title}
+            >
+              <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className="font-normal hover:underline" />
+            </a>
+          ) : (
+            <AppRouteLink
+              className="block min-w-0 flex-1 text-left"
+              href={sessionHref}
+              onNavigate={() => onOpen?.(session)}
+              title={session.name || session.title}
+            >
+              <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className="font-normal hover:underline" />
+            </AppRouteLink>
+          )}
         </div>
         {layout.compact ? (
           <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(session, "session")}</div>
@@ -1793,8 +1799,8 @@ function ProjectSessionsRows({
 }) {
   const projectId = String(project?.id || "").trim();
   const sessionsQuery = useQuery({
-    ...projectSessionsQueryOptions(projectId),
-    enabled: Boolean(projectId),
+    ...projectSessionsQueryOptions(workspaceId, projectId),
+    enabled: Boolean(workspaceId) && Boolean(projectId),
   });
   const sessions = Array.isArray(sessionsQuery.data) ? sessionsQuery.data : [];
   const projectContext = {
@@ -3105,10 +3111,6 @@ function SessionRow({
               {treeMode && depth > 0 && session?.element_id_in_parent ? (
                 <span className="block truncate text-[10px] text-gray-500">{session.element_id_in_parent}</span>
               ) : null}
-              <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-accent/75 transition-colors hover:text-accent">
-                <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
-                <IcoChevron right className="text-[10px]" />
-              </span>
             </AppRouteLink>
             {Number(session?.activity_count) > 0 ? (
               <span
@@ -3573,14 +3575,15 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 
   const handleProjectStatusChange = useCallback(async (nextStatus) => {
     if (!projectId || !nextStatus) return false;
-    const resp = await apiPatchProject(projectId, { status: nextStatus });
+    const apiStatus = mapCatalogStatusToProjectApi(nextStatus);
+    const resp = await apiPatchProject(projectId, { status: apiStatus });
     if (!resp?.ok) {
-      window.alert?.(String(resp?.error || "Не удалось обновить статус проекта"));
+      setError(String(resp?.error || "Не удалось обновить статус проекта"));
       return false;
     }
     await load();
     return true;
-  }, [projectId, load]);
+  }, [projectId, load, setError]);
 
   const loadSessionChildren = useCallback(async (sessionId) => {
     const sid = String(sessionId || "").trim();
