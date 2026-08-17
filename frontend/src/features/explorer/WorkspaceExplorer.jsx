@@ -1976,17 +1976,31 @@ function ExplorerPane({
   // P4 [А]: адаптив по ширине КОНТЕЙНЕРА таблицы (сайдбар схлопывается —
   // media queries по viewport не подходят). ResizeObserver + чистая функция
   // getExplorerColumnLayout (пороги/приоритеты — explorerColumnVisibility.js).
+  // Callback ref: таблица монтируется условно (после загрузки данных), поэтому
+  // effect с [] не подходит — RO подключаем в момент появления контейнера.
   const explorerTableContainerRef = useRef(null);
+  const explorerTableRORef = useRef(null);
   const [explorerTableWidth, setExplorerTableWidth] = useState(0);
-  useEffect(() => {
-    const el = explorerTableContainerRef.current;
-    if (!el) return undefined;
+  const explorerTableContainerCallbackRef = useCallback((el) => {
+    if (explorerTableRORef.current) {
+      explorerTableRORef.current.disconnect();
+      explorerTableRORef.current = null;
+    }
+    explorerTableContainerRef.current = el;
+    if (!el) return;
+    setExplorerTableWidth(Math.round(el.clientWidth || 0));
     const ro = new ResizeObserver((entries) => {
       const w = Math.round(entries[0]?.contentRect?.width || 0);
       setExplorerTableWidth((prev) => (prev === w ? prev : w));
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    explorerTableRORef.current = ro;
+  }, []);
+  useEffect(() => () => {
+    if (explorerTableRORef.current) {
+      explorerTableRORef.current.disconnect();
+      explorerTableRORef.current = null;
+    }
   }, []);
   const explorerColumnLayout = useMemo(
     () => getExplorerColumnLayout(explorerTableWidth, { signalColumns: treeColumnProfile.showSignalColumns }),
@@ -2486,7 +2500,7 @@ function ExplorerPane({
         // ширине контейнера (ResizeObserver + getExplorerColumnLayout): колонки
         // скрываются по приоритету Обновлено → Ответственный → Состав; <680px —
         // двухстрочные строки без шапки. Горизонтального скролла нет нигде.
-        <div className="flex-1 overflow-auto" ref={explorerTableContainerRef} data-testid="explorer-table-container">
+        <div className="flex-1 overflow-auto" ref={explorerTableContainerCallbackRef} data-testid="explorer-table-container">
           <table
             className="w-full table-fixed text-left border-collapse"
           >
