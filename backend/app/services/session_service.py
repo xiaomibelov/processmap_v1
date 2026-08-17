@@ -30,6 +30,8 @@ from ..services.bpmn_navigation import (
     element_type,
     find_subprocess_elements,
     find_child_session_element_ids,
+    get_element_name,
+    assert_unique_element_id,
 )
 from .session_recompute import _recompute_session
 
@@ -969,6 +971,15 @@ def recompute_session(session_id: str, request: Optional[Request] = None):
     return sess.model_dump()
 
 
+def _resolve_subprocess_title(xml_text: str, element_id: str) -> str:
+    """Return a human-readable title for a subprocess/callActivity element.
+
+    Falls back to a generic label when the BPMN element has no name.
+    """
+    name = get_element_name(xml_text, element_id) if xml_text and element_id else None
+    return name or "Без названия"
+
+
 def _subprocess_request_context(request: Optional[Request]):
     if request is None:
         return "", "", False
@@ -1048,7 +1059,7 @@ def _create_child_session(
 
     parent_bpmn = str(getattr(parent_session, "bpmn_xml", "") or "").strip()
     called = called_element_id(parent_bpmn, element_id) if parent_bpmn else None
-    title = f"Подпроцесс: {called or element_id}"
+    title = _resolve_subprocess_title(parent_bpmn, element_id)
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     parent_title = str(getattr(parent_session, "title", "") or "").strip() or parent_id
@@ -1206,6 +1217,17 @@ def auto_create_subprocess_sessions(
             # propagate into existing child sessions instead of leaving stale
             # content behind.
             refreshed = _refresh_child_session_bpmn_from_xml(existing, child_xml)
+            # Keep the child session title and breadcrumb name in sync with the
+            # current BPMN element name so drill-in breadcrumbs never show stale
+            # "Подпроцесс: ..." labels after a re-import.
+            if str(getattr(existing, "title", "") or "").strip() != title:
+                existing.title = title
+                refreshed = True
+            stack = list(getattr(existing, "navigation_stack", []) or [])
+            if stack and str(stack[-1].get("name") or "").strip() != title:
+                stack[-1]["name"] = title
+                existing.navigation_stack = stack
+                refreshed = True
             if getattr(existing, "deleted_at", 0):
                 existing.deleted_at = 0
                 existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
@@ -1392,6 +1414,13 @@ def navigate_to_subprocess(
     if el_type not in {"callactivity", "subprocess"}:
         raise HTTPException(status_code=400, detail="Element is not a subprocess or call activity")
 
+    try:
+        assert_unique_element_id(xml, element_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    subprocess_title = _resolve_subprocess_title(xml, element_id)
+
     called = called_element_id(xml, element_id) if el_type == "callactivity" else None
 
     def _xml_has_definitions(child_xml: str) -> bool:
@@ -1437,12 +1466,38 @@ def navigate_to_subprocess(
         child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
         child = _create_child_session(sess, element_id, child_xml, request)
 
+    # Heal the child's human-readable label and navigation stack from the
+    # current parent XML. This fixes pre-existing child sessions created with
+    # generic "Подпроцесс: ..." titles and keeps breadcrumbs accurate after
+    # the parent BPMN is re-imported.
+    child_needs_save = False
+    if str(getattr(child, "title", "") or "").strip() != subprocess_title:
+        child.title = subprocess_title
+        child_needs_save = True
+    stack = list(getattr(child, "navigation_stack", []) or [])
+    if not stack:
+        stack = _build_child_navigation_stack(sess, element_id)
+        stack[-1]["session_id"] = str(getattr(child, "id", "") or "").strip()
+        child_needs_save = True
+    else:
+        if str(stack[-1].get("name") or "").strip() != subprocess_title:
+            stack[-1]["name"] = subprocess_title
+            child_needs_save = True
+        if not str(stack[-1].get("session_id") or "").strip():
+            stack[-1]["session_id"] = str(getattr(child, "id", "") or "").strip()
+            child_needs_save = True
+    if child_needs_save:
+        child.navigation_stack = stack
+        child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+
     child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
     target_id = resolve_target_element_id(child_xml, target_element_id)
     breadcrumbs = _build_breadcrumbs(child, request)
 
     return {
         "subprocess_session_id": getattr(child, "id", ""),
+        "subprocess_title": subprocess_title,
         "target_element_id": target_id,
         "breadcrumbs": breadcrumbs,
         "bpmn_xml": child_xml,

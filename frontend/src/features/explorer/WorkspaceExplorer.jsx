@@ -3425,6 +3425,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [loadingSessionChildren, setLoadingSessionChildren] = useState(() => new Set());
   const [sessionChildrenErrors, setSessionChildrenErrors] = useState({});
 
+  const projectSessionsQuery = useQuery({
+    ...projectSessionsQueryOptions(workspaceId, projectId),
+    enabled: Boolean(workspaceId) && Boolean(projectId),
+  });
+
   // Lazy tree only: children are loaded on demand via expand button.
   const eagerTree = false;
 
@@ -3459,6 +3464,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     openingSessionIdRef.current = "";
     setOpeningSessionId("");
   }, [projectId]);
+
+  useEffect(() => {
+    // When the server-side session list is refreshed (e.g. after BPMN upload
+    // invalidates the project-sessions query), drop cached children so expanded
+    // sessions reload their subprocess lists from the new XML.
+    if (!treeEnabled) return;
+    setSessionChildrenCache({});
+  }, [projectSessionsQuery.data, treeEnabled]);
 
   // ── P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта ──────────────
   const updatePendingUpload = useCallback((tempId, patch) => {
