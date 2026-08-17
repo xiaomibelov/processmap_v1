@@ -6,29 +6,37 @@ const explorerSource = readFileSync(new URL("../features/explorer/WorkspaceExplo
 const appShellSource = readFileSync(new URL("./AppShell.jsx", import.meta.url), "utf8");
 const topBarSource = readFileSync(new URL("./TopBar.jsx", import.meta.url), "utf8");
 const stripSource = readFileSync(new URL("./SessionNavStrip.jsx", import.meta.url), "utf8");
+const breadcrumbsSource = readFileSync(new URL("./TextBreadcrumbs.jsx", import.meta.url), "utf8");
 
-// Часть А (nav-zone): на трёх уровнях в навигационной зоне ровно два
-// текстовых элемента — кнопка «назад» и строка пути; никаких чипов/подписей.
+// Часть А-2 (nav-zone): навигационная зона — ОДНА строка на всех трёх
+// уровнях (раздел/проект/сессия). Кнопка «назад» слева, текстовые крошки
+// (текущий сегмент полужирный, заменяет H1), статус-бейдж после него, мета
+// справа через «·». Строка не переносится; жертвы по ширине контейнера:
+// мета → крошки через «…» → статус точкой → кнопка иконкой.
 
-test("ProjectPane: нет чипов и подписи «Навигация», есть текстовые крошки и кнопка назад", () => {
-  assert.doesNotMatch(explorerSource, /BreadcrumbChip/);
-  assert.doesNotMatch(explorerSource, />Навигация</);
+test("ProjectPane: одна flex-строка без переноса, кнопка назад и крошки в ней", () => {
   assert.match(explorerSource, /← Назад к разделу/);
   assert.match(explorerSource, /data-testid="project-back-section"/);
   assert.match(explorerSource, /dataTestId="project-breadcrumbs"/);
+  // однострочный контейнер: nowrap + overflow-hidden + высота строки
+  assert.match(explorerSource, /flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap/);
+  // H1 как отдельного блока больше нет — testid заголовка на текущем сегменте крошек
+  assert.doesNotMatch(explorerSource, /<h1[^>]*data-testid="project-title"/);
+  assert.match(explorerSource, /testId: index === projectBreadcrumbTrail\.length - 1 \? "project-title" : undefined/);
 });
 
-test("ProjectPane: H1 проекта со статус-бейджем рядом и мета-строкой", () => {
-  assert.match(explorerSource, /data-testid="project-title"/);
-  assert.match(explorerSource, /<StatusBadge status=\{proj\.status\} \/>/);
-  assert.match(explorerSource, /Сессии:\s*\{sessionCount\}/);
+test("ProjectPane: статус-бейдж и мета «Сессии: N» в строке навигации", () => {
+  assert.match(explorerSource, /<StatusBadge status=\{proj\.status\} dotOnly=\{projectNavLayout\.statusDotOnly\} \/>/);
+  assert.match(explorerSource, /· Сессии: \{sessionCount\}/);
+  assert.match(explorerSource, /data-testid="project-meta"/);
 });
 
-test("ExplorerPane: кнопка «← Назад к разделам» и текстовые крошки", () => {
+test("ExplorerPane: кнопка «← Назад к разделам», крошки и мета в одной строке", () => {
   assert.match(explorerSource, /← Назад к разделам/);
   assert.match(explorerSource, /data-testid="explorer-back-sections"/);
   assert.match(explorerSource, /dataTestId="explorer-breadcrumbs"/);
-  assert.match(explorerSource, /data-testid="explorer-section-title"/);
+  assert.doesNotMatch(explorerSource, /<h1[^>]*data-testid="explorer-section-title"/);
+  assert.match(explorerSource, /testId: index === headerCrumbs\.length - 1 \? "explorer-section-title" : undefined/);
   assert.match(explorerSource, /data-testid="explorer-section-meta"/);
 });
 
@@ -38,13 +46,26 @@ test("AppShell: полоса сессии над ProcessStage/stageOverride пр
   assert.match(appShellSource, /onBackToProject=\{\(\) => onReturnToSessionList\?\.\(\)\}/);
 });
 
-test("SessionNavStrip: кнопка «← Назад к проекту», крошки, H1+статус, мета", () => {
+test("SessionNavStrip: однострочная полоса — кнопка, крошки, статус, мета", () => {
   assert.match(stripSource, /← Назад к проекту/);
   assert.match(stripSource, /data-testid="session-nav-strip"/);
+  assert.match(stripSource, /flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap/);
   assert.match(stripSource, /dataTestId="topbar-breadcrumbs"/);
   assert.match(stripSource, /data-testid="topbar-session-status"/);
-  assert.match(stripSource, /data-testid="session-nav-title"/);
+  // H1 отдельно нет — testid заголовка на текущем сегменте крошек
+  assert.doesNotMatch(stripSource, /<h1/);
+  assert.match(stripSource, /testId: "session-nav-title"/);
   assert.match(stripSource, /data-testid="session-nav-meta"/);
+  // адаптив: ResizeObserver-хук + чистая функция порогов
+  assert.match(stripSource, /useElementWidth/);
+  assert.match(stripSource, /getNavSingleLineLayout\(stripWidth\)/);
+});
+
+test("TextBreadcrumbs: однострочный режим (nowrap) и акцент текущего сегмента", () => {
+  assert.match(breadcrumbsSource, /singleLine/);
+  assert.match(breadcrumbsSource, /flex-nowrap overflow-hidden whitespace-nowrap/);
+  assert.match(breadcrumbsSource, /currentClassName/);
+  assert.match(breadcrumbsSource, /forceCollapse/);
 });
 
 test("TopBar очищен: нет кнопки назад, крошек и статус-пилюли", () => {

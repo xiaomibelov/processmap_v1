@@ -102,6 +102,8 @@ import {
 import "./explorerAdaptive.css";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import TextBreadcrumbs from "../../components/TextBreadcrumbs.jsx";
+import useElementWidth from "../../components/useElementWidth.js";
+import { getNavSingleLineLayout } from "../../components/navSingleLineLayout.js";
 import { useWorkspaceMainNavSlot } from "../../components/workspaceMainNavSlot.js";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -356,10 +358,17 @@ function SortHeader({ label, sortKey, sort, onSort, align = "left", title = "" }
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, dotOnly = false }) {
   const normalized = String(status || "").trim().toLowerCase();
   if (["draft", "in_progress", "review", "ready", "archived"].includes(normalized)) {
     const meta = getManualSessionStatusMeta(normalized);
+    if (dotOnly) {
+      return (
+        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${meta.badgeClass}`} title={`Статус: ${meta.label}`}>
+          <span className="h-2 w-2 rounded-full bg-current" />
+        </span>
+      );
+    }
     return (
       <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${meta.badgeClass}`}>
         {meta.label}
@@ -373,6 +382,13 @@ function StatusBadge({ status }) {
     completed: ["Завершён", "border-emerald-300 bg-emerald-50 text-emerald-700"],
   };
   const [label, cls] = map[normalized] || ["—", "border-slate-300 bg-slate-100 text-slate-600"];
+  if (dotOnly) {
+    return (
+      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${cls}`} title={`Статус: ${label}`}>
+        <span className="h-2 w-2 rounded-full bg-current" />
+      </span>
+    );
+  }
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</span>;
 }
 
@@ -2008,6 +2024,10 @@ function ExplorerPane({
     () => getExplorerColumnLayout(explorerTableWidth, { signalColumns: treeColumnProfile.showSignalColumns }),
     [explorerTableWidth, treeColumnProfile.showSignalColumns],
   );
+  // Часть А-2 (nav-zone): однострочная навигационная полоса — адаптив по
+  // ширине контейнера (useElementWidth + getNavSingleLineLayout).
+  const [explorerNavRef, explorerNavWidth] = useElementWidth();
+  const explorerNavLayout = getNavSingleLineLayout(explorerNavWidth);
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
   const contextHeaderTitle = folderId
     ? "Для папок: количество проектов"
@@ -2371,6 +2391,8 @@ function ExplorerPane({
   const headerCrumbItems = headerCrumbs.map((crumb, index) => ({
     key: `${crumb.type}-${crumb.id || "root"}`,
     label: crumb.name,
+    // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
+    testId: index === headerCrumbs.length - 1 ? "explorer-section-title" : undefined,
     onClick:
       index < headerCrumbs.length - 1
         ? () => {
@@ -2379,7 +2401,6 @@ function ExplorerPane({
           }
         : undefined,
   }));
-  const sectionTitle = String(headerCrumbs[headerCrumbs.length - 1]?.name || "").trim();
   const parentHeaderCrumb = headerCrumbs.length > 1 ? headerCrumbs[headerCrumbs.length - 2] : null;
   const headerFolderCount = rootItems.filter((item) => item?.type === "folder").length;
   const headerProjectCount = rootItems.filter((item) => item?.type === "project").length;
@@ -2389,8 +2410,16 @@ function ExplorerPane({
   const navSlotEl = useWorkspaceMainNavSlot();
   const headerSlotEl = portalHeader ? navSlotEl : null;
   const explorerHeader = (
-      <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0 bg-panel">
-        <div className="flex flex-col items-start">
+      <div className="px-4 border-b border-border flex-shrink-0 bg-panel">
+        {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
+            (текущий сегмент = заголовок), мета справа. Без переносов; жертвы
+            по ширине контейнера: мета → крошки «…» → кнопка иконкой. */}
+        <div
+          ref={explorerNavRef}
+          className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+          data-nav-width={Math.round(explorerNavWidth)}
+          data-nav-meta={explorerNavLayout.showMeta ? "1" : "0"}
+        >
           {folderId ? (
             <button
               type="button"
@@ -2399,27 +2428,32 @@ function ExplorerPane({
                   ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
                   : onNavigateToBreadcrumb(workspaceId, "")
               }
-              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                explorerNavLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
+              }`}
+              title="Назад к разделам"
+              aria-label="Назад к разделам"
               data-testid="explorer-back-sections"
             >
-              ← Назад к разделам
+              {explorerNavLayout.backIconOnly ? "←" : "← Назад к разделам"}
             </button>
           ) : null}
-          <div className={`min-w-0 ${folderId ? "mt-1" : ""}`}>
-            <TextBreadcrumbs crumbs={headerCrumbItems} dataTestId="explorer-breadcrumbs" />
-          </div>
-        </div>
-        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-col">
-            <h1 className="truncate text-lg font-semibold text-fg" data-testid="explorer-section-title">
-              {sectionTitle}
-            </h1>
-            <span className="mt-0.5 text-xs text-muted" data-testid="explorer-section-meta">
+          <TextBreadcrumbs
+            crumbs={headerCrumbItems}
+            dataTestId="explorer-breadcrumbs"
+            singleLine
+            forceCollapse={explorerNavLayout.collapseCrumbs}
+            currentClassName="text-[15px] font-semibold"
+          />
+          {explorerNavLayout.showMeta ? (
+            <span className="ml-auto shrink-0 text-xs text-muted" data-testid="explorer-section-meta">
               {folderId
-                ? `Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
-                : `Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`}
+                ? `· Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
+                : `· Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`}
             </span>
-          </div>
+          ) : null}
+        </div>
+        <div className="flex h-9 items-center justify-end gap-1.5 pb-1.5">
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
             <button
@@ -3404,11 +3438,16 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [onOpenSession, projectContext, projectId, workspaceId]);
 
   const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
-  const projectCrumbItems = projectBreadcrumbTrail.map((c) => ({
+  const projectCrumbItems = projectBreadcrumbTrail.map((c, index) => ({
     key: `${c.type}-${c.id || "project"}`,
     label: c.name,
+    // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
+    testId: index === projectBreadcrumbTrail.length - 1 ? "project-title" : undefined,
     onClick: c.active ? undefined : () => onBack(c),
   }));
+  // Часть А-2 (nav-zone): однострочная полоса — адаптив по ширине контейнера.
+  const [projectNavRef, projectNavWidth] = useElementWidth();
+  const projectNavLayout = getNavSingleLineLayout(projectNavWidth);
   const normalizedProjectStatus = String(proj?.status || "").trim().toLowerCase();
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
   // Прямой переход по URL (без контекста explorer): назад — в раздел проекта
@@ -3461,36 +3500,48 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
   const navSlotEl = useWorkspaceMainNavSlot();
   const projectHeader = (
-      <div className="px-4 pt-3 pb-2 border-b border-border flex-shrink-0 bg-panel">
-        <div className="flex flex-col items-start">
+      <div className="px-4 border-b border-border flex-shrink-0 bg-panel">
+        {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
+            (текущий сегмент = заголовок), статус-бейдж, мета справа. */}
+        <div
+          ref={projectNavRef}
+          className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+          data-nav-width={Math.round(projectNavWidth)}
+          data-nav-meta={projectNavLayout.showMeta ? "1" : "0"}
+        >
           {projectBackCrumb ? (
             <button
               type="button"
               onClick={() => onBack(projectBackCrumb)}
-              className="secondaryBtn h-8 min-h-0 px-3 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                projectNavLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
+              }`}
+              title="Назад к разделу"
+              aria-label="Назад к разделу"
               data-testid="project-back-section"
             >
-              ← Назад к разделу
+              {projectNavLayout.backIconOnly ? "←" : "← Назад к разделу"}
             </button>
           ) : null}
-          <div className={`min-w-0 ${projectBackCrumb ? "mt-1" : ""}`}>
-            <TextBreadcrumbs crumbs={projectCrumbItems} dataTestId="project-breadcrumbs" />
-          </div>
+          <TextBreadcrumbs
+            crumbs={projectCrumbItems}
+            dataTestId="project-breadcrumbs"
+            singleLine
+            forceCollapse={projectNavLayout.collapseCrumbs}
+            currentClassName="text-[15px] font-semibold"
+          />
+          {proj && normalizedProjectStatus && normalizedProjectStatus !== "active" ? (
+            <StatusBadge status={proj.status} dotOnly={projectNavLayout.statusDotOnly} />
+          ) : null}
+          {proj && projectNavLayout.showMeta ? (
+            <span className="ml-auto shrink-0 text-xs text-muted" data-testid="project-meta">
+              · Сессии: {sessionCount}
+            </span>
+          ) : null}
         </div>
 
         {proj && (
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-col">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <h1 className="truncate text-lg font-semibold text-fg" data-testid="project-title">
-                  {proj.name}
-                </h1>
-                {normalizedProjectStatus && normalizedProjectStatus !== "active" ? (
-                  <StatusBadge status={proj.status} />
-                ) : null}
-              </div>
-              <span className="mt-0.5 text-xs text-muted">Сессии: {sessionCount}</span>
-            </div>
+          <div className="flex h-9 items-center justify-end gap-2 pb-1.5">
             <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
               <button
                 type="button"
