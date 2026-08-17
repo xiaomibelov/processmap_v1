@@ -8,20 +8,29 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-from typing import Any, Dict, List, Optional
+import uuid
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from gateway.gateway import complete
+from gateway.gateway import complete, complete_stream
 from runners.action_runners import run_explain_step, run_step_qa, run_suggest_next
+from runners.monolith_client import search_rag
 from schemas import AgentChatIn, AgentChatOut
 
 from .context import AgentContext, load_context
 from .memory_store import AgentTurn, append_turn, find_turn_by_client_id, get_or_create_conversation
+from .schema_memory import load_schema_memory, schedule_memory_update
 
 
 FEATURE = "processman_agent"
 MAX_TOKENS = 1200
+ROUTER_FEATURE = "agent_router"
+ROUTER_MAX_TOKENS = 200
+SMALLTALK_MAX_TOKENS = 400
+SCHEMA_OVERVIEW_MAX_TOKENS = 400
+VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk"}
 
 
 def _now_ms() -> int:
@@ -39,6 +48,95 @@ def _to_json_text(value: Any) -> str:
 
 def _step_ids(projection: Dict[str, Any]) -> set:
     return {str(s.get("id") or "").strip() for s in (projection.get("steps") or []) if str(s.get("id") or "").strip()}
+
+
+def _step_in_projection(projection: Dict[str, Any], step_id: Optional[str]) -> bool:
+    return bool(str(step_id or "").strip()) and str(step_id).strip() in _step_ids(projection)
+
+
+def _history_summary_for_router(history: List[AgentTurn], limit: int = 3) -> str:
+    lines: List[str] = []
+    for turn in history[-limit:]:
+        text = str((turn.content or {}).get("text") or "").strip()
+        if not text:
+            continue
+        prefix = "User" if turn.role == "user" else "Assistant"
+        lines.append(f"{prefix}: {text[:200]}")
+    return "\n".join(lines)
+
+
+def _router_digest(question: str, projection_digest: str, selected_node_id: Optional[str]) -> str:
+    key = "|".join([
+        str(question or "").strip(),
+        str(projection_digest or "").strip(),
+        str(selected_node_id or "").strip(),
+    ])
+    return hashlib.md5(key.encode("utf-8")).hexdigest()
+
+
+def _normalize_intent(text: Optional[str]) -> str:
+    raw = str(text or "").strip().lower()
+    # strip punctuation/markdown fences
+    raw = re.sub(r"[^a-z0-9_\-]+", "", raw)
+    if raw in VALID_INTENTS:
+        return raw
+    # accept hyphen variants
+    aliases = {
+        "nodeqa": "node_qa",
+        "schemaoverview": "schema_overview",
+        "overview": "schema_overview",
+        "schema": "schema_overview",
+        "docqa": "doc_qa",
+        "documentation": "doc_qa",
+        "suggestnext": "suggest_next",
+        "next": "suggest_next",
+        "smalltalk": "smalltalk",
+        "chat": "smalltalk",
+    }
+    return aliases.get(raw, "smalltalk")
+
+
+def route_intent(
+    question: str,
+    projection_digest: str,
+    selected_node_id: Optional[str],
+    history: List[AgentTurn],
+    *,
+    user_id: str = "",
+    project_id: str = "",
+    session_id: str = "",
+    org_id: str = "org_default",
+) -> str:
+    """Cheap router: classify user question into one of VALID_INTENTS.
+
+    Degrades to 'smalltalk' on any failure or unexpected output.
+    """
+    payload = {
+        "input": json.dumps(
+            {
+                "question": str(question or "").strip(),
+                "projection_digest": str(projection_digest or "").strip(),
+                "selected_node_id": str(selected_node_id or "").strip(),
+                "history_summary": _history_summary_for_router(history),
+            },
+            ensure_ascii=False,
+        )
+    }
+    try:
+        result = complete(
+            ROUTER_FEATURE,
+            payload=payload,
+            user_id=user_id,
+            project_id=project_id,
+            session_id=session_id,
+            org_id=org_id,
+            max_tokens=ROUTER_MAX_TOKENS,
+        )
+        if not result.get("ok"):
+            return "smalltalk"
+        return _normalize_intent(str(result.get("text") or ""))
+    except Exception:
+        return "smalltalk"
 
 
 def _format_history_for_prompt(history: List[AgentTurn], current_digest: str) -> str:
@@ -149,6 +247,324 @@ def _persisted_answer_from_turn(turn: AgentTurn) -> AgentChatOut:
     )
 
 
+def _persist_assistant_turn(
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    message: str,
+    usage: Dict[str, Any],
+    ctx: AgentContext,
+    *,
+    client_turn_id: Optional[str] = None,
+    action: Optional[str] = None,
+    action_payload: Dict[str, Any] = None,
+    now_ms: Optional[int] = None,
+) -> AgentChatOut:
+    append_turn(
+        session_id,
+        user_id,
+        org_id,
+        role="assistant",
+        content_json={"text": message},
+        client_turn_id=client_turn_id,
+        action=action,
+        action_payload_json=(action_payload or {}),
+        projection_digest=ctx.digest,
+        usage_json=usage,
+        now_ms=now_ms,
+    )
+    return AgentChatOut(
+        ok=True,
+        status="ok",
+        error="",
+        message=message,
+        action=action,
+        action_payload=(action_payload or {}),
+        usage=usage,
+        projection_digest=ctx.digest,
+    )
+
+
+def _run_node_qa_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    selected = str(payload.selected_step_id or "").strip()
+    result = run_step_qa(
+        session_id,
+        token,
+        step_id=selected,
+        question=payload.message,
+    )
+    message = str(result.get("answer") or result.get("message") or result.get("note") or "")
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    return _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=message,
+        usage={},
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="step-qa",
+        action_payload=result,
+        now_ms=_now_ms(),
+    )
+
+
+def _run_suggest_next_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    selected = str(payload.selected_step_id or "").strip()
+    result = run_suggest_next(
+        session_id,
+        token,
+        after_step_id=selected,
+    )
+    message = str(result.get("message") or result.get("note") or "")
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    return _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=message,
+        usage={},
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="suggest-next",
+        action_payload=result,
+        now_ms=_now_ms(),
+    )
+
+
+def _run_schema_overview_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    memory = load_schema_memory(session_id, org_id)
+    if memory and memory.get("projection_digest") == ctx.digest and memory.get("summary"):
+        return _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message=memory["summary"],
+            usage={"cached": True},
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action="schema_overview",
+            action_payload={},
+            now_ms=_now_ms(),
+        )
+
+    prompt_text = (
+        "Кратко опиши BPMN-схему ниже на русском языке. "
+        "Не более 400 токенов. Схема:\n\n"
+        f"{_to_json_text(ctx.projection)}"
+    )
+    result = complete(
+        FEATURE,
+        payload={"input": prompt_text},
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=SCHEMA_OVERVIEW_MAX_TOKENS,
+    )
+    usage = _usage_out(result)
+    if not result.get("ok"):
+        return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
+
+    message = str(result.get("text") or "").strip()
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    return _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=message,
+        usage=usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="schema_overview",
+        action_payload={},
+        now_ms=_now_ms(),
+    )
+
+
+def _run_doc_qa_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    try:
+        rag = search_rag(
+            payload.message,
+            session_id,
+            token,
+            source_type="",
+            top_k=5,
+            min_score=0.1,
+        )
+        results = rag.get("results") or [] if isinstance(rag, dict) else []
+    except Exception:
+        results = []
+
+    if not results:
+        return _run_free_answer_branch(
+            payload, ctx, session_id, user_id, org_id, token, client_turn_id=client_turn_id
+        )
+
+    chunks_text = "\n---\n".join(
+        str(r.get("chunk") or r.get("text") or "").strip() for r in results[:5]
+    )
+    prompt_text = (
+        "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
+        "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
+        f"Отрывки:\n{chunks_text}\n\n"
+        f"Вопрос: {payload.message}"
+    )
+    result = complete(
+        FEATURE,
+        payload={"input": prompt_text},
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=MAX_TOKENS,
+    )
+    usage = _usage_out(result)
+    if not result.get("ok"):
+        return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
+
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    return _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=str(result.get("text") or ""),
+        usage=usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="doc_qa",
+        action_payload={"results_count": len(results)},
+        now_ms=_now_ms(),
+    )
+
+
+def _run_free_answer_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    """Smalltalk / free-answer fallback. Preserves AGENT-0 action-JSON fallback."""
+    user_prompt_text = _build_user_prompt(ctx, payload)
+    result = complete(
+        FEATURE,
+        payload={"input": user_prompt_text},
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS,
+    )
+
+    usage = _usage_out(result)
+
+    if not result.get("ok"):
+        return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
+
+    llm_text = str(result.get("text") or "")
+    action_obj = _extract_json_block(llm_text)
+
+    action_name: Optional[str] = None
+    action_payload: Dict[str, Any] = {}
+    assistant_message = llm_text
+
+    if action_obj and isinstance(action_obj, dict):
+        possible_action = str(action_obj.get("action") or "").strip()
+        if possible_action in {"suggest-next", "explain-step", "step-qa"}:
+            action_result = _run_action(possible_action, action_obj, session_id, token, ctx, payload.message)
+            if action_result is not None:
+                action_name = possible_action
+                action_payload = action_result
+                assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
+
+    return _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=assistant_message,
+        usage=usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action=action_name,
+        action_payload=action_payload,
+        now_ms=_now_ms(),
+    )
+
+
+def _gateway_error_out(
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    result: Dict[str, Any],
+    ctx: AgentContext,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    status = str(result.get("status") or "error")
+    error_text = str(result.get("error") or "")
+    assistant_text = f"[{status}] {error_text}" if error_text else status
+    usage = _usage_out(result)
+    append_turn(
+        session_id,
+        user_id,
+        org_id,
+        role="assistant",
+        content_json={"text": assistant_text, "status": status},
+        client_turn_id=client_turn_id,
+        projection_digest=ctx.digest,
+        usage_json=usage,
+        now_ms=_now_ms(),
+    )
+    return AgentChatOut(
+        ok=False,
+        status=status,
+        error=error_text,
+        message=assistant_text,
+        usage=usage,
+        projection_digest=ctx.digest,
+    )
+
+
 def run_turn(
     session_id: str,
     user_id: str,
@@ -185,81 +601,225 @@ def run_turn(
         now_ms=_now_ms(),
     )
 
-    user_prompt_text = _build_user_prompt(ctx, payload)
-    result = complete(
-        FEATURE,
-        payload={"input": user_prompt_text},
+    project_id = str(getattr(ctx.session, "project_id", "") or "")
+    intent = route_intent(
+        payload.message,
+        ctx.digest,
+        payload.selected_step_id,
+        ctx.history,
         user_id=uid,
-        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        project_id=project_id,
         session_id=sid,
         org_id=oid,
-        max_tokens=MAX_TOKENS,
     )
 
-    usage = _usage_out(result)
+    if intent == "node_qa" and _step_in_projection(ctx.projection, payload.selected_step_id):
+        return _run_node_qa_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
-    # Handle gateway-level non-ok statuses: still persist assistant turn for retry context.
-    if not result.get("ok"):
-        status = str(result.get("status") or "error")
-        error_text = str(result.get("error") or "")
-        assistant_text = f"[{status}] {error_text}" if error_text else status
-        append_turn(
-            sid,
-            uid,
-            oid,
-            role="assistant",
-            content_json={"text": assistant_text, "status": status},
-            client_turn_id=client_turn_id,
-            projection_digest=ctx.digest,
-            usage_json=usage,
-            now_ms=_now_ms(),
-        )
-        return AgentChatOut(
-            ok=False,
-            status=status,
-            error=error_text,
-            message=assistant_text,
-            usage=usage,
-            projection_digest=ctx.digest,
-        )
+    if intent == "schema_overview":
+        return _run_schema_overview_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
-    llm_text = str(result.get("text") or "")
-    action_obj = _extract_json_block(llm_text)
+    if intent == "doc_qa":
+        return _run_doc_qa_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
-    action_name: Optional[str] = None
-    action_payload: Dict[str, Any] = {}
-    assistant_message = llm_text
+    if intent == "suggest_next" and _step_in_projection(ctx.projection, payload.selected_step_id):
+        return _run_suggest_next_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
-    if action_obj and isinstance(action_obj, dict):
-        possible_action = str(action_obj.get("action") or "").strip()
-        if possible_action in {"suggest-next", "explain-step", "step-qa"}:
-            action_result = _run_action(possible_action, action_obj, sid, token, ctx, payload.message)
-            if action_result is not None:
-                action_name = possible_action
-                action_payload = action_result
-                assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
+    return _run_free_answer_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
+
+
+def run_turn_stream(
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    payload: AgentChatIn,
+    *,
+    token: str = "",
+    session_row: Optional[Dict[str, Any]] = None,
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Streaming variant of run_turn. Yields SSE event tuples (type, payload)."""
+    sid = str(session_id or "").strip()
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip() or "org_default"
+
+    ctx = load_context(sid, uid, oid, token=token, session_row=session_row, history_limit=50)
+    conv_id = get_or_create_conversation(sid, uid, oid, now_ms=_now_ms())
+
+    client_turn_id = (str(payload.client_turn_id).strip() if payload.client_turn_id else None)
+    if client_turn_id:
+        existing = find_turn_by_client_id(conv_id, client_turn_id)
+        if existing:
+            yield ("done", {"message": str((existing.content or {}).get("text") or "")})
+            return
 
     append_turn(
         sid,
         uid,
         oid,
-        role="assistant",
-        content_json={"text": assistant_message},
+        role="user",
+        content_json={"text": payload.message, "selected_step_id": payload.selected_step_id},
         client_turn_id=client_turn_id,
-        action=action_name,
-        action_payload_json=action_payload,
         projection_digest=ctx.digest,
-        usage_json=usage,
         now_ms=_now_ms(),
     )
 
-    return AgentChatOut(
-        ok=True,
-        status="ok",
-        error="",
+    project_id = str(getattr(ctx.session, "project_id", "") or "")
+    turn_id = f"turn_{uuid.uuid4().hex[:12]}"
+    yield ("start", {"turn_id": turn_id})
+
+    intent = route_intent(
+        payload.message,
+        ctx.digest,
+        payload.selected_step_id,
+        ctx.history,
+        user_id=uid,
+        project_id=project_id,
+        session_id=sid,
+        org_id=oid,
+    )
+
+    def _finish(text: str, usage: Dict[str, Any], action: Optional[str] = None, action_payload: Dict[str, Any] = None) -> None:
+        _persist_assistant_turn(
+            sid,
+            uid,
+            oid,
+            message=text,
+            usage=usage,
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action=action,
+            action_payload=(action_payload or {}),
+            now_ms=_now_ms(),
+        )
+        yield ("done", {"usage": usage, "projection_digest": ctx.digest})
+
+    if intent == "node_qa" and _step_in_projection(ctx.projection, payload.selected_step_id):
+        result = run_step_qa(sid, token, step_id=str(payload.selected_step_id), question=payload.message)
+        message = str(result.get("answer") or result.get("message") or result.get("note") or "")
+        yield from _finish(message, {}, action="step-qa", action_payload=result)
+        yield ("action", {"action": "step-qa", "payload": result})
+        return
+
+    if intent == "suggest_next" and _step_in_projection(ctx.projection, payload.selected_step_id):
+        result = run_suggest_next(sid, token, after_step_id=str(payload.selected_step_id))
+        message = str(result.get("message") or result.get("note") or "")
+        yield from _finish(message, {}, action="suggest-next", action_payload=result)
+        yield ("action", {"action": "suggest-next", "payload": result})
+        return
+
+    if intent == "schema_overview":
+        memory = load_schema_memory(sid, oid)
+        if memory and memory.get("projection_digest") == ctx.digest and memory.get("summary"):
+            yield ("token", {"delta": memory["summary"]})
+            yield from _finish(memory["summary"], {"cached": True}, action="schema_overview")
+            return
+
+    prompt_text: Optional[str] = None
+    max_tokens_for_stream = MAX_TOKENS
+    if intent == "schema_overview":
+        prompt_text = (
+            "Кратко опиши BPMN-схему ниже на русском языке. "
+            "Не более 400 токенов. Схема:\n\n"
+            f"{_to_json_text(ctx.projection)}"
+        )
+        max_tokens_for_stream = SCHEMA_OVERVIEW_MAX_TOKENS
+        schedule_memory_update(sid, oid, ctx.digest)
+    elif intent == "doc_qa":
+        try:
+            rag = search_rag(payload.message, sid, token, source_type="", top_k=5, min_score=0.1)
+            results = rag.get("results") or [] if isinstance(rag, dict) else []
+        except Exception:
+            results = []
+        if results:
+            chunks_text = "\n---\n".join(str(r.get("chunk") or r.get("text") or "").strip() for r in results[:5])
+            prompt_text = (
+                "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
+                "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
+                f"Отрывки:\n{chunks_text}\n\n"
+                f"Вопрос: {payload.message}"
+            )
+        else:
+            prompt_text = _build_user_prompt(ctx, payload)
+            max_tokens_for_stream = SMALLTALK_MAX_TOKENS
+    else:
+        # smalltalk / fallback
+        prompt_text = _build_user_prompt(ctx, payload)
+        max_tokens_for_stream = SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS
+
+    collected_text = ""
+    final_usage: Dict[str, Any] = {}
+    stream_error: Optional[Dict[str, Any]] = None
+
+    for event_type, event_data in complete_stream(
+        FEATURE,
+        payload={"input": prompt_text},
+        user_id=uid,
+        project_id=project_id,
+        session_id=sid,
+        org_id=oid,
+        max_tokens=max_tokens_for_stream,
+    ):
+        if event_type == "token":
+            delta = str(event_data.get("delta") or "")
+            collected_text += delta
+            yield ("token", {"delta": delta})
+        elif event_type == "error":
+            stream_error = event_data
+            break
+        elif event_type == "usage":
+            final_usage = {
+                "prompt_tokens": int(event_data.get("usage", {}).get("prompt_tokens", 0)),
+                "completion_tokens": int(event_data.get("usage", {}).get("completion_tokens", 0)),
+                "provider_id": str(event_data.get("provider_id") or ""),
+                "model": str(event_data.get("model") or ""),
+                "prompt_version": int(event_data.get("prompt_version") or 0),
+                "fallback": bool(event_data.get("fallback")),
+                "cached": False,
+            }
+
+    if stream_error is not None:
+        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
+        _persist_assistant_turn(
+            sid,
+            uid,
+            oid,
+            message=text,
+            usage=final_usage,
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action=None,
+            action_payload={},
+            now_ms=_now_ms(),
+        )
+        yield ("error", {"status": stream_error.get("status"), "error": stream_error.get("error", "")})
+        return
+
+    # AGENT-0 action-JSON fallback preserved for streaming free-answer.
+    action_name: Optional[str] = None
+    action_payload: Dict[str, Any] = {}
+    assistant_message = collected_text
+    if intent in {"smalltalk", "doc_qa"}:
+        action_obj = _extract_json_block(collected_text)
+        if action_obj and isinstance(action_obj, dict):
+            possible_action = str(action_obj.get("action") or "").strip()
+            if possible_action in {"suggest-next", "explain-step", "step-qa"}:
+                action_result = _run_action(possible_action, action_obj, sid, token, ctx, payload.message)
+                if action_result is not None:
+                    action_name = possible_action
+                    action_payload = action_result
+                    assistant_message = str(action_result.get("message") or action_result.get("note") or collected_text)
+                    yield ("action", {"action": action_name, "payload": action_payload})
+
+    _persist_assistant_turn(
+        sid,
+        uid,
+        oid,
         message=assistant_message,
+        usage=final_usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
         action=action_name,
         action_payload=action_payload,
-        usage=usage,
-        projection_digest=ctx.digest,
+        now_ms=_now_ms(),
     )
+    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest})

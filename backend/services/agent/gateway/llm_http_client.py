@@ -6,8 +6,9 @@ AGENT-SVC Phase 1). Сервис не импортирует backend.app.* — �
 """
 from __future__ import annotations
 
+import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import requests
 
@@ -89,3 +90,92 @@ def _deepseek_chat_request(
     if last_exc is not None:
         raise last_exc
     raise RuntimeError("deepseek request failed")
+
+
+def _deepseek_chat_request_stream(
+    *,
+    api_key: str,
+    base_url: str,
+    messages: List[Dict[str, str]],
+    temperature: float,
+    timeout: int,
+    max_tokens: Optional[int] = None,
+    max_attempts: int = 3,
+    retry_backoff_sec: float = 0.8,
+    model: str = "deepseek-chat",
+) -> Generator[Dict[str, Any], None, None]:
+    """Streaming chat/completions request.
+
+    Yields parsed chunks (OpenAI streaming format) OR a single non-streaming
+    response dict if the provider returns a regular JSON body.  Caller must
+    distinguish `choices[0].delta.content` (stream) from
+    `choices[0].message.content` (fallback).
+    """
+    payload = {
+        "model": str(model or "deepseek-chat"),
+        "messages": messages,
+        "temperature": float(temperature),
+        "stream": True,
+    }
+    mt = int(max_tokens or 0)
+    if mt > 0:
+        payload["max_tokens"] = mt
+    url = f"{base_url}/v1/chat/completions"
+    attempts = max(1, int(max_attempts or 1))
+    backoff = max(0.0, float(retry_backoff_sec or 0.0))
+    last_exc: Optional[Exception] = None
+    read_timeout = max(10, int(timeout or 0))
+    connect_timeout = max(3, min(15, read_timeout))
+
+    for attempt in range(1, attempts + 1):
+        try:
+            with requests.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                    "Accept-Encoding": "identity",
+                    "Connection": "close",
+                },
+                json=payload,
+                stream=True,
+                timeout=(connect_timeout, read_timeout),
+            ) as r:
+                r.raise_for_status()
+                content_type = str(r.headers.get("Content-Type", "")).lower()
+                # Non-streaming fallback: provider ignored stream=true.
+                if "text/event-stream" not in content_type:
+                    data = r.json()
+                    if isinstance(data, dict):
+                        yield data
+                        return
+                    raise ValueError("invalid_json_root")
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    text = line.decode("utf-8", errors="replace") if isinstance(line, bytes) else str(line)
+                    text = text.strip()
+                    if text == "data: [DONE]" or text == "[DONE]":
+                        return
+                    if text.startswith("data: "):
+                        text = text[len("data: "):]
+                    if not text:
+                        continue
+                    try:
+                        chunk = json.loads(text)
+                    except Exception:
+                        continue
+                    if isinstance(chunk, dict):
+                        yield chunk
+                return
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= attempts or not _is_retryable_deepseek_error(exc):
+                raise
+            sleep_for = backoff * attempt
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("deepseek stream request failed")

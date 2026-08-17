@@ -24,10 +24,10 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from . import llm_store
-from .llm_http_client import _deepseek_chat_request
+from .llm_http_client import _deepseek_chat_request, _deepseek_chat_request_stream
 from .redis_cache import cache_get_json, cache_set_json
 
 CACHE_TTL_SEC = 7 * 24 * 3600  # 7 дней
@@ -234,3 +234,151 @@ def complete_cached(
             client=cache_client,
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Streaming variant: yields (event_type, payload) tuples.
+# event_type ∈ {"token", "usage", "error"}
+# ---------------------------------------------------------------------------
+
+def complete_stream(
+    feature: str,
+    payload: Any = None,
+    *,
+    user_id: str = "",
+    project_id: str = "",
+    session_id: str = "",
+    org_id: str = "org_default",
+    max_tokens: Optional[int] = None,
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Streaming LLM call through the fallback chain.
+
+    Yields:
+        ("token", {"delta": str})         — next text fragment
+        ("usage", {"usage": ..., "model": ..., ...}) — final metadata
+        ("error", {"status": str, "error": str})    — gateway-level failure
+    Never raises; terminal event is always either usage or error.
+    """
+    started = time.monotonic()
+
+    def _record(status: str, **extra: Any) -> Dict[str, Any]:
+        latency_ms = int((time.monotonic() - started) * 1000)
+        usage = extra.get("usage", {}) or {}
+        llm_store.record_usage(
+            org_id=org_id, feature=feature,
+            model=extra.get("model", "") or "",
+            provider_id=extra.get("provider_id", "") or "",
+            prompt_tokens=int(usage.get("prompt_tokens", 0)),
+            completion_tokens=int(usage.get("completion_tokens", 0)),
+            cached=False, user_id=user_id, project_id=project_id, session_id=session_id,
+            latency_ms=latency_ms, status=status,
+        )
+        return {"status": status, "latency_ms": latency_ms, **extra}
+
+    # 1. feature flag
+    flag = llm_store.get_feature_flag(feature)
+    if flag is not None and not flag.get("enabled"):
+        yield ("error", _record("disabled", error=f"feature '{feature}' is disabled"))
+        return
+
+    # 2. daily token limit
+    if flag is not None:
+        limit = int(flag.get("daily_token_limit") or 0)
+        if limit > 0:
+            used = llm_store.usage_daily_tokens(feature, org_id, int(time.time()) - 24 * 3600)
+            if used >= limit:
+                yield (
+                    "error",
+                    _record(
+                        "rate_limited",
+                        error=f"daily token limit reached ({used}/{limit})",
+                        used_tokens_24h=used,
+                        daily_token_limit=limit,
+                    ),
+                )
+                return
+
+    # 3. active prompt
+    prompt = llm_store.get_active_prompt(feature)
+    effective_max_tokens = int(max_tokens or (prompt or {}).get("max_tokens") or DEFAULT_MAX_TOKENS)
+    messages = _render_messages(prompt, payload)
+
+    # 4–5. provider chain
+    chain = _provider_chain(org_id)
+    if not chain:
+        yield ("error", _record("no_provider", error="no enabled LLM providers with api key"))
+        return
+
+    last_error = ""
+    for provider_index, provider in enumerate(chain):
+        fallback_used = provider_index > 0 or str(provider.get("id") or "") == "env_fallback"
+        resolved_model = llm_store.resolve_model(feature, org_id) or str(provider.get("model") or "")
+        collected_text = ""
+        usage_out: Dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0}
+        model_out = str(provider.get("model") or "")
+        try:
+            for chunk in _deepseek_chat_request_stream(
+                api_key=str(provider.get("api_key") or ""),
+                base_url=str(provider.get("base_url") or ""),
+                messages=messages,
+                temperature=0.2,
+                timeout=timeout_sec,
+                max_tokens=effective_max_tokens,
+                max_attempts=_GATEWAY_MAX_ATTEMPTS,
+                model=resolved_model,
+            ):
+                if not isinstance(chunk, dict):
+                    continue
+                choices = chunk.get("choices") or []
+                choice = choices[0] if choices else {}
+                delta = choice.get("delta") or {}
+                delta_content = delta.get("content")
+                if delta_content is not None:
+                    text_piece = str(delta_content)
+                    collected_text += text_piece
+                    yield ("token", {"delta": text_piece})
+                message = choice.get("message") or {}
+                msg_content = message.get("content")
+                if msg_content is not None:
+                    text_piece = str(msg_content)
+                    collected_text = text_piece
+                    yield ("token", {"delta": text_piece})
+                usage_raw = chunk.get("usage") or {}
+                if usage_raw:
+                    usage_out = {
+                        "prompt_tokens": int(usage_raw.get("prompt_tokens") or 0),
+                        "completion_tokens": int(usage_raw.get("completion_tokens") or 0),
+                    }
+                model_out = str(chunk.get("model") or model_out)
+
+            # If provider returned no delta but a non-streaming message was already
+            # emitted above, collected_text is set.  If nothing was emitted at all,
+            # emit a single fallback token with whatever we have (even if empty).
+            if not collected_text:
+                yield ("token", {"delta": ""})
+
+            yield (
+                "usage",
+                _record(
+                    "ok",
+                    usage=usage_out,
+                    text=collected_text,
+                    provider_id=str(provider.get("id") or ""),
+                    model=model_out,
+                    prompt_version=int((prompt or {}).get("version") or 0),
+                    fallback=fallback_used,
+                ),
+            )
+            return
+        except Exception as exc:
+            last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
+            llm_store.record_usage(
+                org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
+                provider_id=str(provider.get("id") or ""), cached=False,
+                user_id=user_id, project_id=project_id, session_id=session_id,
+                latency_ms=int((time.monotonic() - started) * 1000), status="error",
+            )
+            continue
+
+    yield ("error", _record("error", error=last_error or "all providers failed"))
