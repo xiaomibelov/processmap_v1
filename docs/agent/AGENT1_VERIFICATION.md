@@ -171,25 +171,45 @@ WHERE session_id = '02315c2eac';
 
 ### K3 — router cache on repeat question
 
+Fix: `fix/agent-1-router-cache` — `route_intent` теперь вызывает `complete_cached(ROUTER_FEATURE, cache_digest=...)`, где `cache_digest = _router_digest(question, projection_digest, selected_node_id)`.
+
+Проверка на свежем локальном стеке (session `645cee3ad1`, пустая схема):
+
 ```bash
 # first
-curl ... -d '{"message":"какой следующий блок добавить?","selected_step_id":"n_9a469bbb","client_turn_id":"k3_first_001"}'
-# second (same text + same selected_step_id)
-curl ... -d '{"message":"какой следующий блок добавить?","selected_step_id":"n_9a469bbb","client_turn_id":"k3_second_001"}'
+curl -s -X POST "http://localhost:5178/api/sessions/645cee3ad1/agent/chat" \
+  -H "Authorization: Bearer $TOKEN" -H 'X-Org-Id: org_default' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"расскажи про схему","client_turn_id":"k3_first"}'
+# second (same text + same projection)
+curl ... -d '{"message":"расскажи про схему","client_turn_id":"k3_second"}'
 ```
 
 `llm_usage` за оба вызова:
 
-```text
-agent_router | 335 | 3 | f | deepseek-chat | 1787001184
-agent_router | 335 | 3 | f | deepseek-chat | 1787001182
+```sql
+SELECT feature, prompt_tokens, completion_tokens, cached, model, ts
+FROM llm_usage
+WHERE session_id='645cee3ad1' AND feature='agent_router'
+ORDER BY ts;
 ```
 
-Оба вызова роутера потребляли токены (`cached=false`). Ключа `pm:cache:llm:agent_router:*`, который бы читался из `route_intent`, в ходе chat-вызовов **не создаётся**.
+```text
+agent_router | 240 | 3 | f | deepseek-chat | 1787002047
+agent_router |   0 | 0 | t | deepseek-chat | 1787002053
+```
 
-**Root cause:** `route_intent` в `backend/services/agent/memory/chat.py:126` вызывает `complete(ROUTER_FEATURE, ...)`, а не `complete_cached(...)`. Внутренний endpoint `/internal/llm/complete_cached` кэширует (ключи в Redis с TTL ~7 дней видны), но production-путь чата их не использует.
+Redis:
 
-**Verdict: FAIL** (из-за бага реализации, не данных; исправление требует изменения кода, что вне scope этого запуска).
+```bash
+docker compose exec -T redis redis-cli -n 0 KEYS 'pm:cache:llm:agent_router:*'
+# pm:cache:llm:agent_router:v1:947b2948bc35605f71926c02bbe87de1
+
+docker compose exec -T redis redis-cli -n 0 TTL 'pm:cache:llm:agent_router:v1:947b2948bc35605f71926c02bbe87de1'
+# 604769
+```
+
+**Verdict: PASS**. Первый вызов роутера — `cached=false`, второй — `cached=true`, 0 токенов, ключ в Redis с TTL ~7 дней.
 
 ## Spot-check: empty schema
 
@@ -224,6 +244,15 @@ turns = list_turns(sid, "", oid, limit=MAX_TURNS)
 
 `list_turns` строит `conversation_id = f"conv:{session_id}:{user_id}"`. С `user_id=""` получается ключ `conv:{session_id}:`, то есть **session-level** диалог, а не per-user. Это корректно для `agent_schema_memory`, потому что summary и facts привязаны к сессии (`UNIQUE(org_id, session_id)`), и для формирования общей картины схемы важна вся история сессии, а не конкретного пользователя.
 
+## Проверка кэша в schema_overview / smalltalk
+
+По плану (таблица 2.6) кэш LLM в этих ветках не предусмотрен:
+
+- `schema_overview`: тёплый ответ берётся из `agent_schema_memory` (0 LLM-токенов), холодный — один вызов `processman_agent` + фоновый `schedule_memory_update`.
+- `smalltalk`: один вызов `processman_agent` с коротким ответом.
+
+В коде `backend/services/agent/memory/chat.py` обе ветки используют `complete(FEATURE, ...)`, что соответствует плану. Дополнительного кэширования, аналогичного router, там не требуется.
+
 ## Token economy
 
 ```sql
@@ -249,10 +278,10 @@ schema_assistant |  2938 |  584
 | Router tuning accuracy | PASS | 9/10, в пределах допуска |
 | K1 node_qa | PASS | router uncached, step-qa, meaningful answer |
 | K2 schema_overview | PASS | cold → memory row, warm ≤5 s / 0 tokens |
-| K3 router cache | **FAIL** | `route_intent` не использует `complete_cached` |
+| K3 router cache | **PASS** | после фикса `fix/agent-1-router-cache`: второй вызов `cached=true`, 0 токенов |
 | Empty schema smalltalk | PASS | no raw JSON |
 
-**Рекомендация:** перед объявлением AGENT-1 полностью PASS нужен код-фикс `backend/services/agent/memory/chat.py:126` — заменить `complete(ROUTER_FEATURE, ...)` на `complete_cached(ROUTER_FEATURE, cache_digest=..., ...)` с `cache_digest = _router_digest(question, projection_digest, selected_node_id)`. Без этого K3 не закроется ни данными, ни конфигом.
+**Рекомендация:** AGENT-1 gate K1–K3 закрыт. Следующий шаг — review и merge PR `fix/agent-1-router-cache`, затем мониторинг soak (монолитный agent-код и флаг `LLM_VIA_AGENT_SVC` не трогать).
 
 ## Git Proof
 
