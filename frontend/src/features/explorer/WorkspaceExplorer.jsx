@@ -92,6 +92,14 @@ import {
   isExplorerContextStatusEditable,
   normalizeExplorerContextStatus,
 } from "./explorerContextStatusModel.js";
+import {
+  buildExplorerRowMeta,
+  explorerMarqueeMotion,
+  explorerVisibleColumnCount,
+  getExplorerColumnLayout,
+  isExplorerTextTruncated,
+} from "./explorerColumnVisibility.js";
+import "./explorerAdaptive.css";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import TextBreadcrumbs from "../../components/TextBreadcrumbs.jsx";
 import { useWorkspaceMainNavSlot } from "../../components/workspaceMainNavSlot.js";
@@ -593,6 +601,38 @@ function UpdatedCell({ node }) {
 // ─── P3 [А]: единый статус-контрол explorer (точка 7px + подпись + поповер) ──
 // Заменяет прежний <select>: случайная смена при wheel/scroll невозможна —
 // поповер открывается только явным кликом по бейджу.
+
+// ─── P4 [А]: marquee длинных названий ─────────────────────────────────────────
+// ellipsis + fade-маска всегда; прокрутка при hover — только если текст реально
+// обрезан (scrollWidth > clientWidth) и нет prefers-reduced-motion (см. CSS).
+
+function ExplorerMarqueeText({ text, className = "" }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [truncated, setTruncated] = useState(false);
+  useEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return undefined;
+    const measure = () => {
+      const isTrunc = isExplorerTextTruncated(inner.scrollWidth, outer.clientWidth);
+      setTruncated(isTrunc);
+      const { shiftPx, durationSec } = explorerMarqueeMotion(inner.scrollWidth, outer.clientWidth);
+      inner.style.setProperty("--explorer-marquee-x", `${-shiftPx}px`);
+      inner.style.setProperty("--explorer-marquee-dur", `${durationSec}s`);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(outer);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [text]);
+  return (
+    <span ref={outerRef} className={`explorer-marquee ${truncated ? "is-truncated" : ""} ${className}`}>
+      <span ref={innerRef} className="explorer-marquee__inner">{text}</span>
+    </span>
+  );
+}
 
 function StatusDotBadge({ domain, value }) {
   const entry = getExplorerStatusEntry(domain, value);
@@ -1336,7 +1376,9 @@ function FolderRow({
   canDelete = false,
   currentFolderId = "",
   showSignalColumns = false,
+  columnLayout,
 }) {
+  const layout = columnLayout || getExplorerColumnLayout(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1384,14 +1426,19 @@ function FolderRow({
               <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
             )}
             <IcoFolder className="shrink-0 text-accent/80" />
-            <button className="block min-w-0 flex-1 truncate text-left hover:underline" onClick={() => onNavigate(folder)} title={folder.name}>
-              {folder.name}
+            <button className="block min-w-0 flex-1 text-left hover:underline" onClick={() => onNavigate(folder)} title={folder.name}>
+              <ExplorerMarqueeText text={folder.name} />
             </button>
           </div>
+          {layout.compact ? (
+            <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(folder, "folder")}</div>
+          ) : null}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" label={folderLabel} /></td>
-        <td className="px-2 py-2.5"><CompositionCell item={folder} /></td>
-        <td className="px-2 py-2.5"><AssigneeCell item={folder} /></td>
+        {layout.showType ? (
+          <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" label={folderLabel} /></td>
+        ) : null}
+        {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={folder} /></td> : null}
+        {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={folder} /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -1406,7 +1453,7 @@ function FolderRow({
             <StatusDotBadge domain="folder" value={folder.context_status} />
           )}
         </td>
-        <UpdatedCell node={folder} />
+        {layout.showUpdated ? <UpdatedCell node={folder} /> : null}
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
@@ -1476,7 +1523,9 @@ function ProjectRow({
   canRename = false,
   canDelete = false,
   showSignalColumns = false,
+  columnLayout,
 }) {
+  const layout = columnLayout || getExplorerColumnLayout(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1521,23 +1570,30 @@ function ProjectRow({
               onNavigate={() => onClick(project)}
               title={project.name}
             >
-              <span className="block truncate hover:underline">{project.name}</span>
-              <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-muted transition-colors group-hover:text-accent">
-                <span>Открыть проект</span>
-                <IcoChevron right className="text-[10px]" />
-              </span>
+              <ExplorerMarqueeText text={project.name} className="hover:underline" />
+              {layout.compact ? null : (
+                <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-muted transition-colors group-hover:text-accent">
+                  <span>Открыть проект</span>
+                  <IcoChevron right className="text-[10px]" />
+                </span>
+              )}
             </AppRouteLink>
           </div>
+          {layout.compact ? (
+            <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(project, "project")}</div>
+          ) : null}
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="project" /></td>
-        <td className="px-2 py-2.5"><CompositionCell item={project} /></td>
-        <td className="px-2 py-2.5"><AssigneeCell item={project} /></td>
+        {layout.showType ? (
+          <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="project" /></td>
+        ) : null}
+        {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={project} /></td> : null}
+        {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={project} /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
         <td className="px-2 py-2.5">
           <StatusDotBadge domain="project" value={project.status} />
         </td>
-        <UpdatedCell node={project} />
+        {layout.showUpdated ? <UpdatedCell node={project} /> : null}
         <td className="px-2 py-2.5 text-right relative" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1.5">
             <AppRouteLink
@@ -1590,7 +1646,8 @@ function ProjectRow({
 
 // ─── P2 [Б]: Session rows под раскрытым проектом (3-й уровень дерева) ────────
 
-function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange }) {
+function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange, columnLayout }) {
+  const layout = columnLayout || getExplorerColumnLayout(0);
   const leftPadding = 8 + depth * 18;
   const sessionHref = buildAppWorkspaceHref({
     projectId: session?.project_id || project?.id,
@@ -1616,13 +1673,16 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
             onNavigate={() => onOpen?.(session)}
             title={session.name || session.title}
           >
-            <span className="block truncate font-normal hover:underline">{session.name || session.title || "Сессия"}</span>
+            <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className="font-normal hover:underline" />
           </AppRouteLink>
         </div>
+        {layout.compact ? (
+          <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(session, "session")}</div>
+        ) : null}
       </td>
-      <td className="px-2 py-2 text-xs text-muted">—</td>
-      <td className="px-2 py-2" />
-      <td className="px-2 py-2" />
+      {layout.showType ? <td className="px-2 py-2 text-xs text-muted">—</td> : null}
+      {layout.showComposition ? <td className="px-2 py-2" /> : null}
+      {layout.showAssignee ? <td className="px-2 py-2" /> : null}
       {showSignalColumns ? <td className="px-2 py-2" /> : null}
       {showSignalColumns ? <td className="px-2 py-2" /> : null}
       <td className="px-2 py-2">
@@ -1632,7 +1692,7 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
           onChange={(nextStatus) => onStatusChange?.(session, nextStatus)}
         />
       </td>
-      <UpdatedCell node={session} />
+      {layout.showUpdated ? <UpdatedCell node={session} /> : null}
       <td className="px-2 py-2 w-8" />
     </tr>
   );
@@ -1651,6 +1711,7 @@ function ProjectSessionsRows({
   colSpan = 7,
   onOpenSession,
   onSessionStatusChange,
+  columnLayout,
 }) {
   const projectId = String(project?.id || "").trim();
   const sessionsQuery = useQuery({
@@ -1699,6 +1760,7 @@ function ProjectSessionsRows({
       showSignalColumns={showSignalColumns}
       onOpen={openSession}
       onStatusChange={onSessionStatusChange}
+      columnLayout={columnLayout}
     />
   ));
 }
@@ -1910,6 +1972,26 @@ function ExplorerPane({
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
+
+  // P4 [А]: адаптив по ширине КОНТЕЙНЕРА таблицы (сайдбар схлопывается —
+  // media queries по viewport не подходят). ResizeObserver + чистая функция
+  // getExplorerColumnLayout (пороги/приоритеты — explorerColumnVisibility.js).
+  const explorerTableContainerRef = useRef(null);
+  const [explorerTableWidth, setExplorerTableWidth] = useState(0);
+  useEffect(() => {
+    const el = explorerTableContainerRef.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0]?.contentRect?.width || 0);
+      setExplorerTableWidth((prev) => (prev === w ? prev : w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const explorerColumnLayout = useMemo(
+    () => getExplorerColumnLayout(explorerTableWidth, { signalColumns: treeColumnProfile.showSignalColumns }),
+    [explorerTableWidth, treeColumnProfile.showSignalColumns],
+  );
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
   const contextHeaderTitle = folderId
     ? "Для папок: количество проектов"
@@ -1938,7 +2020,7 @@ function ExplorerPane({
     }),
     [sortedRootItems, mergedExpandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
-  const inlineColSpan = treeColumnProfile.showSignalColumns ? 9 : 7;
+  const inlineColSpan = explorerVisibleColumnCount(explorerColumnLayout, { signalColumns: treeColumnProfile.showSignalColumns });
   const searchIndex = useMemo(
     () => buildExplorerSearchIndex({
       rootItems,
@@ -2400,48 +2482,60 @@ function ExplorerPane({
         // колонка с гарантированным min-width (≥260px) и flex-растяжением;
         // остальные колонки фиксированы: Тип 88 + Состав 210 + Ответственный 176
         // + Статус 88 + Обновлено 190 + Действия 32 = 784 (+72 с сигнальными).
-        // Ниже 1044px (1116px) таблица скроллится горизонтально, а не давит «Название».
-        <div className="flex-1 overflow-auto">
+        // P4 [А]: временный горизонтальный скролл <1044px ЗАМЕНЁН адаптивом по
+        // ширине контейнера (ResizeObserver + getExplorerColumnLayout): колонки
+        // скрываются по приоритету Обновлено → Ответственный → Состав; <680px —
+        // двухстрочные строки без шапки. Горизонтального скролла нет нигде.
+        <div className="flex-1 overflow-auto" ref={explorerTableContainerRef} data-testid="explorer-table-container">
           <table
             className="w-full table-fixed text-left border-collapse"
-            style={{ minWidth: treeColumnProfile.showSignalColumns ? 1116 : 1044 }}
           >
             <colgroup>
-              <col />
-              <col className="w-[88px]" />
-              <col className="w-[210px]" />
-              <col className="w-[176px]" />
+              <col style={explorerColumnLayout.compact ? undefined : { minWidth: explorerColumnLayout.nameMinWidth }} />
+              {explorerColumnLayout.showType ? <col className="w-[88px]" /> : null}
+              {explorerColumnLayout.showComposition ? <col className="w-[210px]" /> : null}
+              {explorerColumnLayout.showAssignee ? <col className="w-[176px]" /> : null}
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               <col className="w-[88px]" />
-              <col className="w-[190px]" />
+              {explorerColumnLayout.showUpdated ? <col className="w-[190px]" /> : null}
               <col className="w-8" />
             </colgroup>
+            {explorerColumnLayout.compact ? null : (
             <thead>
               <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "name" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Название" sortKey="name" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
+                {explorerColumnLayout.showType ? (
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "type" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Тип" sortKey="type" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
+                ) : null}
+                {explorerColumnLayout.showComposition ? (
                 <th className="px-2 py-2" title={contextHeaderTitle}>
                   Состав
                 </th>
+                ) : null}
+                {explorerColumnLayout.showAssignee ? (
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "assignee" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Ответственный / Исполнитель" sortKey="assignee" sort={explorerSort} onSort={handleExplorerSort} title="Сортирует разделы и папки по ответственному, проекты — по исполнителю." />
                 </th>
+                ) : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "status" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Статус" sortKey="status" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
+                {explorerColumnLayout.showUpdated ? (
                 <th className="px-2 py-2" aria-sort={explorerSort?.key === "updatedAt" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Обновлено" sortKey="updatedAt" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
+                ) : null}
                 <th className="px-2 py-2 w-8" />
               </tr>
             </thead>
+            )}
             <tbody className="divide-y divide-border/65">
               {visibleRows.map((row, index) => {
                 if (row.rowType === "loading") {
@@ -2487,6 +2581,7 @@ function ExplorerPane({
                       canDelete={!!permissions?.canDeleteFolder}
                       currentFolderId={folderId || ""}
                       showSignalColumns={treeColumnProfile.showSignalColumns}
+                      columnLayout={explorerColumnLayout}
                     />
                   );
                 }
@@ -2504,6 +2599,7 @@ function ExplorerPane({
                       colSpan={inlineColSpan}
                       onOpenSession={onOpenSession}
                       onSessionStatusChange={handleTreeSessionStatusChange}
+                      columnLayout={explorerColumnLayout}
                     />
                   );
                 }
@@ -2534,6 +2630,7 @@ function ExplorerPane({
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
                     showSignalColumns={treeColumnProfile.showSignalColumns}
+                    columnLayout={explorerColumnLayout}
                   />
                 );
               })}
