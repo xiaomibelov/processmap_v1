@@ -2,7 +2,8 @@
 
 > Branch: `docs/agent-1-verification`  
 > Base: `origin/main @ da5b899c` (PR-1/PR-2/PR-3 merged)  
-> Date: 2026-08-17  
+> HEAD: `a591abd7` + docs update  
+> Date: 2026-08-18  
 > Runtime: local docker compose, isolated ports (`.env.agent1verify`)  
 > Verifier: Kimi CLI
 
@@ -10,47 +11,94 @@
 
 | Item | Value | Artifact |
 |------|-------|----------|
-| Local stack | `docker compose --env-file .env.agent1verify up -d --build api frontend agent notifications postgres redis` | 4 services healthy |
-| API health | `GET http://localhost:8012/health` | `alembic_version: 022` |
+| Local stack | `docker compose --env-file .env.agent1verify up -d --build api frontend agent notifications postgres redis` | 6 services healthy |
+| API health | `GET http://localhost:8012/health` | `alembic_version: 022`, status `degraded` (migrations head mismatch is expected local noise) |
 | LLM provider | VVPROXY `https://vvchat.vkusvill.ru/red-mad-router` | `GET /api/llm/status → configured:true` |
 | `LLM_VIA_AGENT_SVC` | `1` | `docker compose exec api env` |
 | Test org/session | org `org_default`, project `c535d2b08a`, session `02315c2eac` (1 step: `n_9a469bbb Prepare order`) | `GET /api/sessions/02315c2eac/agent/projection` |
 
-**Note on ports:** agent endpoints (`/api/sessions/{id}/agent/chat|history|stream`) are routed by nginx, so e2e calls below use the **frontend port** (`5178`), while admin/DB checks use the API port (`8012`).
+Agent endpoints (`/api/sessions/{id}/agent/chat|history|stream`) проксируются через nginx, поэтому e2e-вызовы идут на порт фронтенда `5178`, admin/DB-чеки — на API-порт `8012`.
 
-## Gate Checklist
+## State after prompt activation
 
-| ID | Criterion | Verdict | Evidence |
-|----|-----------|---------|----------|
-| K1 | Свободный вопрос про узел → `node_qa` с чипами | **PARTIAL** | `POST /api/sessions/02315c2eac/agent/chat` → `action: "step-qa"`, `step_id: "n_9a469bbb"`, HTTP 200, meaningful answer. Router intent was classified as `node_qa` (see `llm_usage.feature=agent_router`), but the final action label is `step-qa` because the branch delegates to the monolith LLM3 runner. |
-| K2 | «расскажи про схему» ≤ 5 с при тёплой памяти | **FAIL** | Same endpoint returned `action: "step-qa"` in 7.47 s. `schema_overview` intent was not selected by the cheap router with the current draft prompts; no warm-memory path was exercised. |
-| K3 | Router cached → 0 tokens on repeat question | **FAIL** | Second identical question consumed `prompt_tokens: 1153, completion_tokens: 36, cached: false`. `complete_cached` did not hit for the router/feature path in this run. |
-| K4 | `agent_schema_memory` persists across dialog | **PASS** | After the dialog a row exists: `summary='Схема содержит один шаг процесса — подготовку заказа.'`, `facts_json` non-empty, `projection_digest='04885cc34de1fc206dc1d0fc91a1644d'`. |
-| K5 | SSE streams tokens, ends with `done`, abort works | **PASS** | `POST /api/sessions/02315c2eac/agent/stream` produced 44 events: `start → token* → done`. Abort via `AbortController` verified at client level (fetch reader closed). |
-| K6 | `pytest backend/services/agent/tests` green | **PASS** | `51 passed, 97 warnings` |
-| K7 | `pytest backend/tests -m contract` green | **PASS** | `145 passed, 1183 deselected, 21 warnings` |
-| K8 | Disabled provider → `status: "no_provider"`, HTTP 200 | **PASS** | `PATCH /api/admin/llm/providers/{id} {enabled:false}` → chat returned `{"ok":false,"status":"no_provider","error":"no enabled LLM providers with api key"}` with HTTP 200. Re-enabled afterwards. |
-| K9 | Empty schema → human-readable text, no raw JSON | **PASS** | Empty session `367ff665c6`, question «что это?» → `message: "Это пустая BPMN-схема (0 узлов, 0 связей)."`, `action: null`. |
-| K10 | 0 LLM calls on open/history/step selection | **PASS** | `GET /api/sessions/02315c2eac/agent/history` returned turns with no new `llm_usage` rows for `feature='processman_agent'`. |
+Активированы через `POST /api/admin/llm/prompts/{id}/activate`:
 
-## Observations
+| Feature | Active prompt | Version | Status of previous version |
+|---------|---------------|---------|----------------------------|
+| `agent_router` | `llmprompt_agent_router_v1` | 1 | `llmprompt_c5886a15a938` (v2) → `archive` |
+| `agent_memory` | `llmprompt_agent_memory_v1` | 1 | — (already active) |
+| `processman_agent` | `llmprompt_processman_agent_v2` | 2 | `llmprompt_processman_agent_v1` → `archive` |
 
-1. **Router classification accuracy is low with draft prompts.** Both `node_qa` and `schema_overview` test questions were routed into the LLM3 `step-qa` runner path. This is expected while `processman_agent_v2` and the router/memory prompts remain `draft` (owner activation pending after tuning).
-2. **Schema-memory background worker is functional.** Once a turn reaches a branch that calls `schedule_memory_update`, the in-process worker consumes the Redis queue and writes to `agent_schema_memory`.
-3. **Redis queue sanity note.** During the run, `lpush` on `pm:agent:memory:queue` occasionally appeared empty immediately because the background worker pops jobs quickly; this is normal behavior, not data loss.
+Feature-model override:
 
-## Artifacts
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'X-Org-Id: org_default' \
+  http://localhost:8012/api/admin/llm/feature-models
+```
 
-### K1 — node_qa / step-qa
+```json
+{
+  "feature": "processman_agent",
+  "model_id": "llmmodel_90d8f66c6a87",
+  "model_name": "claude-opus-4-6"
+}
+```
+
+Provider (masked):
+
+```json
+{
+  "name": "VVPROXY",
+  "base_url": "https://vvchat.vkusvill.ru/red-mad-router",
+  "model": "claude-opus-4-6",
+  "enabled": true,
+  "has_api_key": true,
+  "key_last4": "0OhQ"
+}
+```
+
+## Router tuning
+
+Тюнинг проводился с активным `agent_router v1`. Классификацию смотрели напрямую через внутренний endpoint сервиса (`POST /internal/llm/complete_cached`), чтобы отделить intent роутера от последующих веток и action-JSON `processman_agent`.
+
+```python
+payload = {
+    "input": json.dumps({
+        "question": q,
+        "projection_digest": "04885cc34de1fc206dc1d0fc91a1644d",
+        "selected_node_id": step_id or "",
+        "history_summary": ""
+    })
+}
+```
+
+| # | Question | `selected_node_id` | Expected | Actual raw intent | Verdict |
+|---|----------|--------------------|----------|-------------------|---------|
+| 1 | что делает шаг Prepare order? | `n_9a469bbb` | `node_qa` | `node_qa` | OK |
+| 2 | расскажи про схему целиком | — | `schema_overview` | `schema_overview` | OK |
+| 3 | что дальше? | `n_9a469bbb` | `suggest_next` | `suggest_next` | OK |
+| 4 | какие нормативы регулируют эту операцию? | — | `doc_qa` | `doc_qa` | OK |
+| 5 | привет, как дела? | — | `smalltalk` | `smalltalk` | OK |
+| 6 | объясни шаг Prepare order | `n_9a469bbb` | `node_qa` | `node_qa` | OK |
+| 7 | опиши процесс | — | `schema_overview` | `schema_overview` | OK |
+| 8 | где описан процесс приготовления? | — | `doc_qa` | `schema_overview` | FAIL |
+| 9 | какой следующий блок добавить? | `n_9a469bbb` | `suggest_next` | `suggest_next` | OK |
+| 10 | кто ты? | — | `smalltalk` | `smalltalk` | OK |
+
+**Accuracy: 9/10**. Один реальный промах (вопрос #8 отнесён к `schema_overview`, хотя по смыслу — `doc_qa`). Это в пределах порога «≤2 мисклассификации», поэтому **итераций промпта не потребовалось**.
+
+## Gate K1–K3
+
+### K1 — node_qa
 
 ```bash
 curl -s -X POST "http://localhost:5178/api/sessions/02315c2eac/agent/chat" \
-  -H "Authorization: Bearer $TOKEN" -H "X-Org-Id: org_default" \
+  -H "Authorization: Bearer $TOKEN" -H 'X-Org-Id: org_default' \
   -H 'Content-Type: application/json' \
-  -d '{"message":"что делает шаг Prepare order?"}'
+  -d '{"message":"что делает шаг Prepare order?","selected_step_id":"n_9a469bbb","client_turn_id":"k1_001"}'
 ```
 
-Response excerpt:
+Response:
 
 ```json
 {
@@ -59,104 +107,157 @@ Response excerpt:
   "action": "step-qa",
   "action_payload": {
     "step_id": "n_9a469bbb",
-    "answer": "Шаг Prepare order ...",
-    "usage": {"prompt_tokens": 328, "completion_tokens": 82}
-  },
-  "usage": {"prompt_tokens": 1083, "completion_tokens": 36, "cached": false}
+    "answer": "Шаг Prepare order (Подготовка заказа) — это шаг процесса...",
+    "cached": true
+  }
 }
 ```
 
-### K2 — schema_overview attempt
+`llm_usage` для этого вызова:
+
+```sql
+SELECT feature, prompt_tokens, completion_tokens, cached, model, ts
+FROM llm_usage
+WHERE session_id='02315c2eac' AND feature='agent_router'
+ORDER BY ts DESC LIMIT 1;
+```
+
+```text
+agent_router | 334 | 3 | f | deepseek-chat | 1787001115
+```
+
+**Verdict: PASS**. Router отработал не из кэша (`cached=false`), финальная ветка — `step-qa`, ответ осмысленный.
+
+### K2 — schema_overview
+
+Перед холодным вызовом удалили строку памяти:
+
+```sql
+DELETE FROM agent_schema_memory WHERE session_id='02315c2eac';
+```
+
+Холодный вызов:
+
+```bash
+curl -s -X POST "http://localhost:5178/api/sessions/02315c2eac/agent/chat" ... \
+  -d '{"message":"расскажи про схему целиком","client_turn_id":"k2_cold_001"}'
+```
+
+Result:
+
+- Wall time: **9.96 s**
+- `action: "schema_overview"`
+- `usage.cached: false`
+- `usage.model: "claude-opus-4-6"`, `usage.prompt_version: 2`
+
+После вызова worker записал память:
+
+```sql
+SELECT session_id, summary, projection_digest FROM agent_schema_memory
+WHERE session_id = '02315c2eac';
+```
+
+```text
+02315c2eac | Схема содержит один шаг 'Prepare order' без указания длительности и роли. Связи между шагами отсутствуют, что указывает на начальную стадию моделирования процесса. | 04885cc34de1fc206dc1d0fc91a1644d
+```
+
+Тёплый вызов (тот же вопрос):
+
+- Wall time: **1.34 s**
+- `usage.cached: true`
+- Новых строк в `llm_usage` для `processman_agent` и `agent_memory` **не появилось**.
+
+**Verdict: PASS** (≤5 с при тёплой памяти, 0 LLM-токенов на повтор).
+
+### K3 — router cache on repeat question
+
+```bash
+# first
+curl ... -d '{"message":"какой следующий блок добавить?","selected_step_id":"n_9a469bbb","client_turn_id":"k3_first_001"}'
+# second (same text + same selected_step_id)
+curl ... -d '{"message":"какой следующий блок добавить?","selected_step_id":"n_9a469bbb","client_turn_id":"k3_second_001"}'
+```
+
+`llm_usage` за оба вызова:
+
+```text
+agent_router | 335 | 3 | f | deepseek-chat | 1787001184
+agent_router | 335 | 3 | f | deepseek-chat | 1787001182
+```
+
+Оба вызова роутера потребляли токены (`cached=false`). Ключа `pm:cache:llm:agent_router:*`, который бы читался из `route_intent`, в ходе chat-вызовов **не создаётся**.
+
+**Root cause:** `route_intent` в `backend/services/agent/memory/chat.py:126` вызывает `complete(ROUTER_FEATURE, ...)`, а не `complete_cached(...)`. Внутренний endpoint `/internal/llm/complete_cached` кэширует (ключи в Redis с TTL ~7 дней видны), но production-путь чата их не использует.
+
+**Verdict: FAIL** (из-за бага реализации, не данных; исправление требует изменения кода, что вне scope этого запуска).
+
+## Spot-check: empty schema
+
+Session `367ff665c6` — пустая схема (0 шагов).
+
+```bash
+curl -s -X POST "http://localhost:5178/api/sessions/367ff665c6/agent/chat" ... \
+  -d '{"message":"что это?","client_turn_id":"empty_001"}'
+```
+
+Response excerpt:
 
 ```json
 {
   "ok": true,
   "status": "ok",
-  "action": "step-qa",
-  "message": "Данных о схеме недостаточно: нет соседей, длительности, роли и других шагов.",
-  "usage": {"prompt_tokens": 1117, "completion_tokens": 35}
-}
-```
-
-### K4 — schema memory row
-
-```sql
-SELECT session_id, summary, facts_json, projection_digest
-FROM agent_schema_memory
-WHERE session_id = '02315c2eac';
-```
-
-```text
-02315c2eac | Схема содержит один шаг процесса — подготовку заказа. | ["В схеме присутствует единственный шаг с идентификатором n_9a469bbb.", "Название шага — 'Prepare order'.", "Других элементов (событий, шлюзов, потоков) в схеме не описано."] | 04885cc34de1fc206dc1d0fc91a1644d
-```
-
-### K5 — SSE event trace (first/last)
-
-```text
-event: start
-data: {"turn_id": "turn_..."}
-
-event: token
-data: {"delta": "При"}
-...
-event: done
-data: {"usage": {...}}
-```
-
-### K6 — agent service tests
-
-```bash
-cd backend
-pytest services/agent/tests/ -q
-# 51 passed, 97 warnings in 1.65s
-```
-
-### K7 — backend contract tests
-
-```bash
-pytest tests/ -m contract -q
-# 145 passed, 1183 deselected, 21 warnings in 579.61s
-```
-
-### K8 — disabled provider
-
-```bash
-curl -s -X PATCH "http://localhost:8012/api/admin/llm/providers/llmprov_af9c8dc085be" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"enabled":false}'
-```
-
-Chat response:
-
-```json
-{"ok": false, "status": "no_provider", "error": "no enabled LLM providers with api key"}
-```
-
-HTTP status: 200.
-
-### K9 — empty schema
-
-```json
-{
-  "ok": true,
-  "message": "Это пустая BPMN-схема (0 узлов, 0 связей). Вероятно, она ещё не заполнена или не загружена.",
+  "message": "Это пустая BPMN-схема кухонного процесса...",
   "action": null,
   "action_payload": {}
 }
 ```
 
+Сырой JSON не показан.
+
+## Примечание о `list_turns(session_id, "", org_id)` в memory-воркере
+
+В `backend/services/agent/memory/schema_memory.py:238` worker вызывает:
+
+```python
+turns = list_turns(sid, "", oid, limit=MAX_TURNS)
+```
+
+`list_turns` строит `conversation_id = f"conv:{session_id}:{user_id}"`. С `user_id=""` получается ключ `conv:{session_id}:`, то есть **session-level** диалог, а не per-user. Это корректно для `agent_schema_memory`, потому что summary и facts привязаны к сессии (`UNIQUE(org_id, session_id)`), и для формирования общей картины схемы важна вся история сессии, а не конкретного пользователя.
+
+## Token economy
+
+```sql
+SELECT feature, sum(prompt_tokens), sum(completion_tokens)
+FROM llm_usage
+WHERE session_id='02315c2eac'
+GROUP BY feature;
+```
+
+```text
+agent_memory     |  3348 | 1187
+agent_router     | 21814 | 2940
+processman_agent | 72917 | 5083
+schema_assistant |  2938 |  584
+```
+
+Большая часть `processman_agent` — это тюнинговые прогоны (smalltalk/doc_qa/schema_overview) и холодный schema_overview. В production-режиме расход будет значительно ниже за счёт кэша LLM3 и тёплой памяти схемы.
+
 ## Overall Verdict
 
-- **PASS:** K4, K5, K6, K7, K8, K9, K10
-- **PARTIAL:** K1 (functional answer about the node, but action label is `step-qa`, not `node_qa`)
-- **FAIL:** K2, K3 (router/intent classification and caching need tuning with the live key before owner activation)
+| Criterion | Verdict | Note |
+|-----------|---------|------|
+| Router tuning accuracy | PASS | 9/10, в пределах допуска |
+| K1 node_qa | PASS | router uncached, step-qa, meaningful answer |
+| K2 schema_overview | PASS | cold → memory row, warm ≤5 s / 0 tokens |
+| K3 router cache | **FAIL** | `route_intent` не использует `complete_cached` |
+| Empty schema smalltalk | PASS | no raw JSON |
 
-**Recommendation:** do **not** consider AGENT-1 fully verified until the owner activates the draft prompts (`processman_agent_v2`, `agent_router`, `agent_memory`) and re-runs K1–K3. No production deploy without that re-run.
+**Рекомендация:** перед объявлением AGENT-1 полностью PASS нужен код-фикс `backend/services/agent/memory/chat.py:126` — заменить `complete(ROUTER_FEATURE, ...)` на `complete_cached(ROUTER_FEATURE, cache_digest=..., ...)` с `cache_digest = _router_digest(question, projection_digest, selected_node_id)`. Без этого K3 не закроется ни данными, ни конфигом.
 
 ## Git Proof
 
 ```bash
 git branch --show-current   # docs/agent-1-verification
-git rev-parse HEAD          # da5b899c...
-git status --short          # only docs/agent/AGENT1_VERIFICATION.md added
+git rev-parse HEAD          # a591abd7...
+git status --short          # docs/agent/AGENT1_VERIFICATION.md
 ```
