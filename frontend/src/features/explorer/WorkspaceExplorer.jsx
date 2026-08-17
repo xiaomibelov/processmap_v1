@@ -2098,7 +2098,11 @@ function ExplorerPane({
     setMoveNotice("");
     try {
       const resp = await apiUpdateFolder(workspaceId, folderIdToUpdate, { context_status: normalizedStatus });
-      if (!resp?.ok) throw new Error(resp?.error || "Не удалось обновить статус");
+      if (!resp?.ok) {
+        throw new Error(resp?.status === 0
+          ? "Не удалось обновить статус. Проверьте соединение и повторите."
+          : resp?.error || "Не удалось обновить статус");
+      }
       await load({ resetInlineChildren: true });
       setMoveNotice("Статус обновлён.");
       return true;
@@ -2118,16 +2122,20 @@ function ExplorerPane({
       const sessionSnapshot = await apiGetSession(sessionId);
       const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
       if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
-        throw new Error(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
+        throw new Error(sessionSnapshot?.status === 0
+          ? "Не удалось получить актуальную версию сессии. Проверьте соединение и повторите."
+          : formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
       }
       const resp = await apiPatchSession(sessionId, {
         status: normalizedStatus,
         base_diagram_state_version: baseVersion,
       });
       if (!resp?.ok) {
-        throw new Error(resp?.status === 409
-          ? "Переход в выбранный статус недоступен для текущего состояния сессии."
-          : formatSessionPatchError(resp));
+        throw new Error(resp?.status === 0
+          ? "Не удалось обновить статус. Проверьте соединение и повторите."
+          : resp?.status === 409
+            ? "Переход в выбранный статус недоступен для текущего состояния сессии."
+            : formatSessionPatchError(resp));
       }
       await queryClient.invalidateQueries({
         queryKey: projectSessionsQueryKey(session?.project_id),
