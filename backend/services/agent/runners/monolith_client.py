@@ -46,3 +46,37 @@ def get_projection(session_id: str, *, token: str = "", timeout_sec: int = DEFAU
     if not isinstance(data, dict) or not data.get("ok"):
         raise MonolithError("monolith projection not ok")
     return data
+
+
+def search_rag(
+    q: str,
+    session_id: str,
+    token: str,
+    *,
+    source_type: str = "",
+    top_k: int = 5,
+    min_score: float = 0.1,
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Dict[str, Any]:
+    """GET /api/rag/search → {ok, results[]} with JWT propagation."""
+    sid = str(session_id or "").strip()
+    query = str(q or "").strip()
+    params: Dict[str, Any] = {"q": query, "top_k": max(1, int(top_k)), "session_id": sid}
+    if source_type:
+        params["source_type"] = str(source_type)
+    if min_score is not None:
+        params["min_score"] = float(min_score)
+    url = f"{_base_url()}/api/rag/search"
+    try:
+        resp = httpx.get(url, headers=_headers(token), params=params, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+    except Exception as exc:
+        raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
+    if resp.status_code != 200:
+        raise MonolithError(f"monolith rag/search HTTP {resp.status_code}")
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise MonolithError(f"monolith rag/search invalid json: {exc.__class__.__name__}") from exc
+    if not isinstance(data, dict):
+        raise MonolithError("monolith rag/search invalid root")
+    return data
