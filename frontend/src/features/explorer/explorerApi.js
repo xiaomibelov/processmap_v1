@@ -173,3 +173,11 @@ export async function apiCreateSession(workspaceId, projectId, { name, roles = [
     { method: "POST", body: { name, roles, start_role, mode, process_layer, derived_from_session_id } }
   );
 }
+
+// P6 [Г]: multipart upload .bpmn/.xml в сессию (POST /api/sessions/{id}/bpmn-upload).
+// FormData прозрачно проходит через apiFetch (не plain object → не JSON).
+export async function apiUploadSessionBpmn(sessionId, file) {
+  const form = new FormData();
+  form.append("file", file, file?.name || "diagram.bpmn");
+  return call(`/api/sessions/${encodeURIComponent(sessionId)}/bpmn-upload`, { method: "POST", body: form });
+}
