@@ -26,6 +26,13 @@ import {
 } from "./explorerTreePersistence.js";
 import SessionCreateModal from "./SessionCreateModal.jsx";
 import {
+  createSessionWithBpmnUpload,
+  stripBpmnExtension,
+  uploadSessionBpmnOnly,
+  uploadStageLabel,
+  validateBpmnUploadFile,
+} from "./bpmnUploadFlow.js";
+import {
   apiRenameWorkspace,
   apiGetExplorerPage,
   apiCreateFolder,
@@ -1540,11 +1547,16 @@ function ProjectRow({
   canDelete = false,
   showSignalColumns = false,
   columnLayout,
+  uploadState = null,
+  onFileDrop,
+  onUploadRetry,
 }) {
   const layout = columnLayout || getExplorerColumnLayout(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // P6 [Г]: строка проекта — drop-зона для .bpmn/.xml (подсветка при drag-over).
+  const [fileDragOver, setFileDragOver] = useState(false);
   const leftPadding = 8 + depth * 18;
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const assigneeActionLabel = getExplorerAssigneeActionLabel(project);
@@ -1557,7 +1569,28 @@ function ProjectRow({
   ];
   return (
     <>
-      <tr className="group hover:bg-accentSoft/30 transition-colors">
+      <tr
+        className={`group transition-colors ${fileDragOver ? "bg-accentSoft/40 outline-2 outline-dashed outline-accent/70 outline-offset-[-2px]" : "hover:bg-accentSoft/30"}`}
+        data-testid={`project-row-${String(project?.id || "")}`}
+        onDragOver={(e) => {
+          if (e.dataTransfer?.types?.includes?.("Files")) {
+            e.preventDefault();
+            e.stopPropagation();
+            setFileDragOver(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setFileDragOver(false);
+        }}
+        onDrop={(e) => {
+          if (!e.dataTransfer?.files?.length) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setFileDragOver(false);
+          onFileDrop?.(project, e.dataTransfer.files[0]);
+        }}
+      >
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
           <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
             {expandable ? (
@@ -1597,6 +1630,14 @@ function ProjectRow({
           </div>
           {layout.compact ? (
             <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(project, "project")}</div>
+          ) : null}
+          {uploadState && uploadState.stage && uploadState.stage !== "done" ? (
+            <div className="mt-0.5 text-[11px]" style={{ paddingLeft: `${leftPadding + 32}px` }}>
+              <PendingUploadStageLabel
+                upload={{ ...uploadState, tempId: String(project?.id || "") }}
+                onRetry={() => onUploadRetry?.(String(project?.id || ""))}
+              />
+            </div>
           ) : null}
         </td>
         {layout.showType ? (
@@ -1817,8 +1858,70 @@ function InlineEmptyRow({ depth = 0, colSpan = 8, text = "В папке нет �
   );
 }
 
-function InlineErrorRow({ depth = 0, message = "", colSpan = 8, onRetry = null }) {
-  const leftPadding = 8 + depth * 18;
+// ─── P6 [Г]: транзиентная строка/карточка upload-сессии (стадии + retry) ────
+
+function PendingUploadStageLabel({ upload, onRetry }) {
+  const stage = String(upload?.stage || "");
+  if (stage === "error") {
+    return (
+      <span className="inline-flex items-center gap-2 text-danger/90" data-testid="session-upload-stage" data-stage="error">
+        <span className="truncate" title={upload?.error || ""}>Ошибка{upload?.error ? `: ${upload.error}` : ""}</span>
+        {upload?.sessionId ? (
+          <button
+            type="button"
+            className="secondaryBtn h-6 min-h-0 shrink-0 px-2 text-xs"
+            data-testid="session-upload-retry"
+            onClick={(e) => { e.stopPropagation(); onRetry?.(upload.tempId); }}
+          >
+            Повторить
+          </button>
+        ) : null}
+      </span>
+    );
+  }
+  const label = uploadStageLabel(stage);
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted" data-testid="session-upload-stage" data-stage={stage}>
+      <IcoSpinner className="animate-spin" />
+      {label}
+    </span>
+  );
+}
+
+function PendingUploadRow({ upload, onRetry }) {
+  return (
+    <tr className="bg-accentSoft/15" data-testid="session-upload-transient-row">
+      <td className="px-3 py-2 w-5" />
+      <td className="px-2 py-2 text-sm font-medium text-fg">
+        <div className="flex min-w-0 items-center gap-2">
+          <IcoSession className="shrink-0 text-muted" />
+          <span className="truncate">{upload.name}</span>
+        </div>
+      </td>
+      <td className="px-2 py-2 text-xs text-muted">—</td>
+      <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">
+        <PendingUploadStageLabel upload={upload} onRetry={onRetry} />
+      </td>
+      <td colSpan={7} className="px-2 py-2" />
+    </tr>
+  );
+}
+
+function PendingUploadCard({ upload, onRetry }) {
+  return (
+    <div
+      className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-panel2/40 px-3 py-2 text-sm"
+      data-testid="session-upload-transient-row"
+    >
+      <IcoSession className="shrink-0 text-muted" />
+      <span className="min-w-0 flex-1 truncate font-medium text-fg">{upload.name}</span>
+      <PendingUploadStageLabel upload={upload} onRetry={onRetry} />
+    </div>
+  );
+}
+
+function InlineErrorRow({ depth = 0, message = "", colSpan = 8, onRetry = null }) {  const leftPadding = 8 + depth * 18;
   const text = String(message || "").trim() || "Не удалось загрузить вложенные элементы.";
   return (
     <tr>
@@ -2032,6 +2135,67 @@ function ExplorerPane({
   const contextHeaderTitle = folderId
     ? "Для папок: количество проектов"
     : "Для разделов: количество проектов";
+
+  // ── P6 [Г]: dnd-upload .bpmn/.xml на строке ПРОЕКТА в дереве explorer ────
+  // Строки раздела/папки — НЕ drop-зона (обработчики только на ProjectRow).
+  // Зона не пересекается с bpmnFileDrop на канвасе (#721): тот живёт в
+  // SessionView; здесь stopPropagation на всякий случай вложенности.
+  const [projectUploads, setProjectUploads] = useState({});
+  const updateProjectUpload = useCallback((projectId, patch) => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return;
+    setProjectUploads((prev) => ({ ...prev, [pid]: { ...(prev[pid] || {}), ...patch } }));
+  }, []);
+  const clearProjectUpload = useCallback((projectId) => {
+    const pid = String(projectId || "").trim();
+    setProjectUploads((prev) => {
+      if (!prev[pid]) return prev;
+      const next = { ...prev };
+      delete next[pid];
+      return next;
+    });
+  }, []);
+  const handleProjectFileDrop = useCallback(async (project, file) => {
+    const pid = String(project?.id || "").trim();
+    if (!pid || !file || !permissions?.canCreate) return;
+    const name = stripBpmnExtension(file.name) || "Сессия";
+    const verdict = validateBpmnUploadFile(file);
+    if (!verdict.ok) {
+      updateProjectUpload(pid, { stage: "error", error: verdict.error, sessionId: "", file, name });
+      return;
+    }
+    updateProjectUpload(pid, { stage: "creating", error: "", sessionId: "", file, name });
+    const res = await createSessionWithBpmnUpload({
+      workspaceId,
+      projectId: pid,
+      name,
+      file,
+      onStage: (stage) => updateProjectUpload(pid, { stage }),
+    });
+    updateProjectUpload(pid, { stage: res.stage, sessionId: res.sessionId, error: res.error });
+    if (res.ok) {
+      await queryClient.invalidateQueries({ queryKey: projectSessionsQueryKey(pid) });
+      load({ resetInlineChildren: true });
+      setTimeout(() => clearProjectUpload(pid), 1200);
+    }
+  }, [workspaceId, permissions?.canCreate, queryClient, load, updateProjectUpload, clearProjectUpload]);
+  const handleProjectUploadRetry = useCallback(async (projectId) => {
+    const pid = String(projectId || "").trim();
+    const item = projectUploads[pid];
+    if (!item?.sessionId || !item?.file) return;
+    updateProjectUpload(pid, { stage: "uploading", error: "" });
+    const res = await uploadSessionBpmnOnly({
+      sessionId: item.sessionId,
+      file: item.file,
+      onStage: (stage) => updateProjectUpload(pid, { stage }),
+    });
+    updateProjectUpload(pid, { stage: res.stage, error: res.error });
+    if (res.ok) {
+      await queryClient.invalidateQueries({ queryKey: projectSessionsQueryKey(pid) });
+      load({ resetInlineChildren: true });
+      setTimeout(() => clearProjectUpload(pid), 1200);
+    }
+  }, [projectUploads, queryClient, load, updateProjectUpload, clearProjectUpload]);
 
   const sortedRootItems = useMemo(
     () => sortExplorerItems(rootItems, explorerSort, { isRoot: !folderId }),
@@ -2687,6 +2851,9 @@ function ExplorerPane({
                     canDelete={!!permissions?.canDeleteProject}
                     showSignalColumns={treeColumnProfile.showSignalColumns}
                     columnLayout={explorerColumnLayout}
+                    uploadState={projectUploads[String(project.id || "")]}
+                    onFileDrop={handleProjectFileDrop}
+                    onUploadRetry={handleProjectUploadRetry}
                   />
                 );
               })}
@@ -3034,7 +3201,8 @@ function SessionRow({
             <StatusBadge status={session.status} />
           )}
         </td>
-        <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">{session.stage || "—"}</td>
+        {/* P6 [Г]: стадия — без вечного «—»: fallback на derived-статус */}
+        <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">{session.stage || sessionStatusMeta.label || "—"}</td>
         <td className="hidden md:table-cell px-2 py-2">
           {session.owner
             ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
@@ -3262,6 +3430,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  // P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта.
+  // pendingUploads — транзиентные строки создания/upload (стадии + retry).
+  const [pendingUploads, setPendingUploads] = useState([]);
+  const [tableDragOver, setTableDragOver] = useState(false);
+  const pendingUploadSeq = useRef(0);
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionSort, setSessionSort] = useState(null);
@@ -3308,6 +3481,73 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     openingSessionIdRef.current = "";
     setOpeningSessionId("");
   }, [projectId]);
+
+  // ── P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта ──────────────
+  const updatePendingUpload = useCallback((tempId, patch) => {
+    setPendingUploads((prev) => prev.map((u) => (u.tempId === tempId ? { ...u, ...patch } : u)));
+  }, []);
+  const finishPendingUpload = useCallback((tempId) => {
+    setPendingUploads((prev) => prev.filter((u) => u.tempId !== tempId));
+  }, []);
+  const handleSessionFileDrop = useCallback(async (file) => {
+    if (!file || !permissions?.canCreate) return;
+    const tempId = `upl-${++pendingUploadSeq.current}`;
+    const name = stripBpmnExtension(file.name) || "Сессия";
+    const verdict = validateBpmnUploadFile(file);
+    if (!verdict.ok) {
+      setPendingUploads((prev) => [...prev, { tempId, name, stage: "error", error: verdict.error, sessionId: "", file }]);
+      return;
+    }
+    setPendingUploads((prev) => [...prev, { tempId, name, stage: "creating", error: "", sessionId: "", file }]);
+    const res = await createSessionWithBpmnUpload({
+      workspaceId,
+      projectId,
+      name,
+      file,
+      onStage: (stage) => updatePendingUpload(tempId, { stage }),
+    });
+    updatePendingUpload(tempId, { stage: res.stage, sessionId: res.sessionId, error: res.error });
+    if (res.ok) {
+      load();
+      setTimeout(() => finishPendingUpload(tempId), 1200);
+    }
+  }, [workspaceId, projectId, permissions?.canCreate, load, updatePendingUpload, finishPendingUpload]);
+  const handlePendingUploadRetry = useCallback(async (tempId) => {
+    const item = pendingUploads.find((u) => u.tempId === tempId);
+    if (!item?.sessionId || !item?.file) return;
+    updatePendingUpload(tempId, { stage: "uploading", error: "" });
+    const res = await uploadSessionBpmnOnly({
+      sessionId: item.sessionId,
+      file: item.file,
+      onStage: (stage) => updatePendingUpload(tempId, { stage }),
+    });
+    updatePendingUpload(tempId, { stage: res.stage, error: res.error });
+    if (res.ok) {
+      load();
+      setTimeout(() => finishPendingUpload(tempId), 1200);
+    }
+  }, [pendingUploads, load, updatePendingUpload, finishPendingUpload]);
+  const sessionTableDropZoneProps = {
+    "data-testid": "project-sessions-dropzone",
+    onDragOver: (e) => {
+      if (e.dataTransfer?.types?.includes?.("Files")) {
+        e.preventDefault();
+        e.stopPropagation();
+        setTableDragOver(true);
+      }
+    },
+    onDragLeave: (e) => {
+      e.preventDefault();
+      setTableDragOver(false);
+    },
+    onDrop: (e) => {
+      if (!e.dataTransfer?.files?.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setTableDragOver(false);
+      void handleSessionFileDrop(e.dataTransfer.files[0]);
+    },
+  };
 
   const handleSessionPatched = useCallback((sessionId, patch = {}) => {
     const sid = String(sessionId || "").trim();
@@ -3596,12 +3836,25 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       {searchModel.active ? (
         <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
       ) : isEmpty ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+        <div
+          className={`flex-1 flex flex-col items-center justify-center gap-4 p-8 transition-colors ${tableDragOver ? "bg-accentSoft/30 outline-2 outline-dashed outline-accent/60 outline-offset-[-6px]" : ""}`}
+          {...sessionTableDropZoneProps}
+        >
           <IcoSession className="w-10 h-10 text-muted/30" />
           <div className="text-center">
             <p className="text-base font-medium text-fg mb-1">Нет сессий</p>
             <p className="text-sm text-muted">Создайте первую сессию для этого проекта</p>
+            {permissions?.canCreate ? (
+              <p className="mt-1 text-xs text-muted">Или перетащите сюда файл .bpmn/.xml</p>
+            ) : null}
           </div>
+          {pendingUploads.length ? (
+            <div className="w-full max-w-lg grid gap-1.5">
+              {pendingUploads.map((u) => (
+                <PendingUploadCard key={u.tempId} upload={u} onRetry={handlePendingUploadRetry} />
+              ))}
+            </div>
+          ) : null}
           {permissions?.canCreate ? (
             <button onClick={() => setCreating(true)} className="primaryBtn h-8 px-4 text-sm flex items-center gap-1">
               <IcoPlus /> Создать сессию
@@ -3609,7 +3862,10 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
           ) : null}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div
+          className={`flex-1 overflow-y-auto transition-colors ${tableDragOver ? "bg-accentSoft/25 outline-2 outline-dashed outline-accent/60 outline-offset-[-6px]" : ""}`}
+          {...sessionTableDropZoneProps}
+        >
           <table className="w-full text-left border-collapse">
             <colgroup>
               <col className="w-5" />
@@ -3665,6 +3921,9 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               </tr>
             </thead>
             <tbody className="divide-y divide-border/65">
+              {pendingUploads.map((u) => (
+                <PendingUploadRow key={u.tempId} upload={u} onRetry={handlePendingUploadRetry} />
+              ))}
               {treeEnabled ? (
                 <SessionTreeRows
                   sessions={sortedSessions}
@@ -3729,7 +3988,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               derived_from_session_id: derivedFrom,
             });
             if (!resp?.ok) throw new Error(resp?.error || "Не удалось создать сессию");
+            const sessionId = String(resp?.data?.id || "").trim();
             load();
+            return { sessionId };
+          }}
+          onUploadFile={async (sessionId, file) => {
+            const res = await uploadSessionBpmnOnly({ sessionId, file });
+            if (res.ok) load();
+            return res;
           }}
         />
       ) : null}
