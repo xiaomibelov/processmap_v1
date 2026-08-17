@@ -27,10 +27,18 @@ import psycopg
 # 010/011 НЕ считалась «невалидной» и не уводилась stamp'ом вниз до 009
 # (иначе каждый рестарт api пересаживал upgrade на неидемпотентную 010 →
 # column process_layer already exists → ретраи + degraded-старт).
-LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018"]
+LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022"]
 
 # маркер «объект ревизии существует» (SELECT 1 ... LIMIT 1)
 MARKERS = {
+    # AGENT-1: маркер 022 — seed-промт processman_agent v2 (data-маркер).
+    "022": "SELECT 1 FROM llm_prompts WHERE id='llmprompt_processman_agent_v2' LIMIT 1",
+    # AGENT-1: маркер 021 — seed-промт agent_memory (data-маркер).
+    "021": "SELECT 1 FROM llm_prompts WHERE id='llmprompt_agent_memory_v1' LIMIT 1",
+    # AGENT-1: маркер 020 — seed-промт agent_router (data-маркер).
+    "020": "SELECT 1 FROM llm_prompts WHERE id='llmprompt_agent_router_v1' LIMIT 1",
+    # AGENT-1: маркер 019 — таблица agent_schema_memory (структурный маркер).
+    "019": "SELECT 1 FROM information_schema.tables WHERE table_name='agent_schema_memory' LIMIT 1",
     # AGENT-0: маркер 018 — seed-промт processman_agent (data-маркер).
     "018": "SELECT 1 FROM llm_prompts WHERE feature='processman_agent' LIMIT 1",
     # AGENT-0: маркер 017 — таблицы памяти диалога (структурный маркер).
