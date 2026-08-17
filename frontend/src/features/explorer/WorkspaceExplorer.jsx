@@ -101,7 +101,9 @@ import {
 } from "./explorerColumnVisibility.js";
 import "./explorerAdaptive.css";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
-import NavZone from "../../components/NavZone.jsx";
+import TextBreadcrumbs from "../../components/TextBreadcrumbs.jsx";
+import useElementWidth from "../../components/useElementWidth.js";
+import { getNavSingleLineLayout } from "../../components/navSingleLineLayout.js";
 import { useWorkspaceMainNavSlot } from "../../components/workspaceMainNavSlot.js";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -356,10 +358,17 @@ function SortHeader({ label, sortKey, sort, onSort, align = "left", title = "" }
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, dotOnly = false }) {
   const normalized = String(status || "").trim().toLowerCase();
   if (["draft", "in_progress", "review", "ready", "archived"].includes(normalized)) {
     const meta = getManualSessionStatusMeta(normalized);
+    if (dotOnly) {
+      return (
+        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${meta.badgeClass}`} title={`Статус: ${meta.label}`}>
+          <span className="h-2 w-2 rounded-full bg-current" />
+        </span>
+      );
+    }
     return (
       <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${meta.badgeClass}`}>
         {meta.label}
@@ -373,6 +382,13 @@ function StatusBadge({ status }) {
     completed: ["Завершён", "border-emerald-300 bg-emerald-50 text-emerald-700"],
   };
   const [label, cls] = map[normalized] || ["—", "border-slate-300 bg-slate-100 text-slate-600"];
+  if (dotOnly) {
+    return (
+      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${cls}`} title={`Статус: ${label}`}>
+        <span className="h-2 w-2 rounded-full bg-current" />
+      </span>
+    );
+  }
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</span>;
 }
 
@@ -1992,6 +2008,10 @@ function ExplorerPane({
     () => getExplorerColumnLayout(explorerTableWidth, { signalColumns: treeColumnProfile.showSignalColumns }),
     [explorerTableWidth, treeColumnProfile.showSignalColumns],
   );
+  // Часть А-2 (nav-zone): однострочная навигационная полоса — адаптив по
+  // ширине контейнера (useElementWidth + getNavSingleLineLayout).
+  const [explorerNavRef, explorerNavWidth] = useElementWidth();
+  const explorerNavLayout = getNavSingleLineLayout(explorerNavWidth);
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
   const contextHeaderTitle = folderId
     ? "Для папок: количество проектов"
@@ -2355,6 +2375,8 @@ function ExplorerPane({
   const headerCrumbItems = headerCrumbs.map((crumb, index) => ({
     key: `${crumb.type}-${crumb.id || "root"}`,
     label: crumb.name,
+    // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
+    testId: index === headerCrumbs.length - 1 ? "explorer-section-title" : undefined,
     onClick:
       index < headerCrumbs.length - 1
         ? () => {
@@ -2372,83 +2394,104 @@ function ExplorerPane({
   const navSlotEl = useWorkspaceMainNavSlot();
   const headerSlotEl = portalHeader ? navSlotEl : null;
   const explorerHeader = (
-    <div className="flex-shrink-0 bg-panel">
-      <NavZone
-        back={
-          folderId
-            ? {
-                testId: "explorer-back-sections",
-                label: "← Назад к разделам",
-                title: "Вернуться к разделам",
-                onClick: () =>
-                  parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
-                    ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
-                    : onNavigateToBreadcrumb(workspaceId, ""),
+      <div className="px-4 border-b border-border flex-shrink-0 bg-panel">
+        {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
+            (текущий сегмент = заголовок), мета справа. Без переносов; жертвы
+            по ширине контейнера: мета → крошки «…» → кнопка иконкой. */}
+        <div
+          ref={explorerNavRef}
+          className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+          data-nav-width={Math.round(explorerNavWidth)}
+          data-nav-meta={explorerNavLayout.showMeta ? "1" : "0"}
+        >
+          {folderId ? (
+            <button
+              type="button"
+              onClick={() =>
+                parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
+                  ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
+                  : onNavigateToBreadcrumb(workspaceId, "")
               }
-            : null
-        }
-        breadcrumbsTestId="explorer-breadcrumbs"
-        crumbs={headerCrumbItems}
-        meta={
-          folderId
-            ? `Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
-            : `Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`
-        }
-        metaTestId="explorer-section-meta"
-      />
-      <div className="px-4 py-2 flex flex-wrap items-center justify-end gap-2">
-        <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
-          <button
-            type="button"
-            onClick={() => setActiveTab("projects")}
-            className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-              activeTab === "projects" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-            }`}
-          >
-            Проекты
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("analytics")}
-            className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-              activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-            }`}
-          >
-            Аналитика
-          </button>
+              className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                explorerNavLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
+              }`}
+              title="Назад к разделам"
+              aria-label="Назад к разделам"
+              data-testid="explorer-back-sections"
+            >
+              {explorerNavLayout.backIconOnly ? "←" : "← Назад к разделам"}
+            </button>
+          ) : null}
+          <TextBreadcrumbs
+            crumbs={headerCrumbItems}
+            dataTestId="explorer-breadcrumbs"
+            singleLine
+            forceCollapse={explorerNavLayout.collapseCrumbs}
+            currentClassName="text-[15px] font-semibold"
+          />
+          {explorerNavLayout.showMeta ? (
+            <span className="ml-auto shrink-0 text-xs text-muted" data-testid="explorer-section-meta">
+              {folderId
+                ? `· Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
+                : `· Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`}
+            </span>
+          ) : null}
         </div>
-        <ExplorerSearchBox
-          id="workspace-explorer-tree-search"
-          value={searchQuery}
-          onChange={setSearchQuery}
-          className="w-[260px]"
-        />
-        {permissions?.canCreate ? (
-          <button
-            onClick={() => setCreatingFolder(true)}
-            className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-          >
-            <IcoPlus className="opacity-70" /> {folderCopy.createLabel}
-          </button>
-        ) : null}
-        {/* Project can only be created inside a folder, not at workspace root */}
-        {folderId && permissions?.canCreate ? (
-          <button
-            onClick={() => setCreatingProject(true)}
-            className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-          >
-            <IcoPlus /> Проект
-          </button>
-        ) : permissions?.canCreate ? (
-          <span
-            className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
-            title="Войдите в папку, чтобы создать проект"
-          >
-            <IcoPlus className="opacity-50" /> Проект
-          </span>
-        ) : null}
+        <div className="flex h-9 items-center justify-end gap-1.5 pb-1.5">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab("projects")}
+              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                activeTab === "projects" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+              }`}
+            >
+              Проекты
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("analytics")}
+              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+              }`}
+            >
+              Аналитика
+            </button>
+            </div>
+            <ExplorerSearchBox
+              id="workspace-explorer-tree-search"
+              value={searchQuery}
+              onChange={setSearchQuery}
+              className="w-[260px]"
+            />
+          {permissions?.canCreate ? (
+            <button
+              onClick={() => setCreatingFolder(true)}
+              className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+            >
+              <IcoPlus className="opacity-70" /> {folderCopy.createLabel}
+            </button>
+          ) : null}
+          {/* Project can only be created inside a folder, not at workspace root */}
+          {folderId && permissions?.canCreate ? (
+            <button
+              onClick={() => setCreatingProject(true)}
+              className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+            >
+              <IcoPlus /> Проект
+            </button>
+          ) : permissions?.canCreate ? (
+            <span
+              className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
+              title="Войдите в папку, чтобы создать проект"
+            >
+              <IcoPlus className="opacity-50" /> Проект
+            </span>
+          ) : null}
+          </div>
+        </div>
       </div>
-    </div>
   );
 
   return (
@@ -3373,18 +3416,17 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [onOpenSession, projectContext, projectId, workspaceId]);
 
   const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
-  const projectCrumbItems = projectBreadcrumbTrail.map((c) => ({
+  const projectCrumbItems = projectBreadcrumbTrail.map((c, index) => ({
     key: `${c.type}-${c.id || "project"}`,
     label: c.name,
+    // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
+    testId: index === projectBreadcrumbTrail.length - 1 ? "project-title" : undefined,
     onClick: c.active ? undefined : () => onBack(c),
   }));
+  // Часть А-2 (nav-zone): однострочная полоса — адаптив по ширине контейнера.
+  const [projectNavRef, projectNavWidth] = useElementWidth();
+  const projectNavLayout = getNavSingleLineLayout(projectNavWidth);
   const normalizedProjectStatus = String(proj?.status || "").trim().toLowerCase();
-  const projectStatusMeta = {
-    active: { label: "Активен", dot: "#10B981" },
-    on_hold: { label: "Пауза", dot: "#F59E0B" },
-    done: { label: "Готов", dot: "#10B981" },
-    completed: { label: "Завершён", dot: "#10B981" },
-  }[normalizedProjectStatus];
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
   // Прямой переход по URL (без контекста explorer): назад — в раздел проекта
   // (folder_id из карточки проекта) или в корень рабочей области.
@@ -3436,56 +3478,71 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
   const navSlotEl = useWorkspaceMainNavSlot();
   const projectHeader = (
-    <div className="flex-shrink-0 bg-panel">
-      <NavZone
-        back={
-          projectBackCrumb
-            ? {
-                testId: "project-back-section",
-                label: "← Назад к разделу",
-                title: "Вернуться к разделу",
-                onClick: () => onBack(projectBackCrumb),
-              }
-            : null
-        }
-        breadcrumbsTestId="project-breadcrumbs"
-        crumbs={projectCrumbItems}
-        status={
-          projectStatusMeta
-            ? {
-                dot: projectStatusMeta.dot,
-                label: projectStatusMeta.label,
-                title: `Статус: ${projectStatusMeta.label}`,
-              }
-            : null
-        }
-        meta={`Сессии: ${sessionCount}`}
-      />
-      {proj && (
-        <div className="px-4 py-2 flex flex-wrap items-center justify-end gap-2">
-          <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
+      <div className="px-4 border-b border-border flex-shrink-0 bg-panel">
+        {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
+            (текущий сегмент = заголовок), статус-бейдж, мета справа. */}
+        <div
+          ref={projectNavRef}
+          className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+          data-nav-width={Math.round(projectNavWidth)}
+          data-nav-meta={projectNavLayout.showMeta ? "1" : "0"}
+        >
+          {projectBackCrumb ? (
             <button
               type="button"
-              onClick={() => setActiveTab("sessions")}
-              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                activeTab === "sessions" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+              onClick={() => onBack(projectBackCrumb)}
+              className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
+                projectNavLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
               }`}
+              title="Назад к разделу"
+              aria-label="Назад к разделу"
+              data-testid="project-back-section"
             >
-              Сессии
+              {projectNavLayout.backIconOnly ? "←" : "← Назад к разделу"}
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("analytics")}
-              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-              }`}
-            >
-              Аналитика
-            </button>
-          </div>
+          ) : null}
+          <TextBreadcrumbs
+            crumbs={projectCrumbItems}
+            dataTestId="project-breadcrumbs"
+            singleLine
+            forceCollapse={projectNavLayout.collapseCrumbs}
+            currentClassName="text-[15px] font-semibold"
+          />
+          {proj && normalizedProjectStatus && normalizedProjectStatus !== "active" ? (
+            <StatusBadge status={proj.status} dotOnly={projectNavLayout.statusDotOnly} />
+          ) : null}
+          {proj && projectNavLayout.showMeta ? (
+            <span className="ml-auto shrink-0 text-xs text-muted" data-testid="project-meta">
+              · Сессии: {sessionCount}
+            </span>
+          ) : null}
         </div>
-      )}
-    </div>
+
+        {proj && (
+          <div className="flex h-9 items-center justify-end gap-2 pb-1.5">
+            <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab("sessions")}
+                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                  activeTab === "sessions" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+                }`}
+              >
+                Сессии
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("analytics")}
+                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                  activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+                }`}
+              >
+                Аналитика
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
   );
 
   return (
