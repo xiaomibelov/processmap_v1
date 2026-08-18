@@ -13,6 +13,7 @@ export const AVATAR_PALETTE = [
 
 const PROJECT_FORMS = ["проект", "проекта", "проектов"];
 const SESSION_FORMS = ["сессия", "сессии", "сессий"];
+const SECTION_FORMS = ["раздел", "раздела", "разделов"];
 
 export function pluralizeRu(count, forms) {
   const [one, few, many] = forms;
@@ -30,6 +31,11 @@ export function pluralizeRu(count, forms) {
 export function compositionProjectsText(count) {
   const n = Math.max(0, Math.floor(Number(count) || 0));
   return `${n} ${pluralizeRu(n, PROJECT_FORMS)}`;
+}
+
+export function workspaceSectionCounterText(count) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return `${n} ${pluralizeRu(n, SECTION_FORMS)}`;
 }
 
 export function compositionSessionsText(count) {
