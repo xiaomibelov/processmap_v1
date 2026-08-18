@@ -1,6 +1,6 @@
 {
   "contour_id": "subprocess-preserve-di-on-sync",
-  "status": "planned",
+  "status": "ready_for_review",
   "run_id": "wf-1787064107319-fix-subprocess-preserve-di",
   "previous_contour": "feature/subprocess-layout-overwrite-warning",
   "repo": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/fix-subprocess-preserve-di-on-sync",
