@@ -205,9 +205,11 @@ export const apiRoutes = {
   },
   agent: {
     // AGENT-1 — диалоговый агент PROCESSMAN (chat/history/stream).
+    // AGENT-3 — resume для HITL-подтверждения правок на канвасе.
     chat: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/chat`,
     history: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/history`,
     stream: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/stream`,
+    resume: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/resume`,
   },
   clipboard: {
     bpmn: () => "/api/clipboard/bpmn",
