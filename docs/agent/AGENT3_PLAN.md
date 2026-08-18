@@ -1,8 +1,8 @@
 # AGENT-3: агент правит канвас с подтверждением человека (HITL)
 
-> **СТАТУС: ПЛАН, редакция 1. Требует апрува владельца. Реализацию не начинать.**  
+> **СТАТУС: ПЛАН, редакция 2, решения владельца внесены. Требует апрува владельца. Реализацию не начинать.**  
 > Дата: 2026-08-17. Ветка: `docs/agent-3-plan` от `origin/main` @ `0bb49484`.  
-> База: AGENT-1 PASS (`docs/agent/AGENT1_VERIFICATION.md`), AGENT-2 идёт параллельно. Монолитный `backend/app/agent/` и флаг `LLM_VIA_AGENT_SVC` **не трогаются** (soak на боевом).
+> База: AGENT-1 PASS (`docs/agent/AGENT1_VERIFICATION.md`), AGENT-2 в `main`. Монолитный `backend/app/agent/` и флаг `LLM_VIA_AGENT_SVC` **не трогаются** (soak на боевом).
 
 ---
 
@@ -111,7 +111,7 @@ AGENT-3 вводит цикл «модель ↔ инструмент»:
 | Оценка дней до первого e2e | **2–3 дня** | 4–5 дней |
 | Оценка общих дней | **~7 дней** | ~9 дней |
 
-### 0.5 Рекомендация владельцу
+### 0.5 Рекомендация владельцу + tripwire
 
 **Принять вариант (а) — interrupt руками.** Причины:
 
@@ -120,7 +120,9 @@ AGENT-3 вводит цикл «модель ↔ инструмент»:
 - Минимальный риск регрессии AGENT-1.
 - Langgraph оставляем как триггер пересмотра: если в AGENT-4 появится сложное ветвление / multi-turn планирование — перейти.
 
-**Решение владельца: __________ (вариант а / вариант б / отложить).**
+**Tripwire:** если реализация interrupt/state-машины превысит **2 дня чистого времени** — стоп, пересмотр langgraph.
+
+**Решение владельца: вариант (а) с tripwire.**
 
 ---
 
@@ -161,6 +163,18 @@ AGENT-3 вводит цикл «модель ↔ инструмент»:
 4. **dry-run через валидатор сессии**: собрать ui_model `{nodes, edges}` после применения плана и вызвать `validate_with_catalog` (`backend/app/validation/service.py:554`) через новый внутренний endpoint монолита `POST /internal/session/dry-run` (JWT, org-scoped). Возвращает `{summary: {errors, warnings}, findings: [...]}`.
 5. **Невалидный план → агент чинит**: возвращаем LLM'у `validation_result` как данные, просим исправить. Цикл ≤ `max_iterations`.
 6. **После N итераций** — честный отказ: SSE-событие `error` с `status="edit_plan_failed"` и причиной.
+
+### 1.4 Роутер intent v2
+
+Миграция `025_agent_edit_prompts.py` включает seed-промпт `agent_router` v2 с шестым интентом:
+
+| Intent | Описание |
+|---|---|
+| `edit_canvas` | Просьба изменить схему (переименовать шаг, добавить/удалить узел или связь) |
+
+- Статус seed-промпта: `draft` (активирует владелец после тюнинга, аналогично AGENT-1).
+- До активации v2 запросы типа «переименуй шаг» идут в `smalltalk` / `free-answer` и не применяют правки.
+- В таблице файлов (раздел 11) — `backend/alembic/versions/025_agent_edit_prompts.py`.
 
 ---
 
@@ -383,16 +397,19 @@ INSERT INTO llm_feature_flags (feature, enabled, daily_token_limit) VALUES
 | Регрессия AGENT-1 гейта | `pytest services/agent/tests` + ручной чат K1–K3 | PASS/FAIL |
 | Регрессия contract-suite | `pytest -m contract` | PASS/FAIL |
 | 0 вызовов на открытие/history | `llm_usage` count до/после | PASS/FAIL |
+| Просьба переименовать шаг → intent `edit_canvas` | Тест роутера + `llm_usage.feature=agent_router` после активации v2 | PASS/FAIL |
 
 ---
 
-## 9. Открытые вопросы владельцу
+## 9. Решения владельца (2026-08-17)
 
-1. **Рантайм**: принять вариант (а) interrupt руками или перейти на langgraph?
-2. **Scope tools**: достаточно ли 4 tools (`propose_node_update`, `propose_add_node`, `propose_add_edge`, `propose_delete_node`) или нужны add_gateway / split_flow / merge_paths?
-3. **Таймаут подтверждения**: 15 мин подходит? Сделать configurable per org?
-4. **Лимиты**: `agent_edit` 200k tokens/день — ок?
-5. **Откат**: нужна ли кнопка «Отменить применённое» в UI (restore snapshot) или откат через существующий history bpmn_versions достаточен?
+Все открытые вопросы закрыты:
+
+1. **Рантайм**: вариант (а) — interrupt руками, с tripwire: если реализация interrupt/state-машины превысит 2 дня чистого времени — стоп, пересмотр langgraph.
+2. **Scope tools**: 4 базовых tools (`propose_node_update`, `propose_add_node`, `propose_add_edge`, `propose_delete_node`) — достаточно для MVP. Шлюзы / split / merge — отдельным контуром позже.
+3. **Таймаут подтверждения**: 15 мин по умолчанию. Configurable per-org — в backlog, не в MVP.
+4. **Лимиты**: `agent_edit` 200k tokens/день — ок. Добавить мониторинг доли `agent_edit*` в общем потреблении первую неделю.
+5. **Откат**: откат через существующие `bpmn_versions` snapshots. Кнопка «Отменить применённое» в UI — по факту потребности, не в MVP.
 
 ---
 
@@ -423,8 +440,11 @@ INSERT INTO llm_feature_flags (feature, enabled, daily_token_limit) VALUES
 | `backend/services/agent/routers/agent_resume.py` | `POST /sessions/{id}/agent/resume` | Новый роутер |
 | `backend/services/agent/runners/monolith_client.py` | `dry_run_session`, `create_bpmn_version_snapshot`, `add_node`, `patch_node`, `add_edge`, `delete_node` | |
 | `backend/services/agent/gateway/llm_store.py` | feature flags `agent_edit`, `agent_edit_propose` | Seed-миграция |
-| `backend/alembic/versions/025_agent_edit_prompts.py` | Seed-промпты `agent_edit`, `agent_edit_propose` status='draft' | Новая миграция |
+| `backend/alembic/versions/025_agent_edit_prompts.py` | Seed-промпты `agent_edit`, `agent_edit_propose`, `agent_router` v2 (intent `edit_canvas`) status='draft' | Новая миграция |
 | `backend/app/routers/internal_sessions.py` (или новый) | `POST /internal/session/dry-run`, `POST /internal/session/snapshot` | Монолит |
+| `deploy/nginx/default.conf` | Regex `(chat|history|stream|resume)` | Добавить `resume` |
+| `deploy/nginx/default.prod.internal.conf` | Regex `(chat|history|stream|resume)` | Добавить `resume` |
+| `deploy/nginx/default.prod.tls.conf` | Regex `(chat|history|stream|resume)` (2 location'а) | Добавить `resume` |
 | `backend/app/celery_app.py` | Импорт `backend/app/tasks/rag_tasks.py` (AGENT-2) без циклов | Учесть Blocker #5 |
 | `frontend/src/features/process/processman/processmanView.js` | `mapStreamEventToMessage` для `confirm_required` | |
 | `frontend/src/features/process/processman/ProcessmanTobe.jsx` | Карточка подтверждения, состояния | |
