@@ -213,7 +213,7 @@ def create_bpmn_version_snapshot(
         session_id=session_id,
         bpmn_xml=bpmn_xml,
         source_action=source_action,
-        user_id=user_id,
+        created_by=user_id,
         org_id=org_id,
     )
 

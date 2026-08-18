@@ -1,12 +1,13 @@
 import os
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 
 from app.auth import create_access_token, create_user
 from app.schemas.legacy_api import BpmnXmlIn
 from app.services import session_service as svc
-from app.services.bpmn_navigation import find_subprocess_elements
+from app.services.bpmn_navigation import find_subprocess_elements, _local_tag, _shape_bounds
 import app._legacy_main as _lm
 from app.storage import (
     create_org_record,
@@ -916,6 +917,157 @@ class TestSubprocessSessionCreation(unittest.TestCase):
             {"camunda_extensions_by_element_id": {"Task_1": {"properties": {}}}},
         )
         self.assertEqual(child.activity_count, 3)
+
+    def _bounds_from_xml(self, xml_text, element_id):
+        root = ET.fromstring(xml_text)
+        for shape in root.iter():
+            if _local_tag(shape.tag) == "bpmnshape" and shape.attrib.get("bpmnElement") == element_id:
+                return _shape_bounds(shape)
+        return None
+
+    def _count_child_bpmn_versions(self, child_id, org_id):
+        return self.st.count_bpmn_versions(child_id, org_id=org_id)
+
+    def _child_xml_with_manual_di(self, sub_id, task_name):
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+            'xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" '
+            'xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" '
+            'xmlns:di="http://www.omg.org/spec/DD/20100524/DI" '
+            'id="Definitions_child" targetNamespace="ns">'
+            '<bpmn:process id="Process_child">'
+            f'<bpmn:startEvent id="{sub_id}_start" />'
+            f'<bpmn:task id="{sub_id}_task" name="{task_name}" />'
+            f'<bpmn:sequenceFlow id="{sub_id}_flow" sourceRef="{sub_id}_start" targetRef="{sub_id}_task" />'
+            '</bpmn:process>'
+            '<bpmndi:BPMNDiagram id="BPMNDiagram_child">'
+            '<bpmndi:BPMNPlane id="BPMNPlane_child" bpmnElement="Process_child">'
+            f'<bpmndi:BPMNShape id="{sub_id}_start_di" bpmnElement="{sub_id}_start">'
+            '<dc:Bounds x="242" y="212" width="36" height="36" />'
+            '</bpmndi:BPMNShape>'
+            f'<bpmndi:BPMNShape id="{sub_id}_task_di" bpmnElement="{sub_id}_task">'
+            '<dc:Bounds x="330" y="190" width="100" height="80" />'
+            '</bpmndi:BPMNShape>'
+            f'<bpmndi:BPMNEdge id="{sub_id}_flow_di" bpmnElement="{sub_id}_flow" sourceElement="{sub_id}_start" targetElement="{sub_id}_task">'
+            '<di:waypoint x="260" y="230" />'
+            '<di:waypoint x="380" y="230" />'
+            '</bpmndi:BPMNEdge>'
+            '</bpmndi:BPMNPlane>'
+            '</bpmndi:BPMNDiagram>'
+            '</bpmn:definitions>'
+        )
+
+    def test_bpmn_save_creates_child_bpmn_version_snapshot_before_overwrite(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_snap_1@local", "editor_snap_1@local", "org_snap_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_snap_1", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task("sub_1", "Task A")
+        self._hybrid_save_bpmn(sid, xml_a, editor, "org_snap_1")
+
+        child_row = self.st.find_by_parent_element(sid, "sub_1", org_id="org_snap_1")
+        self.assertIsNotNone(child_row)
+        child_id = str(child_row.id)
+        initial_version_count = self._count_child_bpmn_versions(child_id, "org_snap_1")
+
+        # Re-save parent with a semantic change inside the subprocess.
+        xml_b = self._bpmn_with_subprocess_task("sub_1", "Task B")
+        result = self._hybrid_save_bpmn(sid, xml_b, editor, "org_snap_1")
+        self.assertTrue(result.get("ok"))
+
+        versions = self.st.list_bpmn_versions(
+            child_id, org_id="org_snap_1", include_technical=True, include_xml=True
+        )
+        sync_versions = [v for v in versions if v.get("source_action") == "subprocess_sync"]
+        self.assertEqual(len(sync_versions), 1)
+        self.assertIn("Task A", sync_versions[0].get("bpmn_xml", ""))
+        self.assertEqual(
+            self._count_child_bpmn_versions(child_id, "org_snap_1"),
+            initial_version_count + 1,
+        )
+
+    def test_bpmn_save_preserves_child_di_during_sync(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_di_1@local", "editor_di_1@local", "org_di_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_di_1", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task("sub_1", "Task A")
+        self._hybrid_save_bpmn(sid, xml_a, editor, "org_di_1")
+
+        child_row = self.st.find_by_parent_element(sid, "sub_1", org_id="org_di_1")
+        self.assertIsNotNone(child_row)
+        child_id = str(child_row.id)
+
+        # Save a manual layout into the child session.
+        manual_xml = self._child_xml_with_manual_di("sub_1", "Task A")
+        req = _DummyRequest(editor, "org_di_1")
+        svc.bpmn_save(
+            child_id,
+            BpmnXmlIn(xml=manual_xml, source_action="manual_save", bpmn_meta={}),
+            req,
+        )
+
+        # Re-save parent with a semantic rename only.
+        xml_b = self._bpmn_with_subprocess_task("sub_1", "Task B")
+        result = self._hybrid_save_bpmn(sid, xml_b, editor, "org_di_1")
+        self.assertTrue(result.get("ok"))
+
+        child = self.st.load(child_id, org_id="org_di_1", is_admin=True)
+        bounds = self._bounds_from_xml(child.bpmn_xml, "sub_1_task")
+        self.assertIsNotNone(bounds)
+        self.assertEqual(bounds["x"], "330")
+        self.assertEqual(bounds["y"], "190")
+        self.assertIn("Task B", child.bpmn_xml)
+
+    def _bpmn_with_subprocess_two_tasks(self, sub_id, task_a_name, task_b_name):
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="ns">'
+            '<bpmn:process id="p1">'
+            '<bpmn:startEvent id="start"/>'
+            f'<bpmn:subProcess id="{sub_id}" name="Sub {sub_id}">'
+            f'<bpmn:task id="{sub_id}_task" name="{task_a_name}" />'
+            f'<bpmn:task id="{sub_id}_task2" name="{task_b_name}" />'
+            f'<bpmn:sequenceFlow id="{sub_id}_flow" sourceRef="{sub_id}_task" targetRef="{sub_id}_task2" />'
+            '</bpmn:subProcess>'
+            '<bpmn:endEvent id="end"/>'
+            '</bpmn:process>'
+            '</bpmn:definitions>'
+        )
+
+    def test_bpmn_save_places_new_child_element_in_free_area(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_di_2@local", "editor_di_2@local", "org_di_2"
+        )
+        sid = self._create_session(str(owner["id"]), "org_di_2", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task("sub_1", "Task A")
+        self._hybrid_save_bpmn(sid, xml_a, editor, "org_di_2")
+
+        child_row = self.st.find_by_parent_element(sid, "sub_1", org_id="org_di_2")
+        self.assertIsNotNone(child_row)
+        child_id = str(child_row.id)
+
+        manual_xml = self._child_xml_with_manual_di("sub_1", "Task A")
+        req = _DummyRequest(editor, "org_di_2")
+        svc.bpmn_save(
+            child_id,
+            BpmnXmlIn(xml=manual_xml, source_action="manual_save", bpmn_meta={}),
+            req,
+        )
+
+        # Re-save parent with an additional task inside the subprocess.
+        xml_b = self._bpmn_with_subprocess_two_tasks("sub_1", "Task B", "Task C")
+        result = self._hybrid_save_bpmn(sid, xml_b, editor, "org_di_2")
+        self.assertTrue(result.get("ok"))
+
+        child = self.st.load(child_id, org_id="org_di_2", is_admin=True)
+        old_bounds = self._bounds_from_xml(child.bpmn_xml, "sub_1_task")
+        new_bounds = self._bounds_from_xml(child.bpmn_xml, "sub_1_task2")
+        self.assertIsNotNone(old_bounds)
+        self.assertIsNotNone(new_bounds)
+        # New shape must be placed to the right of the preserved one.
+        self.assertGreater(float(new_bounds["x"]), float(old_bounds["x"]) + float(old_bounds["width"]))
 
 
 if __name__ == "__main__":
