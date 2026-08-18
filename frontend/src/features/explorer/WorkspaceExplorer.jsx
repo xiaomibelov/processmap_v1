@@ -58,6 +58,11 @@ import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
 import { buildVisibleRows, hasFolderChildren, projectHasSessions } from "./work3TreeState.js";
 import { projectSessionsQueryKey, projectSessionsQueryOptions } from "./projectSessionsQuery.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
+import {
+  ExplorerSidebarProvider,
+  useExplorerSidebarHeader,
+  useSetExplorerSidebarHeader,
+} from "./ExplorerSidebarContext.jsx";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
 import {
   buildExplorerGlobalSearchModel,
@@ -1325,7 +1330,7 @@ function WorkspaceSidebar({
     queryClient.prefetchQuery(explorerPageQueryOptions(wsId, ""));
   };
   return (
-    <div className="h-full flex flex-col border-r border-border bg-panel2 select-none">
+    <div className="h-full flex flex-col select-none">
       <div className="px-3 pt-3 pb-2 flex items-center justify-between">
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Organization</div>
@@ -2659,11 +2664,42 @@ function ExplorerPane({
   const createFolderLabel = explorerHeaderLayout.shortCreateLabels
     ? folderCopy.createLabel.replace(/^Создать\s+/, "")
     : folderCopy.createLabel;
+  // Блок «назад + путь» для левой колонки (uiux/sidebar-header-join-v1).
+  const explorerSidebarHeader = (
+    <>
+      {folderId ? (
+        <button
+          type="button"
+          onClick={() =>
+            parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
+              ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
+              : onNavigateToBreadcrumb(workspaceId, "")
+          }
+          className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          title="Назад к разделам"
+          aria-label="Назад к разделам"
+          data-testid="explorer-back-sections"
+        >
+          ← Назад к разделам
+        </button>
+      ) : null}
+      <TextBreadcrumbs
+        crumbs={headerCrumbItems}
+        dataTestId="explorer-breadcrumbs"
+        singleLine
+        forceCollapse
+        currentClassName="text-[15px] font-semibold"
+      />
+    </>
+  );
+  useSetExplorerSidebarHeader(explorerSidebarHeader);
+
   const explorerHeader = (
       <div className="px-4 pr-5 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
         {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
             (текущий сегмент = заголовок), табы, поиск, создание.
-            Счётчики workspace перенесены в сайдбар (uiux/ws-counters-to-sidebar-v1).
+            Счётчики workspace перенесены в сайдбар (uiux/ws-counters-to-sidebar-v1);
+            back/crumbs перенесены в левую колонку.
             Без переносов; жертвы по ширине контейнера: кнопки/поиск сжимаются
             → крошки «…» → кнопка «назад» иконкой. */}
         <div
@@ -2671,31 +2707,6 @@ function ExplorerPane({
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
         >
-          {folderId ? (
-            <button
-              type="button"
-              onClick={() =>
-                parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
-                  ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
-                  : onNavigateToBreadcrumb(workspaceId, "")
-              }
-              className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
-                explorerHeaderLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
-              }`}
-              title="Назад к разделам"
-              aria-label="Назад к разделам"
-              data-testid="explorer-back-sections"
-            >
-              {explorerHeaderLayout.backIconOnly ? "←" : "← Назад к разделам"}
-            </button>
-          ) : null}
-          <TextBreadcrumbs
-            crumbs={headerCrumbItems}
-            dataTestId="explorer-breadcrumbs"
-            singleLine
-            forceCollapse={explorerHeaderLayout.collapseCrumbs}
-            currentClassName="text-[15px] font-semibold"
-          />
           <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
             <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
               <button
@@ -3820,39 +3831,43 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const sessionCountersFull = `Сессии: ${sessionCount}`;
   const sessionCountersShort = String(sessionCount);
 
+  // Блок «назад + путь» для левой колонки (uiux/sidebar-header-join-v1).
+  const projectSidebarHeader = (
+    <>
+      {projectBackCrumb ? (
+        <button
+          type="button"
+          onClick={() => onBack(projectBackCrumb)}
+          className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          title="Назад к разделу"
+          aria-label="Назад к разделу"
+          data-testid="project-back-section"
+        >
+          ← Назад к разделу
+        </button>
+      ) : null}
+      <TextBreadcrumbs
+        crumbs={projectCrumbItems}
+        dataTestId="project-breadcrumbs"
+        singleLine
+        forceCollapse
+        currentClassName="text-[15px] font-semibold"
+      />
+    </>
+  );
+  useSetExplorerSidebarHeader(projectSidebarHeader);
+
   // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
   const navSlotEl = useWorkspaceMainNavSlot();
   const projectHeader = (
       <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
-            (текущий сегмент = заголовок), статус, табы, поиск, создание, мета справа. */}
+        {/* Часть А-2 (nav-zone): одна строка ~40px — статус, табы, поиск, создание, мета справа.
+            Back/crumbs перенесены в левую колонку. */}
         <div
           ref={projectNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(projectNavWidth)}
-          data-nav-meta={projectNavLayout.showCounters ? "full" : projectNavLayout.shortCounters ? "short" : "0"}
         >
-          {projectBackCrumb ? (
-            <button
-              type="button"
-              onClick={() => onBack(projectBackCrumb)}
-              className={`secondaryBtn h-7 min-h-0 shrink-0 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${
-                projectNavLayout.backIconOnly ? "w-7 px-0" : "px-2.5"
-              }`}
-              title="Назад к разделу"
-              aria-label="Назад к разделу"
-              data-testid="project-back-section"
-            >
-              {projectNavLayout.backIconOnly ? "←" : "← Назад к разделу"}
-            </button>
-          ) : null}
-          <TextBreadcrumbs
-            crumbs={projectCrumbItems}
-            dataTestId="project-breadcrumbs"
-            singleLine
-            forceCollapse={projectNavLayout.collapseCrumbs}
-            currentClassName="text-[15px] font-semibold"
-          />
           {proj ? (
             <StatusPopoverControl
               domain="project"
@@ -4146,78 +4161,96 @@ export default function WorkspaceExplorer({
     );
   }
 
-  return (
-    <div className="h-full flex flex-col min-h-0 bg-bg font-sans">
-      {!currentOrgActive ? (
-        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
-          <strong>Организация деактивирована.</strong>{" "}
-          Создание и редактирование сессий недоступно. Обратитесь к администратору.
-        </div>
-      ) : null}
-      <div className="h-full flex flex-row min-h-0 font-sans">
-        {/* Left sidebar — Workspaces */}
-      <div className="w-48 shrink-0">
-        <WorkspaceSidebar
-          organizationName={currentOrgName}
-          workspaces={workspaces}
-          activeWorkspaceId={activeWorkspaceId}
-          onSelectWorkspace={handleSelectWorkspace}
-          onCreateWorkspace={handleCreateWorkspace}
-          canCreateWorkspace={permissions.canManageUsers}
-          canRenameWorkspace={permissions.canRenameWorkspace}
-          onWorkspaceRenamed={handleWorkspaceRenamed}
-        />
-      </div>
+// ─── Explorer Left Column Header ─────────────────────────────────────────────
 
-      {/* Right pane — Explorer + Project (both mounted; only one visible at a time).
-           ExplorerPane is kept in DOM so its loaded state survives project round-trips.
-           This eliminates the refetch that used to happen when navigating back. */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
-        {requestProjectId && projectRestoreStatus === "resolving" ? (
-          <div className="flex-1 flex items-center justify-center text-sm text-muted">
-            Восстанавливаем проект…
+function ExplorerSidebarHeaderBlock() {
+  const header = useExplorerSidebarHeader();
+  return (
+    <div
+      className="h-10 px-3 border-b border-border flex items-center gap-2 overflow-hidden whitespace-nowrap bg-panel"
+      data-testid="explorer-sidebar-header"
+    >
+      {header || <span className="min-w-0 flex-1" aria-hidden="true" />}
+    </div>
+  );
+}
+
+  return (
+    <ExplorerSidebarProvider>
+      <div className="h-full flex flex-col min-h-0 bg-bg font-sans">
+        {!currentOrgActive ? (
+          <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            <strong>Организация деактивирована.</strong>{" "}
+            Создание и редактирование сессий недоступно. Обратитесь к администратору.
           </div>
-        ) : !activeWorkspaceId ? (
-          <div className="flex-1 flex items-center justify-center text-sm text-muted">
-            Выберите workspace слева
-          </div>
-        ) : (
-          <>
-            {/* ExplorerPane: always mounted, hidden while a project is open */}
-            <div className={`absolute inset-0 flex flex-col min-h-0 ${currentProjectId ? "invisible pointer-events-none" : ""}`}>
-              <ExplorerPane
-                activeOrgId={activeOrgId}
-                orgs={orgs}
-                currentUser={user}
-                workspaceId={activeWorkspaceId}
-                folderId={currentFolderId}
-                onNavigateToFolder={handleNavigateToFolder}
-                onNavigateToProject={handleNavigateToProject}
-                onNavigateToBreadcrumb={handleNavigateToBreadcrumb}
-                onOpenSession={onOpenSession}
-                permissions={permissions}
-                portalHeader={!currentProjectId}
+        ) : null}
+        <div className="h-full flex flex-row min-h-0 font-sans">
+          {/* Left column: back + breadcrumbs on top, workspace list below (single surface). */}
+          <div className="w-56 shrink-0 flex flex-col bg-panel rounded-xl2 border border-border overflow-hidden">
+            <ExplorerSidebarHeaderBlock />
+            <div className="flex-1 overflow-hidden">
+              <WorkspaceSidebar
+                organizationName={currentOrgName}
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                onSelectWorkspace={handleSelectWorkspace}
+                onCreateWorkspace={handleCreateWorkspace}
+                canCreateWorkspace={permissions.canManageUsers}
+                canRenameWorkspace={permissions.canRenameWorkspace}
+                onWorkspaceRenamed={handleWorkspaceRenamed}
               />
             </div>
+          </div>
 
-            {/* ProjectPane: only rendered while a project is selected */}
-            {currentProjectId && (
-              <div className="absolute inset-0 flex flex-col min-h-0">
-                <ProjectPane
-                  workspaceId={activeWorkspaceId}
-                  projectId={currentProjectId}
-                  onBack={handleBackFromProject}
-                  onOpenSession={onOpenSession}
-                  activeOrgId={activeOrgId}
-                  breadcrumbBase={breadcrumbBase}
-                  permissions={permissions}
-                />
+          {/* Right pane — Explorer + Project (both mounted; only one visible at a time).
+               ExplorerPane is kept in DOM so its loaded state survives project round-trips. */}
+          <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
+            {requestProjectId && projectRestoreStatus === "resolving" ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted">
+                Восстанавливаем проект…
               </div>
+            ) : !activeWorkspaceId ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted">
+                Выберите workspace слева
+              </div>
+            ) : (
+              <>
+                {/* ExplorerPane: always mounted, hidden while a project is open */}
+                <div className={`absolute inset-0 flex flex-col min-h-0 ${currentProjectId ? "invisible pointer-events-none" : ""}`}>
+                  <ExplorerPane
+                    activeOrgId={activeOrgId}
+                    orgs={orgs}
+                    currentUser={user}
+                    workspaceId={activeWorkspaceId}
+                    folderId={currentFolderId}
+                    onNavigateToFolder={handleNavigateToFolder}
+                    onNavigateToProject={handleNavigateToProject}
+                    onNavigateToBreadcrumb={handleNavigateToBreadcrumb}
+                    onOpenSession={onOpenSession}
+                    permissions={permissions}
+                    portalHeader={!currentProjectId}
+                  />
+                </div>
+
+                {/* ProjectPane: only rendered while a project is selected */}
+                {currentProjectId && (
+                  <div className="absolute inset-0 flex flex-col min-h-0">
+                    <ProjectPane
+                      workspaceId={activeWorkspaceId}
+                      projectId={currentProjectId}
+                      onBack={handleBackFromProject}
+                      onOpenSession={onOpenSession}
+                      activeOrgId={activeOrgId}
+                      breadcrumbBase={breadcrumbBase}
+                      permissions={permissions}
+                    />
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
+        </div>
       </div>
-    </div>
-    </div>
+    </ExplorerSidebarProvider>
   );
 }
