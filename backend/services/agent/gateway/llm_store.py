@@ -180,3 +180,21 @@ def usage_daily_tokens(feature: str, org_id: str, since_ts: int) -> int:
             (feature, org_id, int(since_ts)),
         ).fetchone()
     return int(dict(row)["t"] if row is not None else 0)
+
+
+def ensure_edit_feature_flags() -> None:
+    """Seed feature flags for AGENT-3 (idempotent INSERT OR IGNORE)."""
+    defaults = [
+        ("agent_edit", 1, 200000),
+        ("agent_edit_propose", 1, 100000),
+    ]
+    with get_conn() as con:
+        for feature, enabled, limit in defaults:
+            con.execute(
+                adapt_sql(
+                    "INSERT INTO llm_feature_flags (feature, enabled, daily_token_limit)"
+                    " VALUES (?, ?, ?)"
+                    " ON CONFLICT(feature) DO NOTHING"
+                ),
+                (feature, enabled, limit),
+            )

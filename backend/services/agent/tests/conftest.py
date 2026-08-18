@@ -131,6 +131,22 @@ CREATE TABLE IF NOT EXISTS agent_schema_memory (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_schema_memory_session
 ON agent_schema_memory(org_id, session_id);
+CREATE TABLE IF NOT EXISTS agent_pending_edits (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL DEFAULT 'org_default',
+    session_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    edit_plan_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'rejected', 'expired', 'conflict_rev')),
+    expires_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL,
+    resumed_by_user_id TEXT,
+    resumed_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_pending_edits_session_status
+ON agent_pending_edits(org_id, session_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_pending_edits_turn
+ON agent_pending_edits(org_id, session_id, turn_id);
 """
 
 

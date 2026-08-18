@@ -16,8 +16,9 @@ import time
 
 from fastapi import FastAPI
 
+from gateway.llm_store import ensure_edit_feature_flags
 from memory.schema_memory import run_memory_worker_once
-from routers import agent_chat, agent_stream, health, internal_llm
+from routers import agent_chat, agent_resume, agent_stream, health, internal_llm
 
 logging.basicConfig(
     level=logging.INFO if str(os.environ.get("AGENT_LOG_LEVEL") or "info").lower() != "debug" else logging.DEBUG,
@@ -52,12 +53,18 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(agent_chat.router)
     app.include_router(agent_stream.router)
+    app.include_router(agent_resume.router)
     app.include_router(internal_llm.router)
 
     @app.on_event("startup")
     def _startup() -> None:
         global _worker_stop_event, _worker_thread
         logger.info("agent service starting up")
+        try:
+            ensure_edit_feature_flags()
+            logger.info("edit feature flags ensured")
+        except Exception as exc:
+            logger.warning("ensure_edit_feature_flags failed: %s", exc)
         _worker_stop_event = threading.Event()
         _worker_thread = threading.Thread(
             target=_memory_worker_loop,
