@@ -32,6 +32,7 @@ from ..services.bpmn_navigation import (
     find_child_session_element_ids,
     get_element_name,
     assert_unique_element_id,
+    preserve_existing_di,
 )
 from .session_recompute import _recompute_session
 
@@ -49,25 +50,59 @@ def _bpmn_meta_with_fresh_camunda_extensions(current_meta: Any, xml_text: str) -
     return meta
 
 
-def _refresh_child_session_bpmn_from_xml(child: Session, child_xml: str) -> bool:
+def _snapshot_child_bpmn(
+    child: Session,
+    old_xml: str,
+    *,
+    created_by: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    """Persist a pre-overwrite BPMN snapshot for rollback/audit.
+
+    The snapshot is created for any non-empty old_xml that differs from the
+    incoming XML, regardless of whether old_xml parses cleanly — a corrupt
+    previous state must still be recoverable.
+    """
+    if not old_xml.strip():
+        return
+    try:
+        session_repo.create_bpmn_version_snapshot(
+            str(getattr(child, "id", "") or "").strip(),
+            bpmn_xml=old_xml,
+            source_action="subprocess_sync",
+            user_id=str(created_by or "").strip(),
+            org_id=str(org_id or "").strip() or None,
+        )
+    except Exception:
+        logger.exception("_snapshot_child_bpmn failed for session %s", getattr(child, "id", ""))
+
+
+def _refresh_child_session_bpmn_from_xml(
+    child: Session,
+    child_xml: str,
+    *,
+    created_by: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> bool:
     """Refresh child session XML plus BPMN-derived extension metadata.
 
     PRODUCT DECISION (official): the BPMN file is the source of truth.
     A reimport intentionally performs a FULL overwrite of the child
-    session's ``bpmn_xml`` (and of the derived ``camunda_extensions_by_element_id``
-    map). Manual UI edits made inside the subprocess — DI layout tweaks,
-    ``pm:RobotMeta`` rows, camunda/zeebe properties edited through the UI —
-    are LOST on the next reimport of the parent file. This is accepted and
-    documented behavior.
+    session's semantic content. DI layout is preserved where element ids
+    match the previous child XML; new elements are placed in a free grid
+    area so they do not overlap preserved ones.
 
     Guards: an empty ``child_xml`` never wipes anything (neither ``bpmn_xml``
     nor the extension map) — we only overwrite from real file content.
     """
     xml = str(child_xml or "")
+    old_xml = str(getattr(child, "bpmn_xml", "") or "")
     changed = False
-    if xml and xml != str(getattr(child, "bpmn_xml", "") or ""):
-        child.bpmn_xml = xml
-        child.activity_count = _count_bpmn_activities(xml)
+    if xml and xml != old_xml:
+        _snapshot_child_bpmn(child, old_xml, created_by=created_by, org_id=org_id)
+        merged_xml = preserve_existing_di(xml, old_xml) or xml
+        child.bpmn_xml = merged_xml
+        child.activity_count = _count_bpmn_activities(merged_xml)
         changed = True
 
     if xml:
@@ -1216,7 +1251,12 @@ def auto_create_subprocess_sessions(
             # so parent re-saves (e.g. BPMN import into an existing session)
             # propagate into existing child sessions instead of leaving stale
             # content behind.
-            refreshed = _refresh_child_session_bpmn_from_xml(existing, child_xml)
+            refreshed = _refresh_child_session_bpmn_from_xml(
+                existing,
+                child_xml,
+                created_by=uid,
+                org_id=oid,
+            )
             # Keep the child session title and breadcrumb name in sync with the
             # current BPMN element name so drill-in breadcrumbs never show stale
             # "Подпроцесс: ..." labels after a re-import.
@@ -1250,7 +1290,7 @@ def auto_create_subprocess_sessions(
                 org_id=oid,
                 is_admin=admin,
             )
-            if _refresh_child_session_bpmn_from_xml(child, child_xml):
+            if _refresh_child_session_bpmn_from_xml(child, child_xml, created_by=uid, org_id=oid):
                 child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                 session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
             created.append(str(child.id))
