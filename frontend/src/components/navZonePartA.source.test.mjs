@@ -31,13 +31,13 @@ test("ProjectPane: статус-бейдж и мета «Сессии: N» в с
   assert.match(explorerSource, /data-testid="project-meta"/);
 });
 
-test("ExplorerPane: кнопка «← Назад к разделам», крошки и мета в одной строке", () => {
+test("ExplorerPane: кнопка «← Назад к разделам», крошки в одной строке; мета workspace перенесена в сайдбар", () => {
   assert.match(explorerSource, /← Назад к разделам/);
   assert.match(explorerSource, /data-testid="explorer-back-sections"/);
   assert.match(explorerSource, /dataTestId="explorer-breadcrumbs"/);
   assert.doesNotMatch(explorerSource, /<h1[^>]*data-testid="explorer-section-title"/);
   assert.match(explorerSource, /testId: index === headerCrumbs\.length - 1 \? "explorer-section-title" : undefined/);
-  assert.match(explorerSource, /data-testid="explorer-section-meta"/);
+  assert.doesNotMatch(explorerSource, /data-testid="explorer-section-meta"/);
 });
 
 test("AppShell: полоса сессии над ProcessStage/stageOverride при активной сессии", () => {

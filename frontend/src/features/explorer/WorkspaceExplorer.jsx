@@ -128,6 +128,7 @@ import {
   sessionsCounterText,
   sessionsProgressPercent,
   sessionsTooltipText,
+  workspaceSectionCounterText,
 } from "./explorerTableFormat.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
@@ -1254,6 +1255,56 @@ function ExplorerSearchResults({ model, onOpenResult }) {
   );
 }
 
+// ─── Workspace Sidebar Counters ───────────────────────────────────────────────
+
+function WorkspaceSidebarActiveCounters({ workspaceId }) {
+  const { data: page, isFetching } = useQuery({
+    ...explorerPageQueryOptions(workspaceId, ""),
+    placeholderData: keepPreviousData,
+    enabled: Boolean(workspaceId),
+  });
+  const items = Array.isArray(page?.items) ? page.items : [];
+  const sectionCount = items.filter((item) => item?.type === "folder").length;
+  const projectCount = items.filter((item) => item?.type === "project").length;
+
+  const textRef = useRef(null);
+  const [short, setShort] = useState(false);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return undefined;
+    const check = () => setShort(isExplorerTextTruncated(el.scrollWidth, el.clientWidth));
+    check();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(check);
+      ro.observe(el);
+    }
+    return () => {
+      if (ro) ro.disconnect();
+    };
+  }, [sectionCount, projectCount]);
+
+  if (!workspaceId) return null;
+  if (isFetching && !page) {
+    return <span className="block h-3 w-20 rounded bg-border/50 animate-pulse" aria-hidden="true" />;
+  }
+
+  const full = `${workspaceSectionCounterText(sectionCount)} · ${compositionProjectsText(projectCount)}`;
+  const shortLabel = `${sectionCount} · ${projectCount}`;
+  const title = `Разделов: ${sectionCount} · Проектов: ${projectCount}`;
+
+  return (
+    <span
+      ref={textRef}
+      className={`block truncate text-[11px] leading-tight ${isFetching ? "text-muted/40" : "text-muted/75"}`}
+      title={short ? title : undefined}
+    >
+      {short ? shortLabel : full}
+    </span>
+  );
+}
+
 // ─── Workspace Sidebar ────────────────────────────────────────────────────────
 
 function WorkspaceSidebar({
@@ -1299,29 +1350,38 @@ function WorkspaceSidebar({
         {workspaces.length === 0 && (
           <p className="px-3 py-4 text-xs text-muted text-center">Нет workspaces</p>
         )}
-        {workspaces.map((ws) => (
-          <div
-            key={ws.id}
-            onMouseEnter={() => prefetchWorkspace(ws.id)}
-            onFocus={() => prefetchWorkspace(ws.id)}
-            className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors rounded-none
-              ${ws.id === activeWorkspaceId
-                ? "bg-accentSoft text-accent font-medium"
-                : "text-fg hover:bg-bg"
-              }`}
-          >
-            <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onSelectWorkspace(ws.id)}>
-              <IcoWorkspace className={ws.id === activeWorkspaceId ? "text-accent" : "text-muted"} />
-              <span className="truncate">{ws.name}</span>
-            </button>
-            <span className="text-[10px] text-muted opacity-60">{ws.role || "viewer"}</span>
-            {canRenameWorkspace && ws.id === activeWorkspaceId ? (
-              <button className="text-muted hover:text-fg p-0.5" title="Переименовать workspace" onClick={() => setRenamingWorkspace(ws)}>
-                <IcoEdit />
+        {workspaces.map((ws) => {
+          const isActive = ws.id === activeWorkspaceId;
+          return (
+            <div
+              key={ws.id}
+              onMouseEnter={() => prefetchWorkspace(ws.id)}
+              onFocus={() => prefetchWorkspace(ws.id)}
+              className={`w-full flex items-start gap-2 px-3 py-2 text-sm transition-colors rounded-none
+                ${isActive
+                  ? "bg-accentSoft text-accent font-medium"
+                  : "text-fg hover:bg-bg"
+                }`}
+            >
+              <button
+                className={`min-w-0 flex-1 text-left ${isActive ? "flex flex-col" : "flex items-center gap-2"}`}
+                onClick={() => onSelectWorkspace(ws.id)}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <IcoWorkspace className={isActive ? "text-accent" : "text-muted"} />
+                  <span className="truncate">{ws.name}</span>
+                </span>
+                {isActive ? <WorkspaceSidebarActiveCounters workspaceId={ws.id} /> : null}
               </button>
-            ) : null}
-          </div>
-        ))}
+              <span className="text-[10px] text-muted opacity-60 mt-0.5">{ws.role || "viewer"}</span>
+              {canRenameWorkspace && isActive ? (
+                <button className="text-muted hover:text-fg p-0.5 mt-0.5" title="Переименовать workspace" onClick={() => setRenamingWorkspace(ws)}>
+                  <IcoEdit />
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       {creating && canCreateWorkspace && (
         <InputModal
@@ -2591,9 +2651,6 @@ function ExplorerPane({
         : undefined,
   }));
   const parentHeaderCrumb = headerCrumbs.length > 1 ? headerCrumbs[headerCrumbs.length - 2] : null;
-  const headerFolderCount = rootItems.filter((item) => item?.type === "folder").length;
-  const headerProjectCount = rootItems.filter((item) => item?.type === "project").length;
-
   // Часть А: хедер раздела порталится в общий слот workspaceMain (пиксель-в-пиксель).
   // Когда открыт проект, ExplorerPane остаётся смонтированным (скрытым) — портал глушим.
   const navSlotEl = useWorkspaceMainNavSlot();
@@ -2602,21 +2659,17 @@ function ExplorerPane({
   const createFolderLabel = explorerHeaderLayout.shortCreateLabels
     ? folderCopy.createLabel.replace(/^Создать\s+/, "")
     : folderCopy.createLabel;
-  const explorerCountersFull = folderId
-    ? `Папок: ${headerFolderCount} · Проектов: ${headerProjectCount}`
-    : `Разделов: ${headerFolderCount} · Проектов: ${headerProjectCount}`;
-  const explorerCountersShort = `${headerFolderCount} · ${headerProjectCount}`;
   const explorerHeader = (
-      <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
+      <div className="px-4 pr-5 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
         {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
-            (текущий сегмент = заголовок), табы, поиск, создание, мета справа.
-            Без переносов; жертвы по ширине контейнера: счётчики → короткие счётчики
-            → кнопки/поиск сжимаются → крошки «…» → кнопка «назад» иконкой. */}
+            (текущий сегмент = заголовок), табы, поиск, создание.
+            Счётчики workspace перенесены в сайдбар (uiux/ws-counters-to-sidebar-v1).
+            Без переносов; жертвы по ширине контейнера: кнопки/поиск сжимаются
+            → крошки «…» → кнопка «назад» иконкой. */}
         <div
           ref={explorerNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
-          data-nav-meta={explorerHeaderLayout.showCounters ? "full" : explorerHeaderLayout.shortCounters ? "short" : "0"}
         >
           {folderId ? (
             <button
@@ -2692,17 +2745,6 @@ function ExplorerPane({
                 title="Войдите в папку, чтобы создать проект"
               >
                 <IcoPlus className="opacity-50" /> Проект
-              </span>
-            ) : null}
-            {explorerHeaderLayout.showCounters || explorerHeaderLayout.shortCounters ? (
-              <span
-                className="shrink-0 text-xs text-muted"
-                title={explorerHeaderLayout.shortCounters ? explorerCountersFull : undefined}
-                data-testid="explorer-section-meta"
-              >
-                {explorerHeaderLayout.showCounters
-                  ? `· ${explorerCountersFull}`
-                  : `· ${explorerCountersShort}`}
               </span>
             ) : null}
           </div>
