@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ru } from "../../../shared/i18n/ru";
-import { apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
+import { apiAgentResume, apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
 import {
   answerCacheKey,
   buildAnswerMeta,
@@ -16,6 +16,7 @@ import {
   appendAgentPending,
   appendStreamingDelta,
   appendUserMessage,
+  attachPendingEdit,
   failAgentMessage,
   finishAgentMessage,
   getChatHistory,
@@ -24,6 +25,7 @@ import {
   resolveAgentMessage,
   stopAgentMessage,
   updateAgentMessage,
+  updatePendingEditStatus,
 } from "./chat/processmanChatStore";
 import ProcessmanChatFeed from "./ProcessmanChatFeed";
 import ProcessmanComposer from "./ProcessmanComposer";
@@ -61,6 +63,7 @@ export default function ProcessmanTobe({
   const [, bump] = useReducer((v) => v + 1, 0);
   const [question, setQuestion] = useState("");
   const abortRef = useRef(null);
+  const resumeAbortRef = useRef(null);
   const composerRef = useRef(null);
 
   const sid = String(sessionId || "");
@@ -151,6 +154,15 @@ export default function ProcessmanTobe({
             } else {
               failAgentMessage(sid, pendingMsg.id, { errorText: mapped.errorText, errorStatus: mapped.errorStatus });
             }
+            bump();
+          } else if (patch.type === "confirm_required") {
+            finishAgentMessage(sid, pendingMsg.id);
+            attachPendingEdit(sid, pendingMsg.id, {
+              pendingEditId: patch.pendingEditId,
+              editPlan: patch.editPlan,
+              diff: patch.diff,
+              timeoutSec: patch.timeoutSec,
+            });
             bump();
           } else if (patch.type === "done") {
             if (patch.usage) {
@@ -248,6 +260,60 @@ export default function ProcessmanTobe({
     void run(msg.action, { force: 1, question: msg.question || "" });
   }, [run]);
 
+  const handleRejectEdit = useCallback((msg) => {
+    resumeAbortRef.current?.abort();
+    updatePendingEditStatus(sid, msg.id, { status: AGENT_STATUS.EDIT_REJECTED });
+    bump();
+  }, [sid]);
+
+  const handleConfirmEdit = useCallback(async (msg) => {
+    const pe = msg?.pendingEdit;
+    if (!pe || pe.status !== AGENT_STATUS.EDIT_PENDING) return;
+    const controller = new AbortController();
+    resumeAbortRef.current = controller;
+    try {
+      const stream = await apiAgentResume(
+        sid,
+        { pending_edit_id: pe.pendingEditId, decision: "confirm" },
+        { signal: controller.signal },
+      );
+      if (!stream.ok) {
+        updatePendingEditStatus(sid, msg.id, { status: AGENT_STATUS.ERROR, errorText: stream.error });
+        bump();
+        return;
+      }
+      for await (const { event, data } of readSseEvents(stream.reader)) {
+        const patch = mapStreamEventToMessage(event, data);
+        if (patch.type === "text") {
+          appendStreamingDelta(sid, msg.id, patch.delta);
+          bump();
+        } else if (patch.type === "done") {
+          const status = data?.status === "applied" ? AGENT_STATUS.EDIT_APPLIED : AGENT_STATUS.EDIT_REJECTED;
+          updatePendingEditStatus(sid, msg.id, { status, result: data });
+          bump();
+        } else if (patch.type === "error") {
+          const status = patch.errorStatus === "conflict_rev" ? AGENT_STATUS.EDIT_CONFLICT : AGENT_STATUS.ERROR;
+          updatePendingEditStatus(sid, msg.id, { status, errorText: patch.errorText, result: data });
+          bump();
+        }
+      }
+      const current = lastAgentMessage(sid);
+      if (current?.id === msg.id && current?.status === AGENT_STATUS.STREAMING) {
+        finishAgentMessage(sid, msg.id);
+        bump();
+      }
+    } catch (err) {
+      if (String(err?.name || "") === "AbortError") return;
+      updatePendingEditStatus(sid, msg.id, {
+        status: AGENT_STATUS.ERROR,
+        errorText: String(err?.message || err || t.errorTitle),
+      });
+    } finally {
+      if (resumeAbortRef.current === controller) resumeAbortRef.current = null;
+      bump();
+    }
+  }, [sid]);
+
   const handlePickExample = useCallback((text) => {
     setQuestion(text);
     composerRef.current?.focus?.();
@@ -278,6 +344,8 @@ export default function ProcessmanTobe({
           onNodeClick={(id) => onFocusElement?.(id)}
           onStop={handleStop}
           onRetry={handleRetry}
+          onConfirmEdit={handleConfirmEdit}
+          onRejectEdit={handleRejectEdit}
         />
       )}
 

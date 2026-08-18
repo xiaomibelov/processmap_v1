@@ -8,6 +8,7 @@ import {
   appendAgentPending,
   appendStreamingDelta,
   appendUserMessage,
+  attachPendingEdit,
   failAgentMessage,
   finishAgentMessage,
   getChatHistory,
@@ -20,6 +21,7 @@ import {
   typewriterProgress,
   TYPEWRITER_CHARS_PER_TICK,
   updateAgentMessage,
+  updatePendingEditStatus,
 } from "./processmanChatStore.js";
 
 test.beforeEach(() => resetChatHistories());
@@ -103,4 +105,28 @@ test("updateAgentMessage: текст/meta/статус", () => {
   assert.equal(msg.text, "action text");
   assert.equal(msg.meta.usage.tokens, 1);
   assert.equal(msg.status, AGENT_STATUS.STREAMING);
+});
+
+test("AGENT-3 attachPendingEdit: карточка HITL прикрепляется к сообщению", () => {
+  const pending = appendAgentPending("s1", { action: "edit_canvas" });
+  resolveAgentMessage("s1", pending.id, { text: "предлагаю правку" });
+  const updated = attachPendingEdit("s1", pending.id, {
+    pendingEditId: "pe_1",
+    editPlan: { note: "добавить шаг" },
+    diff: [{ op: "add_node", node_id: "Task_1", title: "Новый шаг" }],
+    timeoutSec: 900,
+  });
+  assert.equal(updated.status, AGENT_STATUS.EDIT_PENDING);
+  assert.equal(updated.pendingEdit.pendingEditId, "pe_1");
+  assert.equal(updated.pendingEdit.diff.length, 1);
+  assert.equal(updated.pendingEdit.status, AGENT_STATUS.EDIT_PENDING);
+});
+
+test("AGENT-3 updatePendingEditStatus: applied/rejected/conflict", () => {
+  const pending = appendAgentPending("s1", { action: "edit_canvas" });
+  attachPendingEdit("s1", pending.id, { pendingEditId: "pe_2", diff: [] });
+  updatePendingEditStatus("s1", pending.id, { status: AGENT_STATUS.EDIT_APPLIED, result: { operations_applied: 1 } });
+  const msg = lastAgentMessage("s1");
+  assert.equal(msg.status, AGENT_STATUS.EDIT_APPLIED);
+  assert.equal(msg.pendingEdit.result.operations_applied, 1);
 });

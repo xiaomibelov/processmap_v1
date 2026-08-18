@@ -1243,6 +1243,84 @@ export async function apiAgentStream(sessionId, payload = {}, options = {}) {
   };
 }
 
+/**
+ * AGENT-3 — SSE streaming resume для HITL-подтверждения правок.
+ * decision: "confirm" | "reject".
+ * Возвращает { ok: true, response, reader, abort() } или { ok: false, error }.
+ */
+export async function apiAgentResume(sessionId, payload = {}, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+
+  const body = isPlainObject(payload) ? payload : {};
+  const peid = String(body.pending_edit_id || "").trim();
+  const decision = String(body.decision || "").trim().toLowerCase();
+  if (!peid) return { ok: false, status: 0, error: "missing pending_edit_id" };
+  if (!["confirm", "reject"].includes(decision)) {
+    return { ok: false, status: 0, error: "decision must be confirm or reject" };
+  }
+
+  const url = joinUrl(apiRoutes.agent.resume(sid));
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = String(getAccessToken() || "").trim();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ pending_edit_id: peid, decision }),
+      credentials: "include",
+      signal: options?.signal,
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      error: String(err?.message || err || "network error"),
+      aborted: String(err?.name || "") === "AbortError",
+    };
+  }
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = await response.text();
+    } catch {
+      detail = "";
+    }
+    return {
+      ok: false,
+      status: Number(response.status || 0),
+      error: detail || `HTTP ${response.status}`,
+    };
+  }
+
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    return { ok: false, status: 0, error: "streaming not supported" };
+  }
+
+  return {
+    ok: true,
+    response,
+    reader,
+    abort: () => {
+      try {
+        options?.signal?.abort?.();
+      } catch {
+        // ignore
+      }
+      try {
+        reader.cancel("stop").catch(() => {});
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
 function resolveReportOrgId(options = {}) {
   const explicit = String(options?.orgId || "").trim();
   if (explicit) return explicit;

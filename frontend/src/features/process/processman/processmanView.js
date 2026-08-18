@@ -204,6 +204,7 @@ export const SSE_EVENT = Object.freeze({
   START: "start",
   TOKEN: "token",
   ACTION: "action",
+  CONFIRM_REQUIRED: "confirm_required",
   DONE: "done",
   ERROR: "error",
 });
@@ -275,6 +276,15 @@ export function mapStreamEventToMessage(event, data) {
   if (event === SSE_EVENT.ACTION) {
     const payload = data?.payload && typeof data.payload === "object" ? data.payload : {};
     return { type: "action", action: String(data?.action || ""), actionPayload: payload };
+  }
+  if (event === SSE_EVENT.CONFIRM_REQUIRED) {
+    return {
+      type: "confirm_required",
+      pendingEditId: String(data?.pending_edit_id || ""),
+      editPlan: data?.edit_plan && typeof data.edit_plan === "object" ? data.edit_plan : {},
+      diff: Array.isArray(data?.diff) ? data.diff : [],
+      timeoutSec: Number(data?.timeout_sec || 0),
+    };
   }
   if (event === SSE_EVENT.DONE) {
     const usage = data?.usage && typeof data.usage === "object" ? data.usage : {};

@@ -1809,3 +1809,90 @@
     max-height: calc(100dvh - 20px);
   }
 }
+
+/* --- AGENT-3 — карточка подтверждения правки на канвасе (HITL) --- */
+.pm-processman-edit-card {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 30%, var(--pm-tobe-border));
+  background: var(--pm-tobe-assistant-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pm-processman-edit-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-edit-card__diff-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pm-tobe-muted-fg);
+  margin-bottom: 6px;
+}
+
+.pm-processman-edit-card__diff-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pm-tobe-fg);
+}
+
+.pm-processman-edit-card__diff-item {
+  margin-bottom: 3px;
+}
+
+.pm-processman-edit-card__diff-empty {
+  font-size: 12px;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.pm-processman-edit-card__status {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-edit-card__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pm-processman-edit-card__confirm,
+.pm-processman-edit-card__reject {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.pm-processman-edit-card__confirm {
+  border: 1px solid var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+}
+
+.pm-processman-edit-card__confirm:hover:not(:disabled) {
+  border-color: var(--pm-tobe-assistant-strong);
+  background: var(--pm-tobe-assistant-strong);
+}
+
+.pm-processman-edit-card__reject {
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  color: var(--pm-tobe-muted-fg);
+}
+
+.pm-processman-edit-card__reject:hover {
+  border-color: var(--pm-tobe-destructive);
+  color: var(--pm-tobe-destructive);
+  background: color-mix(in srgb, var(--pm-tobe-destructive) 8%, var(--pm-tobe-surface));
+}

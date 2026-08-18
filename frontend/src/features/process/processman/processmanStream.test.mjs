@@ -77,3 +77,19 @@ test("mapStreamEventToMessage: token/action/done/error", () => {
   );
   assert.deepEqual(mapStreamEventToMessage("unknown", {}), { type: "noop" });
 });
+
+test("mapStreamEventToMessage: AGENT-3 confirm_required", () => {
+  const payload = {
+    pending_edit_id: "pe_123",
+    edit_plan: { note: "добавить шаг", operations: [] },
+    diff: [{ op: "add_node", node_id: "Task_1", title: "Новый шаг" }],
+    timeout_sec: 900,
+  };
+  assert.deepEqual(mapStreamEventToMessage(SSE_EVENT.CONFIRM_REQUIRED, payload), {
+    type: "confirm_required",
+    pendingEditId: "pe_123",
+    editPlan: { note: "добавить шаг", operations: [] },
+    diff: [{ op: "add_node", node_id: "Task_1", title: "Новый шаг" }],
+    timeoutSec: 900,
+  });
+});
