@@ -18,7 +18,7 @@ FORBIDDEN_ROOTS = {"app", "backend"}
 # случайное появление app.py в корне сервиса).
 ALLOWED_LOCAL_ROOTS = {
     "db", "schemas", "main",
-    "gateway", "memory", "runners", "routers", "services", "tests",
+    "gateway", "memory", "runners", "routers", "services", "tests", "edit",
 }
 
 
