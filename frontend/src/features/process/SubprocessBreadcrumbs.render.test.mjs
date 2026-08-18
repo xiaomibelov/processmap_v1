@@ -12,11 +12,22 @@ test("SubprocessBreadcrumbs renders the current path including the root session"
 
 test("SubprocessBreadcrumbs exposes clickable parents and a non-clickable current segment", () => {
   assert.match(source, /isLast/);
-  assert.match(source, /onNavigate\?\.\(crumb\?\.session_id\)/);
-  assert.match(source, /\{crumb\?\.name \|\| "Текущий"\}/);
+  assert.match(source, /onNavigate\?\.\(crumb\?\.session_id/);
+  assert.match(source, /crumb\?\.name \|\| "Без названия"/);
 });
 
 test("SubprocessBreadcrumbs no longer embeds the back arrow inside the path", () => {
   assert.doesNotMatch(source, /onBack/);
   assert.doesNotMatch(source, /←/);
+});
+
+test("SubprocessBreadcrumbs shows a stable id-based tooltip with session and element id", () => {
+  assert.match(source, /crumb\?\.session_id/);
+  assert.match(source, /crumb\?\.element_id/);
+  assert.match(source, /formatTooltip/);
+});
+
+test("SubprocessBreadcrumbs collapses the middle of a long trail", () => {
+  assert.match(source, /collapseBreadcrumbTrail/);
+  assert.match(source, /subprocess-breadcrumbs-ellipsis/);
 });

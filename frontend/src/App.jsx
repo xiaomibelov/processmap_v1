@@ -105,6 +105,8 @@ import {
   deriveLeaveNavigationRisk,
 } from "./features/process/navigation/leaveNavigationGuardModel";
 import { useAuth } from "./features/auth/AuthProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import { projectSessionsQueryKey } from "./features/explorer/projectSessionsQuery.js";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
 import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatus";
@@ -956,6 +958,7 @@ export default function App() {
   const parentViewportSnapshotRef = useRef(new Map());
   const sessionCacheRef = useRef(new Map());
   const bpmnXmlCacheRef = useBpmnXmlCache();
+  const queryClient = useQueryClient();
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1194,6 +1197,54 @@ export default function App() {
       bpmnXmlCacheRef.current.set(sid, xml);
     }
   }, [draft?.session_id, draft?.id, draft?.bpmn_xml]);
+
+  // After BPMN is persisted to the server, derived data (child sessions,
+  // explorer tree, drill-in breadcrumbs) must be reloaded so stale fragments
+  // do not survive the upload/save.
+  const handleBpmnSaved = useCallback(async (sessionId, projectId) => {
+    const sid = String(sessionId || "").trim();
+    const pid = String(projectId || "").trim();
+
+    // Drop runtime caches: child-session XML may have changed on the server.
+    try {
+      bpmnXmlCacheRef.current?.clear?.();
+    } catch {
+      /* noop */
+    }
+    try {
+      sessionCacheRef.current?.clear?.();
+    } catch {
+      /* noop */
+    }
+
+    // Invalidate explorer project-sessions so the session/subprocess tree
+    // refreshes when the user returns to the workspace.
+    if (pid) {
+      try {
+        await queryClient.invalidateQueries({ queryKey: projectSessionsQueryKey(pid) });
+      } catch {
+        /* noop */
+      }
+    }
+
+    // Rebuild drill-in breadcrumbs from the fresh navigation_stack.
+    if (sid) {
+      try {
+        const loaded = await apiGetSession(sid);
+        if (loaded.ok && loaded.session?.navigation_stack?.length > 0) {
+          setSubprocessBreadcrumbs(
+            loaded.session.navigation_stack.map((frame) => ({
+              session_id: frame.session_id,
+              name: frame.name || "",
+              element_id: frame.element_id_in_parent,
+            }))
+          );
+        }
+      } catch {
+        /* noop */
+      }
+    }
+  }, [queryClient]);
 
   // Register runtime callbacks for the unified property CRUD boundary.
   useEffect(() => {
@@ -4322,6 +4373,7 @@ export default function App() {
           await refreshSessions(projectId);
           await refreshMentionNotifications();
         }}
+        onBpmnSaved={handleBpmnSaved}
         onNewProject={() => setWizardOpen(true)}
         onNewBackendSession={() => setSessionFlowOpen(true)}
         selectedBpmnElement={selectedBpmnElement}
