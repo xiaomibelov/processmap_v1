@@ -12,6 +12,12 @@ export const AGENT_STATUS = Object.freeze({
   DONE: "done",
   STOPPED: "stopped",   // пользователь оборвал (Стоп)
   ERROR: "error",
+  // AGENT-3 — HITL карточка подтверждения правки на канвасе.
+  EDIT_PENDING: "edit_pending",
+  EDIT_APPLIED: "edit_applied",
+  EDIT_REJECTED: "edit_rejected",
+  EDIT_EXPIRED: "edit_expired",
+  EDIT_CONFLICT: "edit_conflict",
 });
 
 // Этапы pending-индикатора — ЧЕСТНЫЙ lifecycle запроса (без выдуманных
@@ -119,6 +125,35 @@ export function updateAgentMessage(sessionId, messageId, { text, meta, status } 
   if (text !== undefined) msg.text = String(text || "");
   if (meta !== undefined) msg.meta = meta || null;
   if (status !== undefined && Object.values(AGENT_STATUS).includes(status)) msg.status = status;
+  return msg;
+}
+
+/** Прикрепить к агент-сообщению карточку HITL-подтверждения правки. */
+export function attachPendingEdit(sessionId, messageId, payload = {}) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT) return null;
+  msg.pendingEdit = {
+    pendingEditId: String(payload.pendingEditId || ""),
+    editPlan: payload.editPlan && typeof payload.editPlan === "object" ? payload.editPlan : {},
+    diff: Array.isArray(payload.diff) ? payload.diff : [],
+    timeoutSec: Number(payload.timeoutSec || 0),
+    status: AGENT_STATUS.EDIT_PENDING,
+    result: null,
+    errorText: "",
+  };
+  msg.status = AGENT_STATUS.EDIT_PENDING;
+  return msg;
+}
+
+/** Обновить статус карточки HITL (applied/rejected/expired/conflict). */
+export function updatePendingEditStatus(sessionId, messageId, { status, result = null, errorText = "" } = {}) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT || !msg.pendingEdit) return null;
+  if (!Object.values(AGENT_STATUS).includes(status)) return null;
+  msg.pendingEdit.status = status;
+  msg.pendingEdit.result = result || null;
+  msg.pendingEdit.errorText = String(errorText || "");
+  msg.status = status;
   return msg;
 }
 
