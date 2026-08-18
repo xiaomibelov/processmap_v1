@@ -137,6 +137,36 @@ Auth/права: как у `PUT bpmn` (auth + edit-право на workspace с�
 Response: как у `PUT bpmn` (`{ok: true, ...}` + опциональные ключи
 subprocess-sync).
 
+### POST /api/sessions/{session_id}/subprocess/{element_id}/navigate
+
+Переход (drill-in) в подпроцесс / callActivity. Сервер находит или создаёт
+child-сессию, свежим XML которой является фрагмент родительской диаграммы.
+
+Response (200):
+
+```json
+{
+  "subprocess_session_id": "sess_child_789",
+  "subprocess_title": "Варка бульона",
+  "target_element_id": "Task_1",
+  "breadcrumbs": [
+    {"session_id": "sess_parent_123", "name": "Сырники", "element_id": "Subprocess_1"},
+    {"session_id": "sess_child_789", "name": "Варка бульона", "element_id": null}
+  ],
+  "bpmn_xml": "<?xml ...>"
+}
+```
+
+| Поле | Семантика |
+| --- | --- |
+| `subprocess_session_id` | ID child-сессии, в которую нужно переключить канвас. |
+| `subprocess_title` | Человекочитаемое имя подпроцесса из `bpmn:subProcess/@name` (или `callActivity/@name`). Fallback — «Без названия». |
+| `target_element_id` | Рекомендуемый элемент для фокуса внутри child-сессии. |
+| `breadcrumbs` | Стек навигации: каждый сегмент содержит `session_id`, `name` и `element_id` — id элемента в родителе, по которому произошёл drill-in. |
+
+Ошибки: 400 если элемент не `subProcess`/`callActivity`; 400 с деталями, если
+`element_id` неуникален в BPMN; 404 если фрагмент подпроцесса не найден.
+
 ## Explorer item aggregates (projects-table-v2)
 
 `GET /api/explorer` возвращает `items` (folder/project) с агрегатными полями счётчиков сессий.

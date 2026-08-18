@@ -161,6 +161,7 @@ export default function AppShell({
   noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
+  onBpmnSaved = null,
   subprocessBreadcrumbs = [],
   onBreadcrumbNavigate = null,
   onReturnToParent = null,
@@ -438,6 +439,7 @@ export default function AppShell({
               subprocessBreadcrumbs={subprocessBreadcrumbs}
               onBreadcrumbNavigate={onBreadcrumbNavigate}
               onReturnToParent={onReturnToParent}
+              onBpmnSaved={onBpmnSaved}
               bpmnXmlCacheRef={bpmnXmlCacheRef}
               bpmnStageRef={bpmnStageRef}
               focusElementId={focusElementId}
