@@ -10,6 +10,7 @@ import {
   pluralizeRu,
   sessionsCounterText,
   sessionsProgressPercent,
+  workspaceSectionCounterText,
 } from "./explorerTableFormat.js";
 
 test("pluralizeRu picks correct russian plural form", () => {
@@ -43,6 +44,16 @@ test("compositionProjectsText pluralizes project count", () => {
   assert.equal(compositionProjectsText(2), "2 проекта");
   assert.equal(compositionProjectsText(7), "7 проектов");
   assert.equal(compositionProjectsText(0), "0 проектов");
+});
+
+test("workspaceSectionCounterText pluralizes section count", () => {
+  assert.equal(workspaceSectionCounterText(1), "1 раздел");
+  assert.equal(workspaceSectionCounterText(2), "2 раздела");
+  assert.equal(workspaceSectionCounterText(4), "4 раздела");
+  assert.equal(workspaceSectionCounterText(7), "7 разделов");
+  assert.equal(workspaceSectionCounterText(11), "11 разделов");
+  assert.equal(workspaceSectionCounterText(21), "21 раздел");
+  assert.equal(workspaceSectionCounterText(0), "0 разделов");
 });
 
 test("sessionsCounterText renders done/total pair", () => {
