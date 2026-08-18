@@ -298,6 +298,149 @@ def _bounds_contained(inner, outer, tolerance: float = 0.0) -> bool:
     )
 
 
+_GRID_STEP_X = 120.0
+_GRID_STEP_Y = 80.0
+
+
+def preserve_existing_di(new_xml: str, old_xml: str) -> Optional[str]:
+    """Merge preserved DI from old_xml into new_xml.
+
+    - Shapes/edges whose element id exists in old_xml keep old bounds/waypoints.
+    - New shapes are placed in a free area to the right/bottom of preserved ones
+      using the same grid step as ``_generate_di_for_process``.
+    - New edges get straight waypoints between the final centers of their
+      source/target shapes.
+    - Returns ``new_xml`` unchanged if old_xml is unparseable or contains no DI.
+    - Returns ``None`` if new_xml is unparseable.
+    """
+    if not new_xml or not old_xml:
+        return None
+    try:
+        new_root = ET.fromstring(new_xml)
+    except Exception:
+        return None
+    try:
+        old_root = ET.fromstring(old_xml)
+    except Exception:
+        return new_xml
+
+    new_plane = None
+    for diagram in new_root.iter():
+        if _local_tag(diagram.tag) == "bpmndiagram":
+            for plane in diagram:
+                if _local_tag(plane.tag) == "bpmnplane":
+                    new_plane = plane
+                    break
+            break
+    if new_plane is None:
+        return new_xml
+
+    old_shapes: Dict[str, ET.Element] = {}
+    old_edges: Dict[str, ET.Element] = {}
+    for diagram in old_root.iter():
+        if _local_tag(diagram.tag) != "bpmndiagram":
+            continue
+        for plane in diagram:
+            if _local_tag(plane.tag) != "bpmnplane":
+                continue
+            for shape in plane:
+                tag = _local_tag(shape.tag)
+                if tag == "bpmnshape":
+                    eid = shape.attrib.get("bpmnElement")
+                    if eid:
+                        old_shapes[eid] = shape
+                elif tag == "bpmnedge":
+                    eid = shape.attrib.get("bpmnElement")
+                    if eid:
+                        old_edges[eid] = shape
+
+    if not old_shapes and not old_edges:
+        return new_xml
+
+    # Phase 1: preserve bounds for shapes that existed before.
+    new_shapes: List[ET.Element] = []
+    final_bounds: Dict[str, Tuple[float, float, float, float]] = {}
+    for shape in new_plane:
+        if _local_tag(shape.tag) != "bpmnshape":
+            continue
+        eid = shape.attrib.get("bpmnElement")
+        if not eid:
+            continue
+        bounds_el = shape.find(".//{http://www.omg.org/spec/DD/20100524/DC}Bounds")
+        if bounds_el is None:
+            continue
+        if eid in old_shapes:
+            old_bounds = _shape_bounds(old_shapes[eid])
+            if old_bounds:
+                for k, v in old_bounds.items():
+                    bounds_el.attrib[k] = str(v)
+        else:
+            new_shapes.append(shape)
+        final_bounds[eid] = tuple(
+            float(bounds_el.attrib.get(k, 0)) for k in ("x", "y", "width", "height")
+        )
+
+    # Phase 2: place new shapes in a free area using the same grid step.
+    max_x = 0.0
+    max_y = 0.0
+    for x, y, w, h in final_bounds.values():
+        max_x = max(max_x, x + w)
+        max_y = max(max_y, y + h)
+
+    anchor_x = max_x + _GRID_STEP_X
+    anchor_y = max_y + _GRID_STEP_Y
+
+    for idx, shape in enumerate(new_shapes):
+        eid = shape.attrib.get("bpmnElement")
+        bounds_el = shape.find(".//{http://www.omg.org/spec/DD/20100524/DC}Bounds")
+        if bounds_el is None:
+            continue
+        w = float(bounds_el.attrib.get("width", 100))
+        h = float(bounds_el.attrib.get("height", 80))
+        x = anchor_x + (idx % 3) * _GRID_STEP_X
+        y = anchor_y + (idx // 3) * _GRID_STEP_Y
+        bounds_el.attrib["x"] = str(int(x))
+        bounds_el.attrib["y"] = str(int(y))
+        bounds_el.attrib["width"] = str(int(w))
+        bounds_el.attrib["height"] = str(int(h))
+        final_bounds[eid] = (x, y, w, h)
+
+    # Phase 3: preserve old edge waypoints; recalculate new edges from final bounds.
+    for edge in list(new_plane):
+        if _local_tag(edge.tag) != "bpmnedge":
+            continue
+        eid = edge.attrib.get("bpmnElement")
+        if not eid:
+            continue
+
+        # Remove existing waypoints.
+        for wp in list(edge):
+            if _local_tag(wp.tag) == "waypoint":
+                edge.remove(wp)
+
+        if eid in old_edges:
+            for wp in old_edges[eid]:
+                if _local_tag(wp.tag) == "waypoint":
+                    ET.SubElement(edge, _ns("waypoint", DI_NS), wp.attrib)
+            continue
+
+        source_id = edge.attrib.get("sourceElement")
+        target_id = edge.attrib.get("targetElement")
+        if not source_id or not target_id:
+            flow_el = next((e for e in new_root.iter() if _element_id(e) == eid), None)
+            if flow_el is not None:
+                source_id = flow_el.attrib.get("sourceRef")
+                target_id = flow_el.attrib.get("targetRef")
+
+        if source_id in final_bounds and target_id in final_bounds:
+            sx, sy = _center(final_bounds[source_id])
+            tx, ty = _center(final_bounds[target_id])
+            ET.SubElement(edge, _ns("waypoint", DI_NS), {"x": str(sx), "y": str(sy)})
+            ET.SubElement(edge, _ns("waypoint", DI_NS), {"x": str(tx), "y": str(ty)})
+
+    return ET.tostring(new_root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
 def _recursive_copy_translate(src: ET.Element, dst_parent: ET.Element, offset_x: float, offset_y: float) -> None:
     new = ET.SubElement(dst_parent, src.tag, dict(src.attrib))
     if _local_tag(new.tag) in ("bounds", "waypoint"):

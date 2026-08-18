@@ -1,0 +1,23 @@
+{
+  "contour_id": "subprocess-preserve-di-on-sync",
+  "status": "ready_for_review",
+  "run_id": "wf-1787064107319-fix-subprocess-preserve-di",
+  "previous_contour": "feature/subprocess-layout-overwrite-warning",
+  "repo": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/fix-subprocess-preserve-di-on-sync",
+  "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+  "branch_at_planning": "fix/subprocess-preserve-di-on-sync",
+  "head": "0bb49484a33fbfbfda10c2c9c100d20ca01b31f1",
+  "origin_main": "0bb49484a33fbfbfda10c2c9c100d20ca01b31f1",
+  "merge_base": "0bb49484a33fbfbfda10c2c9c100d20ca01b31f1",
+  "planned_branch": "fix/subprocess-preserve-di-on-sync",
+  "planned_at": "2026-08-18T00:00:00Z",
+  "mode": "fix",
+  "allowed_changes": [
+    "backend/app/services/bpmn_navigation.py",
+    "backend/app/services/session_service.py",
+    "backend/tests/test_auto_create_subprocess_sessions.py",
+    "backend/tests/test_bpmn_navigation_helpers.py",
+    ".planning/contours/fix/subprocess-preserve-di-on-sync/*"
+  ],
+  "notes": "Preserve child subprocess DI during parent→child sync and create bpmn_versions snapshot before overwrite. Contour feature/subprocess-layout-overwrite-warning is paused."
+}

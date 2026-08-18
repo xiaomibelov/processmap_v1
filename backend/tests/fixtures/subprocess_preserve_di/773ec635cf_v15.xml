@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_subprocess" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Activity_0m5mlzm" name="Добавить ингредиент">
+    <bpmn:property id="Property_0bgvc1h" name="__targetRef_placeholder" />
+    <bpmn:startEvent id="Event_0ehaumf">
+      <bpmn:outgoing>Flow_0sm15fy</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_12yc0lk" name="Взять ингредиент">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ingredient" value="Крупа гречневая" />
+          <camunda:property name="container_tara" value="Гастроемкость 1/1 65 мм" />
+          <camunda:property name="ee_time" value="2" />
+          <camunda:property name="ee_operation" value="А" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0sm15fy</bpmn:incoming>
+      <bpmn:outgoing>Flow_0ih2nkd</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_0sm15fy" sourceRef="Event_0ehaumf" targetRef="Activity_12yc0lk" />
+    <bpmn:task id="Activity_0fpcwm9" name="Взвесить ингредиент">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ingredient" value="Крупа гречневая" />
+          <camunda:property name="ingredient_value" value="из задания" />
+          <camunda:property name="ingredient_um" value="кг" />
+          <camunda:property name="equipment" value="Весы высокоточные" />
+          <camunda:property name="ee_time" value="0,33*n" />
+          <camunda:property name="ee_operation" value="А" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0ih2nkd</bpmn:incoming>
+      <bpmn:outgoing>Flow_17y9utt</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_0ih2nkd" sourceRef="Activity_12yc0lk" targetRef="Activity_0fpcwm9" />
+    <bpmn:task id="Activity_1l1h3t3" name="Положить ингредиент">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ingredient" value="Крупа гречневая" />
+          <camunda:property name="container_tara" value="Гастроемкость 1/1 65 мм" />
+          <camunda:property name="container_tara_value" value="1 шт" />
+          <camunda:property name="ee_time" value="0,33" />
+          <camunda:property name="ee_operation" value="А" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_17y9utt</bpmn:incoming>
+      <bpmn:outgoing>Flow_030jbxn</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_17y9utt" sourceRef="Activity_0fpcwm9" targetRef="Activity_1l1h3t3" />
+    <bpmn:sequenceFlow id="Flow_030jbxn" sourceRef="Activity_1l1h3t3" targetRef="Event_0z8txn9" />
+    <bpmn:intermediateThrowEvent id="Event_0z8txn9">
+      <bpmn:incoming>Flow_030jbxn</bpmn:incoming>
+    </bpmn:intermediateThrowEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Activity_0m5mlzm">
+      <bpmndi:BPMNShape id="Event_0ehaumf_di" bpmnElement="Event_0ehaumf">
+        <dc:Bounds x="242" y="212" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_12yc0lk_di" bpmnElement="Activity_12yc0lk">
+        <dc:Bounds x="330" y="190" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0fpcwm9_di" bpmnElement="Activity_0fpcwm9">
+        <dc:Bounds x="490" y="190" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1l1h3t3_di" bpmnElement="Activity_1l1h3t3">
+        <dc:Bounds x="650" y="190" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1nlu5kw_di" bpmnElement="Event_0z8txn9">
+        <dc:Bounds x="812" y="212" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_0sm15fy_di" bpmnElement="Flow_0sm15fy">
+        <di:waypoint x="278" y="230" />
+        <di:waypoint x="330" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0ih2nkd_di" bpmnElement="Flow_0ih2nkd">
+        <di:waypoint x="430" y="230" />
+        <di:waypoint x="490" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_17y9utt_di" bpmnElement="Flow_17y9utt">
+        <di:waypoint x="590" y="230" />
+        <di:waypoint x="650" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_030jbxn_di" bpmnElement="Flow_030jbxn">
+        <di:waypoint x="750" y="230" />
+        <di:waypoint x="812" y="230" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+
