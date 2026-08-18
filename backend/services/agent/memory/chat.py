@@ -14,9 +14,17 @@ import re
 import uuid
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
+from edit import (
+    build_human_diff,
+    create_pending_edit,
+    EditApplyError,
+    propose_edit_plan,
+    validate_edit_plan,
+)
+from gateway import llm_store
 from gateway.gateway import complete, complete_cached, complete_stream
 from runners.action_runners import run_explain_step, run_step_qa, run_suggest_next
-from runners.monolith_client import search_rag
+from runners.monolith_client import get_session as monolith_get_session, search_rag
 from schemas import AgentChatIn, AgentChatOut
 
 from .context import AgentContext, load_context
@@ -25,12 +33,14 @@ from .schema_memory import load_schema_memory, schedule_memory_update
 
 
 FEATURE = "processman_agent"
+EDIT_FEATURE = "agent_edit"
+EDIT_PROPOSE_FEATURE = "agent_edit_propose"
 MAX_TOKENS = 1200
 ROUTER_FEATURE = "agent_router"
 ROUTER_MAX_TOKENS = 200
 SMALLTALK_MAX_TOKENS = 400
 SCHEMA_OVERVIEW_MAX_TOKENS = 400
-VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk"}
+VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk", "edit_canvas"}
 
 
 def _now_ms() -> int:
@@ -90,6 +100,9 @@ def _normalize_intent(text: Optional[str]) -> str:
         "documentation": "doc_qa",
         "suggestnext": "suggest_next",
         "next": "suggest_next",
+        "editcanvas": "edit_canvas",
+        "edit": "edit_canvas",
+        "canvas": "edit_canvas",
         "smalltalk": "smalltalk",
         "chat": "smalltalk",
     }
@@ -260,8 +273,8 @@ def _persist_assistant_turn(
     action: Optional[str] = None,
     action_payload: Dict[str, Any] = None,
     now_ms: Optional[int] = None,
-) -> AgentChatOut:
-    append_turn(
+) -> Tuple[str, AgentChatOut]:
+    turn_id = append_turn(
         session_id,
         user_id,
         org_id,
@@ -274,7 +287,7 @@ def _persist_assistant_turn(
         usage_json=usage,
         now_ms=now_ms,
     )
-    return AgentChatOut(
+    return turn_id, AgentChatOut(
         ok=True,
         status="ok",
         error="",
@@ -305,7 +318,7 @@ def _run_node_qa_branch(
     )
     message = str(result.get("answer") or result.get("message") or result.get("note") or "")
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
-    return _persist_assistant_turn(
+    _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
@@ -317,6 +330,7 @@ def _run_node_qa_branch(
         action_payload=result,
         now_ms=_now_ms(),
     )
+    return out
 
 
 def _run_suggest_next_branch(
@@ -337,7 +351,7 @@ def _run_suggest_next_branch(
     )
     message = str(result.get("message") or result.get("note") or "")
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
-    return _persist_assistant_turn(
+    _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
@@ -349,6 +363,7 @@ def _run_suggest_next_branch(
         action_payload=result,
         now_ms=_now_ms(),
     )
+    return out
 
 
 def _run_schema_overview_branch(
@@ -363,7 +378,7 @@ def _run_schema_overview_branch(
 ) -> AgentChatOut:
     memory = load_schema_memory(session_id, org_id)
     if memory and memory.get("projection_digest") == ctx.digest and memory.get("summary"):
-        return _persist_assistant_turn(
+        _, out = _persist_assistant_turn(
             session_id,
             user_id,
             org_id,
@@ -375,6 +390,7 @@ def _run_schema_overview_branch(
             action_payload={},
             now_ms=_now_ms(),
         )
+        return out
 
     prompt_text = (
         "Кратко опиши BPMN-схему ниже на русском языке. "
@@ -396,7 +412,7 @@ def _run_schema_overview_branch(
 
     message = str(result.get("text") or "").strip()
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
-    return _persist_assistant_turn(
+    _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
@@ -408,6 +424,7 @@ def _run_schema_overview_branch(
         action_payload={},
         now_ms=_now_ms(),
     )
+    return out
 
 
 def _run_doc_qa_branch(
@@ -461,7 +478,7 @@ def _run_doc_qa_branch(
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
-    return _persist_assistant_turn(
+    _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
@@ -473,6 +490,7 @@ def _run_doc_qa_branch(
         action_payload={"results_count": len(results)},
         now_ms=_now_ms(),
     )
+    return out
 
 
 def _run_free_answer_branch(
@@ -518,7 +536,7 @@ def _run_free_answer_branch(
                 action_payload = action_result
                 assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
 
-    return _persist_assistant_turn(
+    _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
@@ -529,6 +547,222 @@ def _run_free_answer_branch(
         action=action_name,
         action_payload=action_payload,
         now_ms=_now_ms(),
+    )
+
+    return out
+
+
+def _edit_feature_enabled(org_id: str) -> Optional[str]:
+    """Проверить, что agent_edit разрешён. Вернуть error или None."""
+    flag = llm_store.get_feature_flag(EDIT_FEATURE)
+    if flag is not None and not flag.get("enabled"):
+        return "feature 'agent_edit' is disabled"
+    if flag is not None:
+        limit = int(flag.get("daily_token_limit") or 0)
+        if limit > 0:
+            used = llm_store.usage_daily_tokens(EDIT_FEATURE, org_id, int(_now_ms()) - 24 * 3600)
+            if used >= limit:
+                return f"daily token limit reached ({used}/{limit})"
+    return None
+
+
+def _run_edit_canvas_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    """Непотоковая ветка edit_canvas: возвращает action='edit_canvas' с diff."""
+    disabled = _edit_feature_enabled(org_id)
+    if disabled:
+        _, out = _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message=disabled,
+            usage={},
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action="edit_canvas",
+            action_payload={"status": "disabled"},
+            now_ms=_now_ms(),
+        )
+        return out
+
+    edit_plan, meta = propose_edit_plan(
+        question=payload.message,
+        projection=ctx.projection,
+        token=token,
+        session_id=session_id,
+        org_id=org_id,
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        selected_node_id=payload.selected_step_id,
+    )
+
+    if edit_plan is None:
+        message = str(meta.get("error") or "Не удалось составить план правок")
+        _, out = _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message=message,
+            usage={},
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action="edit_canvas",
+            action_payload={"status": meta.get("status", "error"), "validation_errors": meta.get("validation_errors", [])},
+            now_ms=_now_ms(),
+        )
+        return out
+
+    # Валидируем ещё раз перед сохранением.
+    validation_errors = validate_edit_plan(edit_plan, ctx.projection, token, session_id)
+    if validation_errors:
+        _, out = _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message="Не удалось составить корректный план правок",
+            usage={},
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action="edit_canvas",
+            action_payload={"status": "edit_plan_failed", "validation_errors": validation_errors},
+            now_ms=_now_ms(),
+        )
+        return out
+
+    _, assistant_turn = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=str(edit_plan.get("note") or "Агент предлагает изменить схему"),
+        usage={},
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="edit_canvas",
+        action_payload={"edit_plan": edit_plan, "status": "pending_confirmation"},
+        now_ms=_now_ms(),
+    )
+
+    pending_id = create_pending_edit(
+        session_id=session_id,
+        org_id=org_id,
+        turn_id=assistant_turn.id if hasattr(assistant_turn, "id") else "",
+        edit_plan=edit_plan,
+        now_ms=_now_ms(),
+    )
+
+    _, out = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=str(edit_plan.get("note") or "Агент предлагает изменить схему"),
+        usage={},
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="edit_canvas",
+        action_payload={
+            "pending_edit_id": pending_id,
+            "edit_plan": edit_plan,
+            "diff": build_human_diff(edit_plan),
+            "timeout_sec": 900,
+            "status": "pending_confirmation",
+        },
+        now_ms=_now_ms(),
+    )
+
+    return out
+
+
+def _run_edit_canvas_branch_stream(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    turn_id: str,
+    client_turn_id: Optional[str],
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Streaming ветка edit_canvas: yield confirm_required и не завершает turn."""
+    disabled = _edit_feature_enabled(org_id)
+    if disabled:
+        _ = _persist_assistant_turn(
+            session_id, user_id, org_id,
+            message=disabled, usage={}, ctx=ctx,
+            client_turn_id=client_turn_id, action="edit_canvas",
+            action_payload={"status": "disabled"}, now_ms=_now_ms(),
+        )
+        yield ("error", {"status": "disabled", "error": disabled})
+        return
+
+    edit_plan, meta = propose_edit_plan(
+        question=payload.message,
+        projection=ctx.projection,
+        token=token,
+        session_id=session_id,
+        org_id=org_id,
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        selected_node_id=payload.selected_step_id,
+    )
+
+    if edit_plan is None:
+        message = str(meta.get("error") or "Не удалось составить план правок")
+        _ = _persist_assistant_turn(
+            session_id, user_id, org_id,
+            message=message, usage={}, ctx=ctx,
+            client_turn_id=client_turn_id, action="edit_canvas",
+            action_payload={"status": meta.get("status", "error"), "validation_errors": meta.get("validation_errors", [])},
+            now_ms=_now_ms(),
+        )
+        yield ("error", {"status": meta.get("status", "error"), "error": message})
+        return
+
+    validation_errors = validate_edit_plan(edit_plan, ctx.projection, token, session_id)
+    if validation_errors:
+        _ = _persist_assistant_turn(
+            session_id, user_id, org_id,
+            message="Не удалось составить корректный план правок", usage={}, ctx=ctx,
+            client_turn_id=client_turn_id, action="edit_canvas",
+            action_payload={"status": "edit_plan_failed", "validation_errors": validation_errors},
+            now_ms=_now_ms(),
+        )
+        yield ("error", {"status": "edit_plan_failed", "error": "Не удалось составить корректный план правок"})
+        return
+
+    assistant_message = str(edit_plan.get("note") or "Агент предлагает изменить схему")
+    _ = _persist_assistant_turn(
+        session_id, user_id, org_id,
+        message=assistant_message, usage={}, ctx=ctx,
+        client_turn_id=client_turn_id, action="edit_canvas",
+        action_payload={"edit_plan": edit_plan, "status": "pending_confirmation"},
+        now_ms=_now_ms(),
+    )
+
+    pending_id = create_pending_edit(
+        session_id=session_id,
+        org_id=org_id,
+        turn_id=turn_id,
+        edit_plan=edit_plan,
+        now_ms=_now_ms(),
+    )
+
+    yield ("token", {"delta": assistant_message + "\n\n"})
+    yield (
+        "confirm_required",
+        {
+            "pending_edit_id": pending_id,
+            "edit_plan": edit_plan,
+            "diff": build_human_diff(edit_plan),
+            "timeout_sec": 900,
+        },
     )
 
 
@@ -626,6 +860,9 @@ def run_turn(
     if intent == "suggest_next" and _step_in_projection(ctx.projection, payload.selected_step_id):
         return _run_suggest_next_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
+    if intent == "edit_canvas":
+        return _run_edit_canvas_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
+
     return _run_free_answer_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
 
@@ -680,7 +917,7 @@ def run_turn_stream(
     )
 
     def _finish(text: str, usage: Dict[str, Any], action: Optional[str] = None, action_payload: Dict[str, Any] = None) -> None:
-        _persist_assistant_turn(
+        _ = _persist_assistant_turn(
             sid,
             uid,
             oid,
@@ -706,6 +943,12 @@ def run_turn_stream(
         message = str(result.get("message") or result.get("note") or "")
         yield from _finish(message, {}, action="suggest-next", action_payload=result)
         yield ("action", {"action": "suggest-next", "payload": result})
+        return
+
+    if intent == "edit_canvas":
+        yield from _run_edit_canvas_branch_stream(
+            payload, ctx, sid, uid, oid, token, turn_id, client_turn_id
+        )
         return
 
     if intent == "schema_overview":
@@ -780,7 +1023,7 @@ def run_turn_stream(
 
     if stream_error is not None:
         text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
-        _persist_assistant_turn(
+        _ = _persist_assistant_turn(
             sid,
             uid,
             oid,
@@ -811,7 +1054,7 @@ def run_turn_stream(
                     assistant_message = str(action_result.get("message") or action_result.get("note") or collected_text)
                     yield ("action", {"action": action_name, "payload": action_payload})
 
-    _persist_assistant_turn(
+    _ = _persist_assistant_turn(
         sid,
         uid,
         oid,
