@@ -1,6 +1,6 @@
 # AGENT-2: RAG-эволюция — гибридный поиск, новые источники, инкрементальная индексация
 
-> **СТАТУС: ПЛАН, редакция 1. Требует апрува владельца. Реализацию не начинать.**  
+> **СТАТУС: ПЛАН, редакция 2, решения владельца внесены. Требует апрува владельца. Реализацию не начинать.**  
 > Дата: 2026-08-17. Ветка: `docs/agent-2-plan` от `origin/main` @ `3ce04bb0`.  
 > База: AGENT-1 уже в `main` (`docs/agent/AGENT1_VERIFICATION.md` PASS, K1–K3), монолитный `backend/app/agent/` и флаг `LLM_VIA_AGENT_SVC` **не трогаются** (soak на боевом).
 
@@ -70,13 +70,13 @@ curl -X POST https://vvchat.vkusvill.ru/red-mad-router/v1/embeddings \
 
 | Вариант | Суть | Плюсы | Минусы | Оценка |
 |---|---|---|---|---|
-| **(а) Локальный sidecar `multilingual-e5-large`** | Отдельный контейнер (CPU, onnx/sentence-transformers), endpoint `/embeddings` внутри compose | Нет внешних зависимостей; размерность ~1024; русский/мультиязык хорошо | +400–600 MB RAM, +~1 GB образ; время кодирования на слабом CPU | Рекомендуется |
+| **(а) Локальный sidecar `multilingual-e5-small`** | Отдельный контейнер (CPU, onnx/sentence-transformers), endpoint `/embeddings` внутри compose | Нет внешних зависимостей; ~384 dim; русский/мультиязык достаточно; 512 MB RAM | Меньше точность, чем e5-large; апгрейд до large при провале recall@5 | Рекомендуется (решение владельца) |
 | **(б) Внешний API эмбеддингов** | OpenAI/Azure/Yandex — отдельный ключ и биллинг | Просто, не грузит CPU | Ещё один провайдер/секрет; латентность сети; стоимость | Возможно, но не через VVPROXY |
 | **(в) Остаться на BM25 + query-expansion** | Без векторов; cheap-модель расширяет запрос синонимами/алиасами | 0 инфраструктуры; работает сейчас | Плохо на семантических вопросах («что такое шокер?» → котёл vs охлаждение) | Fallback, если (а) не пройдёт PoC |
 
 ### 0.3 Рекомендация владельцу
 
-**Принять вариант (а)** — локальный sidecar `multilingual-e5-large` (или `intfloat/multilingual-e5-small` если RAM критична) как **единственный embedding-провайдер** внутри compose. Внешний API (вариант б) — отдельным контуром после AGENT-2, если понадобится масштаб.
+**Принят вариант (а)** — локальный sidecar `intfloat/multilingual-e5-small` как **единственный embedding-провайдер** внутри compose, memory limit **512 MB** (`docker-compose.yml`). Внешний API (вариант б) — отдельным контуром после AGENT-2. Апгрейд до `multilingual-e5-large` — только если eval-set `recall@5` не пройдёт на small.
 
 **Почему не pgvector в Postgres:**
 - Образ `postgres:16-alpine` не содержит pgvector. Переход на `pgvector/pgvector:pg16` требует миграции существующего volume (это возможно, но расширяет scope).
@@ -84,7 +84,7 @@ curl -X POST https://vvchat.vkusvill.ru/red-mad-router/v1/embeddings \
 
 | Подход | Зависимости | Поиск | Сложность внедрения | Риск |
 |---|---|---|---|---|
-| **pgvector в Postgres** | Сменить образ БД; `CREATE EXTENSION vector`; миграция `rag_embeddings.vector_data` → `vector(1024)` | SQL `<->` оператор, индекс IVFFlat/hnsw | Средняя (данные + инфра) | Образ БД меняется; тестировать на stage |
+| **pgvector в Postgres** | Сменить образ БД; `CREATE EXTENSION vector`; миграция `rag_embeddings.vector_data` → `vector(384)` (для e5-small) | SQL `<->` оператор, индекс IVFFlat/hnsw | Средняя (данные + инфра) | Образ БД меняется; тестировать на stage |
 | **BYTEA + Python cosine** | Текущая схема уже `BYTEA`; numpy/scipy | Загрузка векторов org/model в память, `cosine_similarity` | Низкая | Память при большом корпусе; `_MAX_CHUNKS_LOAD=2000` ограничивает |
 
 **Рекомендация: начать с BYTEA + Python cosine** (используем существующую `rag_embeddings.vector_data`), а pgvector вынести в отдельный infra-контур. Это позволяет пройти гейт AGENT-2 без смены образа БД. При росте корпуса (>10k чанков/org) — мигрировать на pgvector.
@@ -115,7 +115,7 @@ curl -X POST https://vvchat.vkusvill.ru/red-mad-router/v1/embeddings \
      ADD COLUMN IF NOT EXISTS hybrid_enabled INTEGER NOT NULL DEFAULT 0,
      ADD COLUMN IF NOT EXISTS vector_weight REAL NOT NULL DEFAULT 0.5,
      ADD COLUMN IF NOT EXISTS bm25_weight REAL NOT NULL DEFAULT 0.5,
-     ADD COLUMN IF NOT EXISTS embedding_model_id TEXT NOT NULL DEFAULT 'local-e5';
+     ADD COLUMN IF NOT EXISTS embedding_model_id TEXT NOT NULL DEFAULT 'local-e5-small';
    ```
 3. Обновить `backend/scripts/db_bootstrap.py:30`: `LINEAR += "023"`, `MARKERS += "023"`.
 
@@ -125,7 +125,7 @@ curl -X POST https://vvchat.vkusvill.ru/red-mad-router/v1/embeddings \
 
 ```python
 class HybridSearch:
-    def __init__(self, org_id: str, embedding_model_id: str = "local-e5"):
+    def __init__(self, org_id: str, embedding_model_id: str = "local-e5-small"):
         self.org_id = org_id
         self.model_id = embedding_model_id
 
@@ -155,12 +155,12 @@ embedding:
   ports:
     - "${EMBEDDING_PORT:-8009}:8000"
   environment:
-    - MODEL_NAME=intfloat/multilingual-e5-large
+    - MODEL_NAME=intfloat/multilingual-e5-small
   deploy:
     resources:
       limits:
         cpus: "2.0"
-        memory: 1G
+        memory: 512M
 ```
 
 - Endpoint `POST /v1/embeddings` — OpenAI-совместимый.
@@ -213,7 +213,7 @@ _ALLOWED_SOURCE_TYPES = {
 ### 2.3 Индексация новых источников
 
 - `property_dictionary` / `operation_catalog` / `glossary` — отдельный endpoint `POST /api/rag/index-org-sources` (platform-admin/org-admin) + автоматическая переиндексация при изменении справочника.
-- `tobe_doc` — отдельный endpoint `POST /api/rag/index-doc` (admin) после того, как источник появится.
+- `tobe_doc` — endpoint-заготовка `POST /api/rag/index-doc` (admin) остаётся, но наполнение/индексация вынесены за scope AGENT-2 (решение владельца).
 
 ### 2.4 Тест
 
@@ -235,7 +235,7 @@ if _has_product_actions(s):
     schedule_session_index(sid, org_scope, "product_action")
 ```
 
-Фоновая задача — **не блокирует сохранение**. Способ: Celery (`celery-worker` уже в compose) или Redis queue + lightweight worker. Рекомендация: переиспользовать Celery, т.к. `celery-worker` уже поднят (`docker-compose.yml:43`).
+Фоновая задача — **не блокирует сохранение**. **Решение владельца: использовать Celery.** Создать отдельный `backend/app/tasks/rag_tasks.py` (самодостаточный, без импортов из `backend/app/tasks.py` и без импорта `tasks.py` в `rag_tasks.py`) — учесть **Blocker #5 аудита** (циклические импорты в Celery-тасках). Добавить unit-тест `backend/tests/test_rag_tasks_no_cycles.py`: `import backend.app.tasks.rag_tasks` не порождает циклов и не тянет за собой `backend.app.tasks`.
 
 ### 3.2 BPMN-XML истина
 
@@ -263,9 +263,9 @@ if _has_product_actions(s):
 mode: Optional[str] = Query(default="hybrid", regex="^(bm25|vector|hybrid)$")
 ```
 
-- `bm25` — текущее поведение.
-- `vector` — только косинус (для eval).
-- `hybrid` — RRF BM25 + vector.
+- `bm25` — текущее поведение; `mode_effective="bm25"`.
+- `vector` — только косинус (для eval); `mode_effective="vector"`.
+- `hybrid` — RRF BM25 + vector; если embedding-сервис недоступен — деградация в `bm25`, поле `mode_effective="bm25"` в ответе.
 
 ### 4.2 Источники по умолчанию для doc_qa
 
@@ -285,12 +285,12 @@ action_payload={
 }
 ```
 
-Фронт рендерит раздел «Источники» под ответом (аналог `trace` в LLM4).
+Фронт рендерит раздел «Источники» под ответом (аналог `trace` в LLM4). **Включено в scope AGENT-2:** компонент `ProcessmanTobe` (`frontend/src/features/process/processman/ProcessmanTobe.jsx`) получает `action_payload.sources` из `POST /agent/chat` и отображает список источников с `source_type`, `source_id`, `score`.
 
 ### 4.4 Деградация
 
-- pgvector/embedding-сервис недоступен → `mode=bm25`.
-- BM25 выключен → `free-answer` по схеме.
+- embedding-сервис недоступен → `mode=hybrid` отрабатывает как `bm25`, в ответе `mode_effective="bm25"`.
+- BM25 выключен (`rag_settings.enabled=false`) → `free-answer` по схеме.
 - Все статусы — HTTP 200, не 500.
 
 ---
@@ -337,16 +337,19 @@ action_payload={
 | неизменённая схема = 0 новых чанков | `rag_index` returns `was_updated=false, chunks_created=0` | PASS/FAIL |
 | регрессия contract-suite и тестов сервиса | `pytest -m contract`, `pytest services/agent/tests` | PASS/FAIL |
 | 0 LLM-вызовов на открытие/history | `llm_usage` count до/после | PASS/FAIL |
+| sidecar `embedding` остановлен → `doc_qa` отвечает на BM25 без 500 | `docker compose stop embedding`; POST `/agent/chat` с doc_qa-вопросом; ответ `mode_effective="bm25"` | PASS/FAIL |
 
 ---
 
-## 8. Открытые вопросы владельцу
+## 8. Решения владельца (2026-08-17)
 
-1. **Эмбеддинги**: принять ли вариант (а) — локальный sidecar `multilingual-e5-large` + хранение векторов в `BYTEA`? Или сразу переходить на pgvector?
-2. **tobe_doc**: где сейчас живёт документация to_be? Создавать ли новый источник/таблицу под неё?
-3. **Инкрементальная индексация**: использовать существующий Celery-worker (`celery-worker` в compose) или сделать Redis queue + in-process worker по аналогии с `agent_schema_memory`?
-4. **Расход RAM на sidecar**: лимит 1G приемлем? Попробовать `e5-small` (~400 MB) вместо `e5-large`?
-5. **Вынос RAG в сервис**: откладываем до следующего контура — ок?
+Все открытые вопросы закрыты; план скорректирован.
+
+1. **Эмбеддинги** — локальный sidecar `intfloat/multilingual-e5-small`, memory limit 512 MB; хранение векторов в существующей `BYTEA`-колонке `rag_embeddings.vector_data`. Апгрейд до `multilingual-e5-large` — только если eval-set `recall@5` не пройдёт на small.
+2. **tobe_doc** — выведен из scope AGENT-2. `source_type="tobe_doc"` и endpoint-заготовка `/api/rag/index-doc` остаются в плане, но индексация и наполнение — отдельным контуром после AGENT-2.
+3. **Инкрементальная индексация** — Celery. Создать `backend/app/tasks/rag_tasks.py`, самодостаточный, **без импортов из `backend/app/tasks.py`**. Учесть **Blocker #5 аудита** — тест на отсутствие циклических импортов.
+4. **RAM sidecar** — лимит 512 MB (подтверждено).
+5. **Вынос RAG в сервис** — отложен. Триггер пересмотра: PASS гейта AGENT-2 + рост корпуса >10k чанков/org или необходимость масштабировать embedding независимо.
 
 ---
 
@@ -362,14 +365,15 @@ action_payload={
 | `backend/app/rag/chunker.py` | Чанкеры для `property_dictionary`, `operation_catalog`, `glossary`, `tobe_doc` | |
 | `backend/app/rag/indexer.py` | Поддержка новых `source_type` | |
 | `backend/app/rag/storage_rag.py` | CRUD для `rag_embeddings` | |
-| `backend/app/routers/rag.py` | `mode`, новые `source_type`, `/index-org-sources` | |
+| `backend/app/routers/rag.py` | `mode`, `mode_effective`, новые `source_type`, `/index-org-sources`, `/index-doc` (заготовка) | |
 | `backend/app/storage.py` | Триггер индексации в `SessionStorage.save()` | |
-| `docker-compose.yml` | Сервис `embedding` | |
+| `backend/app/tasks/rag_tasks.py` | Celery-таски индексации; без импортов из `tasks.py` | Новый модуль |
+| `docker-compose.yml` | Сервис `embedding` (`multilingual-e5-small`, 512M) | |
 | `deploy.sh` / `verify-deploy.sh` | Поднять/проверить `embedding` | |
 | `backend/services/agent/runners/monolith_client.py` | `mode=hybrid`, убрать `source_type` | |
 | `backend/services/agent/memory/chat.py` | `action_payload.sources` для `doc_qa` | |
-| `frontend/src/features/process/processman/ProcessmanTobe.jsx` | Рендер раздела «Источники» | По решению владельца |
-| `backend/tests/test_rag_*.py` | Новые/обновлённые тесты | |
+| `frontend/src/features/process/processman/ProcessmanTobe.jsx` | Рендер раздела «Источники» | Включено в scope |
+| `backend/tests/test_rag_*.py` | Новые/обновлённые тесты, включая `test_rag_tasks_no_cycles.py` | |
 
 ---
 
