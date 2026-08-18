@@ -27,10 +27,14 @@ import psycopg
 # 010/011 НЕ считалась «невалидной» и не уводилась stamp'ом вниз до 009
 # (иначе каждый рестарт api пересаживал upgrade на неидемпотентную 010 →
 # column process_layer already exists → ретраи + degraded-старт).
-LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023"]
+LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023", "024", "025"]
 
 # маркер «объект ревизии существует» (SELECT 1 ... LIMIT 1)
 MARKERS = {
+    # AGENT-3: маркер 025 — seed-промт agent_edit v1 (data-маркер).
+    "025": "SELECT 1 FROM llm_prompts WHERE id='llmprompt_agent_edit_v1' LIMIT 1",
+    # AGENT-3: маркер 024 — таблица agent_pending_edits (структурный маркер).
+    "024": "SELECT 1 FROM information_schema.tables WHERE table_name='agent_pending_edits' LIMIT 1",
     # AGENT-2: маркер 023 — колонки hybrid search в rag_settings (структурный маркер).
     "023": "SELECT 1 FROM information_schema.columns WHERE table_name='rag_settings' AND column_name='hybrid_enabled' LIMIT 1",
     # AGENT-1: маркер 022 — seed-промт processman_agent v2 (data-маркер).
