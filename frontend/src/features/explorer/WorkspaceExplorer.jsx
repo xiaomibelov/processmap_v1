@@ -1310,6 +1310,22 @@ function WorkspaceSidebarActiveCounters({ workspaceId }) {
   );
 }
 
+// ─── Explorer Left Column Header ──────────────────────────────────────────────
+// Вынесен на верхний уровень: определение функции внутри render приводит к
+// пересозданию компонента на каждом рендере и ломает stable reconciliation.
+
+function ExplorerSidebarHeaderBlock() {
+  const header = useExplorerSidebarHeader();
+  return (
+    <div
+      className="h-10 px-3 border-b border-border flex items-center gap-2 overflow-hidden whitespace-nowrap bg-panel"
+      data-testid="explorer-sidebar-header"
+    >
+      {header || <span className="min-w-0 flex-1" aria-hidden="true" />}
+    </div>
+  );
+}
+
 // ─── Workspace Sidebar ────────────────────────────────────────────────────────
 
 function WorkspaceSidebar({
@@ -2629,18 +2645,6 @@ function ExplorerPane({
     }
   }, [onNavigateToFolder, onNavigateToProject, onOpenSession, page?.breadcrumbs, workspaceId]);
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="space-y-2 w-full max-w-lg px-6">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-10 rounded-lg bg-border/30 animate-pulse" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   const headerCrumbs = Array.isArray(page?.breadcrumbs) ? page.breadcrumbs : [];
   const headerCrumbItems = headerCrumbs.map((crumb, index) => ({
     key: `${crumb.type}-${crumb.id || "root"}`,
@@ -2692,7 +2696,20 @@ function ExplorerPane({
       />
     </>
   );
+  // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(explorerSidebarHeader);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="space-y-2 w-full max-w-lg px-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-10 rounded-lg bg-border/30 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const explorerHeader = (
       <div className="px-4 pr-5 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
@@ -3813,24 +3830,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     }
   }, [handleOpenSessionRequest, projectId, workspaceId]);
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="space-y-2 w-full max-w-lg px-6">
-          {[1, 2, 3].map((i) => <div key={i} className="h-10 rounded-lg bg-border/30 animate-pulse" />)}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return <div className="flex-1 flex items-center justify-center p-8 text-danger text-sm">{error}</div>;
-  }
-
-  const createSessionLabel = projectNavLayout.shortCreateLabels ? "Сессия" : "Новая сессия";
-  const sessionCountersFull = `Сессии: ${sessionCount}`;
-  const sessionCountersShort = String(sessionCount);
-
   // Блок «назад + путь» для левой колонки (uiux/sidebar-header-join-v1).
   const projectSidebarHeader = (
     <>
@@ -3855,10 +3854,30 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       />
     </>
   );
+  // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(projectSidebarHeader);
 
   // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
   const navSlotEl = useWorkspaceMainNavSlot();
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="space-y-2 w-full max-w-lg px-6">
+          {[1, 2, 3].map((i) => <div key={i} className="h-10 rounded-lg bg-border/30 animate-pulse" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="flex-1 flex items-center justify-center p-8 text-danger text-sm">{error}</div>;
+  }
+
+  const createSessionLabel = projectNavLayout.shortCreateLabels ? "Сессия" : "Новая сессия";
+  const sessionCountersFull = `Сессии: ${sessionCount}`;
+  const sessionCountersShort = String(sessionCount);
+
   const projectHeader = (
       <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
         {/* Часть А-2 (nav-zone): одна строка ~40px — статус, табы, поиск, создание, мета справа.
@@ -4160,20 +4179,6 @@ export default function WorkspaceExplorer({
       </div>
     );
   }
-
-// ─── Explorer Left Column Header ─────────────────────────────────────────────
-
-function ExplorerSidebarHeaderBlock() {
-  const header = useExplorerSidebarHeader();
-  return (
-    <div
-      className="h-10 px-3 border-b border-border flex items-center gap-2 overflow-hidden whitespace-nowrap bg-panel"
-      data-testid="explorer-sidebar-header"
-    >
-      {header || <span className="min-w-0 flex-1" aria-hidden="true" />}
-    </div>
-  );
-}
 
   return (
     <ExplorerSidebarProvider>
