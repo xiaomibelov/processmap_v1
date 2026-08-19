@@ -147,7 +147,7 @@ jobs:
             LAST_HTTP="000"
             for attempt in $(seq 1 18); do
               VERSION_RESPONSE=$(curl -sS -m 10 -w '\n__HTTP__%{http_code}' https://processmap.ru/version 2>&1 || true)
-              LAST_HTTP=$(echo "${VERSION_RESPONSE}" | grep -o '__HTTP__[0-9]*' | tail -1 | cut -c8-)
+              LAST_HTTP=$(echo "${VERSION_RESPONSE}" | grep -o '__HTTP__[0-9]*' | tail -1 | sed 's/__HTTP__//')
               if [ "${LAST_HTTP}" = "200" ]; then break; fi
               echo "[deploy-prod] /version not ready (http=${LAST_HTTP:-000}, attempt ${attempt}/18) — retry in 10s"
               sleep 10
