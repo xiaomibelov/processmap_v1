@@ -1294,7 +1294,14 @@ const WorkspaceSidebarActiveCounters = React.memo(function WorkspaceSidebarActiv
   const { data: page, isFetching } = useQuery(options);
   const items = Array.isArray(page?.items) ? page.items : [];
   const sectionCount = items.filter((item) => item?.type === "folder").length;
-  const projectCount = items.filter((item) => item?.type === "project").length;
+  // Root cause прежнего «0 проектов»: счётчик брал только top-level projects,
+  // а в ФК все проекты лежат внутри разделов. Суммируем descendant_projects_count
+  // по разделам и прибавляем проекты на верхнем уровне.
+  const projectCount = items.reduce((sum, item) => {
+    if (item?.type === "project") return sum + 1;
+    if (item?.type === "folder") return sum + (item?.descendant_projects_count || 0);
+    return sum;
+  }, 0);
   const compact = useViewportBelow(1100);
 
   if (!workspaceId) return null;
@@ -1308,7 +1315,7 @@ const WorkspaceSidebarActiveCounters = React.memo(function WorkspaceSidebarActiv
 
   return (
     <span
-      className={`block truncate text-[11px] leading-tight ${isFetching ? "text-muted/40" : "text-muted/75"}`}
+      className={`block whitespace-nowrap text-[11px] leading-tight ${isFetching ? "text-muted/40" : "text-muted/75"}`}
       title={title}
     >
       {compact ? shortLabel : full}
@@ -4192,7 +4199,7 @@ export default function WorkspaceExplorer({
         ) : null}
         <div className="h-full flex flex-row min-h-0 font-sans">
           {/* Left column: back button on top, workspace list below (single surface). */}
-          <div className="w-60 min-w-[15rem] shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border border-border border-r-0 overflow-hidden">
+          <div className="min-w-[15rem] w-fit shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border border-border border-r-0 overflow-hidden">
             <ExplorerSidebarHeaderBlock />
             <div className="flex-1 overflow-hidden">
               <WorkspaceSidebar
