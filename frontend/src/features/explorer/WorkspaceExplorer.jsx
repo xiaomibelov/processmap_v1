@@ -1262,33 +1262,40 @@ function ExplorerSearchResults({ model, onOpenResult }) {
 
 // ─── Workspace Sidebar Counters ───────────────────────────────────────────────
 
-function WorkspaceSidebarActiveCounters({ workspaceId }) {
-  const { data: page, isFetching } = useQuery({
-    ...explorerPageQueryOptions(workspaceId, ""),
-    placeholderData: keepPreviousData,
-    enabled: Boolean(workspaceId),
-  });
+function useViewportBelow(breakpoint) {
+  const [below, setBelow] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const update = () => setBelow(mq.matches);
+    update();
+    if (mq.addEventListener) {
+      mq.addEventListener("change", update);
+      return () => mq.removeEventListener("change", update);
+    }
+    mq.addListener(update);
+    return () => mq.removeListener(update);
+  }, [breakpoint]);
+  return below;
+}
+
+const WorkspaceSidebarActiveCounters = React.memo(function WorkspaceSidebarActiveCounters({ workspaceId }) {
+  const options = useMemo(
+    () => ({
+      ...explorerPageQueryOptions(workspaceId, ""),
+      placeholderData: keepPreviousData,
+      enabled: Boolean(workspaceId),
+      refetchOnWindowFocus: false,
+    }),
+    [workspaceId]
+  );
+  const { data: page, isFetching } = useQuery(options);
   const items = Array.isArray(page?.items) ? page.items : [];
   const sectionCount = items.filter((item) => item?.type === "folder").length;
   const projectCount = items.filter((item) => item?.type === "project").length;
-
-  const textRef = useRef(null);
-  const [short, setShort] = useState(false);
-
-  useEffect(() => {
-    const el = textRef.current;
-    if (!el) return undefined;
-    const check = () => setShort(isExplorerTextTruncated(el.scrollWidth, el.clientWidth));
-    check();
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(check);
-      ro.observe(el);
-    }
-    return () => {
-      if (ro) ro.disconnect();
-    };
-  }, [sectionCount, projectCount]);
+  const compact = useViewportBelow(1100);
 
   if (!workspaceId) return null;
   if (isFetching && !page) {
@@ -1301,14 +1308,13 @@ function WorkspaceSidebarActiveCounters({ workspaceId }) {
 
   return (
     <span
-      ref={textRef}
       className={`block truncate text-[11px] leading-tight ${isFetching ? "text-muted/40" : "text-muted/75"}`}
-      title={short ? title : undefined}
+      title={title}
     >
-      {short ? shortLabel : full}
+      {compact ? shortLabel : full}
     </span>
   );
-}
+});
 
 // ─── Explorer Left Column Header ──────────────────────────────────────────────
 // Вынесен на верхний уровень: определение функции внутри render приводит к
@@ -1532,7 +1538,12 @@ function FolderRow({
               <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
             )}
             <IcoFolder className="shrink-0 text-accent/80" />
-            <button className="block min-w-0 flex-1 text-left hover:underline" onClick={() => onNavigate(folder)} title={folder.name}>
+            <button
+              className="block min-w-0 flex-1 text-left hover:underline"
+              onClick={() => onNavigate(folder)}
+              title={folder.name}
+              data-testid={`folder-navigate-${folder.id}`}
+            >
               <ExplorerMarqueeText text={folder.name} />
             </button>
           </div>
@@ -2668,34 +2679,23 @@ function ExplorerPane({
   const createFolderLabel = explorerHeaderLayout.shortCreateLabels
     ? folderCopy.createLabel.replace(/^Создать\s+/, "")
     : folderCopy.createLabel;
-  // Блок «назад + путь» для левой колонки (uiux/sidebar-header-join-v1).
-  const explorerSidebarHeader = (
-    <>
-      {folderId ? (
-        <button
-          type="button"
-          onClick={() =>
-            parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
-              ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
-              : onNavigateToBreadcrumb(workspaceId, "")
-          }
-          className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-          title="Назад к разделам"
-          aria-label="Назад к разделам"
-          data-testid="explorer-back-sections"
-        >
-          ← Назад к разделам
-        </button>
-      ) : null}
-      <TextBreadcrumbs
-        crumbs={headerCrumbItems}
-        dataTestId="explorer-breadcrumbs"
-        singleLine
-        forceCollapse
-        currentClassName="text-[15px] font-semibold"
-      />
-    </>
-  );
+  // Блок «назад» для левой колонки (uiux/sidebar-header-join-v1).
+  const explorerSidebarHeader = folderId ? (
+    <button
+      type="button"
+      onClick={() =>
+        parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
+          ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
+          : onNavigateToBreadcrumb(workspaceId, "")
+      }
+      className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      title="Назад к разделам"
+      aria-label="Назад к разделам"
+      data-testid="explorer-back-sections"
+    >
+      ← Назад к разделам
+    </button>
+  ) : null;
   // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(explorerSidebarHeader);
 
@@ -2713,17 +2713,22 @@ function ExplorerPane({
 
   const explorerHeader = (
       <div className="px-4 pr-5 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — кнопка «назад», крошки
-            (текущий сегмент = заголовок), табы, поиск, создание.
-            Счётчики workspace перенесены в сайдбар (uiux/ws-counters-to-sidebar-v1);
-            back/crumbs перенесены в левую колонку.
-            Без переносов; жертвы по ширине контейнера: кнопки/поиск сжимаются
-            → крошки «…» → кнопка «назад» иконкой. */}
+        {/* Часть А-2 (nav-zone): одна строка ~40px — путь (текущий сегмент = заголовок),
+            табы, поиск, создание. Кнопка «назад» живёт в левой колонке.
+            Счётчики workspace перенесены в сайдбар (uiux/ws-counters-to-sidebar-v1).
+            Без переносов; жертвы по ширине контейнера: поиск сжимается → крошки «…». */}
         <div
           ref={explorerNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
         >
+          <TextBreadcrumbs
+            crumbs={headerCrumbItems}
+            dataTestId="explorer-breadcrumbs"
+            singleLine
+            forceCollapse={explorerNavWidth < 900}
+            currentClassName="text-[15px] font-semibold min-w-[12ch]"
+          />
           <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
             <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
               <button
@@ -3830,30 +3835,19 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     }
   }, [handleOpenSessionRequest, projectId, workspaceId]);
 
-  // Блок «назад + путь» для левой колонки (uiux/sidebar-header-join-v1).
-  const projectSidebarHeader = (
-    <>
-      {projectBackCrumb ? (
-        <button
-          type="button"
-          onClick={() => onBack(projectBackCrumb)}
-          className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-          title="Назад к разделу"
-          aria-label="Назад к разделу"
-          data-testid="project-back-section"
-        >
-          ← Назад к разделу
-        </button>
-      ) : null}
-      <TextBreadcrumbs
-        crumbs={projectCrumbItems}
-        dataTestId="project-breadcrumbs"
-        singleLine
-        forceCollapse
-        currentClassName="text-[15px] font-semibold"
-      />
-    </>
-  );
+  // Блок «назад» для левой колонки (uiux/sidebar-header-join-v1).
+  const projectSidebarHeader = projectBackCrumb ? (
+    <button
+      type="button"
+      onClick={() => onBack(projectBackCrumb)}
+      className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      title="Назад к разделу"
+      aria-label="Назад к разделу"
+      data-testid="project-back-section"
+    >
+      ← Назад к разделу
+    </button>
+  ) : null;
   // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(projectSidebarHeader);
 
@@ -3880,13 +3874,20 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 
   const projectHeader = (
       <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — статус, табы, поиск, создание, мета справа.
-            Back/crumbs перенесены в левую колонку. */}
+        {/* Часть А-2 (nav-zone): одна строка ~40px — путь (текущий сегмент = заголовок),
+            статус, табы, поиск, создание, мета справа. Кнопка «назад» живёт в левой колонке. */}
         <div
           ref={projectNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(projectNavWidth)}
         >
+          <TextBreadcrumbs
+            crumbs={projectCrumbItems}
+            dataTestId="project-breadcrumbs"
+            singleLine
+            forceCollapse={projectNavWidth < 900}
+            currentClassName="text-[15px] font-semibold min-w-[12ch]"
+          />
           {proj ? (
             <StatusPopoverControl
               domain="project"
@@ -4190,8 +4191,8 @@ export default function WorkspaceExplorer({
           </div>
         ) : null}
         <div className="h-full flex flex-row min-h-0 font-sans">
-          {/* Left column: back + breadcrumbs on top, workspace list below (single surface). */}
-          <div className="w-56 shrink-0 flex flex-col bg-panel rounded-xl2 border border-border overflow-hidden">
+          {/* Left column: back button on top, workspace list below (single surface). */}
+          <div className="w-60 min-w-[15rem] shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border border-border border-r-0 overflow-hidden">
             <ExplorerSidebarHeaderBlock />
             <div className="flex-1 overflow-hidden">
               <WorkspaceSidebar

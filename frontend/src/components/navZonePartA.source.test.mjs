@@ -25,9 +25,11 @@ test("ProjectPane: одна flex-строка без переноса, кноп�
   assert.match(explorerSource, /testId: index === projectBreadcrumbTrail\.length - 1 \? "project-title" : undefined/);
 });
 
-test("ProjectPane: статус-бейдж и мета «Сессии: N» в строке навигации", () => {
-  assert.match(explorerSource, /<StatusBadge status=\{proj\.status\} dotOnly=\{projectNavLayout\.statusDotOnly\} \/>/);
-  assert.match(explorerSource, /· Сессии: \{sessionCount\}/);
+test("ProjectPane: статус-контрол и мета «Сессии: N» в строке навигации", () => {
+  assert.match(explorerSource, /<StatusPopoverControl/);
+  assert.match(explorerSource, /domain="project"/);
+  assert.match(explorerSource, /value=\{proj\.status\}/);
+  assert.match(explorerSource, /`· \$\{sessionCountersFull\}`/);
   assert.match(explorerSource, /data-testid="project-meta"/);
 });
 
