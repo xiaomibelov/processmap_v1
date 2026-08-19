@@ -18,6 +18,8 @@ class AgentChatIn(BaseModel):
         description="UUID реплики от фронта. Защита от дабл-клика: повтор с тем же id вернёт существующий turn.",
     )
 
+    model_config = {"extra": "forbid"}
+
 
 class AgentChatOut(BaseModel):
     ok: bool = Field(..., description="Успешность ответа.")
