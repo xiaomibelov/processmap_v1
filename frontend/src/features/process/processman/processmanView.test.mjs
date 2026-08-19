@@ -7,6 +7,7 @@ import {
   ANSWER_STATUS,
   answerCacheKey,
   buildAnswerMeta,
+  cleanAgentError,
   contextBadgeKey,
   extractAnswerText,
   formatClock,
@@ -144,4 +145,13 @@ test("isLlmNotConfigured: только при известном configured=fals
 test("formatClock: HH:MM, пусто при мусоре", () => {
   assert.equal(formatClock(0), "");
   assert.match(formatClock(Date.now()), /^\d{2}:\d{2}$/);
+});
+
+test("cleanAgentError: HTML-тело nginx заменяется на чистый S6-текст", () => {
+  const html = "<html><body><center><h1>502 Bad Gateway</h1></center></body></html>";
+  assert.equal(cleanAgentError(html, 502), "HTTP 502 Bad Gateway");
+  assert.equal(cleanAgentError("<!DOCTYPE html><html>...</html>", 502), "HTTP 502 Bad Gateway");
+  assert.equal(cleanAgentError("", 502), "HTTP 502");
+  assert.equal(cleanAgentError(""), "Не удалось получить ответ");
+  assert.equal(cleanAgentError("LLM timeout"), "LLM timeout");
 });
