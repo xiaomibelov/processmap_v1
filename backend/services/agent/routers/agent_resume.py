@@ -5,6 +5,7 @@ POST /sessions/{session_id}/agent/resume — принимает решение �
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -41,7 +42,6 @@ def _session_gate(session_id: str, request: Request) -> Dict[str, Any]:
 
 
 def _sse_event(event_type: str, payload: Dict[str, Any]) -> str:
-    import json
     return f"event: {event_type}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
