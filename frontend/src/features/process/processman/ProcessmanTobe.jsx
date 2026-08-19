@@ -4,6 +4,7 @@ import { apiAgentResume, apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlm
 import {
   answerCacheKey,
   buildAnswerMeta,
+  cleanAgentError,
   extractAnswerText,
   mapActionResponse,
   mapStreamEventToMessage,
@@ -132,7 +133,7 @@ export default function ProcessmanTobe({
       try {
         const stream = await apiAgentStream(sid, { question: q, selected_node_id: elementId, force: force ? 1 : 0 }, { signal: controller.signal });
         if (!stream.ok) {
-          failAgentMessage(sid, pendingMsg.id, { errorText: stream.error });
+          failAgentMessage(sid, pendingMsg.id, { errorText: cleanAgentError(stream.error, stream.status) });
           bump();
           return;
         }
@@ -186,7 +187,7 @@ export default function ProcessmanTobe({
         }
       } catch (err) {
         if (String(err?.name || "") === "AbortError") return;
-        failAgentMessage(sid, pendingMsg.id, { errorText: String(err?.message || err || t.errorTitle) });
+        failAgentMessage(sid, pendingMsg.id, { errorText: cleanAgentError(String(err?.message || err || t.errorTitle)) });
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         bump();
@@ -278,7 +279,7 @@ export default function ProcessmanTobe({
         { signal: controller.signal },
       );
       if (!stream.ok) {
-        updatePendingEditStatus(sid, msg.id, { status: AGENT_STATUS.ERROR, errorText: stream.error });
+        updatePendingEditStatus(sid, msg.id, { status: AGENT_STATUS.ERROR, errorText: cleanAgentError(stream.error, stream.status) });
         bump();
         return;
       }
@@ -306,7 +307,7 @@ export default function ProcessmanTobe({
       if (String(err?.name || "") === "AbortError") return;
       updatePendingEditStatus(sid, msg.id, {
         status: AGENT_STATUS.ERROR,
-        errorText: String(err?.message || err || t.errorTitle),
+        errorText: cleanAgentError(String(err?.message || err || t.errorTitle)),
       });
     } finally {
       if (resumeAbortRef.current === controller) resumeAbortRef.current = null;
