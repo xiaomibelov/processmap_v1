@@ -3,6 +3,8 @@ services:
     depends_on: !override
       api:
         condition: service_started
+      agent:
+        condition: service_healthy
     build:
       context: .
       dockerfile: Dockerfile.gateway.prod
