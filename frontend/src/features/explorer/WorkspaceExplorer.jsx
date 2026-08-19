@@ -1373,12 +1373,13 @@ function WorkspaceSidebar({
           </button>
         ) : null}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto flex flex-col">
         {workspaces.length === 0 && (
           <p className="px-3 py-4 text-xs text-muted text-center">Нет workspaces</p>
         )}
-        {workspaces.map((ws) => {
+        {workspaces.map((ws, index) => {
           const isActive = ws.id === activeWorkspaceId;
+          const isLastInactive = !isActive && workspaces.slice(index + 1).every((w) => w.id === activeWorkspaceId);
           return (
             <div
               key={ws.id}
@@ -1387,11 +1388,12 @@ function WorkspaceSidebar({
               className={`w-full flex items-start gap-2 px-3 py-2 text-sm transition-colors rounded-none
                 ${isActive
                   ? "bg-accentSoft text-accent font-medium"
-                  : "text-fg hover:bg-bg"
-                }`}
+                  : `${isLastInactive ? "bg-bg hover:bg-bgSoft border-t border-border/40" : "hover:bg-bg"} text-fg`
+                }
+                ${isLastInactive ? "flex-1" : ""}`}
             >
               <button
-                className={`min-w-0 flex-1 text-left ${isActive ? "flex flex-col" : "flex items-center gap-2"}`}
+                className={`min-w-0 flex-1 text-left ${isActive ? "flex flex-col" : "flex flex-col h-full justify-start"}`}
                 onClick={() => onSelectWorkspace(ws.id)}
               >
                 <span className="flex items-center gap-2 min-w-0">
