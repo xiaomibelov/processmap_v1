@@ -131,7 +131,7 @@ export default function ProcessmanTobe({
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const stream = await apiAgentStream(sid, { question: q, selected_node_id: elementId, force: force ? 1 : 0 }, { signal: controller.signal });
+        const stream = await apiAgentStream(sid, { message: q, selected_step_id: elementId }, { signal: controller.signal });
         if (!stream.ok) {
           failAgentMessage(sid, pendingMsg.id, { errorText: cleanAgentError(stream.error, stream.status) });
           bump();
