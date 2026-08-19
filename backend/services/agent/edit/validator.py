@@ -160,8 +160,8 @@ def validate_edit_plan(
     final_edges: List[Dict[str, Any]] = []
     seen_edges: Set[Tuple[str, str]] = set()
     for e in existing_edges:
-        fid = str(e.get("from_id") or e.get("source") or "").strip()
-        tid = str(e.get("to_id") or e.get("target") or "").strip()
+        fid = str(e.get("from_id") or e.get("from") or e.get("source") or "").strip()
+        tid = str(e.get("to_id") or e.get("to") or e.get("target") or "").strip()
         if (fid, tid) in planned_deleted_edges:
             continue
         final_edges.append({"from_id": fid, "to_id": tid})
