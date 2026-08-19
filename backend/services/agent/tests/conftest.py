@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     org_id TEXT NOT NULL DEFAULT 'org_default',
     project_id TEXT,
     owner_user_id TEXT NOT NULL DEFAULT '',
-    deleted_at INTEGER NOT NULL DEFAULT 0
+    deleted_at INTEGER NOT NULL DEFAULT 0,
+    diagram_state_version INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS llm_providers (
     id TEXT PRIMARY KEY,
@@ -138,6 +139,7 @@ CREATE TABLE IF NOT EXISTS agent_pending_edits (
     turn_id TEXT NOT NULL,
     edit_plan_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'rejected', 'expired', 'conflict_rev')),
+    base_diagram_state_version INTEGER NOT NULL DEFAULT 0,
     expires_at BIGINT NOT NULL,
     created_at BIGINT NOT NULL,
     resumed_by_user_id TEXT,

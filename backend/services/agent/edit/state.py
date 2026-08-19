@@ -47,6 +47,7 @@ def create_pending_edit(
     turn_id: str,
     edit_plan: Dict[str, Any],
     *,
+    base_diagram_state_version: int = 0,
     status: str = "pending",
     expires_at: Optional[int] = None,
     now_ms: Optional[int] = None,
@@ -67,11 +68,11 @@ def create_pending_edit(
                 """
                 INSERT INTO agent_pending_edits
                     (id, org_id, session_id, turn_id, edit_plan_json, status,
-                     expires_at, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     base_diagram_state_version, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
             ),
-            [pending_id, oid, sid, tid, _to_json(edit_plan), status, exp, now],
+            [pending_id, oid, sid, tid, _to_json(edit_plan), status, int(base_diagram_state_version or 0), exp, now],
         )
     return pending_id
 
@@ -105,6 +106,7 @@ def get_pending_edit(pending_edit_id: str, org_id: str = "") -> Optional[Dict[st
         "turn_id": str(row_d.get("turn_id") or ""),
         "edit_plan": _json_loads(row_d.get("edit_plan_json"), {}),
         "status": str(row_d.get("status") or ""),
+        "base_diagram_state_version": int(row_d.get("base_diagram_state_version") or 0),
         "expires_at": int(row_d.get("expires_at") or 0),
         "created_at": int(row_d.get("created_at") or 0),
         "resumed_by_user_id": str(row_d.get("resumed_by_user_id") or "") if row_d.get("resumed_by_user_id") else None,

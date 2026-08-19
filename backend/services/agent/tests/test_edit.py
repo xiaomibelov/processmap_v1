@@ -111,6 +111,19 @@ def test_create_and_get_pending_edit():
     assert row is not None
     assert row["status"] == "pending"
     assert row["session_id"] == sid
+    assert row["base_diagram_state_version"] == 0
+
+
+def test_pending_edit_stores_base_diagram_state_version():
+    peid = create_pending_edit(
+        session_id="s1",
+        org_id="org_default",
+        turn_id="turn_1",
+        edit_plan={"operations": []},
+        base_diagram_state_version=7,
+    )
+    row = get_pending_edit(peid)
+    assert row["base_diagram_state_version"] == 7
 
 
 def test_update_pending_edit_status():

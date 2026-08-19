@@ -71,7 +71,7 @@ def get_session_context(token: str, session_id: str) -> Dict[str, Any]:
 
         sess_row = conn.execute(
             adapt_sql(
-                "SELECT id, org_id, project_id, owner_user_id, deleted_at"
+                "SELECT id, org_id, project_id, owner_user_id, deleted_at, diagram_state_version"
                 " FROM sessions WHERE id = ? LIMIT 1"
             ),
             [sid],
