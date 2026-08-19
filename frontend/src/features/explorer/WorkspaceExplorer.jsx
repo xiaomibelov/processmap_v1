@@ -2873,62 +2873,68 @@ function ExplorerPane({
   const showExplorerSkeleton = useDelayedSkeleton(explorerIsLoadingPage);
 
   const explorerHeader = (
-      <div className="px-4 pr-5 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — табы │ путь │ поиск/создание.
+      <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
+        {/* Часть А-2 (nav-zone): левая зона = ширине сайдбара (табы),
+            правая зона = путь + действия, разделитель на границе сайдбара.
             Кнопка «назад» живёт в левой колонке; счётчики — в сайдбаре.
-            Жертвы по ширине: поиск → иконка, путь схлопывает средние сегменты. */}
+            Жертвы по ширине: поиск → иконка, путь схлопывает предков. */}
         <div
           ref={explorerNavRef}
-          className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+          className="flex h-10 min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
         >
-          <HeaderTabs
-            tabs={[
-              { key: "projects", label: "Проекты" },
-              { key: "analytics", label: "Аналитика" },
-            ]}
-            activeKey={activeTab}
-            onChange={setActiveTab}
-          />
-          <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
-          <TextBreadcrumbs
-            crumbs={headerCrumbItems}
-            dataTestId="explorer-breadcrumbs"
-            singleLine
-            forceCollapse={explorerNavWidth < 900}
-            currentClassName="text-[15px] font-semibold min-w-[12ch]"
-          />
-          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-            <ExplorerSearchBox
-              id="workspace-explorer-tree-search"
-              value={searchQuery}
-              onChange={setSearchQuery}
-              className={explorerHeaderLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
+          {/* Left zone: matches sidebar width, contains tabs. */}
+          <div className="w-[var(--explorer-sidebar-w)] h-full flex items-center border-r border-border">
+            <HeaderTabs
+              tabs={[
+                { key: "projects", label: "Проекты" },
+                { key: "analytics", label: "Аналитика" },
+              ]}
+              activeKey={activeTab}
+              onChange={setActiveTab}
             />
-            {permissions?.canCreate ? (
-              <button
-                onClick={() => setCreatingFolder(true)}
-                className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-              >
-                <IcoPlus className="opacity-70" /> {createFolderLabel}
-              </button>
-            ) : null}
-            {/* Project can only be created inside a folder, not at workspace root */}
-            {folderId && permissions?.canCreate ? (
-              <button
-                onClick={() => setCreatingProject(true)}
-                className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-              >
-                <IcoPlus /> Проект
-              </button>
-            ) : permissions?.canCreate ? (
-              <span
-                className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
-                title="Войдите в папку, чтобы создать проект"
-              >
-                <IcoPlus className="opacity-50" /> Проект
-              </span>
-            ) : null}
+          </div>
+          {/* Right zone: breadcrumbs + actions, aligned with table NAME column. */}
+          <div className="flex-1 h-full flex items-center min-w-0 overflow-hidden gap-2 pl-2 pr-5">
+            <TextBreadcrumbs
+              crumbs={headerCrumbItems}
+              dataTestId="explorer-breadcrumbs"
+              singleLine
+              forceCollapse={explorerNavWidth < 900}
+              currentClassName="text-[15px] font-semibold"
+            />
+            <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+              <ExplorerSearchBox
+                id="workspace-explorer-tree-search"
+                value={searchQuery}
+                onChange={setSearchQuery}
+                className={explorerHeaderLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
+              />
+              {permissions?.canCreate ? (
+                <button
+                  onClick={() => setCreatingFolder(true)}
+                  className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+                >
+                  <IcoPlus className="opacity-70" /> {createFolderLabel}
+                </button>
+              ) : null}
+              {/* Project can only be created inside a folder, not at workspace root */}
+              {folderId && permissions?.canCreate ? (
+                <button
+                  onClick={() => setCreatingProject(true)}
+                  className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+                >
+                  <IcoPlus /> Проект
+                </button>
+              ) : permissions?.canCreate ? (
+                <span
+                  className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
+                  title="Войдите в папку, чтобы создать проект"
+                >
+                  <IcoPlus className="opacity-50" /> Проект
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -3958,7 +3964,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     }
   }, [onOpenSession, projectContext, projectId, workspaceId]);
 
-  const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
+  const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.title || proj?.name || "");
   const projectCrumbItems = projectBreadcrumbTrail.map((c, index) => ({
     key: `${c.type}-${c.id || "project"}`,
     label: c.name,
@@ -4039,49 +4045,55 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const createSessionLabel = projectNavLayout.shortCreateLabels ? "Сессия" : "Новая сессия";
 
   const projectHeader = (
-      <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — табы │ путь │ статус │ поиск/создание.
+      <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
+        {/* Часть А-2 (nav-zone): левая зона = ширине сайдбара (табы),
+            правая зона = путь + статус + действия, разделитель на границе сайдбара.
             Кнопка «назад» живёт в левой колонке; мета счётчики — в сайдбаре. */}
         <div
           ref={projectNavRef}
-          className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
+          className="flex h-10 min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(projectNavWidth)}
         >
-          <HeaderTabs
-            tabs={[
-              { key: "sessions", label: "Сессии" },
-              { key: "analytics", label: "Аналитика" },
-            ]}
-            activeKey={activeTab}
-            onChange={setActiveTab}
-          />
-          <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
-          <TextBreadcrumbs
-            crumbs={projectCrumbItems}
-            dataTestId="project-breadcrumbs"
-            singleLine
-            forceCollapse={projectNavWidth < 900}
-            currentClassName="text-[15px] font-semibold min-w-[12ch]"
-          />
-          {proj ? (
-            <StatusPopoverControl
-              domain="project"
-              value={proj.status}
-              onChange={handleProjectStatusChange}
+          {/* Left zone: matches sidebar width, contains tabs. */}
+          <div className="w-[var(--explorer-sidebar-w)] h-full flex items-center border-r border-border">
+            <HeaderTabs
+              tabs={[
+                { key: "sessions", label: "Сессии" },
+                { key: "analytics", label: "Аналитика" },
+              ]}
+              activeKey={activeTab}
+              onChange={setActiveTab}
             />
-          ) : null}
-          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-            <ExplorerSearchBox
-              id="workspace-explorer-project-search"
-              value={searchQuery}
-              onChange={setSearchQuery}
-              className={projectNavLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
+          </div>
+          {/* Right zone: breadcrumbs + status + actions, aligned with table NAME column. */}
+          <div className="flex-1 h-full flex items-center min-w-0 overflow-hidden gap-2 pl-2 pr-5">
+            <TextBreadcrumbs
+              crumbs={projectCrumbItems}
+              dataTestId="project-breadcrumbs"
+              singleLine
+              forceCollapse={projectNavWidth < 900}
+              currentClassName="text-[15px] font-semibold"
             />
-            {permissions?.canCreate ? (
-              <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
-                <IcoPlus /> {createSessionLabel}
-              </button>
+            {proj ? (
+              <StatusPopoverControl
+                domain="project"
+                value={proj.status}
+                onChange={handleProjectStatusChange}
+              />
             ) : null}
+            <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+              <ExplorerSearchBox
+                id="workspace-explorer-project-search"
+                value={searchQuery}
+                onChange={setSearchQuery}
+                className={projectNavLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
+              />
+              {permissions?.canCreate ? (
+                <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
+                  <IcoPlus /> {createSessionLabel}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -4335,7 +4347,10 @@ export default function WorkspaceExplorer({
 
   return (
     <ExplorerSidebarProvider>
-      <div className="h-full flex flex-col min-h-0 bg-bg font-sans">
+      <div
+        className="h-full flex flex-col min-h-0 bg-bg font-sans"
+        style={{ "--explorer-sidebar-w": "16rem" }}
+      >
         {!currentOrgActive ? (
           <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
             <strong>Организация деактивирована.</strong>{" "}
@@ -4344,7 +4359,7 @@ export default function WorkspaceExplorer({
         ) : null}
         <div className="h-full flex flex-row min-h-0 font-sans">
           {/* Left column: back button on top, workspace list below (single surface). */}
-          <div className="min-w-[15rem] w-fit shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border border-border border-r-0 overflow-hidden">
+          <div className="w-[var(--explorer-sidebar-w)] shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border border-border border-r-0 overflow-hidden">
             <ExplorerSidebarHeaderBlock />
             <div className="flex-1 overflow-hidden">
               <WorkspaceSidebar

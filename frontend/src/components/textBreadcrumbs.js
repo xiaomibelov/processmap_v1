@@ -1,17 +1,16 @@
 // Сворачивание текстовых хлебных крошек (часть А, nav-zone).
-// > maxVisible сегментов → первый / … / два последних; «…» раскрывается в UI.
+// > maxVisible сегментов → … / текущий; «…» раскрывается в UI.
+// Все предки схлопываются в многоточие, текущий сегмент всегда виден полностью.
 
 export function collapseBreadcrumbTrail(crumbs, maxVisible = 4) {
   const list = Array.isArray(crumbs) ? crumbs.filter(Boolean) : [];
-  if (list.length <= Math.max(3, maxVisible)) {
+  if (list.length <= Math.max(2, maxVisible)) {
     return { collapsed: false, items: list.map((crumb) => ({ type: "crumb", crumb })) };
   }
   return {
     collapsed: true,
     items: [
-      { type: "crumb", crumb: list[0] },
-      { type: "ellipsis", hidden: list.slice(1, -2) },
-      { type: "crumb", crumb: list[list.length - 2] },
+      { type: "ellipsis", hidden: list.slice(0, -1) },
       { type: "crumb", crumb: list[list.length - 1] },
     ],
   };

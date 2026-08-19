@@ -19,15 +19,13 @@ test("collapseBreadcrumbTrail: короткий трейл не сворачив
   }
 });
 
-test("collapseBreadcrumbTrail: длинный трейл — первый / … / два последних", () => {
+test("collapseBreadcrumbTrail: длинный трейл — … / текущий", () => {
   const model = collapseBreadcrumbTrail(makeCrumbs(6));
   assert.equal(model.collapsed, true);
-  assert.equal(model.items.length, 4);
-  assert.equal(model.items[0].crumb.label, "Crumb 0");
-  assert.equal(model.items[1].type, "ellipsis");
-  assert.deepEqual(model.items[1].hidden.map((c) => c.label), ["Crumb 1", "Crumb 2", "Crumb 3"]);
-  assert.equal(model.items[2].crumb.label, "Crumb 4");
-  assert.equal(model.items[3].crumb.label, "Crumb 5");
+  assert.equal(model.items.length, 2);
+  assert.equal(model.items[0].type, "ellipsis");
+  assert.deepEqual(model.items[0].hidden.map((c) => c.label), ["Crumb 0", "Crumb 1", "Crumb 2", "Crumb 3", "Crumb 4"]);
+  assert.equal(model.items[1].crumb.label, "Crumb 5");
 });
 
 test("TextBreadcrumbs: текстовый стиль 12–13px, без чипов и подложек", () => {
