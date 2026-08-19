@@ -67,6 +67,7 @@ export default function TextBreadcrumbs({
                 aria-current={isCurrent ? "page" : undefined}
                 data-current={isCurrent ? "true" : undefined}
                 data-testid={crumb.testId}
+                title={isCurrent ? crumb.label : undefined}
               >
                 {crumb.label}
               </span>
