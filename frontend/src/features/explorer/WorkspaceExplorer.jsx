@@ -173,6 +173,13 @@ function IcoChevron({ right = false, className = "" }) {
     </svg>
   );
 }
+function IcoArrowLeft({ className = "" }) {
+  return (
+    <svg className={`inline-block ${className}`} width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 function IcoSpinner({ className = "" }) {
   return (
     <svg className={`inline-block ${className}`} width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -1331,7 +1338,7 @@ function ExplorerSidebarHeaderBlock() {
   const header = useExplorerSidebarHeader();
   return (
     <div
-      className="h-10 px-3 border-b border-border flex items-center gap-2 overflow-hidden whitespace-nowrap bg-panel"
+      className="h-10 border-b border-border flex items-center overflow-hidden whitespace-nowrap bg-panel"
       data-testid="explorer-sidebar-header"
     >
       {header || <span className="min-w-0 flex-1" aria-hidden="true" />}
@@ -2687,22 +2694,38 @@ function ExplorerPane({
     ? folderCopy.createLabel.replace(/^Создать\s+/, "")
     : folderCopy.createLabel;
   // Блок «назад» для левой колонки (uiux/sidebar-header-join-v1).
-  const explorerSidebarHeader = folderId ? (
+  // Кнопка показывается всегда: на корне disabled, на вложенных уровнях активна.
+  const isExplorerRoot = !folderId;
+  const explorerBackLabel = isExplorerRoot
+    ? "Назад"
+    : parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
+      ? "Назад к разделу"
+      : "Назад к разделам";
+  const explorerBackTitle = isExplorerRoot
+    ? "Вы на верхнем уровне"
+    : explorerBackLabel;
+  const explorerSidebarHeader = (
     <button
       type="button"
+      disabled={isExplorerRoot}
       onClick={() =>
         parentHeaderCrumb && parentHeaderCrumb.type !== "workspace"
           ? onNavigateToBreadcrumb(workspaceId, parentHeaderCrumb.id)
           : onNavigateToBreadcrumb(workspaceId, "")
       }
-      className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-      title="Назад к разделам"
-      aria-label="Назад к разделам"
+      className={`w-full h-full flex items-center gap-2 px-3 text-sm text-left transition-colors rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60
+        ${isExplorerRoot
+          ? "text-muted/60 cursor-default"
+          : "text-fg hover:bg-bg"
+        }`}
+      title={explorerBackTitle}
+      aria-label={explorerBackLabel}
       data-testid="explorer-back-sections"
     >
-      ← Назад к разделам
+      <IcoArrowLeft className="shrink-0" />
+      <span className="truncate">{explorerBackLabel}</span>
     </button>
-  ) : null;
+  );
   // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(explorerSidebarHeader);
 
@@ -3843,18 +3866,21 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }, [handleOpenSessionRequest, projectId, workspaceId]);
 
   // Блок «назад» для левой колонки (uiux/sidebar-header-join-v1).
-  const projectSidebarHeader = projectBackCrumb ? (
+  // На уровне проекта кнопка всегда активна.
+  const projectBackLabel = "Назад к проекту";
+  const projectSidebarHeader = (
     <button
       type="button"
       onClick={() => onBack(projectBackCrumb)}
-      className="secondaryBtn h-7 min-h-0 shrink-0 px-2.5 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-      title="Назад к разделу"
-      aria-label="Назад к разделу"
+      className="w-full h-full flex items-center gap-2 px-3 text-sm text-left text-fg hover:bg-bg transition-colors rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      title={projectBackLabel}
+      aria-label={projectBackLabel}
       data-testid="project-back-section"
     >
-      ← Назад к разделу
+      <IcoArrowLeft className="shrink-0" />
+      <span className="truncate">{projectBackLabel}</span>
     </button>
-  ) : null;
+  );
   // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(projectSidebarHeader);
 
