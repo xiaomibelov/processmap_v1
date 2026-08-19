@@ -2284,6 +2284,49 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_correlation ON error_events(correlation_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_fingerprint ON error_events(fingerprint)")
+            # Контур feature/endpoint-regression-scanner: прогоны read-only
+            # сканера эндпоинтов и их результаты. История не затирается — только INSERT.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS endpoint_check_runs (
+                  id TEXT PRIMARY KEY,
+                  started_at INTEGER NOT NULL DEFAULT 0,
+                  finished_at INTEGER NOT NULL DEFAULT 0,
+                  trigger TEXT NOT NULL DEFAULT 'manual',
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  version_commit TEXT NOT NULL DEFAULT '',
+                  version_branch TEXT NOT NULL DEFAULT '',
+                  version_env TEXT NOT NULL DEFAULT '',
+                  requested_by TEXT NOT NULL DEFAULT '',
+                  summary_json TEXT NOT NULL DEFAULT '{}',
+                  error TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS endpoint_check_results (
+                  id TEXT PRIMARY KEY,
+                  run_id TEXT NOT NULL,
+                  operation_id TEXT NOT NULL DEFAULT '',
+                  method TEXT NOT NULL DEFAULT '',
+                  path TEXT NOT NULL DEFAULT '',
+                  url_path TEXT NOT NULL DEFAULT '',
+                  http_status INTEGER NOT NULL DEFAULT 0,
+                  category TEXT NOT NULL DEFAULT '',
+                  latency_ms REAL NOT NULL DEFAULT 0,
+                  fingerprint TEXT NOT NULL DEFAULT '',
+                  diff_status TEXT NOT NULL DEFAULT '',
+                  note TEXT NOT NULL DEFAULT '',
+                  body_excerpt TEXT NOT NULL DEFAULT '',
+                  error_events_json TEXT NOT NULL DEFAULT '[]',
+                  created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_endpoint_check_results_run ON endpoint_check_results(run_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_endpoint_check_results_op ON endpoint_check_results(operation_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_endpoint_check_runs_started ON endpoint_check_runs(started_at)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
             if not _column_exists(con, "users", "updated_at"):

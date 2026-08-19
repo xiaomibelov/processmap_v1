@@ -204,7 +204,7 @@ function AdminAppInner({
       return <ErrorState title={ru.admin.runtime.dataErrorTitle} message={activeQuery.error} />;
     }
     if (route.section === "dashboard") {
-      return <AdminDashboardPage payload={dashboardQ.data || {}} onNavigate={onNavigate} />;
+      return <AdminDashboardPage payload={dashboardQ.data || {}} onNavigate={onNavigate} canOpenApiDocs={canOpenApiDocs} />;
     }
     if (route.section === "orgs") {
       return (
