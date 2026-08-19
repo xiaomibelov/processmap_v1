@@ -637,7 +637,7 @@ def _run_edit_canvas_branch(
         )
         return out
 
-    _, assistant_turn = _persist_assistant_turn(
+    turn_id, assistant_turn = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
@@ -653,7 +653,7 @@ def _run_edit_canvas_branch(
     pending_id = create_pending_edit(
         session_id=session_id,
         org_id=org_id,
-        turn_id=assistant_turn.id if hasattr(assistant_turn, "id") else "",
+        turn_id=turn_id,
         edit_plan=edit_plan,
         now_ms=_now_ms(),
     )

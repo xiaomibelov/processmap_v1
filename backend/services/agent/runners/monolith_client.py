@@ -117,6 +117,47 @@ def get_session(session_id: str, *, token: str = "", timeout_sec: int = DEFAULT_
     return data
 
 
+def get_session_graph(session_id: str, *, token: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
+    """GET /api/sessions/{id}/graph → raw nodes/edges + diagram_state_version."""
+    url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/graph"
+    try:
+        resp = httpx.get(url, headers=_headers(token), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+    except Exception as exc:
+        raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
+    if resp.status_code != 200:
+        raise MonolithError(f"monolith get_session_graph HTTP {resp.status_code}")
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise MonolithError(f"monolith get_session_graph invalid json: {exc.__class__.__name__}") from exc
+    if not isinstance(data, dict):
+        raise MonolithError("monolith get_session_graph invalid root")
+    return data
+
+
+def patch_session(
+    session_id: str,
+    token: str,
+    body: Dict[str, Any],
+    *,
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Dict[str, Any]:
+    """PATCH /api/sessions/{id} — session save path with CAS/rev guard."""
+    url = f"{_base_url()}/api/sessions/{str(session_id).strip()}"
+    try:
+        resp = httpx.patch(url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+    except Exception as exc:
+        raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise MonolithError(f"monolith patch_session invalid json: {exc.__class__.__name__}") from exc
+    if not isinstance(data, dict):
+        raise MonolithError("monolith patch_session invalid root")
+    data["_http_status"] = resp.status_code
+    return data
+
+
 def _json_headers(token: str) -> Dict[str, str]:
     headers = _headers(token)
     headers["Content-Type"] = "application/json"
