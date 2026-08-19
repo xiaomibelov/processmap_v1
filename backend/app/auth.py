@@ -42,6 +42,10 @@ AUTH_PUBLIC_PATHS = {
     "/api/meta",
     "/api/feature-flags",
     "/api/deployment-notice",
+    # /api/admin/endpoint-check/run — машинный deploy-trigger (X-Deploy-Token) без
+    # bearer; авторизация (bearer ИЛИ deploy-token) полностью в обработчике
+    # (routers/admin_endpoint_check.py), без валидной авторизации → 401.
+    "/api/admin/endpoint-check/run",
     # /api/docs, /api/redoc, /api/openapi.json — НЕ публичные: закрыты правом
     # уровня админки (routers/api_docs.py); 401 без токена — через auth_guard.
 }
@@ -516,12 +520,12 @@ def authenticate_user(email: str, password: str) -> Dict[str, Any]:
     return user
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, ttl_seconds: Optional[int] = None) -> str:
     now = now_ts()
     payload = {
         "sub": str(user_id),
         "iat": now,
-        "exp": now + access_ttl_seconds(),
+        "exp": now + (int(ttl_seconds) if ttl_seconds else access_ttl_seconds()),
         "type": "access",
     }
     return _jwt_encode(payload)

@@ -110,6 +110,27 @@ until curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; do
 done
 echo "[DEPLOY] Healthcheck passed (${HEALTH_URL})"
 
+# 7a. Endpoint regression scan (НЕ фатально): автозапуск после успешного healthcheck'а.
+# Машинный токен — ENDPOINT_CHECK_DEPLOY_TOKEN (env или .env; в репозитории не хранить).
+# 409 (scan already running) и дебаунс — штатно, деплой не валится.
+if [ -z "${ENDPOINT_CHECK_DEPLOY_TOKEN:-}" ] && [ -f .env ]; then
+  # Значение в .env может быть обёрнуто в двойные кавычки — снимаем их.
+  ENDPOINT_CHECK_DEPLOY_TOKEN="$(grep -E '^ENDPOINT_CHECK_DEPLOY_TOKEN=' .env | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)"
+fi
+if [ -n "${ENDPOINT_CHECK_DEPLOY_TOKEN:-}" ]; then
+  SCAN_HTTP="$(curl -sS -o /tmp/endpoint_check_run.json -w '%{http_code}' --max-time 10 \
+    -X POST "http://localhost:${HOST_PORT:-8011}/api/admin/endpoint-check/run" \
+    -H "X-Deploy-Token: ${ENDPOINT_CHECK_DEPLOY_TOKEN}" 2>/dev/null || echo 'curl_failed')"
+  case "${SCAN_HTTP}" in
+    202) echo "[DEPLOY] Endpoint scan triggered: $(cat /tmp/endpoint_check_run.json 2>/dev/null || true)" ;;
+    200) echo "[DEPLOY] Endpoint scan skipped (run_on_deploy disabled): $(cat /tmp/endpoint_check_run.json 2>/dev/null || true)" ;;
+    409) echo "[DEPLOY] Endpoint scan already running (409) — штатно, пропускаем." ;;
+    *)   echo "[DEPLOY] Endpoint scan trigger returned ${SCAN_HTTP} — не фатально, деплой продолжается." ;;
+  esac
+else
+  echo "[DEPLOY] ENDPOINT_CHECK_DEPLOY_TOKEN не задан — автозапуск сканера пропущен."
+fi
+
 # 7b. Agent health (НЕ фатально): fallback — монолит с LLM_VIA_AGENT_SVC=0 рабочий,
 # поэтому нездоровый agent = warning, а не rollback.
 wait_svc_health() {
