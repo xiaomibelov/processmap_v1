@@ -1,9 +1,12 @@
 """Применение edit_plan через существующий save-путь монолита (AGENT-3).
 
 Сервис не импортирует backend.app.*. Все вызовы — HTTP к монолиту с JWT.
+Правки применяются одним PATCH /api/sessions/{id} с CAS/rev-гвардом,
+как это делает фронт (save-путь сессии).
 """
 from __future__ import annotations
 
+import copy
 from typing import Any, Dict, List, Optional
 
 from runners import monolith_client
@@ -18,6 +21,17 @@ class EditApplyError(Exception):
 
 def _http_ok(resp: Dict[str, Any]) -> bool:
     return int(resp.get("_http_status", 200)) in (200, 201)
+
+
+def _node_by_id(nodes: List[Dict[str, Any]], node_id: str) -> Optional[Dict[str, Any]]:
+    for n in nodes:
+        if str(n.get("id") or "").strip() == node_id:
+            return n
+    return None
+
+
+def _edge_key(edge: Dict[str, Any]) -> tuple:
+    return (str(edge.get("from_id") or "").strip(), str(edge.get("to_id") or "").strip())
 
 
 def apply_edit_plan(
@@ -40,11 +54,19 @@ def apply_edit_plan(
 
     snapshot_version_id: Optional[str] = None
     if create_snapshot:
+        # Для BPMN-сессий snapshot создаётся через PUT /bpmn (автоматически при сохранении).
+        # Отдельного публичного endpoint'а для создания snapshot нет; audit и откат
+        # покрываются историей версий BPMN и самим PATCH /sessions/{id}.
         try:
             snap = monolith_client.create_bpmn_version_snapshot(sid, token, source_action="agent_edit")
             snapshot_version_id = snap.get("version_id") or snap.get("id")
         except Exception:
             snapshot_version_id = None
+
+    graph = monolith_client.get_session_graph(sid, token=token)
+    nodes = copy.deepcopy(list(graph.get("nodes") or []))
+    edges = copy.deepcopy(list(graph.get("edges") or []))
+    current_version = int(graph.get("diagram_state_version") or base_diagram_state_version or 0)
 
     applied = 0
     for op in operations:
@@ -54,66 +76,63 @@ def apply_edit_plan(
 
         if op_type == "update_node":
             node_id = str(op.get("node_id") or "").strip()
-            fields = dict(op.get("fields") or {})
-            resp = monolith_client.patch_node(
-                sid, node_id, token, fields,
-                base_diagram_state_version=base_diagram_state_version,
-            )
-            if not _http_ok(resp):
-                _raise_from_response(resp)
+            node = _node_by_id(nodes, node_id)
+            if node is None:
+                raise EditApplyError("not_found", f"узел '{node_id}' не найден")
+            for field, value in (op.get("fields") or {}).items():
+                node[str(field)] = value
             applied += 1
 
         elif op_type == "add_node":
-            node = {k: v for k, v in op.items() if k != "op"}
-            if "incoming" in node:
-                del node["incoming"]
-            if "outgoing" in node:
-                del node["outgoing"]
-            resp = monolith_client.add_node(
-                sid, token, node,
-                base_diagram_state_version=base_diagram_state_version,
-            )
-            if not _http_ok(resp):
-                _raise_from_response(resp)
+            new_node = {k: v for k, v in op.items() if k not in ("op", "incoming", "outgoing")}
+            if "id" not in new_node or not str(new_node["id"]).strip():
+                raise EditApplyError("bad_request", "add_node требует id")
+            if _node_by_id(nodes, str(new_node["id"]).strip()) is not None:
+                raise EditApplyError("bad_request", f"узел '{new_node['id']}' уже существует")
+            nodes.append(new_node)
             applied += 1
 
         elif op_type == "delete_node":
             node_id = str(op.get("node_id") or "").strip()
-            resp = monolith_client.delete_node(
-                sid, node_id, token,
-                base_diagram_state_version=base_diagram_state_version,
-            )
-            if not _http_ok(resp):
-                _raise_from_response(resp)
+            nodes = [n for n in nodes if str(n.get("id") or "").strip() != node_id]
+            edges = [e for e in edges if (
+                str(e.get("from_id") or "").strip() != node_id
+                and str(e.get("to_id") or "").strip() != node_id
+            )]
             applied += 1
 
         elif op_type == "add_edge":
-            edge = {
-                "from_id": str(op.get("from_id") or "").strip(),
-                "to_id": str(op.get("to_id") or "").strip(),
-            }
+            from_id = str(op.get("from_id") or "").strip()
+            to_id = str(op.get("to_id") or "").strip()
+            if not from_id or not to_id:
+                raise EditApplyError("bad_request", "add_edge требует from_id/to_id")
+            new_edge = {"from_id": from_id, "to_id": to_id}
             if op.get("when"):
-                edge["when"] = str(op["when"])
-            resp = monolith_client.add_edge(
-                sid, token, edge,
-                base_diagram_state_version=base_diagram_state_version,
-            )
-            if not _http_ok(resp):
-                _raise_from_response(resp)
+                new_edge["when"] = str(op["when"])
+            if _edge_key(new_edge) not in {_edge_key(e) for e in edges}:
+                edges.append(new_edge)
             applied += 1
 
         elif op_type == "delete_edge":
-            edge = {
-                "from_id": str(op.get("from_id") or "").strip(),
-                "to_id": str(op.get("to_id") or "").strip(),
-            }
-            resp = monolith_client.delete_edge(
-                sid, token, edge,
-                base_diagram_state_version=base_diagram_state_version,
-            )
-            if not _http_ok(resp):
-                _raise_from_response(resp)
+            from_id = str(op.get("from_id") or "").strip()
+            to_id = str(op.get("to_id") or "").strip()
+            edges = [e for e in edges if not (
+                str(e.get("from_id") or "").strip() == from_id
+                and str(e.get("to_id") or "").strip() == to_id
+            )]
             applied += 1
+
+        else:
+            raise EditApplyError("bad_request", f"неизвестная операция '{op_type}'")
+
+    patch_body = {
+        "nodes": nodes,
+        "edges": edges,
+        "base_diagram_state_version": current_version,
+    }
+    resp = monolith_client.patch_session(sid, token, patch_body)
+    if not _http_ok(resp):
+        _raise_from_response(resp)
 
     return {
         "status": "applied",
