@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-COMPOSE_PROJECT="processmap_v1"
+COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-processmap_v1}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT}"
 
 # 1. Collect build metadata
@@ -54,12 +54,12 @@ else
   docker compose build --no-cache api frontend
 fi
 
-# 4b. Build agent/notifications: аддитивно, БЕЗ --no-cache (кэш слоёв сохраняем —
-# stage-машина слабая, сервисы меняются редко). Фатально при падении (set -e):
-# нельзя поднимать старый образ с виду успешного деплоя. Отличие от
-# health-ожидания agent (не фатально) осознанно: собрать код обязаны,
-# подняться контейнеру даём шанс с WARNING.
-docker compose build agent notifications
+# 4b. Build agent/notifications с --no-cache: исключаем риск поднять
+# stale-образ, в котором отсутствует свежий код сервиса. Фатально при
+# падении (set -e): нельзя деплоить виду успешного обновления со
+# старым агентом. Health-ожидание agent остаётся не фатальным — даём
+# шанс стартовать с WARNING, но собрать обязаны.
+docker compose build --no-cache agent notifications
 
 # 5. Deprecate old running containers (rename so compose can create new ones)
 deprecate_old() {
@@ -84,7 +84,7 @@ deprecate_old frontend
 # `alembic -c backend/alembic.ini` не работает (в ini placeholder fpc:***@postgres).
 # agent/notifications включены в up: иначе они теряются при редеплое
 # (раньше поднимались ручным `docker compose up -d`).
-docker compose up -d api frontend agent notifications
+docker compose up -d --build api frontend agent notifications
 
 # 7. Healthcheck: wait for /version 200
 HEALTH_URL="http://localhost:${HOST_PORT:-8011}/version"
@@ -103,7 +103,7 @@ until curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; do
         docker start "${COMPOSE_PROJECT}-${svc}-1" || true
       fi
     done
-    docker compose up -d api frontend agent notifications || true
+    docker compose up -d --build api frontend agent notifications || true
     exit 1
   fi
   sleep 2
