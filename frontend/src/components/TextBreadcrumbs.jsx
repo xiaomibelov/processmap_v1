@@ -22,8 +22,9 @@ export default function TextBreadcrumbs({
 
   const model = expanded && !forceCollapse
     ? { collapsed: false, items: list.map((crumb) => ({ type: "crumb", crumb })) }
-    : collapseBreadcrumbTrail(list, forceCollapse ? 3 : 4);
+    : collapseBreadcrumbTrail(list, forceCollapse ? 2 : 4);
   const lastKey = list[list.length - 1].key;
+  const fullPath = list.map((crumb) => crumb.label).join(" / ");
 
   return (
     <nav
@@ -32,6 +33,7 @@ export default function TextBreadcrumbs({
       }`}
       aria-label="Путь"
       data-testid={dataTestId}
+      title={fullPath}
     >
       {model.items.map((item, index) => {
         const separator = index > 0 ? (
@@ -46,7 +48,7 @@ export default function TextBreadcrumbs({
               {separator}
               <button
                 type="button"
-                className="rounded text-muted transition-colors hover:text-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                className="shrink-0 rounded text-muted transition-colors hover:text-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                 title={hiddenNames ? `Показать: ${hiddenNames}` : "Показать весь путь"}
                 onClick={() => setExpanded(true)}
                 data-testid={`${dataTestId}-ellipsis`}
@@ -63,11 +65,10 @@ export default function TextBreadcrumbs({
             {separator}
             {isCurrent || typeof crumb.onClick !== "function" ? (
               <span
-                className={`truncate ${isCurrent ? `text-fg ${currentClassName}`.trim() : "text-muted"}`}
+                className={`${isCurrent ? `shrink-0 text-fg ${currentClassName}`.trim() : "truncate text-muted"}`}
                 aria-current={isCurrent ? "page" : undefined}
                 data-current={isCurrent ? "true" : undefined}
                 data-testid={crumb.testId}
-                title={isCurrent ? crumb.label : undefined}
               >
                 {crumb.label}
               </span>

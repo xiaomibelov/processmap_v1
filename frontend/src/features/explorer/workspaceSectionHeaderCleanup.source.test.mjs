@@ -6,7 +6,7 @@ const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.me
 const displayLabelSource = readFileSync(new URL("./workspaceDisplayLabels.js", import.meta.url), "utf8");
 
 test("ProjectPane keeps breadcrumb trail and moves session count to sidebar", () => {
-  assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.name\s*\|\|\s*""\)/);
+  assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.title\s*\|\|\s*proj\?\.name\s*\|\|\s*""\)/);
   assert.doesNotMatch(explorerSource, /sessionCountersFull\s*=\s*`Сессии: \$\{sessionCount\}`/);
   assert.doesNotMatch(explorerSource, /data-testid="project-meta"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Owner"/);
