@@ -1628,6 +1628,104 @@ paths:
         '404':
           description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
       description: 'Получить error events. Особенности: доступ: администратор платформы/организации; 404 — ресурс не найден/вне scope.'
+  /api/admin/endpoint-check/run:
+    post:
+      operationId: admin_endpoint_check_run_api_admin_endpoint_check_run_post
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Endpoint Check Run Api Admin Endpoint Check Run
+                  Post
+          description: Successful Response
+      security:
+      - JWT access token: []
+      summary: Admin Endpoint Check Run
+      tags:
+      - admin
+  /api/admin/endpoint-check/runs:
+    get:
+      operationId: admin_endpoint_check_runs_api_admin_endpoint_check_runs_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Endpoint Check Runs Api Admin Endpoint Check Runs
+                  Get
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - JWT access token: []
+      summary: Admin Endpoint Check Runs
+      tags:
+      - admin
+  /api/admin/endpoint-check/runs/{run_id}:
+    get:
+      operationId: admin_endpoint_check_run_detail_api_admin_endpoint_check_runs__run_id__get
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Endpoint Check Run Detail Api Admin Endpoint Check
+                  Runs  Run Id  Get
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - JWT access token: []
+      summary: Admin Endpoint Check Run Detail
+      tags:
+      - admin
+  /api/admin/endpoint-check/status:
+    get:
+      operationId: admin_endpoint_check_status_api_admin_endpoint_check_status_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Endpoint Check Status Api Admin Endpoint Check
+                  Status Get
+          description: Successful Response
+      security:
+      - JWT access token: []
+      summary: Admin Endpoint Check Status
+      tags:
+      - admin
   /api/admin/audit:
     get:
       tags:
