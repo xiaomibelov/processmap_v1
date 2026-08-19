@@ -181,6 +181,17 @@ export function resolveLlmStatusView(llmStatus = null) {
   };
 }
 
+/** Очистить ошибку API от HTML-тела nginx (502 Bad Gateway и т.п.) для S6. */
+export function cleanAgentError(raw, status = 0) {
+  const text = String(raw || "").trim();
+  if (!text) return status ? `HTTP ${status}` : SA_ERROR_TEXTS.error;
+  const lower = text.toLowerCase();
+  if (text.startsWith("<") || lower.startsWith("<!doctype")) {
+    return status ? `HTTP ${status} Bad Gateway` : "Bad Gateway";
+  }
+  return text;
+}
+
 /** has_api_key=false для кнопки: known ответ и configured === false (S1). */
 export function isLlmNotConfigured(llmStatus = null) {
   return resolveLlmStatusView(llmStatus).kind === "not_configured";
