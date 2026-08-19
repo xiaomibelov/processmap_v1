@@ -5,9 +5,10 @@ import { readFileSync } from "node:fs";
 const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
 const displayLabelSource = readFileSync(new URL("./workspaceDisplayLabels.js", import.meta.url), "utf8");
 
-test("ProjectPane keeps breadcrumb trail and only compact session count in header", () => {
+test("ProjectPane keeps breadcrumb trail and moves session count to sidebar", () => {
   assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.name\s*\|\|\s*""\)/);
-  assert.match(explorerSource, /sessionCountersFull\s*=\s*`Сессии: \$\{sessionCount\}`/);
+  assert.doesNotMatch(explorerSource, /sessionCountersFull\s*=\s*`Сессии: \$\{sessionCount\}`/);
+  assert.doesNotMatch(explorerSource, /data-testid="project-meta"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Owner"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Активность"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="DoD"/);

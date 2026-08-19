@@ -61,7 +61,9 @@ import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController
 import {
   ExplorerSidebarProvider,
   useExplorerSidebarHeader,
+  useExplorerSidebarContext,
   useSetExplorerSidebarHeader,
+  useSetExplorerSidebarContextInfo,
 } from "./ExplorerSidebarContext.jsx";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
 import {
@@ -126,10 +128,12 @@ import AnalyticsPage from "../analytics/AnalyticsPage.jsx";
 import {
   avatarColorFromName,
   compositionProjectsText,
+  compositionSessionsText,
   firstName,
   formatAbsoluteDateTime,
   formatRelativeTime,
   initialsFromName,
+  pluralizeRu,
   sessionsCounterText,
   sessionsProgressPercent,
   sessionsTooltipText,
@@ -1288,6 +1292,32 @@ function useViewportBelow(breakpoint) {
   return below;
 }
 
+// Скелетон показывается не сразу: delay убирает вспышку на быстрых переходах,
+// minVisible гарантирует, что пользователь успеет его заметить (не мелькает).
+function useDelayedSkeleton(isLoading, { delay = 150, minVisible = 300 } = {}) {
+  const [show, setShow] = useState(false);
+  const shownAtRef = useRef(0);
+  useEffect(() => {
+    let delayTimer = null;
+    let minTimer = null;
+    if (isLoading) {
+      delayTimer = setTimeout(() => {
+        setShow(true);
+        shownAtRef.current = Date.now();
+      }, delay);
+    } else if (show) {
+      const elapsed = Date.now() - shownAtRef.current;
+      const remaining = Math.max(0, minVisible - elapsed);
+      minTimer = setTimeout(() => setShow(false), remaining);
+    }
+    return () => {
+      if (delayTimer) clearTimeout(delayTimer);
+      if (minTimer) clearTimeout(minTimer);
+    };
+  }, [isLoading, show, delay, minVisible]);
+  return show;
+}
+
 const WorkspaceSidebarActiveCounters = React.memo(function WorkspaceSidebarActiveCounters({ workspaceId }) {
   const options = useMemo(
     () => ({
@@ -1329,6 +1359,57 @@ const WorkspaceSidebarActiveCounters = React.memo(function WorkspaceSidebarActiv
     </span>
   );
 });
+
+function HeaderTabs({ tabs, activeKey, onChange }) {
+  return (
+    <div className="flex h-full items-center gap-0.5" role="tablist" aria-label="Переключатель вкладок">
+      {tabs.map((tab) => {
+        const active = activeKey === tab.key;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={active ? "true" : "false"}
+            onClick={() => onChange(tab.key)}
+            className={`relative h-full px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-none
+              ${active
+                ? "text-accent"
+                : "text-muted hover:text-fg hover:bg-bg"
+              }`}
+          >
+            {tab.label}
+            {active ? <span className="absolute inset-x-1.5 bottom-0 h-0.5 rounded-full bg-accent" aria-hidden /> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function WorkspaceSidebarContextCounters() {
+  const { contextInfo } = useExplorerSidebarContext();
+  if (!contextInfo) return null;
+  const { type } = contextInfo;
+  if (type === "folder") {
+    const folder = contextInfo.folder;
+    const subFolders = Number(contextInfo.childFolderCount ?? folder?.child_folder_count ?? 0);
+    const projects = Number(contextInfo.childProjectCount ?? folder?.child_project_count ?? folder?.descendant_projects_count ?? 0);
+    if (subFolders > 0) {
+      const text = `В разделе: ${pluralizeRu(subFolders, ["папка", "папки", "папок"])} · ${compositionProjectsText(projects)}`;
+      return <span className="block whitespace-nowrap text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
+    }
+    const text = `В папке: ${compositionProjectsText(projects)}`;
+    return <span className="block whitespace-nowrap text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
+  }
+  if (type === "project") {
+    const project = contextInfo.project;
+    const count = Number(contextInfo.sessionCount ?? project?.sessions_count ?? project?.sessionCount ?? 0);
+    const text = `В проекте: ${compositionSessionsText(count)}`;
+    return <span className="block whitespace-nowrap text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
+  }
+  return null;
+}
 
 // ─── Explorer Left Column Header ──────────────────────────────────────────────
 // Вынесен на верхний уровень: определение функции внутри render приводит к
@@ -1412,7 +1493,12 @@ function WorkspaceSidebar({
                   <IcoWorkspace className={isActive ? "text-accent" : "text-muted"} />
                   <span className="truncate">{ws.name}</span>
                 </span>
-                {isActive ? <WorkspaceSidebarActiveCounters workspaceId={ws.id} /> : null}
+                {isActive ? (
+                  <>
+                    <WorkspaceSidebarActiveCounters workspaceId={ws.id} />
+                    <WorkspaceSidebarContextCounters />
+                  </>
+                ) : null}
               </button>
               <span className="text-[10px] text-muted opacity-60 mt-0.5">{ws.role || "viewer"}</span>
               {canRenameWorkspace && isActive ? (
@@ -1926,7 +2012,12 @@ function ProjectSessionsRows({
   };
 
   if (sessionsQuery.isPending) {
-    return <InlineLoadingRow depth={depth} colSpan={colSpan} />;
+    return (
+      <>
+        <InlineLoadingRow key={`ps-loading-${projectId}-1`} depth={depth} colSpan={colSpan} />
+        <InlineLoadingRow key={`ps-loading-${projectId}-2`} depth={depth} colSpan={colSpan} />
+      </>
+    );
   }
   if (sessionsQuery.isError) {
     return (
@@ -1958,14 +2049,12 @@ function ProjectSessionsRows({
 function InlineLoadingRow({ depth = 0, colSpan = 8 }) {
   const leftPadding = 8 + depth * 18;
   return (
-    <tr>
+    <tr className="animate-pulse">
       <td className="px-2 py-2.5 text-sm">
         <div style={{ paddingLeft: `${leftPadding}px` }} className="flex min-w-0 items-center gap-2">
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-panelAlt/50 text-muted">
-            <IcoSpinner className="animate-spin" />
-          </span>
-          <span className="h-4 w-4 shrink-0" />
-          <div className="h-5 w-full max-w-[220px] animate-pulse rounded bg-border/40" />
+          <span className="inline-flex h-6 w-6 shrink-0 rounded-md bg-border/40" aria-hidden />
+          <span className="h-4 w-4 shrink-0 rounded bg-border/40" aria-hidden />
+          <div className="h-4 w-full max-w-[220px] rounded bg-border/40" />
         </div>
       </td>
       <td colSpan={colSpan} className="px-2 py-2.5" />
@@ -2074,6 +2163,46 @@ function InlineErrorRow({ depth = 0, message = "", colSpan = 8, onRetry = null }
         </div>
       </td>
       <td colSpan={colSpan} className="px-2 py-2.5" />
+    </tr>
+  );
+}
+
+function ExplorerTableSkeletonRow({ columnLayout, treeColumnProfile }) {
+  return (
+    <tr className="animate-pulse">
+      <td className="px-2 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-6 w-6 shrink-0 rounded-md bg-border/40" aria-hidden />
+          <span className="h-4 w-4 shrink-0 rounded bg-border/40" aria-hidden />
+          <div className="h-4 w-full max-w-[260px] rounded bg-border/40" />
+        </div>
+      </td>
+      {columnLayout.showType ? <td className="px-2 py-2.5"><div className="h-4 w-10 rounded bg-border/40" /></td> : null}
+      {columnLayout.showComposition ? <td className="px-2 py-2.5"><div className="h-4 w-24 rounded bg-border/40" /></td> : null}
+      {columnLayout.showAssignee ? <td className="px-2 py-2.5"><div className="h-4 w-20 rounded bg-border/40" /></td> : null}
+      {treeColumnProfile.showSignalColumns ? <td className="px-2 py-2.5"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
+      {treeColumnProfile.showSignalColumns ? <td className="px-2 py-2.5"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
+      <td className="px-2 py-2.5"><div className="h-4 w-14 rounded bg-border/40" /></td>
+      {columnLayout.showUpdated ? <td className="px-2 py-2.5"><div className="h-4 w-20 rounded bg-border/40" /></td> : null}
+      <td className="px-2 py-2.5"><div className="ml-auto h-4 w-6 rounded bg-border/40" /></td>
+    </tr>
+  );
+}
+
+function ProjectTableSkeletonRow({ sessionColumnProfile }) {
+  return (
+    <tr className="animate-pulse">
+      <td className="px-3 py-2 w-5"><div className="h-4 w-4 rounded bg-border/40" /></td>
+      <td className="px-2 py-2"><div className="h-4 w-full max-w-[260px] rounded bg-border/40" /></td>
+      <td className="px-2 py-2"><div className="h-4 w-16 rounded bg-border/40" /></td>
+      <td className="hidden sm:table-cell px-2 py-2"><div className="h-4 w-16 rounded bg-border/40" /></td>
+      <td className="hidden md:table-cell px-2 py-2"><div className="h-4 w-20 rounded bg-border/40" /></td>
+      <td className="px-2 py-2"><div className="h-4 w-10 rounded bg-border/40" /></td>
+      {sessionColumnProfile.showDiscussionColumn ? <td className="px-2 py-2"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
+      {sessionColumnProfile.showSignalColumns ? <td className="px-2 py-2"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
+      {sessionColumnProfile.showSignalColumns ? <td className="px-2 py-2"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
+      <td className="px-2 py-2"><div className="ml-auto h-4 w-16 rounded bg-border/40" /></td>
+      <td className="px-2 py-2"><div className="ml-auto h-4 w-6 rounded bg-border/40" /></td>
     </tr>
   );
 }
@@ -2729,29 +2858,39 @@ function ExplorerPane({
   // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(explorerSidebarHeader);
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="space-y-2 w-full max-w-lg px-6">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-10 rounded-lg bg-border/30 animate-pulse" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  // Контекстные счётчики для сайдбара (uiux/sidebar-header-join-v1).
+  const explorerSidebarContextInfo = folderId && page?.context?.folder
+    ? {
+        type: "folder",
+        folder: page.context.folder,
+        childFolderCount: page.items?.filter((item) => item?.type === "folder").length ?? 0,
+        childProjectCount: page.items?.filter((item) => item?.type === "project").length ?? 0,
+      }
+    : null;
+  useSetExplorerSidebarContextInfo(explorerSidebarContextInfo);
+
+  const explorerIsLoadingPage = pageQuery.isFetching && !page;
+  const showExplorerSkeleton = useDelayedSkeleton(explorerIsLoadingPage);
 
   const explorerHeader = (
       <div className="px-4 pr-5 border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — путь (текущий сегмент = заголовок),
-            табы, поиск, создание. Кнопка «назад» живёт в левой колонке.
-            Счётчики workspace перенесены в сайдбар (uiux/ws-counters-to-sidebar-v1).
-            Без переносов; жертвы по ширине контейнера: поиск сжимается → крошки «…». */}
+        {/* Часть А-2 (nav-zone): одна строка ~40px — табы │ путь │ поиск/создание.
+            Кнопка «назад» живёт в левой колонке; счётчики — в сайдбаре.
+            Жертвы по ширине: поиск → иконка, путь схлопывает средние сегменты. */}
         <div
           ref={explorerNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
         >
+          <HeaderTabs
+            tabs={[
+              { key: "projects", label: "Проекты" },
+              { key: "analytics", label: "Аналитика" },
+            ]}
+            activeKey={activeTab}
+            onChange={setActiveTab}
+          />
+          <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
           <TextBreadcrumbs
             crumbs={headerCrumbItems}
             dataTestId="explorer-breadcrumbs"
@@ -2760,26 +2899,6 @@ function ExplorerPane({
             currentClassName="text-[15px] font-semibold min-w-[12ch]"
           />
           <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-            <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
-              <button
-                type="button"
-                onClick={() => setActiveTab("projects")}
-                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                  activeTab === "projects" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-                }`}
-              >
-                Проекты
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("analytics")}
-                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                  activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-                }`}
-              >
-                Аналитика
-              </button>
-            </div>
             <ExplorerSearchBox
               id="workspace-explorer-tree-search"
               value={searchQuery}
@@ -2898,7 +3017,15 @@ function ExplorerPane({
             </thead>
             )}
             <tbody className="divide-y divide-border/65">
-              {visibleRows.map((row, index) => {
+              {showExplorerSkeleton ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <ExplorerTableSkeletonRow
+                    key={`explorer-skel-${i}`}
+                    columnLayout={explorerColumnLayout}
+                    treeColumnProfile={treeColumnProfile}
+                  />
+                ))
+              ) : visibleRows.map((row, index) => {
                 if (row.rowType === "loading") {
                   return <InlineLoadingRow key={`loading-${row.parentId}-${index}`} depth={row.depth} colSpan={inlineColSpan} />;
                 }
@@ -3393,6 +3520,24 @@ function SessionRow({
 
 // ─── Session Tree Rows ────────────────────────────────────────────────────────
 
+function SessionChildrenSkeleton({ depth = 0 }) {
+  const indent = 8 + (depth + 1) * 18;
+  return (
+    <>
+      {[1, 2].map((i) => (
+        <tr key={`tree-skel-${depth}-${i}`} className="animate-pulse">
+          <td colSpan={99} className="px-2 py-2">
+            <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${indent}px` }}>
+              <span className="inline-flex h-6 w-6 shrink-0 rounded-md bg-border/40" aria-hidden />
+              <div className="h-4 w-full max-w-[180px] rounded bg-border/40" />
+            </div>
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
 function SessionTreeRows({
   sessions,
   depth = 0,
@@ -3447,13 +3592,7 @@ function SessionTreeRows({
         />
         {isExpanded ? (
           isLoading ? (
-            <tr className="bg-gray-50/50 transition-opacity duration-200">
-              <td colSpan={99} className="px-2 py-2 text-sm text-gray-500">
-                <span className="inline-flex items-center gap-2" style={{ paddingLeft: indent }}>
-                  <IcoSpinner className="h-4 w-4 animate-spin" /> Загрузка…
-                </span>
-              </td>
-            </tr>
+            <SessionChildrenSkeleton depth={depth} />
           ) : childError ? (
             <tr className="bg-gray-50/50 transition-opacity duration-200">
               <td colSpan={99} className="px-2 py-2 text-sm text-red-600">
@@ -3884,36 +4023,39 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   // Хук должен вызываться на каждом рендере ДО любого раннего return.
   useSetExplorerSidebarHeader(projectSidebarHeader);
 
+  // Контекстные счётчики для сайдбара (uiux/sidebar-header-join-v1).
+  const projectSidebarContextInfo = proj ? { type: "project", project: proj, sessionCount: sessions.length } : null;
+  useSetExplorerSidebarContextInfo(projectSidebarContextInfo);
+
+  const showProjectSkeleton = useDelayedSkeleton(loading);
+
   // Часть А: хедер проекта порталится в общий слот workspaceMain (пиксель-в-пиксель).
   const navSlotEl = useWorkspaceMainNavSlot();
-
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="space-y-2 w-full max-w-lg px-6">
-          {[1, 2, 3].map((i) => <div key={i} className="h-10 rounded-lg bg-border/30 animate-pulse" />)}
-        </div>
-      </div>
-    );
-  }
 
   if (error) {
     return <div className="flex-1 flex items-center justify-center p-8 text-danger text-sm">{error}</div>;
   }
 
   const createSessionLabel = projectNavLayout.shortCreateLabels ? "Сессия" : "Новая сессия";
-  const sessionCountersFull = `Сессии: ${sessionCount}`;
-  const sessionCountersShort = String(sessionCount);
 
   const projectHeader = (
       <div className="px-4 border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
-        {/* Часть А-2 (nav-zone): одна строка ~40px — путь (текущий сегмент = заголовок),
-            статус, табы, поиск, создание, мета справа. Кнопка «назад» живёт в левой колонке. */}
+        {/* Часть А-2 (nav-zone): одна строка ~40px — табы │ путь │ статус │ поиск/создание.
+            Кнопка «назад» живёт в левой колонке; мета счётчики — в сайдбаре. */}
         <div
           ref={projectNavRef}
           className="flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(projectNavWidth)}
         >
+          <HeaderTabs
+            tabs={[
+              { key: "sessions", label: "Сессии" },
+              { key: "analytics", label: "Аналитика" },
+            ]}
+            activeKey={activeTab}
+            onChange={setActiveTab}
+          />
+          <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
           <TextBreadcrumbs
             crumbs={projectCrumbItems}
             dataTestId="project-breadcrumbs"
@@ -3929,26 +4071,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             />
           ) : null}
           <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-            <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
-              <button
-                type="button"
-                onClick={() => setActiveTab("sessions")}
-                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                  activeTab === "sessions" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-                }`}
-              >
-                Сессии
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("analytics")}
-                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
-                  activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
-                }`}
-              >
-                Аналитика
-              </button>
-            </div>
             <ExplorerSearchBox
               id="workspace-explorer-project-search"
               value={searchQuery}
@@ -3959,17 +4081,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
                 <IcoPlus /> {createSessionLabel}
               </button>
-            ) : null}
-            {projectNavLayout.showCounters || projectNavLayout.shortCounters ? (
-              <span
-                className="shrink-0 text-xs text-muted"
-                title={projectNavLayout.shortCounters ? sessionCountersFull : undefined}
-                data-testid="project-meta"
-              >
-                {projectNavLayout.showCounters
-                  ? `· ${sessionCountersFull}`
-                  : `· ${sessionCountersShort}`}
-              </span>
             ) : null}
           </div>
         </div>
@@ -4074,58 +4185,66 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               </tr>
             </thead>
             <tbody className="divide-y divide-border/65">
-              {pendingUploads.map((u) => (
-                <PendingUploadRow key={u.tempId} upload={u} onRetry={handlePendingUploadRetry} />
-              ))}
-              {treeEnabled ? (
-                <SessionTreeRows
-                  sessions={sortedSessions}
-                  sort={sessionSort}
-                  expanded={expandedSessionIds}
-                  loadingChildren={loadingSessionChildren}
-                  childrenCache={sessionChildrenCache}
-                  childrenErrors={sessionChildrenErrors}
-                  onToggleExpand={toggleSessionExpand}
-                  onReloadChildren={loadSessionChildren}
-                  onOpen={(sess, options) => handleOpenSessionRequest({
-                    ...sess,
-                    project_id: projectId,
-                    workspace_id: workspaceId,
-                  }, options)}
-                  isOpening={openingSessionId}
-                  onReload={load}
-                  onSessionPatched={handleSessionPatched}
-                  onSessionStatusChange={handleSessionStatusChange}
-                  canRename={!!permissions?.canRenameSession}
-                  canDelete={!!permissions?.canDeleteSession}
-                  canChangeStatus={!!permissions?.canChangeStatus}
-                  showSignalColumns={sessionColumnProfile.showSignalColumns}
-                  showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
-                  noteAggregatesBySessionId={noteAggregatesBySessionId}
-                  eagerTree={eagerTree}
-                />
-              ) : (
-                sortedSessions.map((s) => (
-                  <SessionRow
-                    key={s.id}
-                    session={s}
-                    notesAggregate={noteAggregatesBySessionId.get(String(s?.id || s?.session_id || "").trim()) || null}
-                    isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
-                        onOpen={(sess, options) => handleOpenSessionRequest({
-                          ...sess,
-                          project_id: projectId,
-                          workspace_id: workspaceId,
-                        }, options)}
-                    onReload={load}
-                    onSessionPatched={handleSessionPatched}
-                    onSessionStatusChange={handleSessionStatusChange}
-                    canRename={!!permissions?.canRenameSession}
-                    canDelete={!!permissions?.canDeleteSession}
-                    canChangeStatus={!!permissions?.canChangeStatus}
-                    showSignalColumns={sessionColumnProfile.showSignalColumns}
-                    showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
-                  />
+              {showProjectSkeleton ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <ProjectTableSkeletonRow key={`project-skel-${i}`} sessionColumnProfile={sessionColumnProfile} />
                 ))
+              ) : (
+                <>
+                  {pendingUploads.map((u) => (
+                    <PendingUploadRow key={u.tempId} upload={u} onRetry={handlePendingUploadRetry} />
+                  ))}
+                  {treeEnabled ? (
+                    <SessionTreeRows
+                      sessions={sortedSessions}
+                      sort={sessionSort}
+                      expanded={expandedSessionIds}
+                      loadingChildren={loadingSessionChildren}
+                      childrenCache={sessionChildrenCache}
+                      childrenErrors={sessionChildrenErrors}
+                      onToggleExpand={toggleSessionExpand}
+                      onReloadChildren={loadSessionChildren}
+                      onOpen={(sess, options) => handleOpenSessionRequest({
+                        ...sess,
+                        project_id: projectId,
+                        workspace_id: workspaceId,
+                      }, options)}
+                      isOpening={openingSessionId}
+                      onReload={load}
+                      onSessionPatched={handleSessionPatched}
+                      onSessionStatusChange={handleSessionStatusChange}
+                      canRename={!!permissions?.canRenameSession}
+                      canDelete={!!permissions?.canDeleteSession}
+                      canChangeStatus={!!permissions?.canChangeStatus}
+                      showSignalColumns={sessionColumnProfile.showSignalColumns}
+                      showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                      noteAggregatesBySessionId={noteAggregatesBySessionId}
+                      eagerTree={eagerTree}
+                    />
+                  ) : (
+                    sortedSessions.map((s) => (
+                      <SessionRow
+                        key={s.id}
+                        session={s}
+                        notesAggregate={noteAggregatesBySessionId.get(String(s?.id || s?.session_id || "").trim()) || null}
+                        isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
+                            onOpen={(sess, options) => handleOpenSessionRequest({
+                              ...sess,
+                              project_id: projectId,
+                              workspace_id: workspaceId,
+                            }, options)}
+                        onReload={load}
+                        onSessionPatched={handleSessionPatched}
+                        onSessionStatusChange={handleSessionStatusChange}
+                        canRename={!!permissions?.canRenameSession}
+                        canDelete={!!permissions?.canDeleteSession}
+                        canChangeStatus={!!permissions?.canChangeStatus}
+                        showSignalColumns={sessionColumnProfile.showSignalColumns}
+                        showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                      />
+                    ))
+                  )}
+                </>
               )}
             </tbody>
           </table>
