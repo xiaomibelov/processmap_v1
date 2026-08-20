@@ -15,12 +15,12 @@ import httpx
 from .monolith_client import DEFAULT_TIMEOUT_SEC, _base_url, _headers
 
 
-def _post_llm3(session_id: str, action_path: str, token: str, *, params: Dict[str, Any], json_body: Dict[str, Any] = None) -> Dict[str, Any]:
+def _post_llm3(session_id: str, action_path: str, token: str, *, params: Dict[str, Any], json_body: Dict[str, Any] = None, org_id: str = "") -> Dict[str, Any]:
     url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/llm/{action_path}"
     try:
         resp = httpx.post(
             url,
-            headers=_headers(token),
+            headers=_headers(token, org_id),
             params={k: v for k, v in params.items() if v},
             json=json_body or {},
             timeout=DEFAULT_TIMEOUT_SEC * 2 + 10,  # запас на retry внутри gateway монолита
@@ -36,16 +36,16 @@ def _post_llm3(session_id: str, action_path: str, token: str, *, params: Dict[st
     return data if isinstance(data, dict) else {"ok": False, "status": "error", "error": "invalid_json_root"}
 
 
-def run_suggest_next(session_id: str, token: str, after_step_id: str = "") -> Dict[str, Any]:
+def run_suggest_next(session_id: str, token: str, after_step_id: str = "", *, org_id: str = "") -> Dict[str, Any]:
     """Runner for 'suggest-next' — LLM3 монолита с catalog guard."""
-    return _post_llm3(session_id, "suggest-next", token, params={"after_step_id": after_step_id})
+    return _post_llm3(session_id, "suggest-next", token, params={"after_step_id": after_step_id}, org_id=org_id)
 
 
-def run_explain_step(session_id: str, token: str, step_id: str = "") -> Dict[str, Any]:
+def run_explain_step(session_id: str, token: str, step_id: str = "", *, org_id: str = "") -> Dict[str, Any]:
     """Runner for 'explain-step' — LLM3 монолита, пересказ trace_map."""
-    return _post_llm3(session_id, "explain-step", token, params={"step_id": step_id})
+    return _post_llm3(session_id, "explain-step", token, params={"step_id": step_id}, org_id=org_id)
 
 
-def run_step_qa(session_id: str, token: str, step_id: str = "", question: str = "") -> Dict[str, Any]:
+def run_step_qa(session_id: str, token: str, step_id: str = "", question: str = "", *, org_id: str = "") -> Dict[str, Any]:
     """Runner for 'step-qa' — LLM3 монолита, контекст = шаг + соседи."""
-    return _post_llm3(session_id, "step-qa", token, params={"step_id": step_id}, json_body={"question": question})
+    return _post_llm3(session_id, "step-qa", token, params={"step_id": step_id}, json_body={"question": question}, org_id=org_id)

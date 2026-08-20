@@ -138,7 +138,7 @@ def propose_edit_plan(
             current_plan = None
             continue
 
-        validation_errors = validate_edit_plan(candidate, projection, token, session_id)
+        validation_errors = validate_edit_plan(candidate, projection, token, session_id, org_id=org_id)
         if not validation_errors:
             return candidate, {"status": "ok", "iterations": iteration, "validation_errors": []}
 

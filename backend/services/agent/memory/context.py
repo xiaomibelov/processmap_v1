@@ -38,7 +38,7 @@ def load_context(
     uid = str(user_id or "").strip()
     oid = str(org_id or "").strip() or "org_default"
 
-    proj = monolith_client.get_projection(sid, token=token)
+    proj = monolith_client.get_projection(sid, token=token, org_id=oid)
     projection = dict(proj.get("projection") or {})
     digest = str(proj.get("projection_digest") or "")
     history = list_turns(sid, uid, oid, limit=history_limit)
