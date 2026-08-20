@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   apiAdminLlmCreateProvider,
@@ -7,7 +7,9 @@ import {
   apiAdminLlmPatchProvider,
   apiAdminLlmTestProvider,
 } from "../api/adminApi";
+import { apiAdminListOrgs } from "../../../lib/api";
 import { apiLlmStatus } from "../../../lib/api";
+import { useAuth } from "../../auth/AuthProvider";
 import ErrorState from "../components/common/ErrorState";
 import LoadingBlock from "../components/common/LoadingBlock";
 import SectionCard from "../components/common/SectionCard";
@@ -22,6 +24,7 @@ const EMPTY_FORM = {
   priority: "0",
   enabled: true,
   api_key: "",
+  org_id: "",
 };
 
 function errorMessage(res, fallback) {
@@ -31,6 +34,7 @@ function errorMessage(res, fallback) {
 }
 
 export default function LlmProvidersPanel() {
+  const { orgs: authOrgs, activeOrgId } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,13 +46,30 @@ export default function LlmProvidersPanel() {
   const [testingId, setTestingId] = useState("");
   const [effectiveProvider, setEffectiveProvider] = useState(null);
   const [effectiveConfigured, setEffectiveConfigured] = useState(false);
+  const [adminOrgs, setAdminOrgs] = useState([]);
+
+  const orgOptions = useMemo(() => {
+    const list = asArray(adminOrgs.length ? adminOrgs : authOrgs);
+    const byId = new Map();
+    list.forEach((row) => {
+      const id = toText(row?.org_id || row?.id);
+      if (!id || byId.has(id)) return;
+      byId.set(id, { id, name: toText(row?.name || row?.org_name || id) });
+    });
+    // org_default всегда доступен как общий скоуп, даже если не в списке org пользователя.
+    if (!byId.has("org_default")) {
+      byId.set("org_default", { id: "org_default", name: t("providers.orgOption.orgDefault") });
+    }
+    return Array.from(byId.values());
+  }, [adminOrgs, authOrgs]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    const [providersRes, statusRes] = await Promise.all([
+    const [providersRes, statusRes, orgsRes] = await Promise.all([
       apiAdminLlmListProviders(),
       apiLlmStatus(),
+      apiAdminListOrgs(),
     ]);
     if (!providersRes?.ok) {
       setError(errorMessage(providersRes, "llm_providers_failed"));
@@ -60,6 +81,10 @@ export default function LlmProvidersPanel() {
       const statusData = asObject(statusRes.result || statusRes.data);
       setEffectiveConfigured(!!statusData.configured);
       setEffectiveProvider(asObject(statusData.effective_provider) || null);
+    }
+    if (orgsRes?.ok) {
+      const orgItems = asArray(asObject(orgsRes.data).items || asObject(orgsRes.data).orgs);
+      setAdminOrgs(orgItems);
     }
     setLoading(false);
   }, []);
@@ -78,6 +103,7 @@ export default function LlmProvidersPanel() {
       priority: String(toInt(item.priority, 0)),
       enabled: item.enabled !== false,
       api_key: "",
+      org_id: toText(item.org_id) || activeOrgId || "",
     });
     setActionError("");
   }
@@ -104,6 +130,7 @@ export default function LlmProvidersPanel() {
       priority: toInt(fieldValue("priority", form.priority), 0),
       enabled: enabledNode ? enabledNode.checked === true : form.enabled === true,
       api_key: String(fieldValue("api_key", form.api_key) || ""),
+      org_id: toText(fieldValue("org_id", form.org_id)),
     };
     setSaving(true);
     setActionError("");
@@ -115,6 +142,7 @@ export default function LlmProvidersPanel() {
       enabled: values.enabled,
     };
     if (toText(values.api_key)) payload.api_key = values.api_key;
+    if (toText(values.org_id)) payload.org_id = values.org_id;
     const res = editingId
       ? await apiAdminLlmPatchProvider(editingId, payload)
       : await apiAdminLlmCreateProvider(payload);
@@ -338,6 +366,22 @@ export default function LlmProvidersPanel() {
               onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
               data-testid="llm-provider-form-priority"
             />
+          </label>
+          <label className="text-xs font-semibold text-slate-700">
+            {t("providers.form.orgScope")}
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+              name="org_id"
+              value={form.org_id || activeOrgId || ""}
+              onChange={(event) => setForm((current) => ({ ...current, org_id: event.target.value }))}
+              data-testid="llm-provider-form-org-id"
+            >
+              {orgOptions.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.id === "org_default" ? t("providers.orgOption.orgDefault") : org.name}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">

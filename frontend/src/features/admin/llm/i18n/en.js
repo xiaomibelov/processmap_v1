@@ -43,6 +43,8 @@ export default {
   "providers.form.apiKey": "API key",
   "providers.form.apiKeyCreatePlaceholder": "paste API key",
   "providers.form.apiKeyEditPlaceholder": "leave empty — keep unchanged",
+  "providers.form.orgScope": "Org scope",
+  "providers.orgOption.orgDefault": "org_default (shared)",
   "providers.action.test": "Test",
   "providers.action.testing": "Testing…",
   "providers.action.enable": "Enable",
