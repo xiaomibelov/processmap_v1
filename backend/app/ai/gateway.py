@@ -51,10 +51,10 @@ def _env_fallback_provider() -> Optional[Dict[str, Any]]:
 
 
 def _provider_chain(org_id: str) -> List[Dict[str, Any]]:
-    providers = llm_store.enabled_providers_with_key(org_id)
+    providers = llm_store.effective_providers_with_key(org_id)
     if providers:
         return providers
-    if not llm_store.any_enabled_provider(org_id):
+    if not llm_store.any_enabled_provider(org_id) and not llm_store.any_enabled_provider("org_default"):
         env_provider = _env_fallback_provider()
         if env_provider:
             return [env_provider]
@@ -137,8 +137,13 @@ def complete(
 
     last_error = ""
     for provider_index, provider in enumerate(chain):
-        # LLM4 S8: fallback = ответил НЕ первый провайдер цепочки (или env-фолбэк).
-        fallback_used = provider_index > 0 or str(provider.get("id") or "") == "env_fallback"
+        # LLM4 S8: fallback = ответил НЕ первый провайдер цепочки (или env-фолбэк,
+        # или провайдер из org_default fallback для другой org).
+        fallback_used = (
+            provider_index > 0
+            or str(provider.get("id") or "") == "env_fallback"
+            or str(provider.get("org_id") or "org_default") != org_id
+        )
         # Резолв модели: реестр (override фичи → default) → provider.model (старое
         # поведение при пустом реестре, env-фолбэк несёт свой хардкод).
         resolved_model = llm_store.resolve_model(feature, org_id) or str(provider.get("model") or "")
@@ -179,6 +184,7 @@ def complete(
             prompt_version=int((prompt or {}).get("version") or 0),
             fallback=fallback_used,
         )
+
 
     return _finish("error", error=last_error or "all providers failed")
 

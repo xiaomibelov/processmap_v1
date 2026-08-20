@@ -687,10 +687,14 @@ def _run_edit_canvas_branch_stream(
     user_id: str,
     org_id: str,
     token: str,
-    turn_id: str,
+    stream_id: str,
     client_turn_id: Optional[str],
 ) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
-    """Streaming ветка edit_canvas: yield confirm_required и не завершает turn."""
+    """Streaming ветка edit_canvas: yield confirm_required и не завершает turn.
+
+    stream_id — только для события start; реальный turn_id для БД берётся из
+    _persist_assistant_turn, чтобы FK agent_pending_edits.turn_id не нарушался.
+    """
     disabled = _edit_feature_enabled(org_id)
     if disabled:
         _ = _persist_assistant_turn(
@@ -738,7 +742,7 @@ def _run_edit_canvas_branch_stream(
         return
 
     assistant_message = str(edit_plan.get("note") or "Агент предлагает изменить схему")
-    _ = _persist_assistant_turn(
+    assistant_turn_id, _ = _persist_assistant_turn(
         session_id, user_id, org_id,
         message=assistant_message, usage={}, ctx=ctx,
         client_turn_id=client_turn_id, action="edit_canvas",
@@ -749,7 +753,7 @@ def _run_edit_canvas_branch_stream(
     pending_id = create_pending_edit(
         session_id=session_id,
         org_id=org_id,
-        turn_id=turn_id,
+        turn_id=assistant_turn_id,
         edit_plan=edit_plan,
         now_ms=_now_ms(),
     )
@@ -902,8 +906,8 @@ def run_turn_stream(
     )
 
     project_id = str(getattr(ctx.session, "project_id", "") or "")
-    turn_id = f"turn_{uuid.uuid4().hex[:12]}"
-    yield ("start", {"turn_id": turn_id})
+    stream_id = f"stream_{uuid.uuid4().hex[:12]}"
+    yield ("start", {"turn_id": stream_id})
 
     intent = route_intent(
         payload.message,
@@ -947,7 +951,7 @@ def run_turn_stream(
 
     if intent == "edit_canvas":
         yield from _run_edit_canvas_branch_stream(
-            payload, ctx, sid, uid, oid, token, turn_id, client_turn_id
+            payload, ctx, sid, uid, oid, token, stream_id, client_turn_id
         )
         return
 
