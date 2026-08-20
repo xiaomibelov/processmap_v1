@@ -23,7 +23,13 @@ test("admin llm section is visible in admin navigation and route metadata", () =
   assert.match(nav, /label:\s*ru\.admin\.nav\.llm/);
   assert.match(utils, /llm:\s*ru\.admin\.sections\.llm/);
   assert.match(app, /route\.section === "llm"/);
-  assert.match(app, /<AdminLlmPage \/>/);
+  assert.match(app, /<AdminLlmPage/);
+});
+
+test("admin llm page has modules tab and renders LlmModulesPanel", () => {
+  const page = readAdminFile("pages/AdminLlmPage.jsx");
+  assert.match(page, /tab\.modules/);
+  assert.match(page, /LlmModulesPanel/);
 });
 
 test("admin llm API routes and wrappers are exposed", () => {
@@ -34,7 +40,10 @@ test("admin llm API routes and wrappers are exposed", () => {
   assert.match(apiRoutes, /llmProviders:\s*\(\)\s*=>\s*"\/api\/admin\/llm\/providers"/);
   assert.match(apiRoutes, /llmProvider:\s*\(id\)\s*=>/);
   assert.match(apiRoutes, /llmProviderTest:\s*\(id\)\s*=>/);
+  assert.match(apiRoutes, /llmModules:\s*\(\)\s*=>\s*"\/api\/admin\/llm\/modules"/);
+  assert.match(apiRoutes, /llmExecutions:\s*\(params = \{\}\)\s*=>\s*withQuery\("\/api\/admin\/llm\/executions"/);
   assert.match(apiRoutes, /llmPrompts:\s*\(params = \{\}\)\s*=>\s*withQuery\("\/api\/admin\/llm\/prompts"/);
+  assert.match(apiRoutes, /llmPrompt:\s*\(id\)\s*=>/);
   assert.match(apiRoutes, /llmPromptActivate:\s*\(id\)\s*=>/);
   assert.match(apiRoutes, /llmPromptRollback:\s*\(id\)\s*=>/);
   assert.match(apiRoutes, /llmFeatures:\s*\(\)\s*=>\s*"\/api\/admin\/llm\/features"/);
@@ -47,6 +56,9 @@ test("admin llm API routes and wrappers are exposed", () => {
     "apiAdminLlmPatchProvider",
     "apiAdminLlmDeleteProvider",
     "apiAdminLlmTestProvider",
+    "apiAdminLlmGetModules",
+    "apiAdminLlmListExecutions",
+    "apiAdminLlmGetPrompt",
     "apiAdminLlmListPrompts",
     "apiAdminLlmCreatePrompt",
     "apiAdminLlmActivatePrompt",

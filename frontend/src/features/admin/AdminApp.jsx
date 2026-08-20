@@ -378,7 +378,7 @@ function AdminAppInner({
       );
     }
     if (route.section === "ai-modules") {
-      return <AdminAiModulesPage />;
+      return <AdminAiModulesPage onNavigate={onNavigate} />;
     }
     if (route.section === "llm") {
       return <AdminLlmPage showTestgen={canOpenApiDocs} />;
