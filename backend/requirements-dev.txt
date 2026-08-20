@@ -8,3 +8,6 @@ fakeredis>=2.20
 # Contract-фаззинг (этап 1): schemathesis + hypothesis.
 schemathesis==4.24.3
 hypothesis==6.165.2
+# jsonschema-rs 0.50.0 убрал CanonicalSchema.is_satisfiable, ломая schemathesis 4.24.3
+# (сборка contract-тестов падает с AttributeError). Пиним до исправления апстрима.
+jsonschema-rs<0.50.0
