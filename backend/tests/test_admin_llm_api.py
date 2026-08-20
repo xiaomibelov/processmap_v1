@@ -27,6 +27,7 @@ DATABASE_URL = os.environ.get("E2_TEST_DATABASE_URL", "postgresql://fpc:fpc@loca
 from backend.app.main import app  # noqa: E402
 from backend.app.auth import create_access_token  # noqa: E402
 from backend.app.ai import llm_store  # noqa: E402
+from backend.app.ai.execution_log import record_ai_execution  # noqa: E402
 from backend.app.routers import admin_llm  # noqa: E402
 
 SECRET_KEY_VALUE = "sk-supersecret-abcdef1234567890"
@@ -322,6 +323,111 @@ def test_prompts_versioning_activate_rollback(client, admin_token, sandbox):
                        json={"feature": "", "template": "x"}).status_code == 422
     assert client.post("/api/admin/llm/prompts", headers=_auth(admin_token),
                        json={"feature": feature, "model_class": "lux"}).status_code == 422
+
+
+def test_llm_prompt_detail(client, admin_token, sandbox):
+    feature = sandbox["feature"]
+    r = client.post("/api/admin/llm/prompts", headers=_auth(admin_token),
+                    json={"feature": feature, "system": "S", "template": "T"})
+    prompt_id = r.json()["item"]["id"]
+    resp = client.get(f"/api/admin/llm/prompts/{prompt_id}", headers=_auth(admin_token))
+    assert resp.status_code == 200
+    item = resp.json()["item"]
+    _assert_shape(item, PROMPT_SHAPE, "prompt.detail")
+    assert item["id"] == prompt_id
+    assert client.get("/api/admin/llm/prompts/nope", headers=_auth(admin_token)).status_code == 404
+
+
+def test_llm_prompt_audit_log(client, admin_token, sandbox):
+    import psycopg
+
+    feature = sandbox["feature"]
+    r = client.post("/api/admin/llm/prompts", headers=_auth(admin_token),
+                    json={"feature": feature, "system": "S", "template": "T"})
+    prompt_id = r.json()["item"]["id"]
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, entity_type, entity_id FROM audit_log "
+                "WHERE entity_type = 'llm_prompt' AND entity_id = %s ORDER BY ts",
+                (prompt_id,),
+            )
+            rows = cur.fetchall()
+            assert len(rows) == 1
+            assert rows[0] == ("llm_prompt_created", "llm_prompt", prompt_id)
+
+            cur.execute("DELETE FROM audit_log WHERE entity_id = %s", (prompt_id,))
+        conn.commit()
+
+    r2 = client.post("/api/admin/llm/prompts", headers=_auth(admin_token),
+                     json={"feature": feature, "system": "S2", "template": "T2"})
+    other_id = r2.json()["item"]["id"]
+    client.post(f"/api/admin/llm/prompts/{other_id}/activate", headers=_auth(admin_token))
+    client.post(f"/api/admin/llm/prompts/{prompt_id}/activate", headers=_auth(admin_token))
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, entity_type, entity_id FROM audit_log "
+                "WHERE entity_type = 'llm_prompt' AND entity_id = %s ORDER BY ts",
+                (prompt_id,),
+            )
+            rows = cur.fetchall()
+            assert len(rows) == 1
+            assert rows[0] == ("llm_prompt_activated", "llm_prompt", prompt_id)
+            cur.execute("DELETE FROM audit_log WHERE entity_id IN (%s, %s)", (prompt_id, other_id))
+        conn.commit()
+
+
+# ---------------------------------------------------------------- modules / execution log
+
+MODULE_CATALOG_SHAPE = {
+    "ok": bool, "modules": list, "provider_settings": dict, "summary": dict,
+}
+
+
+def test_llm_modules_shape(client, admin_token):
+    resp = client.get("/api/admin/llm/modules", headers=_auth(admin_token))
+    assert resp.status_code == 200
+    data = resp.json()
+    for key, typ in MODULE_CATALOG_SHAPE.items():
+        assert key in data, f"modules response missing {key}"
+        assert isinstance(data[key], typ), f"modules.{key} wrong type"
+    assert data["ok"] is True
+    assert any(m.get("module_id") == "ai.questions.session" for m in data["modules"])
+
+
+def test_llm_executions_shape(client, admin_token):
+    import psycopg
+
+    marker = uuid.uuid4().hex[:8]
+    module_id = f"ai.path_report"
+    record_ai_execution(
+        module_id=module_id,
+        actor_user_id="admin",
+        scope={"org_id": "org_default"},
+        status="success",
+        output_summary=f"test-{marker}",
+    )
+    try:
+        resp = client.get("/api/admin/llm/executions", headers=_auth(admin_token))
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert isinstance(data["items"], list)
+        assert isinstance(data["count"], int)
+        assert isinstance(data["page"], dict)
+        assert any(str(r.get("output_summary")) == f"test-{marker}" for r in data["items"])
+
+        filtered = client.get(f"/api/admin/llm/executions?module_id={module_id}&status=success",
+                              headers=_auth(admin_token)).json()
+        assert any(str(r.get("output_summary")) == f"test-{marker}" for r in filtered["items"])
+    finally:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM ai_execution_log WHERE output_summary = %s", (f"test-{marker}",))
+            conn.commit()
 
 
 # ---------------------------------------------------------------- features

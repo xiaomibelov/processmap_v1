@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   apiAdminLlmActivatePrompt,
   apiAdminLlmCreatePrompt,
+  apiAdminLlmGetPrompt,
   apiAdminLlmListPrompts,
   apiAdminLlmRollbackPrompt,
 } from "../api/adminApi";
@@ -35,8 +36,20 @@ export default function LlmPromptsPanel() {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [detail, setDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const [form, setForm] = useState({ system: "", template: "", max_tokens: "1024", model_class: "primary" });
   const [saving, setSaving] = useState(false);
+
+  const featureOptions = useMemo(() => {
+    const fromItems = new Set();
+    asArray(items).forEach((item) => {
+      const f = toText(item?.feature);
+      if (f) fromItems.add(f);
+    });
+    return Array.from(new Set([...LLM_KNOWN_FEATURES, ...fromItems]));
+  }, [items]);
 
   const load = useCallback(async (featureName = feature) => {
     setLoading(true);
@@ -53,7 +66,23 @@ export default function LlmPromptsPanel() {
 
   useEffect(() => {
     void load(feature);
+    setDetail(null);
   }, [feature, load]);
+
+  async function selectPrompt(promptId) {
+    const id = toText(promptId);
+    if (!id) return;
+    setLoadingDetail(true);
+    setDetailError("");
+    const res = await apiAdminLlmGetPrompt(id);
+    if (!res?.ok) {
+      setDetailError(errorMessage(res, "llm_prompt_detail_failed"));
+      setDetail(null);
+    } else {
+      setDetail(asObject(res.data).item || asObject(res.data));
+    }
+    setLoadingDetail(false);
+  }
 
   async function activate(promptId) {
     const id = toText(promptId);
@@ -65,6 +94,10 @@ export default function LlmPromptsPanel() {
       setActionError(errorMessage(res, "llm_prompt_activate_failed"));
     } else {
       await load();
+      const item = asObject(res.data).item || {};
+      if (detail && detail.id === item.id) {
+        setDetail(item);
+      }
     }
     setBusyId("");
   }
@@ -82,6 +115,16 @@ export default function LlmPromptsPanel() {
       await load();
     }
     setBusyId("");
+  }
+
+  function cloneActiveToDraft() {
+    if (!detail) return;
+    setForm({
+      system: String(detail.system || ""),
+      template: String(detail.template || ""),
+      max_tokens: String(toInt(detail.max_tokens, 1024)),
+      model_class: LLM_MODEL_CLASSES.includes(toText(detail.model_class)) ? toText(detail.model_class) : "primary",
+    });
   }
 
   async function submitDraft(event) {
@@ -104,6 +147,9 @@ export default function LlmPromptsPanel() {
     setSaving(false);
   }
 
+  const detailItem = asObject(detail);
+  const detailStatus = toText(detailItem.status || "draft").toLowerCase();
+
   return (
     <SectionCard title={t("prompts.title")} subtitle={t("prompts.subtitle")}>
       <div className="mb-3 flex flex-wrap gap-3">
@@ -115,7 +161,7 @@ export default function LlmPromptsPanel() {
             onChange={(event) => setFeature(event.target.value)}
             data-testid="llm-prompt-feature-select"
           >
-            {LLM_KNOWN_FEATURES.map((name) => <option key={name} value={name}>{name}</option>)}
+            {featureOptions.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
         </label>
       </div>
@@ -141,7 +187,12 @@ export default function LlmPromptsPanel() {
                 const id = toText(prompt?.id);
                 const status = toText(prompt?.status || "draft");
                 return (
-                  <tr key={id} data-testid={`llm-prompt-row-${id}`}>
+                  <tr
+                    key={id}
+                    data-testid={`llm-prompt-row-${id}`}
+                    className="cursor-pointer hover:bg-slate-50"
+                    onClick={() => void selectPrompt(id)}
+                  >
                     <td className="px-3 py-3 align-top font-mono text-xs font-semibold text-slate-800">v{toInt(prompt?.version, 0)}</td>
                     <td className="px-3 py-3 align-top"><StatusPill status={status} tone={promptStatusTone(status)} /></td>
                     <td className="px-3 py-3 align-top text-xs text-slate-700">{toInt(prompt?.max_tokens, 0)}</td>
@@ -154,7 +205,10 @@ export default function LlmPromptsPanel() {
                           type="button"
                           className="rounded-lg border border-emerald-200 px-2 py-1 text-xs font-semibold text-emerald-700 disabled:opacity-40"
                           disabled={status === "active" || busyId === id}
-                          onClick={() => void activate(id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void activate(id);
+                          }}
                           data-testid={`llm-prompt-activate-${id}`}
                         >
                           {t("prompts.action.activate")}
@@ -163,7 +217,10 @@ export default function LlmPromptsPanel() {
                           type="button"
                           className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 disabled:opacity-40"
                           disabled={busyId === id}
-                          onClick={() => void rollback(id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void rollback(id);
+                          }}
                           data-testid={`llm-prompt-rollback-${id}`}
                         >
                           {t("prompts.action.rollback")}
@@ -181,6 +238,45 @@ export default function LlmPromptsPanel() {
           </table>
         </div>
       ) : null}
+
+      {loadingDetail ? <LoadingBlock label={t("common.loading")} /> : null}
+      {detailError ? <ErrorState title={t("common.error")} message={detailError} /> : null}
+      {detailItem.id ? (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3" data-testid="llm-prompt-detail">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{t("prompts.detail.title")}</div>
+            {detailStatus === "active" ? (
+              <button
+                type="button"
+                className="rounded-lg border border-emerald-200 px-2 py-1 text-xs font-semibold text-emerald-700"
+                onClick={() => cloneActiveToDraft()}
+                data-testid="llm-prompt-clone-active"
+              >
+                {t("prompts.detail.clone")}
+              </button>
+            ) : null}
+          </div>
+          <div className="mb-2 flex flex-wrap gap-2 text-xs">
+            <span className="font-mono font-semibold text-slate-800">{detailItem.id}</span>
+            <StatusPill status={toText(detailItem.status || "—")} tone={promptStatusTone(detailItem.status)} />
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">v{toInt(detailItem.version, 0)}</span>
+          </div>
+          <div className="mb-2 text-xs text-slate-500">
+            {toText(detailItem.updated_by || "—")} · {formatTs(detailItem.updated_at)}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">{t("prompts.detail.system")}</div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 font-mono text-xs text-slate-700">{toText(detailItem.system || "—")}</pre>
+            </div>
+            <div>
+              <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">{t("prompts.detail.template")}</div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 font-mono text-xs text-slate-700">{toText(detailItem.template || "—")}</pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <form
         className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"
         onSubmit={(event) => void submitDraft(event)}

@@ -270,6 +270,24 @@ export async function apiAdminLlmTestProvider(id) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminLlmGetModules() {
+  const r = okOrError(await request(apiRoutes.admin.llmModules(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmListExecutions(params = {}) {
+  const endpoint = apiRoutes.admin.llmExecutions(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmGetPrompt(id) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing prompt_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmPrompt(pid), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminLlmListPrompts(params = {}) {
   const endpoint = apiRoutes.admin.llmPrompts(normalizeAdminParams(params));
   const r = okOrError(await request(endpoint, { method: "GET" }));
