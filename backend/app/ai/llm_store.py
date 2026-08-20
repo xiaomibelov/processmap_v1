@@ -65,6 +65,18 @@ def list_providers(org_id: str = "org_default") -> List[Dict[str, Any]]:
         return _rows(cur)
 
 
+def list_providers_by_orgs(org_ids: List[str]) -> List[Dict[str, Any]]:
+    if not org_ids:
+        return []
+    placeholders = ", ".join("?" * len(org_ids))
+    with _connect() as con:
+        cur = con.execute(
+            f"SELECT * FROM llm_providers WHERE org_id IN ({placeholders}) ORDER BY priority ASC, name ASC",
+            tuple(org_ids),
+        )
+        return _rows(cur)
+
+
 def get_provider(provider_id: str) -> Optional[Dict[str, Any]]:
     with _connect() as con:
         cur = con.execute("SELECT * FROM llm_providers WHERE id = ?", (provider_id,))
@@ -97,7 +109,7 @@ def create_provider(
 
 
 def update_provider(provider_id: str, fields: Dict[str, Any], *, actor: str = "") -> Optional[Dict[str, Any]]:
-    allowed = {"name", "base_url", "model", "priority", "enabled", "api_key"}
+    allowed = {"name", "base_url", "model", "priority", "enabled", "api_key", "org_id"}
     sets: List[str] = []
     params: List[Any] = []
     for key in sorted(fields):

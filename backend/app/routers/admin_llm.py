@@ -33,6 +33,7 @@ class LlmProviderBody(BaseModel):
     api_key: str = ""
     priority: Optional[int] = None
     enabled: Optional[bool] = None
+    org_id: Optional[str] = None  # platform-admin может явно задать org; иначе текущая
 
 
 class LlmProviderPatchBody(BaseModel):
@@ -42,6 +43,7 @@ class LlmProviderPatchBody(BaseModel):
     api_key: Optional[str] = None  # None = не менять; "" = очистить
     priority: Optional[int] = None
     enabled: Optional[bool] = None
+    org_id: Optional[str] = None  # platform-admin может сменить скоуп; audit_log пишется
 
 
 class LlmPromptBody(BaseModel):
@@ -86,7 +88,10 @@ def admin_llm_list_providers(request: Request) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
         return err
-    items = [llm_store.mask_provider(p) for p in llm_store.list_providers(oid or "org_default")]
+    current_org = (oid or "").strip() or "org_default"
+    # Показываем провайдеры текущей org + общие провайдеры org_default.
+    org_ids = list(dict.fromkeys([current_org, "org_default"]))
+    items = [llm_store.mask_provider(p) for p in llm_store.list_providers_by_orgs(org_ids)]
     return {"ok": True, "items": items, "count": len(items)}
 
 
@@ -100,23 +105,53 @@ def admin_llm_create_provider(request: Request, body: LlmProviderBody) -> Any:
     model = (body.model or "").strip()
     if not name or not base_url or not model:
         return _legacy_main._enterprise_error(422, "validation_error", "name, base_url and model are required")
+    target_org = (body.org_id or "").strip() or (oid or "").strip() or "org_default"
     row = llm_store.create_provider(
-        org_id=oid or "org_default", name=name, base_url=base_url, model=model,
+        org_id=target_org, name=name, base_url=base_url, model=model,
         api_key=body.api_key or "", priority=100 if body.priority is None else int(body.priority),
         enabled=True if body.enabled is None else bool(body.enabled), actor=uid or "",
     )
+    try:
+        append_audit_log(
+            actor_user_id=uid or "",
+            org_id=target_org,
+            action="llm_provider_created",
+            entity_type="llm_provider",
+            entity_id=str(row.get("id") or ""),
+            meta={"org_id": target_org, "model": model},
+        )
+    except Exception:
+        pass
     return {"ok": True, "item": llm_store.mask_provider(row)}
 
 
 @router.patch("/api/admin/llm/providers/{provider_id}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_patch_provider(request: Request, provider_id: str, body: LlmProviderPatchBody) -> Any:
-    uid, _oid, err = _platform_admin_context(request)
+    uid, oid, err = _platform_admin_context(request)
     if err is not None:
         return err
-    if llm_store.get_provider(provider_id) is None:
+    current = llm_store.get_provider(provider_id)
+    if current is None:
         return _legacy_main._enterprise_error(404, "not_found", "provider not found")
     fields = body.model_dump(exclude_unset=True)
+    new_org = (fields.pop("org_id", None) or "").strip() or None
+    previous_org = str(current.get("org_id") or "org_default")
+    target_org = new_org or previous_org
+    if new_org and new_org != previous_org:
+        fields["org_id"] = new_org
     row = llm_store.update_provider(provider_id, fields, actor=uid or "")
+    if new_org and new_org != previous_org:
+        try:
+            append_audit_log(
+                actor_user_id=uid or "",
+                org_id=target_org,
+                action="llm_provider_scope_changed",
+                entity_type="llm_provider",
+                entity_id=provider_id,
+                meta={"previous_org_id": previous_org, "new_org_id": new_org, "current_org_id": oid or "org_default"},
+            )
+        except Exception:
+            pass
     return {"ok": True, "item": llm_store.mask_provider(row or {})}
 
 
