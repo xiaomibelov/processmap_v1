@@ -7,6 +7,15 @@ def _bool(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _validate_jwt_secret(secret: str) -> str:
+    value = str(secret or "").strip()
+    if not value:
+        raise RuntimeError("JWT_SECRET is not configured")
+    if len(value.encode("utf-8")) < 32:
+        raise RuntimeError("JWT_SECRET is too short")
+    return value
+
+
 class Config:
     """Service-specific configuration read from environment."""
 
@@ -14,7 +23,7 @@ class Config:
         "DATABASE_URL",
         "sqlite:///./notifications.db",
     )
-    JWT_SECRET: str = os.environ.get("JWT_SECRET", "dev-secret")
+    JWT_SECRET: str = os.environ.get("JWT_SECRET", "")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_ISSUER: str | None = os.environ.get("JWT_ISSUER")
 
@@ -36,3 +45,4 @@ class Config:
 
 
 config = Config()
+config.JWT_SECRET = _validate_jwt_secret(config.JWT_SECRET)

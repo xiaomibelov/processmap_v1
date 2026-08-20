@@ -46,9 +46,14 @@ class InternalCompleteCachedIn(BaseModel):
     timeout_sec: int = 30
 
 
+_INVALID_AGENT_TOKENS = {"", "change_me_internal", "CHANGE_ME_INTERNAL", "dev-insecure-change-me"}
+
+
 def _check_internal_token(x_internal_token: str) -> None:
     expected = str(os.environ.get("AGENT_SVC_INTERNAL_TOKEN") or "").strip()
-    if not expected or str(x_internal_token or "").strip() != expected:
+    if not expected or expected in _INVALID_AGENT_TOKENS:
+        raise HTTPException(status_code=401, detail="agent internal token is not configured")
+    if str(x_internal_token or "").strip() != expected:
         raise HTTPException(status_code=401, detail="invalid internal token")
 
 

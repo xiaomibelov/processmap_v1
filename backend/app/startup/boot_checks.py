@@ -16,9 +16,13 @@ def register_boot_events(
     *,
     seed_admin: Callable[[], None],
     validate_invite_email_config: Callable[[], None],
+    validate_jwt_secret: Callable[[], None],
+    validate_llm_encryption_key: Callable[[], None],
 ) -> None:
     @app.on_event("startup")
     def _startup_bootstrap() -> None:
+        validate_jwt_secret()
+        validate_llm_encryption_key()
         seed_admin()
         validate_invite_email_config()
 

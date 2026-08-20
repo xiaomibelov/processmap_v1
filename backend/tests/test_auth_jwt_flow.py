@@ -16,7 +16,7 @@ class AuthJwtFlowTest(unittest.TestCase):
         os.environ["DEV_SEED_ADMIN"] = "1"
         os.environ["ADMIN_EMAIL"] = "admin@local"
         os.environ["ADMIN_PASSWORD"] = "admin"
-        os.environ["JWT_SECRET"] = "unit-test-secret"
+        os.environ["JWT_SECRET"] = "unit-test-secret-for-processmap-jwt-only-32b"
 
         from app.auth import seed_admin_user_if_enabled
 

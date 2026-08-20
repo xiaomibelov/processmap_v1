@@ -19,6 +19,8 @@ from fastapi import FastAPI
 from gateway.llm_store import ensure_edit_feature_flags
 from memory.schema_memory import run_memory_worker_once
 from routers import agent_chat, agent_resume, agent_stream, health, internal_llm
+from routers.internal_llm import _INVALID_AGENT_TOKENS
+
 
 logging.basicConfig(
     level=logging.INFO if str(os.environ.get("AGENT_LOG_LEVEL") or "info").lower() != "debug" else logging.DEBUG,
@@ -42,6 +44,13 @@ def _memory_worker_loop(stop_event: threading.Event) -> None:
             time.sleep(0.5)
 
 
+def _validate_agent_token_or_die() -> None:
+    """Fail fast if the internal service token is missing or a known placeholder."""
+    internal_token = str(os.environ.get("AGENT_SVC_INTERNAL_TOKEN") or "").strip()
+    if not internal_token or internal_token in _INVALID_AGENT_TOKENS:
+        raise RuntimeError("AGENT_SVC_INTERNAL_TOKEN is not configured or is a placeholder")
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ProcessMap Agent Service",
@@ -60,6 +69,7 @@ def create_app() -> FastAPI:
     def _startup() -> None:
         global _worker_stop_event, _worker_thread
         logger.info("agent service starting up")
+        _validate_agent_token_or_die()
         try:
             ensure_edit_feature_flags()
             logger.info("edit feature flags ensured")

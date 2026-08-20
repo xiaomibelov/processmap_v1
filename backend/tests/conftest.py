@@ -3,6 +3,15 @@ import tempfile
 
 import pytest
 
+# Ensure test-only defaults for secrets that are now required at runtime.
+# Real values are never committed; these defaults are safe for the local
+# SQLite-backed test suite only.
+os.environ.setdefault("JWT_SECRET", "unit-test-secret-for-processmap-only")
+os.environ.setdefault("JWT_ISSUER", "processmap-test")
+os.environ.setdefault("JWT_AUDIENCE", "processmap-test")
+os.environ.setdefault("AGENT_SVC_INTERNAL_TOKEN", "unit-test-agent-internal-token")
+os.environ.setdefault("LLM_SETTINGS_ENCRYPTION_KEY", "unit-test-llm-settings-encryption-key-32b")
+
 
 @pytest.fixture(autouse=True)
 def isolate_process_db():
