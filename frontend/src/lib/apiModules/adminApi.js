@@ -238,6 +238,8 @@ export async function apiAdminLlmCreateProvider(payload = {}) {
     enabled: payload?.enabled !== false,
   };
   if (String(payload?.api_key || payload?.apiKey || "")) body.api_key = String(payload?.api_key || payload?.apiKey);
+  const orgId = String(payload?.org_id || payload?.orgId || "").trim();
+  if (orgId) body.org_id = orgId;
   const r = okOrError(await request(apiRoutes.admin.llmProviders(), { method: "POST", body }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
@@ -252,6 +254,10 @@ export async function apiAdminLlmPatchProvider(id, payload = {}) {
   if (Object.prototype.hasOwnProperty.call(payload || {}, "priority")) body.priority = Math.round(Number(payload?.priority || 0));
   if (Object.prototype.hasOwnProperty.call(payload || {}, "enabled")) body.enabled = Boolean(payload?.enabled);
   if (Object.prototype.hasOwnProperty.call(payload || {}, "api_key")) body.api_key = String(payload?.api_key || "");
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "org_id")) {
+    const orgId = String(payload?.org_id || "").trim();
+    if (orgId) body.org_id = orgId;
+  }
   const r = okOrError(await request(apiRoutes.admin.llmProvider(pid), { method: "PATCH", body }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }

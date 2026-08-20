@@ -216,6 +216,112 @@ def test_provider_validation_422(client, admin_token, sandbox):
     assert resp.json()["error"]["code"] == "validation_error"
 
 
+def test_provider_create_with_explicit_org_id(client, admin_token, sandbox):
+    resp = client.post("/api/admin/llm/providers", headers=_auth(admin_token), json={
+        "name": sandbox["name"], "base_url": "https://api.x.com", "model": "m",
+        "org_id": "my_explicit_org",
+    })
+    assert resp.status_code == 201
+    item = resp.json()["item"]
+    assert item["org_id"] == "my_explicit_org"
+
+    # audit_log о создании
+    import psycopg
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, entity_type, meta_json FROM audit_log "
+                "WHERE entity_type = 'llm_provider' AND entity_id = %s ORDER BY ts",
+                (item["id"],),
+            )
+            rows = cur.fetchall()
+            assert len(rows) == 1
+            assert rows[0][0] == "llm_provider_created"
+            assert json.loads(rows[0][2] or "{}").get("org_id") == "my_explicit_org"
+            cur.execute("DELETE FROM audit_log WHERE entity_id = %s", (item["id"],))
+        conn.commit()
+
+
+def test_provider_patch_org_id_and_audit_log(client, admin_token, sandbox):
+    resp = client.post("/api/admin/llm/providers", headers=_auth(admin_token), json={
+        "name": sandbox["name"], "base_url": "https://api.x.com", "model": "m",
+    })
+    pid = resp.json()["item"]["id"]
+    assert resp.json()["item"]["org_id"] == "org_default"
+
+    resp = client.patch(f"/api/admin/llm/providers/{pid}", headers=_auth(admin_token),
+                        json={"org_id": "another_org"})
+    assert resp.status_code == 200
+    assert resp.json()["item"]["org_id"] == "another_org"
+
+    import psycopg
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT action, meta_json FROM audit_log "
+                "WHERE entity_type = 'llm_provider' AND entity_id = %s ORDER BY ts",
+                (pid,),
+            )
+            rows = cur.fetchall()
+            scope_changes = [r for r in rows if r[0] == "llm_provider_scope_changed"]
+            assert len(scope_changes) == 1
+            meta = json.loads(scope_changes[0][1] or "{}")
+            assert meta.get("previous_org_id") == "org_default"
+            assert meta.get("new_org_id") == "another_org"
+            cur.execute("DELETE FROM audit_log WHERE entity_id = %s", (pid,))
+        conn.commit()
+
+
+def test_provider_list_includes_org_default(client, sandbox):
+    """Провайдеры текущей org + org_default показываются в одном списке."""
+    import psycopg
+
+    marker = uuid.uuid4().hex[:8]
+    current_org = f"test_org_{marker}"
+    uid = _insert_user(is_admin=True)
+    token = create_access_token(uid)
+    # Создаём провайдеров в двух разных org напрямую в БД.
+    prov_current = llm_store.create_provider(
+        org_id=current_org, name=f"prov-current-{marker}",
+        base_url="https://a", model="m1", api_key="sk-current")
+    prov_default = llm_store.create_provider(
+        org_id="org_default", name=f"prov-default-{marker}",
+        base_url="https://b", model="m2", api_key="sk-default")
+    try:
+        # Для HTTP-запроса нужно, чтобы admin был членом current_org.
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO orgs (id, name, created_at) VALUES (%s, %s, 0) "
+                    "ON CONFLICT (id) DO NOTHING",
+                    (current_org, current_org),
+                )
+                cur.execute(
+                    "INSERT INTO org_memberships (org_id, user_id, role, created_at) "
+                    "VALUES (%s, %s, 'org_owner', 0) ON CONFLICT DO NOTHING",
+                    (current_org, uid),
+                )
+            conn.commit()
+
+        resp = client.get("/api/admin/llm/providers", headers={
+            **_auth(token),
+            "X-Active-Org-Id": current_org,
+        })
+        assert resp.status_code == 200
+        ids = {p["id"] for p in resp.json()["items"]}
+        assert prov_current["id"] in ids
+        assert prov_default["id"] in ids
+    finally:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM llm_providers WHERE id IN (%s, %s)",
+                            (prov_current["id"], prov_default["id"]))
+                cur.execute("DELETE FROM org_memberships WHERE org_id = %s", (current_org,))
+                cur.execute("DELETE FROM orgs WHERE id = %s", (current_org,))
+                cur.execute("DELETE FROM users WHERE id = %s", (uid,))
+            conn.commit()
+
+
 def test_provider_test_call(client, admin_token, sandbox):
     row = llm_store.create_provider(org_id="org_default", name=sandbox["name"],
                                     base_url="https://api.deepseek.com", model="deepseek-chat",

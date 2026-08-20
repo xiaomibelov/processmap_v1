@@ -14,7 +14,7 @@ const FRONTEND_ROOT = path.resolve(__dirname, "../../../..");
 
 let viteServer = null;
 
-async function loadPage() {
+async function loadModules() {
   if (!viteServer) {
     viteServer = await createServer({
       root: FRONTEND_ROOT,
@@ -23,7 +23,11 @@ async function loadPage() {
       appType: "custom",
     });
   }
-  return viteServer.ssrLoadModule("/src/features/admin/pages/AdminLlmPage.jsx");
+  const [pageMod, authMod] = await Promise.all([
+    viteServer.ssrLoadModule("/src/features/admin/pages/AdminLlmPage.jsx"),
+    viteServer.ssrLoadModule("/src/features/auth/AuthProvider.jsx"),
+  ]);
+  return { Page: pageMod.default, AuthProvider: authMod.AuthProvider };
 }
 
 after(async () => {
@@ -111,6 +115,16 @@ function installFetchMock() {
     const method = String(init?.method || "GET").toUpperCase();
     calls.push({ url, method, body: init?.body ? String(init.body) : "" });
 
+    if (url === "/api/auth/me" && method === "GET") {
+      return jsonResponse({
+        ok: true,
+        user: { id: "admin", is_admin: true },
+        orgs: [{ org_id: "org1", name: "Test Org" }],
+        active_org_id: "org1",
+        default_org_id: "org1",
+      });
+    }
+
     if (url.startsWith("/api/admin/llm/models/model_2/set-default") && method === "POST") {
       return jsonResponse({
         ok: true,
@@ -197,6 +211,12 @@ function installFetchMock() {
           updated_at: 200,
         },
       }, 201);
+    }
+    if (url === "/api/admin/orgs" && method === "GET") {
+      return jsonResponse({
+        ok: true,
+        items: [{ org_id: "org1", name: "Test Org" }],
+      });
     }
     if (url.startsWith("/api/admin/llm/providers") && method === "GET") {
       return jsonResponse({
@@ -317,13 +337,12 @@ function installFetchMock() {
 }
 
 async function renderPage() {
-  const mod = await loadPage();
-  const Page = mod.default;
+  const { Page, AuthProvider } = await loadModules();
   const env = setupDom();
   await act(async () => {
-    env.root.render(React.createElement(Page));
+    env.root.render(React.createElement(AuthProvider, null, React.createElement(Page)));
   });
-  await flush(50);
+  await flush(80);
   return env;
 }
 
