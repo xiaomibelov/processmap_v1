@@ -23,6 +23,9 @@ from .admin import _platform_admin_context
 router = APIRouter()
 
 
+_ADMIN_LLM_FORBIDDEN = {403: {"description": "Доступ запрещён: требуется platform admin"}}
+
+
 class LlmProviderBody(BaseModel):
     name: str = ""
     base_url: str = ""
@@ -78,7 +81,7 @@ class LlmFeatureModelBody(BaseModel):
 
 # ---------------------------------------------------------------- providers
 
-@router.get("/api/admin/llm/providers")
+@router.get("/api/admin/llm/providers", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_list_providers(request: Request) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -87,7 +90,7 @@ def admin_llm_list_providers(request: Request) -> Any:
     return {"ok": True, "items": items, "count": len(items)}
 
 
-@router.post("/api/admin/llm/providers", status_code=201)
+@router.post("/api/admin/llm/providers", status_code=201, responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_create_provider(request: Request, body: LlmProviderBody) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -105,7 +108,7 @@ def admin_llm_create_provider(request: Request, body: LlmProviderBody) -> Any:
     return {"ok": True, "item": llm_store.mask_provider(row)}
 
 
-@router.patch("/api/admin/llm/providers/{provider_id}")
+@router.patch("/api/admin/llm/providers/{provider_id}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_patch_provider(request: Request, provider_id: str, body: LlmProviderPatchBody) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
@@ -117,7 +120,7 @@ def admin_llm_patch_provider(request: Request, provider_id: str, body: LlmProvid
     return {"ok": True, "item": llm_store.mask_provider(row or {})}
 
 
-@router.delete("/api/admin/llm/providers/{provider_id}")
+@router.delete("/api/admin/llm/providers/{provider_id}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_delete_provider(request: Request, provider_id: str) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
@@ -127,7 +130,7 @@ def admin_llm_delete_provider(request: Request, provider_id: str) -> Any:
     return {"ok": True, "deleted": True, "id": provider_id}
 
 
-@router.post("/api/admin/llm/providers/{provider_id}/test")
+@router.post("/api/admin/llm/providers/{provider_id}/test", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_test_provider(request: Request, provider_id: str) -> Any:
     """Тестовый вызов провайдера (verify_llm_settings-паттерн): latency + preview.
 
@@ -192,7 +195,7 @@ def admin_llm_test_provider(request: Request, provider_id: str) -> Any:
 # ------------------------------------------------------------------ models
 # Реестр моделей (миграция 016): что реально уходит в payload["model"].
 
-@router.get("/api/admin/llm/models")
+@router.get("/api/admin/llm/models", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_list_models(request: Request) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -201,7 +204,7 @@ def admin_llm_list_models(request: Request) -> Any:
     return {"ok": True, "items": items, "count": len(items)}
 
 
-@router.post("/api/admin/llm/models", status_code=201)
+@router.post("/api/admin/llm/models", status_code=201, responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_create_model(request: Request, body: LlmModelBody) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -218,7 +221,7 @@ def admin_llm_create_model(request: Request, body: LlmModelBody) -> Any:
     return {"ok": True, "item": llm_store.public_model(row)}
 
 
-@router.patch("/api/admin/llm/models/{model_id}")
+@router.patch("/api/admin/llm/models/{model_id}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_patch_model(request: Request, model_id: str, body: LlmModelPatchBody) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
@@ -238,9 +241,9 @@ def admin_llm_patch_model(request: Request, model_id: str, body: LlmModelPatchBo
 
 
 @router.delete("/api/admin/llm/models/{model_id}", responses={
+    403: {"description": "Доступ запрещён: требуется platform admin"},
     409: {"description": "Конфликт: default-модель нельзя удалить (сначала назначьте другой default)"},
     404: {"description": "Не найдено: модель отсутствует"},
-    403: {"description": "Доступ запрещён: требуется platform admin"},
 })
 def admin_llm_delete_model(request: Request, model_id: str) -> Any:
     uid, _oid, err = _platform_admin_context(request)
@@ -256,7 +259,7 @@ def admin_llm_delete_model(request: Request, model_id: str) -> Any:
     return {"ok": True, "deleted": True, "id": model_id}
 
 
-@router.post("/api/admin/llm/models/{model_id}/set-default")
+@router.post("/api/admin/llm/models/{model_id}/set-default", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_set_default_model(request: Request, model_id: str) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
@@ -267,7 +270,7 @@ def admin_llm_set_default_model(request: Request, model_id: str) -> Any:
     return {"ok": True, "item": llm_store.public_model(row)}
 
 
-@router.get("/api/admin/llm/feature-models")
+@router.get("/api/admin/llm/feature-models", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_list_feature_models(request: Request) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -276,7 +279,7 @@ def admin_llm_list_feature_models(request: Request) -> Any:
     return {"ok": True, "items": items, "count": len(items)}
 
 
-@router.put("/api/admin/llm/feature-models/{feature}")
+@router.put("/api/admin/llm/feature-models/{feature}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_put_feature_model(request: Request, feature: str, body: LlmFeatureModelBody) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -294,7 +297,7 @@ def admin_llm_put_feature_model(request: Request, feature: str, body: LlmFeature
 
 # ------------------------------------------------------------------ prompts
 
-@router.get("/api/admin/llm/prompts")
+@router.get("/api/admin/llm/prompts", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_list_prompts(
     request: Request,
     feature: str = Query(default=""),
@@ -309,7 +312,7 @@ def admin_llm_list_prompts(
     return {"ok": True, **result}
 
 
-@router.get("/api/admin/llm/prompts/{prompt_id}")
+@router.get("/api/admin/llm/prompts/{prompt_id}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_get_prompt(request: Request, prompt_id: str) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -320,7 +323,7 @@ def admin_llm_get_prompt(request: Request, prompt_id: str) -> Any:
     return {"ok": True, "item": row}
 
 
-@router.post("/api/admin/llm/prompts", status_code=201)
+@router.post("/api/admin/llm/prompts", status_code=201, responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_create_prompt(request: Request, body: LlmPromptBody) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -350,7 +353,7 @@ def admin_llm_create_prompt(request: Request, body: LlmPromptBody) -> Any:
     return {"ok": True, "item": row}
 
 
-@router.post("/api/admin/llm/prompts/{prompt_id}/activate")
+@router.post("/api/admin/llm/prompts/{prompt_id}/activate", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_activate_prompt(request: Request, prompt_id: str) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -381,7 +384,7 @@ def admin_llm_activate_prompt(request: Request, prompt_id: str) -> Any:
     return {"ok": True, "item": row, "archived_id": archived_id}
 
 
-@router.post("/api/admin/llm/prompts/{prompt_id}/rollback")
+@router.post("/api/admin/llm/prompts/{prompt_id}/rollback", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_rollback_prompt(request: Request, prompt_id: str) -> Any:
     """Откат: активирует последнюю archived-версию той же фичи (ниже текущего active)."""
     uid, _oid, err = _platform_admin_context(request)
@@ -399,7 +402,7 @@ def admin_llm_rollback_prompt(request: Request, prompt_id: str) -> Any:
 
 # ------------------------------------------------------------------- flags
 
-@router.get("/api/admin/llm/features")
+@router.get("/api/admin/llm/features", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_list_features(request: Request) -> Any:
     uid, oid, err = _platform_admin_context(request)
     if err is not None:
@@ -420,7 +423,7 @@ def admin_llm_list_features(request: Request) -> Any:
     return {"ok": True, "items": items}
 
 
-@router.patch("/api/admin/llm/features/{feature}")
+@router.patch("/api/admin/llm/features/{feature}", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_patch_feature(request: Request, feature: str, body: LlmFeaturePatchBody) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
@@ -441,7 +444,7 @@ def admin_llm_patch_feature(request: Request, feature: str, body: LlmFeaturePatc
 
 # ------------------------------------------------------------------ usage
 
-@router.get("/api/admin/llm/usage")
+@router.get("/api/admin/llm/usage", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_usage(
     request: Request,
     from_ts: int = Query(default=0),
@@ -460,7 +463,7 @@ def admin_llm_usage(
 
 # ------------------------------------------------------------------ modules (legacy catalog + execution log)
 
-@router.get("/api/admin/llm/modules")
+@router.get("/api/admin/llm/modules", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_modules(request: Request) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
@@ -468,7 +471,7 @@ def admin_llm_modules(request: Request) -> Any:
     return ai_module_catalog_payload()
 
 
-@router.get("/api/admin/llm/executions")
+@router.get("/api/admin/llm/executions", responses=_ADMIN_LLM_FORBIDDEN)
 def admin_llm_executions(
     request: Request,
     module_id: str = Query(default=""),
