@@ -91,6 +91,28 @@ def test_complete_cached_field_by_field(client):
     assert cc.call_args.args[1] == "d" * 32
 
 
+def test_complete_cached_digest_reaches_service(client):
+    """Bug C: digest schema_assistant доезжает до сервисного gateway и бьёт кэш."""
+    first = dict(_GW_RESULT, cached=False)
+    second = dict(_GW_RESULT, cached=True, usage={"prompt_tokens": 0, "completion_tokens": 0})
+    with mock.patch("gateway.gateway.complete_cached", side_effect=[first, second]) as cc:
+        r1 = client.post(
+            "/internal/llm/complete_cached",
+            headers=_headers(),
+            json={"feature": "schema_assistant", "cache_digest": "digest-abc", "payload": {"a": 1}},
+        )
+        r2 = client.post(
+            "/internal/llm/complete_cached",
+            headers=_headers(),
+            json={"feature": "schema_assistant", "cache_digest": "digest-abc", "payload": {"a": 1}},
+        )
+    assert r1.status_code == 200 and r1.json()["cached"] is False
+    assert r2.status_code == 200 and r2.json()["cached"] is True
+    assert r2.json()["usage"] == {"prompt_tokens": 0, "completion_tokens": 0}
+    assert cc.call_count == 2
+    assert cc.call_args.args[1] == "digest-abc"
+
+
 def test_complete_error_status_passthrough(client):
     err = {"ok": False, "status": "no_provider", "error": "no enabled LLM providers with api key", "latency_ms": 1}
     with mock.patch("gateway.gateway.complete", return_value=err):

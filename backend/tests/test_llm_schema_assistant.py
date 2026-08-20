@@ -124,6 +124,32 @@ def test_suggest_next_gateway_status_and_partial(_mock_repo, _mock_catalog):
     assert resp["suggestions"]["candidates"] == []
 
 
+def test_suggest_next_cached_second_call(_mock_repo, _mock_catalog):
+    """Bug C: повторный suggest_next на неизменной схеме → cached=true, 0/0."""
+    calls = []
+
+    def _side_effect(feature, digest, payload, **kwargs):
+        calls.append(digest)
+        if len(calls) == 1:
+            return _gw_ok(SUGGEST_JSON, cached=False)
+        return {
+            "ok": True, "status": "ok", "cached": True,
+            "text": SUGGEST_JSON,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            "provider_id": "prov_1", "model": "deepseek-v4-flash", "prompt_version": 1,
+            "latency_ms": 1,
+        }
+
+    with mock.patch.object(sa, "complete_cached", side_effect=_side_effect) as cc:
+        r1 = sa.llm_suggest_next("sess_llm3")
+        r2 = sa.llm_suggest_next("sess_llm3")
+    assert r1["cached"] is False
+    assert r2["cached"] is True
+    assert r2["usage"] == {"prompt_tokens": 0, "completion_tokens": 0}
+    assert len(calls) == 2, "complete_cached вызван дважды с одинаковым digest"
+    assert calls[0] == calls[1]
+
+
 # ── explain_step ─────────────────────────────────────────────────────────────
 
 def test_explain_step_no_trace_no_llm(_mock_repo):
