@@ -3,7 +3,13 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI
 
 from .. import _legacy_main
-from ..auth import bearer_auth, optional_access_token_payload, seed_admin_user_if_enabled
+from ..auth import (
+    bearer_auth,
+    optional_access_token_payload,
+    seed_admin_user_if_enabled,
+    validate_jwt_secret_on_boot,
+)
+from ..settings import validate_llm_encryption_key_on_boot
 from ..middleware.logging_middleware import LoggingMiddleware
 from ..routers import ROUTERS
 from .boot_checks import register_boot_events
@@ -44,6 +50,8 @@ def create_app() -> FastAPI:
         app,
         seed_admin=seed_admin_user_if_enabled,
         validate_invite_email_config=_legacy_main._validate_invite_email_config_on_boot,
+        validate_jwt_secret=validate_jwt_secret_on_boot,
+        validate_llm_encryption_key=validate_llm_encryption_key_on_boot,
     )
 
     # Системный фикс класса «int-параметр > int64 → OverflowError на sqlite-bind

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
+import stat
 import time
 from pathlib import Path
 from typing import Any, Dict
 
 import requests
+from cryptography.fernet import Fernet, InvalidToken
 
 
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -19,6 +23,34 @@ def _storage_dir() -> Path:
 
 def _llm_settings_path() -> Path:
     return _storage_dir() / "_llm_settings.json"
+
+
+def _llm_encryption_key() -> bytes:
+    """Return a valid Fernet key derived from LLM_SETTINGS_ENCRYPTION_KEY.
+
+    The environment value may be either a 32-byte base64-encoded Fernet key
+    (44 url-safe characters) or any high-entropy secret from which a key is
+    derived using PBKDF2-HMAC-SHA256.
+    """
+    raw = str(os.environ.get("LLM_SETTINGS_ENCRYPTION_KEY") or "").strip()
+    if not raw:
+        raise RuntimeError("LLM_SETTINGS_ENCRYPTION_KEY is not configured")
+    # Accept a ready-to-use Fernet key.
+    try:
+        Fernet(raw.encode("utf-8"))
+        return raw.encode("utf-8")
+    except Exception:
+        pass
+    # Derive a Fernet key from the provided secret.
+    # A fixed salt is acceptable here because the input is assumed to be
+    # high-entropy; the salt only prevents pre-computation of weak passwords.
+    salt = b"processmap.llm.settings.v1"
+    key = hashlib.pbkdf2_hmac("sha256", raw.encode("utf-8"), salt, 100_000, dklen=32)
+    return base64.urlsafe_b64encode(key)
+
+
+def _fernet() -> Fernet:
+    return Fernet(_llm_encryption_key())
 
 
 def _normalize_base_url(base_url: str) -> str:
@@ -41,6 +73,28 @@ def _normalize_base_url(base_url: str) -> str:
     return u or DEFAULT_DEEPSEEK_BASE_URL
 
 
+def _read_plaintext_settings(p: Path) -> Dict[str, str]:
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        return {
+            "api_key": str(raw.get("api_key") or "").strip(),
+            "base_url": str(raw.get("base_url") or "").strip(),
+        }
+    return {"api_key": "", "base_url": ""}
+
+
+def _read_encrypted_settings(p: Path) -> Dict[str, str]:
+    data = p.read_bytes()
+    decrypted = _fernet().decrypt(data)
+    raw = json.loads(decrypted.decode("utf-8"))
+    if isinstance(raw, dict):
+        return {
+            "api_key": str(raw.get("api_key") or "").strip(),
+            "base_url": str(raw.get("base_url") or "").strip(),
+        }
+    return {"api_key": "", "base_url": ""}
+
+
 def load_llm_settings() -> Dict[str, str]:
     p = _llm_settings_path()
 
@@ -49,12 +103,16 @@ def load_llm_settings() -> Dict[str, str]:
 
     if p.exists():
         try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                api_key = (raw.get("api_key") or "").strip() or api_key
-                base_url = (raw.get("base_url") or "").strip() or base_url
-        except Exception:
-            pass
+            settings = _read_encrypted_settings(p)
+        except (InvalidToken, ValueError, json.JSONDecodeError):
+            # Backward compatibility: migrate plaintext files written before
+            # encryption was introduced.
+            try:
+                settings = _read_plaintext_settings(p)
+            except Exception:
+                settings = {"api_key": "", "base_url": ""}
+        api_key = settings.get("api_key") or api_key
+        base_url = settings.get("base_url") or base_url
 
     base_url = _normalize_base_url(base_url)
     return {"api_key": api_key, "base_url": base_url}
@@ -74,9 +132,19 @@ def save_llm_settings(api_key: str, base_url: str) -> Dict[str, Any]:
 
     p = _llm_settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"api_key": k, "base_url": u}, ensure_ascii=False, indent=2), encoding="utf-8")
+    encrypted = _fernet().encrypt(
+        json.dumps({"api_key": k, "base_url": u}, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+    p.write_bytes(encrypted)
+    # Restrict read access to the file owner only.
+    p.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
     return {"ok": True, "has_api_key": bool(k), "base_url": u}
+
+
+def validate_llm_encryption_key_on_boot() -> None:
+    """Fail fast on startup if the LLM settings encryption key is missing."""
+    _llm_encryption_key()
 
 
 def verify_llm_settings(api_key: str = "", base_url: str = "") -> Dict[str, Any]:

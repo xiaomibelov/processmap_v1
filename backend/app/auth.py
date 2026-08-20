@@ -23,10 +23,14 @@ except Exception:
     bcrypt = None
 
 
-DEFAULT_JWT_SECRET = "dev-insecure-change-me"
+
+
 ACCESS_TOKEN_TTL_MIN = 15
 REFRESH_TOKEN_TTL_DAYS = 14
 PBKDF2_ITERATIONS = 390_000
+# Minimum JWT secret length in bytes. The secret must be set externally and
+# must be high-entropy; there is no fallback/default secret.
+MIN_JWT_SECRET_LENGTH = 32
 
 AUTH_PUBLIC_PATHS = {
     "/api/auth/login",
@@ -152,7 +156,24 @@ def refresh_rotation_grace_seconds() -> int:
 
 def jwt_secret() -> str:
     secret = os.getenv("JWT_SECRET", "").strip()
-    return secret or DEFAULT_JWT_SECRET
+    if not secret:
+        raise AuthError("JWT_SECRET is not configured")
+    if len(secret.encode("utf-8")) < MIN_JWT_SECRET_LENGTH:
+        raise AuthError("JWT_SECRET is too short")
+    return secret
+
+
+def jwt_issuer() -> Optional[str]:
+    return os.environ.get("JWT_ISSUER") or None
+
+
+def jwt_audience() -> Optional[str]:
+    return os.environ.get("JWT_AUDIENCE") or None
+
+
+def validate_jwt_secret_on_boot() -> None:
+    """Fail fast on startup if the JWT signing secret is missing or weak."""
+    jwt_secret()
 
 
 def refresh_cookie_secure() -> bool:
@@ -242,6 +263,13 @@ def _b64url_decode(raw: str) -> bytes:
 
 def _jwt_encode(payload: Dict[str, Any]) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
+    payload = dict(payload)
+    iss = jwt_issuer()
+    if iss:
+        payload.setdefault("iss", iss)
+    aud = jwt_audience()
+    if aud:
+        payload.setdefault("aud", aud)
     p1 = _b64url_encode(json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
     p2 = _b64url_encode(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
     msg = f"{p1}.{p2}".encode("utf-8")
@@ -256,6 +284,15 @@ def _jwt_decode(token: str) -> Dict[str, Any]:
 
     h_b64, p_b64, s_b64 = parts
     msg = f"{h_b64}.{p_b64}".encode("utf-8")
+
+    try:
+        header = json.loads(_b64url_decode(h_b64).decode("utf-8"))
+    except Exception as e:
+        raise AuthError("invalid_header") from e
+
+    if not isinstance(header, dict) or header.get("alg") != "HS256":
+        raise AuthError("invalid_algorithm")
+
     expected = hmac.new(jwt_secret().encode("utf-8"), msg, hashlib.sha256).digest()
     got = _b64url_decode(s_b64)
     if not hmac.compare_digest(expected, got):
@@ -272,6 +309,14 @@ def _jwt_decode(token: str) -> Dict[str, Any]:
     exp = int(payload.get("exp") or 0)
     if exp <= 0 or exp <= now_ts():
         raise AuthError("token_expired")
+
+    expected_iss = jwt_issuer()
+    if expected_iss and payload.get("iss") != expected_iss:
+        raise AuthError("invalid_issuer")
+
+    expected_aud = jwt_audience()
+    if expected_aud and payload.get("aud") != expected_aud:
+        raise AuthError("invalid_audience")
 
     return payload
 

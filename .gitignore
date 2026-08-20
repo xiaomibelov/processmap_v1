@@ -36,6 +36,7 @@ frontend/test-results/
 workspace/projects/*.json
 .env
 .env.*
+!.env.example
 .local/*
 !.local/processmap/
 .local/processmap/*

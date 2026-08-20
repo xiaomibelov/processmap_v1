@@ -28,13 +28,22 @@ class SessionNotFound(Exception):
     """404: сессии нет, она удалена или принадлежит чужой org."""
 
 
+def _require_jwt_secret() -> str:
+    secret = str(os.environ.get("JWT_SECRET") or "").strip()
+    if not secret:
+        raise AuthError("JWT_SECRET is not configured")
+    if len(secret.encode("utf-8")) < 32:
+        raise AuthError("JWT_SECRET is too short")
+    return secret
+
+
 def decode_access_token(token: str) -> Dict[str, Any]:
     if not token:
         raise AuthError("missing token")
     try:
         payload = jwt.decode(
             token,
-            str(os.environ.get("JWT_SECRET") or "dev-insecure-change-me"),
+            _require_jwt_secret(),
             algorithms=["HS256"],
             issuer=os.environ.get("JWT_ISSUER") or None,
         )

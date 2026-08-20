@@ -11,7 +11,7 @@ import pytest
 _fd, _DB_PATH = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
-os.environ["JWT_SECRET"] = "test-secret"
+os.environ["JWT_SECRET"] = "test-secret-for-notifications-jwt-only-32b"
 os.environ["NOTIFICATIONS_SKIP_AUTH"] = "1"
 os.environ["NOTIFICATIONS_LOG_LEVEL"] = "warning"
 
