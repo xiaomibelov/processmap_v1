@@ -12,16 +12,12 @@ function readAdminFile(relPath) {
   return fs.readFileSync(path.join(ADMIN_ROOT, relPath), "utf8");
 }
 
-test("admin ai modules section is visible in admin navigation and route metadata", () => {
-  const routes = readAdminFile("constants/adminRoutes.constants.js");
+test("admin ai-modules redirects to /admin/llm and is removed from top nav", () => {
   const nav = readAdminFile("constants/adminNav.js");
-  const utils = readAdminFile("adminUtils.js");
   const app = readAdminFile("AdminApp.jsx");
+  const page = readAdminFile("pages/AdminAiModulesPage.jsx");
 
-  assert.match(routes, /aiModules:\s*"ai-modules"/);
-  assert.match(routes, /path:\s*"\/admin\/ai-modules"/);
-  assert.match(nav, /label:\s*ru\.admin\.nav\.aiModules/);
-  assert.match(utils, /"ai-modules":\s*ru\.admin\.sections\.aiModules/);
-  assert.match(app, /route\.section === "ai-modules"/);
-  assert.match(app, /<AdminAiModulesPage \/>/);
+  assert.doesNotMatch(nav, /label:\s*ru\.admin\.nav\.aiModules/);
+  assert.match(page, /\/admin\/llm\?tab=modules/);
+  assert.match(app, /route\.section === "ai-modules"[\s\S]*<AdminAiModulesPage onNavigate=\{onNavigate\} \/>/);
 });

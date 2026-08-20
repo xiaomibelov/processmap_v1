@@ -7,6 +7,7 @@ import {
   apiAdminLlmPatchProvider,
   apiAdminLlmTestProvider,
 } from "../api/adminApi";
+import { apiLlmStatus } from "../../../lib/api";
 import ErrorState from "../components/common/ErrorState";
 import LoadingBlock from "../components/common/LoadingBlock";
 import SectionCard from "../components/common/SectionCard";
@@ -39,16 +40,26 @@ export default function LlmProvidersPanel() {
   const [saving, setSaving] = useState(false);
   const [testResults, setTestResults] = useState({});
   const [testingId, setTestingId] = useState("");
+  const [effectiveProvider, setEffectiveProvider] = useState(null);
+  const [effectiveConfigured, setEffectiveConfigured] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    const res = await apiAdminLlmListProviders();
-    if (!res?.ok) {
-      setError(errorMessage(res, "llm_providers_failed"));
+    const [providersRes, statusRes] = await Promise.all([
+      apiAdminLlmListProviders(),
+      apiLlmStatus(),
+    ]);
+    if (!providersRes?.ok) {
+      setError(errorMessage(providersRes, "llm_providers_failed"));
       setItems([]);
     } else {
-      setItems(asArray(asObject(res.data).items));
+      setItems(asArray(asObject(providersRes.data).items));
+    }
+    if (statusRes?.ok) {
+      const statusData = asObject(statusRes.result || statusRes.data);
+      setEffectiveConfigured(!!statusData.configured);
+      setEffectiveProvider(asObject(statusData.effective_provider) || null);
     }
     setLoading(false);
   }, []);
@@ -162,6 +173,17 @@ export default function LlmProvidersPanel() {
       {error ? <ErrorState title={t("common.error")} message={error} /> : null}
       {actionError ? <ErrorState title={t("common.error")} message={actionError} /> : null}
       {!loading && !error ? (
+        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs" data-testid="llm-effective-provider">
+          {effectiveConfigured && effectiveProvider ? (
+            <span className="font-semibold text-slate-700">
+              {tf("providers.effectiveProvider", { name: toText(effectiveProvider.name || effectiveProvider.id || "—") })}
+            </span>
+          ) : (
+            <span className="text-slate-500">{t("providers.effectiveProvider.none")}</span>
+          )}
+        </div>
+      ) : null}
+      {!loading && !error ? (
         <div className="overflow-x-auto" data-testid="llm-providers-table">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-[0.16em] text-slate-500">
@@ -171,6 +193,7 @@ export default function LlmProvidersPanel() {
                 <th className="px-3 py-2">{t("providers.col.model")}</th>
                 <th className="px-3 py-2">{t("providers.col.priority")}</th>
                 <th className="px-3 py-2">{t("providers.col.enabled")}</th>
+                <th className="px-3 py-2">Org</th>
                 <th className="px-3 py-2">{t("providers.col.key")}</th>
                 <th className="px-3 py-2">{t("providers.col.updated")}</th>
                 <th className="px-3 py-2">{t("common.actions")}</th>
@@ -194,6 +217,20 @@ export default function LlmProvidersPanel() {
                         status={enabled ? t("common.enabled") : t("common.disabled")}
                         tone={enabled ? "ok" : "default"}
                       />
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          toText(provider?.org_id) === "org_default"
+                            ? "bg-slate-100 text-slate-600"
+                            : "bg-emerald-50 text-emerald-700"
+                        }`}
+                        data-testid={`llm-provider-org-${id}`}
+                      >
+                        {toText(provider?.org_id) === "org_default"
+                          ? t("providers.orgBadge.shared")
+                          : tf("providers.orgBadge.orgOnly", { org: toText(provider?.org_id || "—") })}
+                      </span>
                     </td>
                     <td className="px-3 py-3 align-top font-mono text-xs text-slate-600">
                       {hasKey && last4 ? tf("providers.keyMasked", { last4 }) : "—"}
