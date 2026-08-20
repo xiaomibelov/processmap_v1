@@ -276,11 +276,11 @@ def test_backend_exception_event_includes_exception_message():
 def test_backend_exception_event_includes_os_error_details():
     from app.error_events.schema import build_backend_exception_event
 
-    exc = OSError(13, "Permission denied", "/tmp/secret.txt")
+    exc = OSError(50, "Network down", "/tmp/secret.txt")
     event = build_backend_exception_event(_telemetry_request(), exc)
     context = dict(event.context_json or {})
     assert context.get("exception_message")
-    assert context.get("os_errno") == 13
+    assert context.get("os_errno") == 50
     assert context.get("os_filename") == "/tmp/secret.txt"
     assert "os_filename2" in context
     assert event.message == "Unhandled backend exception: OSError"

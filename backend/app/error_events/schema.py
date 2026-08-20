@@ -393,22 +393,26 @@ def build_backend_exception_event(request: Request, exc: Exception) -> ErrorEven
     path = _normalize_route(str(getattr(request.url, "path", "") or ""))
     exception_type = _normalize_text(type(exc).__name__, max_len=160) or "Exception"
     exception_module = _normalize_text(type(exc).__module__, max_len=240)
-    context = redact_context_json(
-        {
-            "method": method,
-            "route": route,
-            "path": path,
-            "query_present": bool(str(getattr(request.url, "query", "") or "")),
-            "status_code": 500,
-            "exception_type": exception_type,
-            "exception_module": exception_module,
-            "stack": _compact_exception_frames(exc),
-            "_server": {
-                "capture": "backend_exception_middleware",
-                "request_id_source": request_id_source,
-            },
-        }
-    )
+    context_payload = {
+        "method": method,
+        "route": route,
+        "path": path,
+        "query_present": bool(str(getattr(request.url, "query", "") or "")),
+        "status_code": 500,
+        "exception_type": exception_type,
+        "exception_module": exception_module,
+        "exception_message": _normalize_text(str(exc), max_len=_MAX_TEXT),
+        "stack": _compact_exception_frames(exc),
+        "_server": {
+            "capture": "backend_exception_middleware",
+            "request_id_source": request_id_source,
+        },
+    }
+    if isinstance(exc, OSError):
+        context_payload["os_errno"] = getattr(exc, "errno", None)
+        context_payload["os_filename"] = getattr(exc, "filename", None)
+        context_payload["os_filename2"] = getattr(exc, "filename2", None)
+    context = redact_context_json(context_payload)
     event = {
         "id": f"evt_{uuid.uuid4().hex[:12]}",
         "schema_version": SCHEMA_VERSION,
