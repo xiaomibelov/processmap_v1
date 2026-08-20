@@ -29,6 +29,10 @@
 - 5 кейсов блокера п.4.
 - Обновлён API-тест `/properties/recalculation` на case A.
 
+### CI — `backend/requirements-dev.txt`
+- Запинен транзитивный dependency `jsonschema-rs>=0.49.0,<0.50.0`.
+- Причина: `jsonschema-rs 0.50.0` выпущен 2026-08-20T17:27:37Z и ломает `schemathesis 4.24.3` на этапе collection (`AttributeError: 'CanonicalSchema' object has no attribute 'is_satisfiable'`). Это же падение наблюдается на `main` после merge PR #789.
+
 ## Проверка
 
 ```bash
@@ -49,12 +53,12 @@ npm run build
 
 ```
 branch: fix/analytics-source-recalc-logic
-HEAD:   42218978... (origin/main baseline)
-status:
-  M backend/app/routers/analytics.py
-  M backend/tests/test_analytics_backend_driven.py
-  M frontend/src/features/analytics/AnalyticsPropertiesPanel.jsx
-  ?? .planning/contours/fix/analytics-source-recalc-logic/
+HEAD:   409d5970 ci(backend): pin jsonschema-rs <0.50.0
+origin: 409d5970 -> origin/fix/analytics-source-recalc-logic
+status: clean (кроме .venv311/, не в коммите)
+commits:
+  409d5970 ci(backend): pin jsonschema-rs <0.50.0
+  499d4cd9 fix(analytics): A/B/C классификация SOURCE и расчёта производительности
 ```
 
 ## Ограничения / открытые вопросы
