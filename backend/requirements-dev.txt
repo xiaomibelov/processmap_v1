@@ -8,3 +8,5 @@ fakeredis>=2.20
 # Contract-фаззинг (этап 1): schemathesis + hypothesis.
 schemathesis==4.24.3
 hypothesis==6.165.2
+# schemathesis 4.24.3 вызывает canonical.is_satisfiable(), удалённый в jsonschema-rs 0.50.0+
+jsonschema-rs<0.50.0
