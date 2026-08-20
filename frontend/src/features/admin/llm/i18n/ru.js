@@ -45,6 +45,8 @@ export default {
   "providers.form.apiKey": "API key",
   "providers.form.apiKeyCreatePlaceholder": "вставьте API key",
   "providers.form.apiKeyEditPlaceholder": "оставьте пустым — не менять",
+  "providers.form.orgScope": "Org-скоуп",
+  "providers.orgOption.orgDefault": "org_default (общий)",
   "providers.action.test": "Проверить",
   "providers.action.testing": "Проверка…",
   "providers.action.enable": "Включить",

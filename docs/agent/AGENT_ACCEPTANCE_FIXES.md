@@ -56,6 +56,44 @@
 | V2-оверлеи отображаются | Скриншот | TBD | |
 | Canvas-правки руками работают | Ручной smoke-test | TBD | |
 
+## Контур `fix/admin-llm-org-scope`
+
+Цель: дать platform-admin в `/admin/llm` явно выбирать org-скоуп провайдера
+(текущая org / `org_default` общий), чтобы ключ переставал «привязываться
+не к той организации».
+
+### Изменения в коде
+
+- **Backend:**
+  - `backend/app/routers/admin_llm.py` — `POST/PATCH /api/admin/llm/providers`
+    принимают `org_id`; `GET /api/admin/llm/providers` возвращает провайдеры
+    текущей org + `org_default`; `audit_log` на создание и смену скоупа.
+  - `backend/app/ai/llm_store.py` — `list_providers_by_orgs(org_ids)`,
+    `update_provider` разрешает менять `org_id`.
+- **Frontend:**
+  - `frontend/src/features/admin/llm/LlmProvidersPanel.jsx` — селект
+    «Org-скоуп» с загрузкой списка org через `apiAdminListOrgs` / fallback
+    на `useAuth().orgs`.
+  - `frontend/src/lib/apiModules/adminApi.js` — `org_id` пробрасывается в
+    `createProvider` / `patchProvider`.
+  - `frontend/src/features/admin/llm/i18n/ru.js` и `en.js` — строки
+    `providers.form.orgScope`, `providers.orgOption.orgDefault`.
+  - `frontend/src/features/admin/pages/AdminLlmPage.test.mjs` — моки
+    `/api/auth/me` и `/api/admin/orgs`, `AuthProvider`.
+- **Тесты:** `backend/tests/test_admin_llm_api.py` — 3 новых теста
+  (explicit org_id, patch org_id + audit_log, list включает org_default).
+
+### Приёмка на stage
+
+| Критерий | Артефакт | Вердикт | Дата |
+|---|---|---|---|
+| В `/admin/llm` при создании провайдера есть селект org-скоупа (текущая org / org_default) | Скриншот / DOM | TBD | |
+| Platform-admin создаёт провайдер VVPROXY для `org_default` через UI, ключ вводит владелец | Провайдер в списке с `org_id=org_default` | TBD | |
+| Свободный вопрос в сессии `org_default` → SSE-ответ | Тело SSE, `llm_usage` | TBD | |
+| `llm_usage.provider_id` указывает на org_default-провайдера | Запись `llm_usage` | TBD | |
+| Router cache — повторный тот же вопрос → `cached=true`, 0 токенов | `llm_usage.cached=true` | TBD | |
+| Регрессия `/admin/llm`: список, редактирование, тест провайдера работают | Ручной smoke-test | TBD | |
+
 ## Известные ограничения
 
 - `test_status_404_foreign_user` падает на локальной dev-БД (возвращает 200
