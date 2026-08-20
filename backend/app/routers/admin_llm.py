@@ -14,7 +14,10 @@ from pydantic import BaseModel
 
 from .. import _legacy_main
 from ..ai import llm_store
+from ..ai.execution_log import list_ai_executions
 from ..ai.llm_http_client import _deepseek_chat_request
+from ..ai.module_catalog import ai_module_catalog_payload
+from ..storage import append_audit_log
 from .admin import _platform_admin_context
 
 router = APIRouter()
@@ -306,9 +309,20 @@ def admin_llm_list_prompts(
     return {"ok": True, **result}
 
 
+@router.get("/api/admin/llm/prompts/{prompt_id}")
+def admin_llm_get_prompt(request: Request, prompt_id: str) -> Any:
+    uid, oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    row = llm_store.get_prompt(prompt_id)
+    if row is None:
+        return _legacy_main._enterprise_error(404, "not_found", "prompt not found")
+    return {"ok": True, "item": row}
+
+
 @router.post("/api/admin/llm/prompts", status_code=201)
 def admin_llm_create_prompt(request: Request, body: LlmPromptBody) -> Any:
-    uid, _oid, err = _platform_admin_context(request)
+    uid, oid, err = _platform_admin_context(request)
     if err is not None:
         return err
     feature = (body.feature or "").strip()
@@ -322,12 +336,23 @@ def admin_llm_create_prompt(request: Request, body: LlmPromptBody) -> Any:
         max_tokens=2000 if body.max_tokens is None else int(body.max_tokens),
         model_class=model_class, actor=uid or "",
     )
+    try:
+        append_audit_log(
+            actor_user_id=uid or "",
+            org_id=oid or "org_default",
+            action="llm_prompt_created",
+            entity_type="llm_prompt",
+            entity_id=str(row.get("id") or ""),
+            meta={"feature": feature, "version": int(row.get("version") or 0)},
+        )
+    except Exception:
+        pass
     return {"ok": True, "item": row}
 
 
 @router.post("/api/admin/llm/prompts/{prompt_id}/activate")
 def admin_llm_activate_prompt(request: Request, prompt_id: str) -> Any:
-    uid, _oid, err = _platform_admin_context(request)
+    uid, oid, err = _platform_admin_context(request)
     if err is not None:
         return err
     before = llm_store.get_prompt(prompt_id)
@@ -338,6 +363,21 @@ def admin_llm_activate_prompt(request: Request, prompt_id: str) -> Any:
     archived_id = ""
     if prev_active and prev_active.get("id") != prompt_id:
         archived_id = str(prev_active.get("id") or "")
+    try:
+        append_audit_log(
+            actor_user_id=uid or "",
+            org_id=oid or "org_default",
+            action="llm_prompt_activated",
+            entity_type="llm_prompt",
+            entity_id=str(row.get("id") or ""),
+            meta={
+                "feature": str(row.get("feature") or ""),
+                "version": int(row.get("version") or 0),
+                "archived_id": archived_id,
+            },
+        )
+    except Exception:
+        pass
     return {"ok": True, "item": row, "archived_id": archived_id}
 
 
@@ -416,3 +456,47 @@ def admin_llm_usage(
         from_ts=from_ts, to_ts=to_ts, feature=feature, model=model, org_id=oid or "org_default",
     )
     return {"ok": True, **result}
+
+
+# ------------------------------------------------------------------ modules (legacy catalog + execution log)
+
+@router.get("/api/admin/llm/modules")
+def admin_llm_modules(request: Request) -> Any:
+    uid, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    return ai_module_catalog_payload()
+
+
+@router.get("/api/admin/llm/executions")
+def admin_llm_executions(
+    request: Request,
+    module_id: str = Query(default=""),
+    status: str = Query(default=""),
+    actor_user_id: str = Query(default=""),
+    org_id: str = Query(default=""),
+    workspace_id: str = Query(default=""),
+    project_id: str = Query(default=""),
+    session_id: str = Query(default=""),
+    created_from: int = Query(default=0),
+    created_to: int = Query(default=0),
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+) -> Any:
+    uid, oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    effective_org_id = (org_id or "").strip() if (org_id or "").strip() else (oid or "org_default")
+    return list_ai_executions(
+        org_id=effective_org_id,
+        module_id=module_id or None,
+        status=status or None,
+        actor_user_id=actor_user_id or None,
+        workspace_id=workspace_id or None,
+        project_id=project_id or None,
+        session_id=session_id or None,
+        created_from=max(0, int(created_from or 0)) or None,
+        created_to=max(0, int(created_to or 0)) or None,
+        limit=max(1, min(int(limit or 50), 200)),
+        offset=max(0, int(offset or 0)),
+    )

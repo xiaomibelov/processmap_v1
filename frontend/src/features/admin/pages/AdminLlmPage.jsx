@@ -4,6 +4,7 @@ import AdminTabs from "../components/common/AdminTabs";
 import { toText } from "../adminUtils";
 import LlmProvidersPanel from "../llm/LlmProvidersPanel";
 import LlmModelsPanel from "../llm/LlmModelsPanel";
+import LlmModulesPanel from "../llm/LlmModulesPanel";
 import LlmPromptsPanel from "../llm/LlmPromptsPanel";
 import LlmFeaturesPanel from "../llm/LlmFeaturesPanel";
 import LlmUsagePanel from "../llm/LlmUsagePanel";
@@ -13,6 +14,7 @@ import { t } from "../llm/i18n";
 const ALL_LLM_TABS = [
   { id: "providers", label: t("tab.providers") },
   { id: "models", label: t("tab.models") },
+  { id: "modules", label: t("tab.modules") },
   { id: "prompts", label: t("tab.prompts") },
   { id: "features", label: t("tab.features") },
   { id: "usage", label: t("tab.usage") },
@@ -54,6 +56,7 @@ export default function AdminLlmPage({ showTestgen = false }) {
 
   function renderTabContent() {
     if (activeTab === "models") return <LlmModelsPanel />;
+    if (activeTab === "modules") return <LlmModulesPanel />;
     if (activeTab === "prompts") return <LlmPromptsPanel />;
     if (activeTab === "features") return <LlmFeaturesPanel />;
     if (activeTab === "usage") return <LlmUsagePanel />;
