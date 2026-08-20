@@ -618,22 +618,36 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {recalcRows.map((row, idx) => (
-                    <tr key={row.bpmn_id || idx}>
-                      <td>{text(row.bpmn_name) || text(row.bpmn_id) || "—"}</td>
-                      <td>{row.ee_time != null ? Number(row.ee_time).toFixed(2) : "—"}</td>
-                      <td>
-                        {row.ingredient_value != null ? Number(row.ingredient_value).toFixed(2) : "—"}
-                        {row.source === "catalog" ? <span className="analyticsRecalcSourceHint"> (справочник)</span> : null}
-                      </td>
-                      <td>{row.result != null ? Number(row.result).toFixed(2) : "—"}</td>
-                      <td>
-                        <span className={`analyticsRecalcSource analyticsRecalcSource--${row.source || "none"}`}>
-                          {row.source === "property" ? "property" : row.source === "catalog" ? "catalog" : "нет данных"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {recalcRows.map((row, idx) => {
+                    const rawIngredient = text(row.ingredient_value);
+                    const sourceLabel =
+                      row.source === "property"
+                        ? "property"
+                        : row.source === "расчёт по умолчанию"
+                          ? "расчёт по умолчанию"
+                          : "нет данных";
+                    const sourceClass =
+                      row.source === "property"
+                        ? "property"
+                        : row.source === "расчёт по умолчанию"
+                          ? "default"
+                          : "none";
+                    return (
+                      <tr key={row.bpmn_id || idx}>
+                        <td>{text(row.bpmn_name) || text(row.bpmn_id) || "—"}</td>
+                        <td>{row.ee_time != null ? Number(row.ee_time).toFixed(2) : "—"}</td>
+                        <td>
+                          {rawIngredient ? Number(rawIngredient).toFixed(2) : "—"}
+                        </td>
+                        <td>{row.result != null ? Number(row.result).toFixed(2) : "—"}</td>
+                        <td>
+                          <span className={`analyticsRecalcSource analyticsRecalcSource--${sourceClass}`}>
+                            {sourceLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
