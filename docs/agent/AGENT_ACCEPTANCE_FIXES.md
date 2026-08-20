@@ -94,6 +94,50 @@
 | Router cache — повторный тот же вопрос → `cached=true`, 0 токенов | `llm_usage.cached=true` | TBD | |
 | Регрессия `/admin/llm`: список, редактирование, тест провайдера работают | Ручной smoke-test | TBD | |
 
+## Контур `fix/agent-org-context`
+
+Цель: устранить `MonolithError projection 404` на stage для пользователей из
+не-дефолтной org путём сквозного прокидывания `X-Org-Id`
+(браузер → agent-сервис → монолит).
+
+### Изменения в коде
+
+- **Frontend:**
+  - `frontend/src/lib/api.js` — `apiAgentStream` и `apiAgentResume` теперь
+    ставят заголовок `X-Org-Id` из `getActiveOrgId()` (ручной `fetch`, не через
+    `apiFetch`).
+- **Backend (agent service):**
+  - `backend/services/agent/runners/monolith_client.py` — все публичные
+    функции принимают `org_id` keyword-only и передают `X-Org-Id` в монолит.
+  - `backend/services/agent/runners/action_runners.py` — `run_suggest_next`,
+    `run_explain_step`, `run_step_qa` и `_post_llm3` принимают и пробрасывают
+    `org_id`.
+  - `backend/services/agent/memory/context.py` и `schema_memory.py` —
+    `get_projection(..., org_id=oid)`.
+  - `backend/services/agent/memory/chat.py` — `org_id` протянут через
+    `_run_action`, ветки `node_qa` / `suggest_next` / `doc_qa` / свободный ответ
+    / `edit_canvas`, а также через `run_turn_stream`.
+  - `backend/services/agent/edit/validator.py`, `planner.py`, `applier.py`,
+    `routers/agent_resume.py` — `org_id` доезжает до `get_operation_catalog`,
+    `create_bpmn_version_snapshot`, `get_session_graph`, `patch_session`,
+    `get_session`.
+- **Тесты:**
+  - `backend/services/agent/tests/test_monolith_client.py` — инвариант:
+    `_headers` содержит `X-Org-Id` и параметризованная проверка всех
+    публичных функций `monolith_client`.
+  - `frontend/src/lib/api.agent.test.mjs` — `apiAgentStream`/`apiAgentResume`
+    отправляют `X-Org-Id`.
+
+### Приёмка на stage
+
+| Критерий | Артефакт | Вердикт | Дата |
+|---|---|---|---|
+| Пользователь из не-дефолтной org открывает сессию этой org | URL + DOM | TBD | |
+| Свободный вопрос PROCESSMAN → `POST /agent/stream` 200/SSE, ответ осмысленный | Тело SSE, нет `MonolithError projection 404` в логах agent-сервиса | TBD | |
+| «Переименовать шаг» → карточка pending edit появляется | DOM карточки + `agent_pending_edits` | TBD | |
+| Confirm pending edit → `POST /agent/resume` 200/SSE, изменение применено | Canvas + PATCH /sessions/{id} без 404/409 | TBD | |
+| Reject pending edit → статус `rejected` | `agent_pending_edits.status=rejected` | TBD | |
+
 ## Известные ограничения
 
 - `test_status_404_foreign_user` падает на локальной dev-БД (возвращает 200

@@ -92,7 +92,7 @@ def _resume_stream(
 
     # Загружаем актуальную сессию для CAS.
     try:
-        session_data = monolith_client.get_session(session_id, token=token)
+        session_data = monolith_client.get_session(session_id, token=token, org_id=org_id)
     except Exception as exc:
         yield _sse_event("error", {"status": "error", "error": f"failed to load session: {exc}"})
         return
@@ -105,6 +105,7 @@ def _resume_stream(
             token=token,
             edit_plan=pending["edit_plan"],
             base_diagram_state_version=base_version,
+            org_id=org_id,
             create_snapshot=True,
         )
         update_pending_edit_status(peid, "applied", resumed_by_user_id=user_id)

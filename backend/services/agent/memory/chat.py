@@ -222,6 +222,8 @@ def _run_action(
     token: str,
     ctx: AgentContext,
     user_message: str,
+    *,
+    org_id: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Execute a valid action or return None to degrade to free answer."""
     step_ids_set = _step_ids(ctx.projection)
@@ -230,20 +232,20 @@ def _run_action(
         after_step_id = str(payload_obj.get("after_step_id") or "").strip()
         if after_step_id and after_step_id not in step_ids_set:
             return None
-        return run_suggest_next(session_id, token, after_step_id=after_step_id)
+        return run_suggest_next(session_id, token, after_step_id=after_step_id, org_id=org_id)
 
     if action == "explain-step":
         step_id = str(payload_obj.get("step_id") or "").strip()
         if not step_id or step_id not in step_ids_set:
             return None
-        return run_explain_step(session_id, token, step_id=step_id)
+        return run_explain_step(session_id, token, step_id=step_id, org_id=org_id)
 
     if action == "step-qa":
         step_id = str(payload_obj.get("step_id") or "").strip()
         question = str(payload_obj.get("question") or "").strip() or user_message
         if not step_id or step_id not in step_ids_set:
             return None
-        return run_step_qa(session_id, token, step_id=step_id, question=question)
+        return run_step_qa(session_id, token, step_id=step_id, question=question, org_id=org_id)
 
     return None
 
@@ -315,6 +317,7 @@ def _run_node_qa_branch(
         token,
         step_id=selected,
         question=payload.message,
+        org_id=org_id,
     )
     message = str(result.get("answer") or result.get("message") or result.get("note") or "")
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
@@ -348,6 +351,7 @@ def _run_suggest_next_branch(
         session_id,
         token,
         after_step_id=selected,
+        org_id=org_id,
     )
     message = str(result.get("message") or result.get("note") or "")
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
@@ -442,6 +446,7 @@ def _run_doc_qa_branch(
             payload.message,
             session_id,
             token,
+            org_id=org_id,
             source_type="",
             top_k=5,
             min_score=0.1,
@@ -530,7 +535,7 @@ def _run_free_answer_branch(
     if action_obj and isinstance(action_obj, dict):
         possible_action = str(action_obj.get("action") or "").strip()
         if possible_action in {"suggest-next", "explain-step", "step-qa"}:
-            action_result = _run_action(possible_action, action_obj, session_id, token, ctx, payload.message)
+            action_result = _run_action(possible_action, action_obj, session_id, token, ctx, payload.message, org_id=org_id)
             if action_result is not None:
                 action_name = possible_action
                 action_payload = action_result
@@ -621,7 +626,7 @@ def _run_edit_canvas_branch(
         return out
 
     # Валидируем ещё раз перед сохранением.
-    validation_errors = validate_edit_plan(edit_plan, ctx.projection, token, session_id)
+    validation_errors = validate_edit_plan(edit_plan, ctx.projection, token, session_id, org_id=org_id)
     if validation_errors:
         _, out = _persist_assistant_turn(
             session_id,
@@ -729,7 +734,7 @@ def _run_edit_canvas_branch_stream(
         yield ("error", {"status": meta.get("status", "error"), "error": message})
         return
 
-    validation_errors = validate_edit_plan(edit_plan, ctx.projection, token, session_id)
+    validation_errors = validate_edit_plan(edit_plan, ctx.projection, token, session_id, org_id=org_id)
     if validation_errors:
         _ = _persist_assistant_turn(
             session_id, user_id, org_id,
@@ -936,14 +941,14 @@ def run_turn_stream(
         yield ("done", {"usage": usage, "projection_digest": ctx.digest})
 
     if intent == "node_qa" and _step_in_projection(ctx.projection, payload.selected_step_id):
-        result = run_step_qa(sid, token, step_id=str(payload.selected_step_id), question=payload.message)
+        result = run_step_qa(sid, token, step_id=str(payload.selected_step_id), question=payload.message, org_id=oid)
         message = str(result.get("answer") or result.get("message") or result.get("note") or "")
         yield from _finish(message, {}, action="step-qa", action_payload=result)
         yield ("action", {"action": "step-qa", "payload": result})
         return
 
     if intent == "suggest_next" and _step_in_projection(ctx.projection, payload.selected_step_id):
-        result = run_suggest_next(sid, token, after_step_id=str(payload.selected_step_id))
+        result = run_suggest_next(sid, token, after_step_id=str(payload.selected_step_id), org_id=oid)
         message = str(result.get("message") or result.get("note") or "")
         yield from _finish(message, {}, action="suggest-next", action_payload=result)
         yield ("action", {"action": "suggest-next", "payload": result})
@@ -974,7 +979,7 @@ def run_turn_stream(
         schedule_memory_update(sid, oid, ctx.digest)
     elif intent == "doc_qa":
         try:
-            rag = search_rag(payload.message, sid, token, source_type="", top_k=5, min_score=0.1)
+            rag = search_rag(payload.message, sid, token, org_id=oid, source_type="", top_k=5, min_score=0.1)
             results = rag.get("results") or [] if isinstance(rag, dict) else []
         except Exception:
             results = []
@@ -1051,7 +1056,7 @@ def run_turn_stream(
         if action_obj and isinstance(action_obj, dict):
             possible_action = str(action_obj.get("action") or "").strip()
             if possible_action in {"suggest-next", "explain-step", "step-qa"}:
-                action_result = _run_action(possible_action, action_obj, sid, token, ctx, payload.message)
+                action_result = _run_action(possible_action, action_obj, sid, token, ctx, payload.message, org_id=oid)
                 if action_result is not None:
                     action_name = possible_action
                     action_payload = action_result
