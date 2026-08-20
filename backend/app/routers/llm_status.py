@@ -59,13 +59,32 @@ def llm_status(request: Request) -> Any:
         }
     else:
         model_info = {"name": "deepseek-chat", "display_name": "DeepSeek Chat", "source": "env"}
+
+    # effective_provider = провайдер, который реально будет использован при вызове.
+    # Для org без своих провайдеров возвращаем org_default fallback, чтобы UI
+    # показывал, откуда берётся ключ (bug B: "невидимый ключ").
+    effective = llm_store.effective_providers_with_key(oid)
+    if effective:
+        p = effective[0]
+        effective_provider = {
+            "id": p["id"],
+            "name": p.get("name") or "",
+            "model": p.get("model") or "",
+            "org_id": p.get("org_id") or "org_default",
+            "source": "org" if p.get("org_id") == oid else "org_default_fallback",
+        }
+    else:
+        effective_provider = None
+
     return {
         # configured = enabled провайдер с непустым ключом (решение владельца Q2:
         # не any_enabled_provider — без ключа фолбэк-цепочка не работает).
-        "configured": bool(llm_store.enabled_providers_with_key(oid)),
+        # С учётом org_default fallback configured=true, если ключ есть в fallback.
+        "configured": bool(effective_provider),
         "quota": {
             "used": int(used),
             "limit": int(limit),
         },
         "model": model_info,
+        "effective_provider": effective_provider,
     }

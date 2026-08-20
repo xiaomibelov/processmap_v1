@@ -127,6 +127,22 @@ def enabled_providers_with_key(org_id: str = "org_default") -> List[Dict[str, An
     return [p for p in list_providers(org_id) if p.get("enabled") and str(p.get("api_key") or "").strip()]
 
 
+def effective_providers_with_key(org_id: str = "org_default") -> List[Dict[str, Any]]:
+    """Цепочка провайдеров для org: сначала org, затем org_default fallback.
+
+    Возвращает список enabled-провайдеров с непустым ключом. Если у org нет
+    своих провайдеров, но в org_default есть — используем org_default.
+    Это позволяет держать один ключ для дефолтной организации и автоматически
+    раздавать его всем остальным org без дублирования.
+    """
+    own = enabled_providers_with_key(org_id)
+    if own:
+        return own
+    if org_id != "org_default":
+        return enabled_providers_with_key("org_default")
+    return []
+
+
 def any_enabled_provider(org_id: str = "org_default") -> bool:
     return any(p.get("enabled") for p in list_providers(org_id))
 

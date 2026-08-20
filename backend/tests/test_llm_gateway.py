@@ -205,13 +205,41 @@ def test_fallback_false_when_primary_answers(sandbox):
     assert result["ok"] is True and result["fallback"] is False
 
 
+def test_org_default_fallback_for_org_without_provider(sandbox):
+    """Bug B: org без своих провайдеров получает org_default fallback."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    default_p = {
+        "id": "llmprov_org_default_fb",
+        "org_id": "org_default",
+        "name": "org-default-fb",
+        "base_url": "https://a",
+        "model": "m-fb",
+        "api_key": "key-org-default",
+        "priority": 10,
+        "enabled": True,
+    }
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[default_p]) as eff, \
+         mock.patch.object(gateway, "_deepseek_chat_request", return_value=_llm_response(model="m-fb")):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+    assert result["ok"] is True and result["status"] == "ok"
+    assert result["provider_id"] == default_p["id"]
+    assert result["model"] == "m-fb"
+    assert result["fallback"] is True, "использован org_default fallback → fallback=True"
+    eff.assert_called_once_with(org)
+    rows = _usage_rows(feature)
+    assert rows[-1]["provider_id"] == default_p["id"]
+    assert rows[-1]["status"] == "ok"
+
+
 def test_fallback_true_for_env_provider(sandbox):
     """LLM4 S8: env-фолбэк — всегда fallback=True (в т.ч. из кэша)."""
     org, feature = sandbox["org_id"], sandbox["feature"]
     fake_redis = _FakeRedis()
-    with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "env-key"}):
-        with mock.patch.object(gateway, "_deepseek_chat_request", return_value=_llm_response()):
-            first = gateway.complete_cached(feature, "digest-fb-1", {"x": 1}, org_id=org, cache_client=fake_redis)
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[]), \
+         mock.patch.object(gateway.llm_store, "any_enabled_provider", return_value=False), \
+         mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "env-key"}), \
+         mock.patch.object(gateway, "_deepseek_chat_request", return_value=_llm_response()):
+        first = gateway.complete_cached(feature, "digest-fb-1", {"x": 1}, org_id=org, cache_client=fake_redis)
     assert first["ok"] is True and first["fallback"] is True and first["cached"] is False
     # попадание в redis-кэш сохраняет признак fallback (бейдж не теряется)
     second = gateway.complete_cached(feature, "digest-fb-1", {"x": 1}, org_id=org, cache_client=fake_redis)
@@ -233,11 +261,8 @@ def test_all_providers_failed(sandbox):
 def test_no_provider_without_keys(sandbox):
     """Гейт 4: нет enabled-провайдеров с ключом и нет env → no_provider, без вызова."""
     org, feature = sandbox["org_id"], sandbox["feature"]
-    llm_store.create_provider(org_id=org, name="p-disabled", base_url="https://a", model="m",
-                              api_key="key-a", priority=10, enabled=False)
-    llm_store.create_provider(org_id=org, name="p-keyless", base_url="https://a", model="m",
-                              api_key="", priority=20, enabled=True)
-    with mock.patch.object(gateway, "_deepseek_chat_request") as mocked:
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[]), \
+         mock.patch.object(gateway, "_deepseek_chat_request") as mocked:
         result = gateway.complete(feature, {}, org_id=org)
     assert result["status"] == "no_provider"
     mocked.assert_not_called()
@@ -247,10 +272,11 @@ def test_no_provider_without_keys(sandbox):
 def test_env_fallback_when_table_empty(sandbox):
     """Env DEEPSEEK_API_KEY — фолбэк только при полном отсутствии enabled-провайдеров."""
     org, feature = sandbox["org_id"], sandbox["feature"]
-    with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "env-key"}):
-        with mock.patch.object(gateway, "_deepseek_chat_request",
-                               return_value=_llm_response()) as mocked:
-            result = gateway.complete(feature, {}, org_id=org)
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[]), \
+         mock.patch.object(gateway.llm_store, "any_enabled_provider", return_value=False), \
+         mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "env-key"}), \
+         mock.patch.object(gateway, "_deepseek_chat_request", return_value=_llm_response()) as mocked:
+        result = gateway.complete(feature, {}, org_id=org)
     assert result["ok"] is True and result["provider_id"] == "env_fallback"
     assert result["fallback"] is True, "env-фолбэк = fallback (LLM4 S8)"
     assert mocked.call_args.kwargs["api_key"] == "env-key"
