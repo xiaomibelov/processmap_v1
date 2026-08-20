@@ -114,6 +114,19 @@ def _refresh_child_session_bpmn_from_xml(
     return changed
 
 
+def _child_sync_scope(child: Session, uid: str, oid: str, admin: bool):
+    """Scope для системной синхронизации child-сессии.
+
+    Синхронизация (refresh XML / heal title+stack / reimport) — системная
+    операция от имени ВЛАДЕЛЬЦА child, а не актора, её вызвавшего.
+    Guard SessionStorage.save() требует owner_scope == existing_owner.
+    """
+    owner = str(getattr(child, "owner_user_id", "") or "").strip()
+    if owner and owner != uid and not admin:
+        return owner, oid, False  # системная запись под scope владельца
+    return uid, oid, admin        # владелец/админ/legacy-без-владельца: как раньше
+
+
 def _bpmn_xml_parseable(xml_text: str) -> bool:
     """Return True only when the XML parses cleanly.
 
@@ -1268,15 +1281,16 @@ def auto_create_subprocess_sessions(
                 stack[-1]["name"] = title
                 existing.navigation_stack = stack
                 refreshed = True
+            s_uid, s_oid, s_admin = _child_sync_scope(existing, uid, oid, admin)
             if getattr(existing, "deleted_at", 0):
                 existing.deleted_at = 0
                 existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-                session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
+                session_repo.save(existing, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
                 restored.append(str(existing.id))
             else:
                 if refreshed:
                     existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-                    session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
+                    session_repo.save(existing, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
                 skipped.append(str(existing.id))
             child_session = existing
         else:
@@ -1292,7 +1306,8 @@ def auto_create_subprocess_sessions(
             )
             if _refresh_child_session_bpmn_from_xml(child, child_xml, created_by=uid, org_id=oid):
                 child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-                session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+                s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, admin)
+                session_repo.save(child, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
             created.append(str(child.id))
             child_session = child
 
@@ -1499,9 +1514,10 @@ def navigate_to_subprocess(
                 # Preserve the legacy error path: no parent fragment AND no
                 # usable child XML -> 404.
                 child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
-        if _refresh_child_session_bpmn_from_xml(child, child_xml):
+        if _refresh_child_session_bpmn_from_xml(child, child_xml, created_by=uid, org_id=oid):
             child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-            session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+            s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, admin)
+            session_repo.save(child, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
     else:
         child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
         child = _create_child_session(sess, element_id, child_xml, request)
@@ -1529,7 +1545,8 @@ def navigate_to_subprocess(
     if child_needs_save:
         child.navigation_stack = stack
         child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-        session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+        s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, admin)
+        session_repo.save(child, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
 
     child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
     target_id = resolve_target_element_id(child_xml, target_element_id)
