@@ -26,9 +26,13 @@ services:
 
   notifications:
     image: processmap_stage-notifications:${STAGE_IMAGE_TAG:-local}
+    env_file:
+      - .env.stage
 
   agent:
     image: processmap_stage-agent:${STAGE_IMAGE_TAG:-local}
+    env_file:
+      - .env.stage
 
 networks:
   edge_shared:
