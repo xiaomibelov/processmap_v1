@@ -401,7 +401,8 @@ def build_backend_exception_event(request: Request, exc: Exception) -> ErrorEven
         "status_code": 500,
         "exception_type": exception_type,
         "exception_module": exception_module,
-        "exception_message": _normalize_text(str(exc), max_len=_MAX_TEXT),
+        # NB: raw str(exc) is intentionally NOT stored: exception text may
+        # contain secrets (contract pinned by test_backend_exception_telemetry).
         "stack": _compact_exception_frames(exc),
         "_server": {
             "capture": "backend_exception_middleware",
