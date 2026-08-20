@@ -262,15 +262,20 @@ def _telemetry_request():
     )
 
 
-def test_backend_exception_event_includes_exception_message():
+def test_backend_exception_event_keeps_no_leak_contract():
+    """Raw exception text may contain secrets and must NOT be persisted
+    (contract pinned by test_backend_exception_telemetry)."""
+    import json as _json
+
     from app.error_events.schema import build_backend_exception_event
 
-    exc = PermissionError("session belongs to another user")
+    exc = PermissionError("session belongs to another user secret_token_should_not_leak")
     event = build_backend_exception_event(_telemetry_request(), exc)
-    context = dict(event.context_json or {})
-    assert context.get("exception_message") == "session belongs to another user"
     # message stays type-based (grouping/fingerprint stability).
     assert event.message == "Unhandled backend exception: PermissionError"
+    assert "secret_token_should_not_leak" not in _json.dumps(
+        dict(event.context_json or {}), ensure_ascii=False
+    )
 
 
 def test_backend_exception_event_includes_os_error_details():
@@ -279,7 +284,6 @@ def test_backend_exception_event_includes_os_error_details():
     exc = OSError(50, "Network down", "/tmp/secret.txt")
     event = build_backend_exception_event(_telemetry_request(), exc)
     context = dict(event.context_json or {})
-    assert context.get("exception_message")
     assert context.get("os_errno") == 50
     assert context.get("os_filename") == "/tmp/secret.txt"
     assert "os_filename2" in context
