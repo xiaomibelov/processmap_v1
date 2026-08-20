@@ -33,9 +33,10 @@ from backend.app.auth import create_access_token  # noqa: E402
 from backend.app.ai import llm_store  # noqa: E402
 from backend.app.storage import create_org_record, upsert_org_membership  # noqa: E402
 
-STATUS_SHAPE = {"configured": bool, "quota": dict, "model": dict}
+STATUS_SHAPE = {"configured": bool, "quota": dict, "model": dict, "effective_provider": (dict, type(None))}
 QUOTA_SHAPE = {"used": int, "limit": int}
 MODEL_SHAPE = {"name": str, "display_name": str, "source": str}
+EFFECTIVE_PROVIDER_SHAPE = {"id": str, "name": str, "model": str, "org_id": str, "source": str}
 
 
 def _assert_shape(item: dict, shape: dict, where: str) -> None:
@@ -164,6 +165,8 @@ def test_status_200_viewer_shape(client, org_and_user):
     _assert_shape(body, STATUS_SHAPE, "status")
     _assert_shape(body["quota"], QUOTA_SHAPE, "status.quota")
     _assert_shape(body["model"], MODEL_SHAPE, "status.model")
+    if body["effective_provider"] is not None:
+        _assert_shape(body["effective_provider"], EFFECTIVE_PROVIDER_SHAPE, "status.effective_provider")
     assert isinstance(body["configured"], bool)
     # секреты/ключи/base_url не должны просочиться в сыром тексте
     # (имя модели в ответе — осознанный контракт feat/llm-model-config)
@@ -174,7 +177,9 @@ def test_status_200_viewer_shape(client, org_and_user):
 # ------------------------------------------------------------- configured
 
 def test_configured_false_without_enabled_provider(client, org_and_user):
-    resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
+    # Изолируем от состояния org_default в dev-БД: пустая effective-цепочка.
+    with mock.patch.object(llm_store, "effective_providers_with_key", return_value=[]):
+        resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
     assert resp.status_code == 200
     assert resp.json()["configured"] is False
 
@@ -186,23 +191,27 @@ def test_configured_false_provider_without_key(client, org_and_user):
         org_id=oid, name=f"llm4-{org_and_user['marker']}-nokey",
         base_url="https://x.example", model="m", api_key="", enabled=True,
     )
-    resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
+    with mock.patch.object(llm_store, "effective_providers_with_key", return_value=[]):
+        resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
     assert resp.status_code == 200
     assert resp.json()["configured"] is False
 
 
 def test_configured_true_provider_with_key(client, org_and_user):
     oid = org_and_user["oid"]
-    llm_store.create_provider(
+    prov = llm_store.create_provider(
         org_id=oid, name=f"llm4-{org_and_user['marker']}-key",
         base_url="https://api.deepseek.com", model="deepseek-chat",
         api_key="sk-supersecret-llm4-test", enabled=True,
     )
-    resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
+    with mock.patch.object(llm_store, "effective_providers_with_key", return_value=[prov]):
+        resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
     assert resp.status_code == 200
     body = resp.json()
     assert body["configured"] is True
     assert "sk-supersecret-llm4-test" not in resp.text
+    assert body["effective_provider"]["id"] == prov["id"]
+    assert body["effective_provider"]["source"] == "org"
     # имя модели в ответе — осознанный контракт feat/llm-model-config
     assert body["model"]["name"]
 
@@ -215,9 +224,38 @@ def test_configured_true_disabled_provider_with_key_ignored(client, org_and_user
         base_url="https://y.example", model="m",
         api_key="sk-zzz", enabled=False,
     )
-    resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
+    # Если в org_default есть enabled-провайдер с ключом, fallback делает configured=true.
+    # Тест изолируем: мокаем effective_providers_with_key, чтобы оценить только own-провайдер.
+    with mock.patch.object(llm_store, "effective_providers_with_key", return_value=[]):
+        resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
     assert resp.status_code == 200
     assert resp.json()["configured"] is False
+
+
+def test_configured_true_org_fallback_from_org_default(client, org_and_user):
+    """Org без своих провайдеров получает configured=true, если ключ есть в org_default."""
+    oid = org_and_user["oid"]
+    default_prov = {
+        "id": "llmprov_org_default_fallback",
+        "org_id": "org_default",
+        "name": "llm4-org-default-fallback",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "api_key": "sk-org-default-fallback-llm4-test",
+        "priority": 100,
+        "enabled": True,
+    }
+    with mock.patch.object(llm_store, "effective_providers_with_key", return_value=[default_prov]) as eff:
+        resp = client.get("/api/llm/status", headers=_auth(org_and_user["token"]))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["configured"] is True
+    _assert_shape(body["effective_provider"], EFFECTIVE_PROVIDER_SHAPE, "effective_provider")
+    assert body["effective_provider"]["id"] == default_prov["id"]
+    assert body["effective_provider"]["org_id"] == "org_default"
+    assert body["effective_provider"]["source"] == "org_default_fallback"
+    assert "sk-org-default-fallback-llm4-test" not in resp.text
+    eff.assert_called_once_with(oid)
 
 
 # ------------------------------------------------------------------ quota
