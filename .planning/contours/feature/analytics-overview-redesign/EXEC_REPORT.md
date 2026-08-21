@@ -172,7 +172,7 @@ docker run --rm -v ".../frontend:/app" -v "/app/node_modules" -w /app \
 
 ```
 branch: feature/analytics-overview-redesign
-HEAD:                319fc052563db0f2792d5b5af320b3ca13248c77
+HEAD:                3cb2e7c7d974eb76d8247a4f11949537c981a8bb
 origin/main:         13c62ba9fe07f2cc26ac94093d359a5c5f563c2c
 origin/feature/analytics-overview-redesign: 319fc052563db0f2792d5b5af320b3ca13248c77
 PR:                  #795 (MERGED до repo reset 21/08/26); hotfix PR #796 (MERGED); новый PR можно создать из текущей ветки
