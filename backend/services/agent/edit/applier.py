@@ -40,6 +40,7 @@ def apply_edit_plan(
     edit_plan: Dict[str, Any],
     base_diagram_state_version: int,
     *,
+    org_id: str = "",
     create_snapshot: bool = True,
 ) -> Dict[str, Any]:
     """Применить edit_plan к сессии. При конфликте версии — EditApplyError('conflict_rev', ...).
@@ -58,12 +59,12 @@ def apply_edit_plan(
         # Отдельного публичного endpoint'а для создания snapshot нет; audit и откат
         # покрываются историей версий BPMN и самим PATCH /sessions/{id}.
         try:
-            snap = monolith_client.create_bpmn_version_snapshot(sid, token, source_action="agent_edit")
+            snap = monolith_client.create_bpmn_version_snapshot(sid, token, org_id=org_id, source_action="agent_edit")
             snapshot_version_id = snap.get("version_id") or snap.get("id")
         except Exception:
             snapshot_version_id = None
 
-    graph = monolith_client.get_session_graph(sid, token=token)
+    graph = monolith_client.get_session_graph(sid, token=token, org_id=org_id)
     nodes = copy.deepcopy(list(graph.get("nodes") or []))
     edges = copy.deepcopy(list(graph.get("edges") or []))
     current_version = int(graph.get("diagram_state_version") or base_diagram_state_version or 0)
@@ -130,7 +131,7 @@ def apply_edit_plan(
         "edges": edges,
         "base_diagram_state_version": current_version,
     }
-    resp = monolith_client.patch_session(sid, token, patch_body)
+    resp = monolith_client.patch_session(sid, token, patch_body, org_id=org_id)
     if not _http_ok(resp):
         _raise_from_response(resp)
 

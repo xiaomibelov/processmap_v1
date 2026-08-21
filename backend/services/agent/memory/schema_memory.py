@@ -222,7 +222,7 @@ def update_schema_memory(
 
     if projection is None:
         try:
-            proj = monolith_client.get_projection(sid, token=token)
+            proj = monolith_client.get_projection(sid, token=token, org_id=oid)
             projection = dict(proj.get("projection") or {})
         except Exception as exc:
             logger.warning("update_schema_memory: projection failed: %s", exc)
