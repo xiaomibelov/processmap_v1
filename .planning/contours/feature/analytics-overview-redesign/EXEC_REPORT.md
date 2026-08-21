@@ -117,9 +117,12 @@ docker run --rm -v ".../frontend:/app" -v "/app/node_modules" -w /app \
 
 ```
 branch: feature/analytics-overview-redesign
-HEAD:   <current>
+HEAD:   e4ccb89e
 origin/main: e8c85795a8
-status: изменения в backend + frontend + .planning
+push:   origin/feature/analytics-overview-redesign (OK)
 ```
 
-PR будет создан на русском. **Merge/deploy только после явного approve пользователя.**
+- Ветка запушена в `origin`.
+- `gh pr create` не удалось: PAT не имеет прав на создание PR (`Resource not accessible by personal access token`). PR нужно создать вручную: https://github.com/xiaomibelov/processmap_v1/compare/main...feature/analytics-overview-redesign
+- Mirror в Obsidian (`tools/pm-agent-mirror-report.sh`) не выполнен локально: скрипт переходит в `/opt/processmap-test`, которого нет в локальной среде. Рекомендуется запустить mirror на canonical runtime.
+- **Merge/deploy только после явного approve пользователя.**
