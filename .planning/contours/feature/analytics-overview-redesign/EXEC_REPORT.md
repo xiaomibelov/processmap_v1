@@ -102,6 +102,27 @@ docker run --rm -v ".../frontend:/app" -v "/app/node_modules" -w /app \
 
 Результат: **сборка прошла успешно** (`built in 5m 26s` после i18n, `built in 8m 5s` до i18n), без ошибок.
 
+### 3.3. Инцидент TDZ на вкладке «Свойства» (HOTFIX, 21/08/26)
+
+**Симптом:** на stage вкладка «Аналитика → Свойства» падает с `Cannot access 'ie' before initialization` в минифицированной сборке; «Обзор» и «Действия» работают.
+
+**Диагноз:** в `frontend/src/features/analytics/AnalyticsPropertiesPanel.jsx` переменная `nameFilter` объявлялась **после** `useEffect`, в deps-array которого она уже использовалась. При первом рендере конструирование массива зависимостей обращалось к `const` до её инициализации — Temporal Dead Zone. Минификатор давал переменной имя `ie`.
+
+Дополнительно найдена сопутствующая ошибка: в `usePropertyRowsProcessor` фильтр `nameFilter` участвовал в логике фильтрации, но отсутствовал в deps-array `useMemo`.
+
+**Фикс:**
+- Перенёс `const [nameFilter, setNameFilter] = useState([]);` **до** `useEffect`, который сбрасывает выбор/страницу.
+- Добавил `nameFilter` в deps-array `usePropertyRowsProcessor` (`frontend/src/features/analytics/AnalyticsPropertiesTable.jsx`).
+
+**Smoke-тест:**
+- `frontend/vitest.config.js` — конфиг vitest поверх Vite, окружение `jsdom`.
+- `frontend/src/features/analytics/AnalyticsPanels.smoke.test.jsx` — рендер `AnalyticsPropertiesPanel`, `AnalyticsOverviewPanel` и `AnalyticsPage` через `react-dom/server`. Тест ловит TDZ и подобные ошибки импорта/рендера на уровне unit, а не только на этапе production-сборки.
+- Скрипт: `npm run test:smoke`.
+
+**Проверка:**
+- `npm run test:smoke` — 3/3 passed.
+- `npm run build` — успешно (`built in 1m 57s`), без ошибок.
+
 ---
 
 ## 4. Ограничения и открытые вопросы
@@ -117,7 +138,7 @@ docker run --rm -v ".../frontend:/app" -v "/app/node_modules" -w /app \
 
 ```
 branch: feature/analytics-overview-redesign
-HEAD:   e4ccb89e
+HEAD:   647b9292
 origin/main: e8c85795a8
 push:   origin/feature/analytics-overview-redesign (OK)
 ```
