@@ -621,10 +621,27 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(result["source"], _SOURCE_NO_DATA)
         self.assertTrue(result["is_invalid"])
 
-    def test_classify_recalc_value_case_b_comma_decimal_not_normalized(self):
+    def test_classify_recalc_value_case_c_comma_decimal_normalized(self):
+        from app.routers.analytics import _SOURCE_PROPERTY, classify_recalc_value
+
+        # Product-owner decision 21/08/26: single comma as decimal separator is valid.
+        self.assertEqual(
+            classify_recalc_value(2.0, "0,5", True),
+            {"result": 1.0, "source": _SOURCE_PROPERTY, "is_invalid": False},
+        )
+
+    def test_classify_recalc_value_case_b_multi_comma_not_normalized(self):
         from app.routers.analytics import _SOURCE_NO_DATA, classify_recalc_value
 
-        result = classify_recalc_value(5.0, "0,5", True)
+        result = classify_recalc_value(3.0, "1,2,3", True)
+        self.assertIsNone(result["result"])
+        self.assertEqual(result["source"], _SOURCE_NO_DATA)
+        self.assertTrue(result["is_invalid"])
+
+    def test_classify_recalc_value_case_b_prefix_not_normalized(self):
+        from app.routers.analytics import _SOURCE_NO_DATA, classify_recalc_value
+
+        result = classify_recalc_value(3.0, "> 10", True)
         self.assertIsNone(result["result"])
         self.assertEqual(result["source"], _SOURCE_NO_DATA)
         self.assertTrue(result["is_invalid"])
@@ -935,6 +952,27 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(row["ingredient_um"], "")
         self.assertEqual(row["source"], _SOURCE_DEFAULT)
         self.assertAlmostEqual(row["result"], 6.0)
+
+    def test_build_source_rows_ee_time_with_comma_decimal_case_a(self):
+        from app.routers.analytics import _SOURCE_DEFAULT
+
+        row = self._build_source_rows_single([
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "0,5"},
+        ])
+        self.assertEqual(row["source"], _SOURCE_DEFAULT)
+        self.assertAlmostEqual(row["ee_time"], 0.5)
+        self.assertAlmostEqual(row["result"], 0.5)
+
+    def test_build_source_rows_ee_time_and_ingredient_with_comma_decimal_case_c(self):
+        from app.routers.analytics import _SOURCE_PROPERTY
+
+        row = self._build_source_rows_single([
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "0,5"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "0,4"},
+        ])
+        self.assertEqual(row["source"], _SOURCE_PROPERTY)
+        self.assertAlmostEqual(row["ee_time"], 0.5)
+        self.assertAlmostEqual(row["result"], 0.2)
 
     def test_export_properties_recalculated_xlsx_source_mode_requires_auth(self):
         r = self.client.get(
