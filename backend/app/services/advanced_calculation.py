@@ -32,6 +32,96 @@ _FLOW_NODE_TAGS = _TASK_TAGS | {
     f"{{{BPMN_NS}}}inclusiveGateway",
 }
 
+
+def count_bpmn_flow_nodes(bpmn_xml: str) -> int:
+    """Return the number of BPMN flow nodes in a diagram.
+
+    Flow nodes = task, userTask, serviceTask, startEvent, endEvent,
+    exclusiveGateway, parallelGateway, inclusiveGateway and subProcess elements.
+    This matches the element set tracked by ``BpmnAnalyzer`` and is the working
+    definition of "all BPMN elements" used by the analytics "Схемы" section.
+    """
+    if not bpmn_xml or not bpmn_xml.strip():
+        return 0
+    try:
+        root = ET.fromstring(bpmn_xml)
+    except ET.ParseError:
+        return 0
+    return sum(1 for elem in root.iter() if elem.tag in _FLOW_NODE_TAGS)
+
+
+BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI"
+OMG_DC_NS = "http://www.omg.org/spec/DD/20100524/DC"
+
+
+def get_element_context(bpmn_xml: str, element_id: str) -> Dict[str, Any]:
+    """Return positional context for a BPMN element.
+
+    Returns a dict with:
+    - ``prev_names``: list of predecessor element names by sequenceFlow.
+    - ``next_names``: list of successor element names by sequenceFlow.
+    - ``x``, ``y``: DI coordinates from the BPMN shape (fallback).
+
+    Empty lists / None coordinates are returned when the information is absent.
+    """
+    result: Dict[str, Any] = {"prev_names": [], "next_names": [], "x": None, "y": None}
+    if not bpmn_xml or not bpmn_xml.strip() or not element_id:
+        return result
+    try:
+        root = ET.fromstring(bpmn_xml)
+    except ET.ParseError:
+        return result
+
+    ns = {"bpmn": BPMN_NS, "bpmndi": BPMNDI_NS, "dc": OMG_DC_NS}
+
+    # Build id -> name map for flow nodes.
+    name_by_id: Dict[str, str] = {}
+    for elem in root.iter():
+        if elem.tag in _FLOW_NODE_TAGS:
+            eid = elem.get("id", "")
+            if eid:
+                name_by_id[eid] = text(elem.get("name")) or eid
+
+    # Build source/target refs for sequence flows.
+    flow_by_id: Dict[str, Tuple[str, str]] = {}
+    for flow in root.iter(_bpmn_tag("sequenceFlow")):
+        fid = flow.get("id", "")
+        if fid:
+            flow_by_id[fid] = (flow.get("sourceRef", ""), flow.get("targetRef", ""))
+
+    # Find incoming/outgoing flow ids for the target element.
+    target_elem = None
+    for elem in root.iter():
+        if elem.get("id") == element_id:
+            target_elem = elem
+            break
+
+    if target_elem is not None:
+        for inc in target_elem.findall(_bpmn_tag("incoming")):
+            fid = text(inc.text)
+            src, _ = flow_by_id.get(fid, ("", ""))
+            if src and src in name_by_id:
+                result["prev_names"].append(name_by_id[src])
+        for out in target_elem.findall(_bpmn_tag("outgoing")):
+            fid = text(out.text)
+            _, tgt = flow_by_id.get(fid, ("", ""))
+            if tgt and tgt in name_by_id:
+                result["next_names"].append(name_by_id[tgt])
+
+    # DI coordinates fallback.
+    shape = root.find(f".//bpmndi:BPMNShape[@bpmnElement='{element_id}']", ns)
+    if shape is not None:
+        bounds = shape.find(".//dc:Bounds", ns)
+        if bounds is not None:
+            try:
+                result["x"] = float(bounds.get("x", "0") or "0")
+                result["y"] = float(bounds.get("y", "0") or "0")
+            except ValueError:
+                pass
+
+    return result
+
+
 # Default set of properties checked by the coverage report.
 _REQUIRED_COVERAGE_KEYS = [
     "ee_time",

@@ -40,4 +40,17 @@ describe("analytics panels import/render smoke", () => {
     );
     expect(html.length).toBeGreaterThan(0);
   });
+
+  it("renders AnalyticsPage actions module without throwing", () => {
+    const html = renderToString(
+      <AnalyticsPage
+        scope="workspace"
+        scopeId="ws_test"
+        module="actions"
+        orgId="org_test"
+        embedded
+      />
+    );
+    expect(html.length).toBeGreaterThan(0);
+  });
 });
