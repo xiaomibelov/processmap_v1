@@ -1,0 +1,137 @@
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+export default function ScenarioNav({
+  selectedTier = "ALL",
+  onSelectTier,
+  search = "",
+  onSearch,
+  sortMode = "bpmn",
+  onSortMode,
+  sections,
+  tierCounts = {},
+  collapsedGroups,
+  onToggleGroup,
+  selectedScenarioId,
+  onSelectScenario,
+  scenarioTitle,
+  scenarioStatusClass,
+  scenarioStatusLabel,
+  scenarioDurationLabel,
+  scenarioMetrics = {},
+}) {
+  const tiers = ["ALL", "P0", "P1", "P2"];
+  return (
+    <div className="interviewScenarioNav">
+      <div className="interviewPathsPaneHead">
+        <div className="interviewPathsRailTitle">Сценарии</div>
+      </div>
+
+      <div className="interviewScenarioNavControls">
+        <div className="interviewScenarioTabs" role="group" aria-label="Фильтр сценариев по tier">
+          {tiers.map((tier) => {
+            const count = Math.max(0, Number(tierCounts?.[tier] || 0));
+            return (
+              <button
+                key={tier}
+                type="button"
+                className={`secondaryBtn tinyBtn interviewScenarioTabBtn ${selectedTier === tier ? "isActive" : ""}`}
+                onClick={() => onSelectTier?.(tier)}
+                title={`${tier}: ${count}`}
+              >
+                <span className="interviewScenarioTabLabel">{tier}</span>
+                <span className="interviewScenarioTabCount">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <input
+          className="input"
+          value={search}
+          onChange={(event) => onSearch?.(event.target.value)}
+          placeholder="Поиск сценария"
+          aria-label="Поиск сценария"
+        />
+
+        <select
+          className="select"
+          value={sortMode}
+          onChange={(event) => onSortMode?.(event.target.value)}
+          aria-label="Сортировка сценариев"
+        >
+          <option value="bpmn">По BPMN</option>
+          <option value="time">По времени</option>
+          <option value="errors">По отклонениям</option>
+        </select>
+      </div>
+
+      <div className="interviewPathsScenarioRail">
+        {toArray(sections).map((section) => {
+          const key = toText(section?.key);
+          const isCollapsed = !!collapsedGroups?.[key];
+          const items = toArray(section?.items);
+          return (
+            <div key={`scenario_nav_section_${key}`} className="interviewPathsScenarioSection">
+              <button
+                type="button"
+                className="interviewPathsScenarioSectionToggle"
+                onClick={() => onToggleGroup?.(key)}
+              >
+                <span className="interviewPathsScenarioSectionTitleWrap">
+                  <span>{toText(section?.title)}</span>
+                  <span className="interviewPathsScenarioSectionCount">{items.length}</span>
+                </span>
+                <span className="muted small">{isCollapsed ? "▶" : "▼"}</span>
+              </button>
+
+              {!isCollapsed ? items.map((scenario) => {
+                const scenarioId = toText(scenario?.id);
+                const isActive = scenarioId === toText(selectedScenarioId);
+                const metrics = scenarioMetrics?.[scenarioId] || {};
+                const stepsCount = Number(metrics?.steps_count || toArray(scenario?.sequence).length || 0);
+                const timeLabel = toText(metrics?.total_time_sec_label || scenarioDurationLabel?.(scenario) || "—");
+                return (
+                  <button
+                    key={`scenario_rail_${scenarioId}`}
+                    type="button"
+                    data-testid={`paths-scenario-item-${scenarioId}`}
+                    className={`interviewPathsScenarioRailItem ${isActive ? "isActive" : ""}`}
+                    onClick={() => onSelectScenario?.(scenarioId)}
+                    aria-current={isActive ? "true" : undefined}
+                  >
+                    <div className="interviewPathsScenarioRailMain">
+                      <span className="interviewScenarioName">
+                        <span className={`interviewScenarioDot ${toText(scenarioStatusClass?.(scenario))}`} aria-hidden="true" />
+                        <span className="interviewScenarioTitleText" title={toText(scenarioTitle?.(scenario))}>
+                          {scenarioTitle?.(scenario)}
+                        </span>
+                      </span>
+                      <span
+                        className={`interviewScenarioStatusTiny ${toText(scenarioStatusClass?.(scenario))}`}
+                        title={toText(scenarioStatusLabel?.(scenario))}
+                        aria-label={toText(scenarioStatusLabel?.(scenario))}
+                      >
+                        {toText(scenarioStatusLabel?.(scenario)).toLowerCase() === "fail" ? "!" : "✓"}
+                      </span>
+                    </div>
+                    <div className="interviewPathsScenarioRailMeta muted small" data-testid={`paths-scenario-meta-${scenarioId}`}>
+                      <span className="interviewScenarioMetaItem">шаги {stepsCount}</span>
+                      <span className="interviewScenarioMetaItem">время {timeLabel}</span>
+                      {isActive ? <span className="interviewScenarioMetaItem isCurrent">текущий</span> : null}
+                    </div>
+                  </button>
+                );
+              }) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

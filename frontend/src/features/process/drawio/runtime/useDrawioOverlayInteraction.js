@@ -1,0 +1,87 @@
+import { useEffect, useRef } from "react";
+import useDrawioInteractionGate from "./useDrawioInteractionGate.js";
+import useDrawioKeyboardActions from "./useDrawioKeyboardActions.js";
+import useDrawioPointerDrag from "./useDrawioPointerDrag.js";
+import useDrawioSelection from "./useDrawioSelection.js";
+import { bumpDrawioPerfCounter } from "./drawioRuntimeProbes.js";
+
+export default function useDrawioOverlayInteraction({
+  visible,
+  hasRenderable,
+  createPlacementActive,
+  meta,
+  metaForGate,
+  layerMap,
+  elementMap,
+  matrixScale,
+  screenToDiagram,
+  onCommitMove,
+  onCreateElement,
+  onDeleteElement,
+  onSelectionChange,
+  onSwitchTool,
+}) {
+  bumpDrawioPerfCounter("drawio.interaction.hook.renders");
+  const rootRef = useRef(null);
+  const matrixScaleRef = useRef(Math.max(0.0001, Number(matrixScale || 1)));
+
+  useEffect(() => {
+    matrixScaleRef.current = Math.max(0.0001, Number(matrixScale || 1));
+  }, [matrixScale]);
+
+  // metaForGate is a stable minimal slice {interaction_mode, locked} that
+  // doesn't change on tool switches — keeps gate/selection callbacks stable.
+  const gateMetaRaw = metaForGate ?? meta;
+
+  const gate = useDrawioInteractionGate({
+    visible,
+    hasRenderable,
+    meta: gateMetaRaw,
+    layerMap,
+    elementMap,
+  });
+
+  const selection = useDrawioSelection({
+    elementMap,
+    layerMap,
+    meta: gateMetaRaw,
+    resolveElementFlags: gate.resolveElementFlags,
+    onSelectionChange,
+  });
+
+  const { draftOffset } = useDrawioPointerDrag({
+    rootRef,
+    hasRenderable: hasRenderable || createPlacementActive,
+    visible,
+    meta,
+    layerMap,
+    elementMap,
+    matrixScaleRef,
+    screenToDiagram,
+    canInteractWithElement: gate.canInteractWithElement,
+    canEditElement: gate.canEditElement,
+    selectElement: selection.selectElement,
+    clearSelection: selection.clearSelection,
+    selectedIdRef: selection.selectedIdRef,
+    onCommitMove,
+    onCreateElement,
+  });
+
+  useDrawioKeyboardActions({
+    hasRenderable,
+    elementMap,
+    selectedIdRef: selection.selectedIdRef,
+    canEditElement: gate.canEditElement,
+    onCommitMove,
+    onDeleteElement,
+    onSwitchTool,
+    clearSelection: selection.clearSelection,
+  });
+
+  return {
+    rootRef,
+    selectedId: selection.selectedId,
+    draftOffset,
+    matrixScaleRef,
+  };
+}

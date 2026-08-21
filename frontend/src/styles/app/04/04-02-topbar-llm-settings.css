@@ -1,0 +1,40 @@
+/* fpc: topbar_llm_settings_v1 */
+.llmToggleBtn{
+  cursor: pointer;
+}
+
+.llmInlineCard{
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 10px;
+  background: rgba(255,255,255,.08);
+  padding: 8px;
+}
+
+.llmInlineCard .input{
+  height: 34px;
+}
+
+.llmKeyInput{
+  min-width: 220px;
+}
+
+.llmUrlInput{
+  min-width: 260px;
+}
+
+@media (max-width: 980px){
+  .llmInlineCard{
+    width: 100%;
+  }
+  .llmKeyInput,
+  .llmUrlInput{
+    min-width: 0;
+    width: 100%;
+  }
+}
+

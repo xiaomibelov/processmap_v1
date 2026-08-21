@@ -1,0 +1,220 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  apiAcknowledgeNoteMention,
+  apiAcknowledgeNoteThreadAttention,
+  apiAddNoteThreadComment,
+  apiCreateNoteThread,
+  apiDeleteNoteComment,
+  apiDeleteNoteThread,
+  apiGetFolderNoteAggregate,
+  apiGetProjectNoteAggregate,
+  apiGetSessionNoteAggregate,
+  apiGetSessionNoteAggregates,
+  apiListMentionableUsers,
+  apiListMyNoteMentions,
+  apiListNoteNotifications,
+  apiListNoteThreads,
+  apiMarkNoteThreadRead,
+  apiPatchNoteComment,
+  apiPatchNoteThread,
+} from "./api.js";
+
+function withFetch(handler, fn) {
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = handler;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      globalThis.fetch = prevFetch;
+    });
+}
+
+test("note threads API helpers use MVP-1 endpoints and payload contract", async () => {
+  const calls = [];
+  await withFetch(async (input, init = {}) => {
+    calls.push({
+      url: String(input || ""),
+      method: String(init?.method || "GET"),
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify({
+      items: [{ id: "thread_1", scope_type: "diagram_element", comments: [] }],
+      count: 1,
+      limit: 20,
+      mention: { id: "mention_1", thread_id: "thread_1", acknowledged_at: 1 },
+      thread_id: "thread_1",
+      last_read_at: 123,
+      unread_count: 0,
+      deleted_at: 1234567890,
+      deleted_by: "user_1",
+      thread: { id: "thread_1", status: "open", requires_attention: true, attention_acknowledged_by_me: true, comments: [] },
+    }), {
+      status: init?.method === "POST" ? 201 : 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }, async () => {
+    const list = await apiListNoteThreads("sess_1", {
+      status: "open",
+      scopeType: "diagram_element",
+      elementId: "Task_1",
+    });
+    const created = await apiCreateNoteThread("sess_1", {
+      scope_type: "diagram_element",
+      scope_ref: { element_id: "Task_1" },
+      priority: "high",
+      requires_attention: true,
+      mention_user_ids: ["user_2"],
+      body: "Проверить шаг",
+    });
+    const commented = await apiAddNoteThreadComment("thread_1", { body: "Комментарий", mention_user_ids: ["user_2"], reply_to_comment_id: "comment_1" });
+    const edited = await apiPatchNoteComment("comment_2", { body: "Правка", mention_user_ids: [] });
+    const deletedThread = await apiDeleteNoteThread("thread_1");
+    const deletedComment = await apiDeleteNoteComment("comment_1");
+    const patched = await apiPatchNoteThread("thread_1", { status: "resolved" });
+    const acknowledged = await apiAcknowledgeNoteThreadAttention("thread_1");
+    const read = await apiMarkNoteThreadRead("thread_1");
+    const mentionable = await apiListMentionableUsers("sess_1");
+    const mentions = await apiListMyNoteMentions(20);
+    const notifications = await apiListNoteNotifications({ limit: 20, includeRead: false });
+    const mentionAck = await apiAcknowledgeNoteMention("mention_1");
+
+    assert.equal(list.ok, true);
+    assert.equal(list.count, 1);
+    assert.equal(created.thread.id, "thread_1");
+    assert.equal(commented.thread.id, "thread_1");
+    assert.equal(edited.thread.id, "thread_1");
+    assert.equal(deletedThread.ok, true);
+    assert.equal(deletedThread.threadId, "thread_1");
+    assert.equal(deletedThread.deletedAt, 1234567890);
+    assert.equal(deletedComment.ok, true);
+    assert.equal(deletedComment.commentId, "comment_1");
+    assert.equal(deletedComment.threadId, "thread_1");
+    assert.equal(patched.thread.status, "open");
+    assert.equal(acknowledged.thread.attention_acknowledged_by_me, true);
+    assert.equal(read.threadId, "thread_1");
+    assert.equal(read.unreadCount, 0);
+    assert.equal(read.lastReadAt, 123);
+    assert.equal(mentionable.ok, true);
+    assert.equal(mentions.count, 1);
+    assert.equal(notifications.count, 1);
+    assert.equal(mentionAck.mention.id, "mention_1");
+  });
+
+  assert.match(calls[0].url, /\/api\/sessions\/sess_1\/note-threads\?status=open&scope_type=diagram_element&element_id=Task_1$/);
+  assert.equal(calls[0].method, "GET");
+  assert.match(calls[1].url, /\/api\/sessions\/sess_1\/note-threads$/);
+  assert.equal(calls[1].method, "POST");
+  assert.deepEqual(Object.keys(calls[1].body).sort(), ["body", "mention_user_ids", "priority", "requires_attention", "scope_ref", "scope_type"]);
+  assert.equal(calls[1].body.priority, "high");
+  assert.equal(calls[1].body.requires_attention, true);
+  assert.deepEqual(calls[1].body.mention_user_ids, ["user_2"]);
+  assert.match(calls[2].url, /\/api\/note-threads\/thread_1\/comments$/);
+  assert.equal(calls[2].method, "POST");
+  assert.deepEqual(calls[2].body.mention_user_ids, ["user_2"]);
+  assert.equal(calls[2].body.reply_to_comment_id, "comment_1");
+  assert.match(calls[3].url, /\/api\/note-comments\/comment_2$/);
+  assert.equal(calls[3].method, "PATCH");
+  assert.deepEqual(calls[3].body, { body: "Правка", mention_user_ids: [] });
+  assert.match(calls[4].url, /\/api\/note-threads\/thread_1$/);
+  assert.equal(calls[4].method, "DELETE");
+  assert.equal(calls[4].body, null);
+  assert.match(calls[5].url, /\/api\/note-comments\/comment_1$/);
+  assert.equal(calls[5].method, "DELETE");
+  assert.equal(calls[5].body, null);
+  assert.match(calls[6].url, /\/api\/note-threads\/thread_1$/);
+  assert.equal(calls[6].method, "PATCH");
+  assert.deepEqual(calls[6].body, { status: "resolved" });
+  assert.match(calls[7].url, /\/api\/note-threads\/thread_1\/attention-acknowledgement$/);
+  assert.equal(calls[7].method, "POST");
+  assert.match(calls[8].url, /\/api\/note-threads\/thread_1\/read$/);
+  assert.equal(calls[8].method, "POST");
+  assert.match(calls[9].url, /\/api\/sessions\/sess_1\/mentionable-users$/);
+  assert.equal(calls[9].method, "GET");
+  assert.match(calls[10].url, /\/api\/note-mentions\?limit=20$/);
+  assert.equal(calls[10].method, "GET");
+  assert.match(calls[11].url, /\/api\/note-notifications\?limit=20$/);
+  assert.equal(calls[11].method, "GET");
+  assert.match(calls[12].url, /\/api\/note-mentions\/mention_1\/acknowledge$/);
+  assert.equal(calls[12].method, "POST");
+});
+
+test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {
+  const calls = [];
+  await withFetch(async (input, init = {}) => {
+    calls.push({
+      url: String(input || ""),
+      method: String(init?.method || "GET"),
+    });
+    return new Response(JSON.stringify({
+      open_notes_count: 2,
+      has_open_notes: true,
+      attention_discussions_count: 1,
+      has_attention_discussions: true,
+      personal_discussions_count: 0,
+      has_personal_discussions: false,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }, async () => {
+    const session = await apiGetSessionNoteAggregate("sess_1");
+    const project = await apiGetProjectNoteAggregate("proj_1");
+    const folder = await apiGetFolderNoteAggregate("folder_1", "workspace_1");
+
+    assert.equal(session.ok, true);
+    assert.equal(session.aggregate.open_notes_count, 2);
+    assert.equal(session.aggregate.attention_discussions_count, 1);
+    assert.equal(session.aggregate.has_attention_discussions, true);
+    assert.equal(session.aggregate.personal_discussions_count, 0);
+    assert.equal(session.aggregate.has_personal_discussions, false);
+    assert.equal(project.aggregate.scope_type, "project");
+    assert.equal(folder.aggregate.has_open_notes, true);
+  });
+
+  assert.match(calls[0].url, /\/api\/sessions\/sess_1\/note-aggregate$/);
+  assert.match(calls[1].url, /\/api\/projects\/proj_1\/note-aggregate$/);
+  assert.match(calls[2].url, /\/api\/folders\/folder_1\/note-aggregate\?workspace_id=workspace_1$/);
+  assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "GET"]);
+});
+
+test("session note aggregate batch helper normalizes duplicate ids into one POST", async () => {
+  const calls = [];
+  await withFetch(async (input, init = {}) => {
+    calls.push({
+      url: String(input || ""),
+      method: String(init?.method || "GET"),
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify({
+      items: [
+        {
+          scope_type: "session",
+          session_id: "sess_1",
+          open_notes_count: 3,
+          has_open_notes: true,
+          attention_discussions_count: 2,
+          has_attention_discussions: true,
+          personal_discussions_count: 1,
+          has_personal_discussions: true,
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }, async () => {
+    const result = await apiGetSessionNoteAggregates(["sess_1", "sess_1", "", "sess_2"]);
+    assert.equal(result.ok, true);
+    assert.equal(result.aggregates.sess_1.open_notes_count, 3);
+    assert.equal(result.aggregates.sess_1.personal_discussions_count, 1);
+    assert.equal(result.aggregates.sess_2.open_notes_count, 0);
+    assert.equal(result.aggregates.sess_2.has_attention_discussions, false);
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/sessions\/note-aggregates$/);
+  assert.equal(calls[0].method, "POST");
+  assert.deepEqual(calls[0].body, { session_ids: ["sess_1", "sess_2"] });
+});

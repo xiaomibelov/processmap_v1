@@ -1,0 +1,242 @@
+/* fpc: interview_titles_and_header_stability_v2 */
+.interviewStage .interviewBlock{
+  border-color: rgba(96,165,250,.26) !important;
+  background: linear-gradient(180deg, rgba(30,41,59,.34), rgba(15,23,42,.28)) !important;
+  box-shadow: inset 0 0 0 1px rgba(96,165,250,.08);
+}
+
+.interviewStage .interviewBlockTitle{
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(96,165,250,.34);
+  background: linear-gradient(180deg, rgba(37,99,235,.20), rgba(30,64,175,.12));
+  color: rgba(241,248,255,.98) !important;
+  font-weight: 900 !important;
+  letter-spacing: .01em;
+  text-shadow: 0 1px 0 rgba(2,6,23,.5);
+}
+
+.processSessionTitle{
+  min-width: 0;
+  max-width: min(52vw, 720px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px){
+  .processSessionTitle{
+    max-width: min(44vw, 540px);
+  }
+}
+
+.processShell .processHeaderRight .badge{
+  max-width: min(42vw, 380px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processShell .processHeaderRight .seg{
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 6px;
+}
+
+.processShell .processHeaderRight .segBtn{
+  white-space: nowrap;
+}
+
+@media (max-width: 1580px){
+  .processShell .processHeaderRight{
+    justify-content: flex-start;
+  }
+  .processSessionTitle{
+    max-width: min(80vw, 900px);
+  }
+}
+
+.interviewAiCue{
+  margin-bottom: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(96,165,250,.38);
+  background:
+    radial-gradient(120% 120% at 10% 0%, rgba(59,130,246,.24), rgba(59,130,246,.04) 55%),
+    linear-gradient(180deg, rgba(15,23,42,.88), rgba(15,23,42,.72));
+  box-shadow: inset 0 0 0 1px rgba(147,197,253,.12), 0 10px 24px rgba(2,6,23,.35);
+  padding: 10px 12px;
+}
+
+.interviewAiCue.added{
+  border-color: rgba(125,211,252,.44);
+}
+
+.interviewAiCue.reused{
+  border-color: rgba(251,191,36,.36);
+  background:
+    radial-gradient(120% 120% at 10% 0%, rgba(245,158,11,.20), rgba(245,158,11,.04) 55%),
+    linear-gradient(180deg, rgba(15,23,42,.88), rgba(15,23,42,.72));
+}
+
+.interviewAiCueHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.interviewAiCueTitle{
+  font-weight: 900;
+  color: rgba(240,249,255,.98);
+  letter-spacing: .01em;
+}
+
+.interviewAiCueSub{
+  color: rgba(226,240,255,.92);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.interviewAiCueMuted{
+  color: rgba(191,219,254,.86);
+  font-size: 12px;
+}
+
+.interviewAiCueList{
+  margin: 8px 0 0;
+  display: grid;
+  gap: 6px;
+  color: rgba(236,245,255,.94);
+  font-size: 13px;
+}
+
+.interviewAiCueItem{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(147,197,253,.18);
+  border-radius: 10px;
+  background: rgba(15,23,42,.35);
+  padding: 6px 8px;
+}
+
+.interviewAiCueCheck{
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1 1 auto;
+  cursor: pointer;
+}
+
+.interviewAiCueCheck input{
+  margin-top: 2px;
+  accent-color: #60a5fa;
+}
+
+.interviewAiCueActions{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.interviewAiCueClose{
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px;
+  border-radius: 8px !important;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+
+.interviewStepRow.hasAiCue{
+  box-shadow: inset 0 -1px 0 rgba(59,130,246,.28);
+}
+
+.interviewAiRow > td{
+  padding: 0 8px 10px !important;
+  background: transparent !important;
+  border-top: 0 !important;
+}
+
+/* fpc: interview_control_clipping_fix_v1 */
+.interviewStage .interviewTimelineFilters .input,
+.interviewStage .interviewTimelineFilters .select,
+.interviewStage .interviewNodeBindSelect{
+  box-sizing: border-box;
+  display: block;
+  height: auto !important;
+  min-height: 40px !important;
+  line-height: 1.35 !important;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+  background-clip: padding-box;
+}
+
+.interviewStage .interviewTimelineFilters .input,
+.interviewStage .interviewTimelineFilters .select{
+  width: 100%;
+}
+
+.interviewStage .interviewNodeBindSelect{
+  width: 75% !important;
+  max-width: 75% !important;
+  min-width: 0 !important;
+}
+
+.interviewStage .interviewTimelineFilters .input{
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+.interviewStage .interviewTimelineFilters .select,
+.interviewStage .interviewNodeBindSelect{
+  padding-left: 12px !important;
+  padding-right: 36px !important;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.interviewAiRow .interviewAiCue{
+  margin: 6px 0 2px;
+}
+
+.interviewAiCueErr{
+  color: rgba(252,165,165,.92) !important;
+}
+
+.interviewAiNoteStatus{
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(96,165,250,.34);
+  background: rgba(30,64,175,.14);
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(224,242,254,.96);
+}
+
+.interviewAiNoteStatus.pending{
+  border-color: rgba(56,189,248,.42);
+  color: rgba(191,235,255,.98);
+}
+
+.interviewAiNoteStatus.ok{
+  border-color: rgba(34,197,94,.44);
+  color: rgba(187,247,208,.98);
+  background: rgba(21,128,61,.16);
+}
+
+.interviewAiNoteStatus.err{
+  border-color: rgba(239,68,68,.42);
+  color: rgba(254,202,202,.98);
+  background: rgba(185,28,28,.16);
+}

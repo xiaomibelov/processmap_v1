@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- E7 proof page: рендер сгенерированного BPMN-XML в bpmn-js (тот же движок,
+     что в Camunda Modeler web). Использование: /bpmn-proof.html?src=<url bpmn>.
+     Только для dev/proof, не входит в продуктовую навигацию. -->
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>E7 BPMN proof — bpmn-js</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      #canvas { height: 100%; background: #fff; }
+      #err { position: absolute; top: 8px; left: 8px; color: #c0392b; font: 14px monospace; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="canvas"></div>
+    <div id="err"></div>
+    <script type="module">
+      import BpmnJS from "bpmn-js";
+
+      async function main() {
+        const params = new URLSearchParams(window.location.search);
+        const src = params.get("src") || "/e7/soups_v1.0.0.bpmn";
+        const res = await fetch(src);
+        if (!res.ok) throw new Error(`fetch ${src}: HTTP ${res.status}`);
+        const xml = await res.text();
+        const viewer = new BpmnJS({ container: "#canvas" });
+        await viewer.importXML(xml);
+        viewer.get("canvas").zoom("fit-viewport");
+        window.__BPMN_RENDERED__ = true;
+      }
+
+      main().catch((err) => {
+        document.getElementById("err").textContent = String(err?.message || err);
+        window.__BPMN_ERROR__ = String(err?.message || err);
+      });
+    </script>
+  </body>
+</html>

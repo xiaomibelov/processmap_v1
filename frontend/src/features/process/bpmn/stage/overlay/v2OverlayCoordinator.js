@@ -1,0 +1,486 @@
+import { extractOverlaysFromBpmn } from "../../../../../components/process/utils/bpmnOverlayParser.js";
+import { filterRowsByHiddenFields } from "../../../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
+import { asArray, asObject, asText } from "./overlayUtils.js";
+import { resolveV2OverlayContent, mergeV2OverlaysWithPropertyPreview } from "./v2OverlayContentResolver.js";
+import { hasLegacyPropertyOverlay, shouldRenderV2Overlay } from "./v2OverlayVisibilityController.js";
+import { computeSequenceFlowMidpoint, computeSequenceFlowOverlayPlacement, createV2OverlayHost, setV2OverlayExpandedForElement } from "./v2OverlayRenderer.js";
+
+function setLegacyPropertyOverlayExpandedForElement(elementId, expanded) {
+  if (typeof document === "undefined" || !elementId) return;
+  const selector = `.fpcPropertyOverlay[data-node-id="${CSS.escape(elementId)}"]`;
+  document.querySelectorAll(selector).forEach((overlay) => {
+    overlay.classList.toggle("fpcPropertyOverlay--expanded", expanded);
+  });
+}
+
+const coordinatorHoverInstalled = new WeakSet();
+const coordinatorHoverHandlers = new WeakMap();
+
+function installCoordinatorHoverListeners(inst, expandedRef) {
+  if (!inst || coordinatorHoverInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  if (!eventBus) return;
+
+  const onHover = (event) => {
+    setV2OverlayExpandedForElement(event?.element?.id, true);
+    setLegacyPropertyOverlayExpandedForElement(event?.element?.id, true);
+  };
+  const onOut = (event) => {
+    setLegacyPropertyOverlayExpandedForElement(event?.element?.id, false);
+    if (!expandedRef?.current) {
+      setV2OverlayExpandedForElement(event?.element?.id, false);
+    }
+  };
+
+  eventBus.on("element.hover", onHover);
+  eventBus.on("element.out", onOut);
+  coordinatorHoverInstalled.add(inst);
+  coordinatorHoverHandlers.set(inst, { onHover, onOut, expandedRef });
+}
+
+function uninstallCoordinatorHoverListeners(inst) {
+  if (!inst || !coordinatorHoverInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  const handlers = coordinatorHoverHandlers.get(inst);
+  if (eventBus && handlers) {
+    eventBus.off("element.hover", handlers.onHover);
+    eventBus.off("element.out", handlers.onOut);
+  }
+  coordinatorHoverInstalled.delete(inst);
+  coordinatorHoverHandlers.delete(inst);
+}
+
+function isSequenceFlowElement(el) {
+  return Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
+}
+
+function computeContentSig(ovl, el, placement = null) {
+  const isSequenceFlow = isSequenceFlowElement(el);
+  const geo = isSequenceFlow ? el.waypoints : { x: el.x, y: el.y, width: el.width, height: el.height };
+  const sig = { ovl, geo };
+  if (isSequenceFlow) {
+    // Sequence-flow cards are positioned by the anti-collision/viewport logic,
+    // so the sig must cover its OUTPUT: the computed placement. The raw viewbox
+    // is intentionally NOT part of the sig — it changes on every pan/zoom and
+    // would force a full DOM remove+re-add of every sequence overlay even when
+    // the placement is pixel-identical (flicker + churn). mount() recomputes
+    // placements on every canvas.viewbox.changed anyway, so a real placement
+    // change still flips the sig and re-renders; an unchanged one short-circuits.
+    sig.placement = placement
+      ? { top: placement.top, left: placement.left, width: placement.width, height: placement.height }
+      : null;
+  }
+  return JSON.stringify(sig);
+}
+
+// Bounding box of any diagram element: shapes use their frame, flows the
+// waypoint bbox. Returns null for elements without usable bounds.
+function elementBoundsBox(el) {
+  if (!el) return null;
+  if (Array.isArray(el.waypoints) && el.waypoints.length >= 2) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    el.waypoints.forEach((pt) => {
+      const px = Number(pt?.x || 0);
+      const py = Number(pt?.y || 0);
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      maxX = Math.max(maxX, px);
+      maxY = Math.max(maxY, py);
+    });
+    if (!Number.isFinite(minX)) return null;
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+  const x = Number(el.x);
+  const y = Number(el.y);
+  const width = Number(el.width);
+  const height = Number(el.height);
+  if (![x, y, width, height].every(Number.isFinite)) return null;
+  if (width <= 0 && height <= 0) return null;
+  return { x, y, width, height };
+}
+
+// Large overlay mounts are split into chunks of this size so each animation
+// frame only pays for a handful of DOM insertions (load-freeze audit, fix 2).
+const MOUNT_CHUNK_SIZE = 12;
+
+function yieldToFrame() {
+  try {
+    if (typeof globalThis?.scheduler?.yield === "function") {
+      return globalThis.scheduler.yield();
+    }
+  } catch {
+    // Fall through to rAF/timeout.
+  }
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
+export function createV2OverlayCoordinator({
+  enabledRef,
+  expandedRef,
+  useExtensionOverlaysRef,
+  previewMapRef,
+  selectedElementRef,
+  hiddenFieldsRef,
+}) {
+  const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
+  // Supersede token for chunked mounts: a newer mount() invalidates the
+  // remaining chunks of the previous one. Tracked PER KIND: the coordinator
+  // serves both the viewer and the editor instance, and their mounts must not
+  // cancel each other's tail chunks (preprod audit, blocker 4).
+  const mountEpochByKind = { viewer: 0, editor: 0 };
+
+  function isElementInViewportWithMidpoint(el, viewbox) {
+    if (!viewbox || !Number.isFinite(viewbox.x)) return true;
+    const vx = viewbox.x;
+    const vy = viewbox.y;
+    const vw = viewbox.width;
+    const vh = viewbox.height;
+    const isSequenceFlow = Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
+    if (isSequenceFlow) {
+      const mid = computeSequenceFlowMidpoint(el.waypoints);
+      const px = mid ? mid.x : Number(el?.x || 0);
+      const py = mid ? mid.y : Number(el?.y || 0);
+      return px >= vx && px <= vx + vw && py >= vy && py <= vy + vh;
+    }
+    const ex = Number(el?.x || 0);
+    const ey = Number(el?.y || 0);
+    const ew = Number(el?.width || 0);
+    const eh = Number(el?.height || 0);
+    return ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
+  }
+
+  function buildDesiredMap(inst, overlayList) {
+    const registry = inst.get("elementRegistry");
+    const desired = new Map();
+
+    if (Array.isArray(overlayList)) {
+      overlayList.forEach((ovl) => {
+        const nodeId = asText(ovl?.node_id || ovl?.nodeId);
+        const el = nodeId ? registry.get(nodeId) : null;
+        if (el) desired.set(nodeId, { ovl, el });
+      });
+      return desired;
+    }
+
+    const previewMap = asObject(previewMapRef?.current);
+    const globalEnabled = !!enabledRef?.current;
+    const elements = registry.getAll().filter((el) => {
+      const type = String(el?.type || "").toLowerCase();
+      return type !== "label";
+    });
+
+    elements.forEach((el) => {
+      const elementId = el.id;
+      const content = resolveV2OverlayContent({
+        elementId,
+        inst,
+        previewMap,
+        forceShow: globalEnabled,
+        hiddenFields: asArray(hiddenFieldsRef?.current),
+      });
+      if (!content) return;
+
+      const elementState = {
+        isSequenceFlow: Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow",
+        width: Number(el.width || 0),
+        height: Number(el.height || 0),
+        hasLegacyOverlay: hasLegacyPropertyOverlay(inst, elementId),
+      };
+
+      if (!shouldRenderV2Overlay({ elementId, globalEnabled, elementState, content })) return;
+
+      desired.set(elementId, { ovl: content, el });
+    });
+
+    return desired;
+  }
+
+  function applyViewportCulling(desired, viewbox) {
+    if (!viewbox || !Number.isFinite(viewbox.x) || desired.size === 0) return desired;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    desired.forEach(({ el }) => {
+      const isSequenceFlow = Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
+      if (isSequenceFlow) {
+        const mid = computeSequenceFlowMidpoint(el.waypoints);
+        const px = mid ? mid.x : Number(el?.x || 0);
+        const py = mid ? mid.y : Number(el?.y || 0);
+        minX = Math.min(minX, px);
+        minY = Math.min(minY, py);
+        maxX = Math.max(maxX, px);
+        maxY = Math.max(maxY, py);
+      } else {
+        const ex = Number(el?.x || 0);
+        const ey = Number(el?.y || 0);
+        const ew = Number(el?.width || 0);
+        const eh = Number(el?.height || 0);
+        minX = Math.min(minX, ex);
+        minY = Math.min(minY, ey);
+        maxX = Math.max(maxX, ex + ew);
+        maxY = Math.max(maxY, ey + eh);
+      }
+    });
+
+    const bboxContained =
+      minX <= maxX &&
+      minY <= maxY &&
+      viewbox.x <= minX &&
+      viewbox.y <= minY &&
+      viewbox.x + viewbox.width >= maxX &&
+      viewbox.y + viewbox.height >= maxY;
+
+    if (bboxContained) return desired;
+
+    const culled = new Map();
+    for (const [elementId, { ovl, el }] of desired.entries()) {
+      if (isElementInViewportWithMidpoint(el, viewbox)) {
+        culled.set(elementId, { ovl, el });
+      }
+    }
+    return culled;
+  }
+
+  function removeExistingV2OverlaysForElement(inst, elementId) {
+    if (!inst || !elementId) return;
+    try {
+      const overlays = inst.get("overlays");
+      const all = overlays.get({ element: elementId });
+      for (const entry of all) {
+        const html = entry?.html;
+        const node = typeof html === "string" ? null : html;
+        if (node && node.classList && node.classList.contains("fpc-overlay-v2-host")) {
+          try { overlays.remove(entry.id || entry.overlayId || entry); } catch {}
+        }
+      }
+    } catch {}
+  }
+
+  function renderForElement(inst, el, ovl, expanded, placement = null) {
+    removeExistingV2OverlaysForElement(inst, el.id);
+    const created = createV2OverlayHost(el, ovl, expanded, placement);
+    if (!created) return null;
+    const overlays = inst.get("overlays");
+    const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
+    return { overlayId, host: created.host };
+  }
+
+  function mountEntry(inst, kind, elementId, ovl, el, placement = null) {
+    const overlays = inst.get("overlays");
+    const map = elementOverlayMapRef.current[kind];
+    const v2Expanded = expandedRef?.current ?? false;
+    const globalEnabled = enabledRef?.current ?? false;
+    const contentSig = computeContentSig(ovl, el, placement);
+    const existing = map.get(elementId);
+
+    const elementState = {
+      isSequenceFlow: isSequenceFlowElement(el),
+      width: Number(el.width || 0),
+      height: Number(el.height || 0),
+      hasLegacyOverlay: hasLegacyPropertyOverlay(inst, elementId),
+    };
+    const canShow = shouldRenderV2Overlay({ elementId, globalEnabled, elementState, content: ovl });
+
+    if (!canShow) {
+      if (existing) {
+        try { overlays.remove(existing.overlayId); } catch {}
+        map.delete(elementId);
+      }
+      removeExistingV2OverlaysForElement(inst, elementId);
+      return;
+    }
+
+    if (existing) {
+      if (existing.contentSig !== contentSig) {
+        const result = renderForElement(inst, el, ovl, v2Expanded, placement);
+        if (result) {
+          map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
+        }
+      } else if (existing.expanded !== v2Expanded) {
+        existing.host.classList.toggle("fpc-overlay-v2-host--expanded", v2Expanded);
+        existing.expanded = v2Expanded;
+      }
+      return;
+    }
+
+    const result = renderForElement(inst, el, ovl, v2Expanded, placement);
+    if (result) {
+      map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
+    }
+  }
+
+  function mount(inst, kind, overlayList) {
+    if (!inst || typeof document === "undefined") return;
+    if (!useExtensionOverlaysRef?.current) return;
+
+    const map = elementOverlayMapRef.current[kind];
+
+    try {
+      const overlays = inst.get("overlays");
+      const canvas = inst.get("canvas");
+      const viewbox = canvas?.viewbox ? canvas.viewbox() : null;
+
+      let desired = buildDesiredMap(inst, overlayList);
+      desired = applyViewportCulling(desired, viewbox);
+
+      if (desired.size > 0) {
+        installCoordinatorHoverListeners(inst, expandedRef);
+      }
+
+      // Remove stale overlays.
+      for (const [elementId] of map.entries()) {
+        if (!desired.has(elementId)) {
+          const entry = map.get(elementId);
+          if (entry) {
+            try { overlays.remove(entry.overlayId); } catch {}
+            map.delete(elementId);
+          }
+        }
+      }
+
+      const entries = Array.from(desired.entries());
+
+      // Anti-collision placement for sequence-flow overlays. Blockers are ALL
+      // diagram elements with bounds (shapes and flows), not only the ones
+      // that carry overlays; each flow's own bbox is excluded for its own
+      // placement, and already-placed sequence overlay boxes accumulate as
+      // blockers for the following ones.
+      const placements = new Map();
+      const sequenceEntries = entries.filter(([, { el }]) => isSequenceFlowElement(el));
+      if (sequenceEntries.length > 0) {
+        const registry = inst.get("elementRegistry");
+        const blockers = [];
+        try {
+          registry.getAll().forEach((other) => {
+            if (!other || String(other?.type || "").toLowerCase() === "label") return;
+            const box = elementBoundsBox(other);
+            if (box) blockers.push({ elementId: other.id, box });
+          });
+        } catch {}
+        for (const [elementId, { el }] of sequenceEntries) {
+          const ownBlockers = blockers
+            .filter((blocker) => blocker.elementId !== elementId)
+            .map((blocker) => blocker.box);
+          const placement = computeSequenceFlowOverlayPlacement(el, ownBlockers, viewbox);
+          if (placement) {
+            placements.set(elementId, placement);
+            blockers.push({
+              elementId,
+              box: { x: placement.left, y: placement.top, width: placement.width, height: placement.height },
+            });
+          }
+        }
+      }
+
+      const epoch = ++mountEpochByKind[kind];
+      if (entries.length <= MOUNT_CHUNK_SIZE) {
+        for (const [elementId, { ovl, el }] of entries) {
+          mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
+        }
+        return;
+      }
+
+      // Large mount: render the first chunk synchronously (instant first
+      // paint), then spread the rest over animation frames so the main
+      // thread stays responsive (load-freeze audit, fix 2). A newer mount
+      // supersedes the remaining chunks via the epoch check.
+      const head = entries.slice(0, MOUNT_CHUNK_SIZE);
+      const tail = entries.slice(MOUNT_CHUNK_SIZE);
+      // Both the head and the tail chunks must receive the computed placement
+      // — passing it only to the tail silently disabled anti-collision for
+      // the first MOUNT_CHUNK_SIZE entries.
+      for (const [elementId, { ovl, el }] of head) {
+        mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
+      }
+      void (async () => {
+        for (let idx = 0; idx < tail.length; idx += MOUNT_CHUNK_SIZE) {
+          await yieldToFrame();
+          if (epoch !== mountEpochByKind[kind]) return;
+          const chunk = tail.slice(idx, idx + MOUNT_CHUNK_SIZE);
+          for (const [elementId, { ovl, el }] of chunk) {
+            mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
+          }
+        }
+      })();
+    } catch {
+      // Overlay mount failures are non-critical; keep the diagram usable.
+    }
+  }
+
+  function mountFromBpmn(inst, kind, precomputedOverlayList = null) {
+    if (!inst) return;
+    const hiddenFields = asArray(hiddenFieldsRef?.current);
+    // Per-field chip filter (property-panel-redesign): the BPMN extraction
+    // path builds card rows directly, so the filter is applied to the
+    // extracted list itself. An auto property card whose every field was
+    // hidden must not render; name-only cards (no properties to begin with)
+    // and authored overlays survive.
+    // precomputedOverlayList: callers that already ran extractOverlaysFromBpmn
+    // (e.g. for a change signature) pass the raw list in — otherwise the same
+    // registry walk would run twice per mount (load-freeze audit, fix 1).
+    const extracted = Array.isArray(precomputedOverlayList)
+      ? precomputedOverlayList
+      : (extractOverlaysFromBpmn(inst, enabledRef?.current) || []);
+    const overlayList = extracted
+      .map((ovl) => {
+        const original = asArray(ovl?.properties);
+        const properties = filterRowsByHiddenFields(original, hiddenFields);
+        if (ovl?.auto === true && original.length > 0 && properties.length === 0) return null;
+        return { ...ovl, properties };
+      })
+      .filter(Boolean);
+    const previewMap = asObject(previewMapRef?.current);
+    const merged = mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap, {
+      forceShow: enabledRef?.current,
+      hiddenFields,
+    });
+    mount(inst, kind, merged);
+  }
+
+  function clear(inst, kind) {
+    if (!inst) return;
+    // Invalidate any pending chunked mount for this kind so its tail cannot
+    // re-mount overlays onto the cleared instance.
+    mountEpochByKind[kind] += 1;
+    try {
+      const overlays = inst.get("overlays");
+      const map = elementOverlayMapRef.current[kind];
+      map.forEach((entry) => {
+        try { overlays.remove(entry.overlayId); } catch {}
+      });
+      map.clear();
+    } catch {}
+  }
+
+  function clearAll(inst) {
+    if (!inst) return;
+    clear(inst, "viewer");
+    clear(inst, "editor");
+  }
+
+  function uninstall(inst) {
+    if (!inst) return;
+    clear(inst, "viewer");
+    clear(inst, "editor");
+    uninstallCoordinatorHoverListeners(inst);
+  }
+
+  return {
+    mount,
+    mountFromBpmn,
+    clear,
+    clearAll,
+    uninstall,
+  };
+}

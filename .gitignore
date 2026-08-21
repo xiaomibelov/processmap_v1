@@ -1,0 +1,89 @@
+.DS_Store
+.idea/
+.vscode/
+.claude/
+.tools/
+
+.venv/
+venv/
+env/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+workspace/.session_store/
+workspace/.session_store/**
+backend/workspace/
+workspace/.session_store/
+workspace/.session_store/**
+
+node_modules/
+dist/
+build/
+playwright-report/
+frontend/playwright-report/
+coverage/
+*.log
+*.pid
+
+workspace/processes/*
+!workspace/processes/.keep
+artifacts/
+test-results/
+frontend/test-results/
+workspace/projects/*.json
+.env
+.env.*
+.local/*
+!.local/processmap/
+.local/processmap/*
+!.local/processmap/*.example
+.local/processmap/playwright/
+.local/processmap/playwright/*.json
+.auth/
+*.storage-state.json
+archive/
+backups/
+zip/
+deploy/logs/
+.agents/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Agent artifacts — prevent large auto-generated files from entering git history
+.planning/contours/**/evidence/
+.planning/contours/**/*.png
+.planning/contours/**/RAG_SEARCH_INDEX_*.json
+.planning/contours/**/RAG_MANIFEST_*.json
+graphify-out/
+tools/agent-ui/
+workspace/_bak_*/
+*.agent.bak
+*.bak.[0-9]*
+
+# Vault has its own git repo for Obsidian sync
+vault/.git
+
+# Git worktrees
+.worktrees/
+frontend/public/build-info.json
+
+# E2E diagnostic screenshots
+scripts/e2e/diagnose/
+
+# Golden-report is rewritten by test_transformation_golden.py on every run
+# (non-deterministic ordering) — keep it out of the working tree diff.
+docs/e35/golden_report.json
+
+# Removed legacy artifacts (main-v2 reset)
+.codex/
+.fpc_extract_*/
+
+# Keep tracked example envs and source coverage helpers (main-v2 reset)
+!.env.example
+!deploy/.env.server.example
+!frontend/src/features/process/coverage/
+!frontend/src/features/process/coverage/**

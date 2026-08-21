@@ -1,0 +1,12 @@
+[Unit]
+Description=ProcessMap Docker bridge egress rules
+Documentation=/opt/processmap/app/DEPLOY_RUNBOOK.md
+Wants=network-online.target docker.service
+After=docker.service ufw.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/processmap/app/deploy/scripts/processmap_docker_egress_persist.sh apply
+
+[Install]
+WantedBy=multi-user.target docker.service ufw.service

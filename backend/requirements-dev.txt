@@ -1,0 +1,13 @@
+# Dev/test-only зависимости. НЕ ставятся в прод-образ (Dockerfile использует requirements.txt).
+# Прод-пины не меняем: fastapi 0.110.0 требует starlette<0.37, которой нужен httpx<0.28
+# (TestClient несовместим с httpx 0.28+ — TypeError: Client.__init__() got an unexpected kwarg 'app').
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.27.2
+fakeredis>=2.20
+# Contract-фаззинг (этап 1): schemathesis + hypothesis.
+schemathesis==4.24.3
+hypothesis==6.165.2
+# Pin transitive dep: jsonschema-rs 0.50.0 (released 2026-08-20) breaks
+# schemathesis 4.24.3 collection with AttributeError on CanonicalSchema.is_satisfiable.
+jsonschema-rs>=0.49.0,<0.50.0

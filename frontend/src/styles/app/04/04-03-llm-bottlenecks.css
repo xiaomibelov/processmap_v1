@@ -1,0 +1,896 @@
+/* fpc: llm_verify_and_bottlenecks_v1 */
+.aiHealthPill{
+  font-weight: 700;
+}
+
+.aiHealthPill.state-ok{
+  color: hsl(var(--success) / 0.96);
+  border-color: hsl(var(--success) / 0.46);
+}
+
+.aiHealthPill.state-fail{
+  color: hsl(var(--danger) / 0.96);
+  border-color: hsl(var(--danger) / 0.54);
+}
+
+.aiHealthPill.state-checking{
+  color: hsl(var(--warning) / 0.96);
+  border-color: hsl(var(--warning) / 0.48);
+}
+
+.aiHealthPill.state-unknown{
+  color: hsl(var(--accent2) / 0.94);
+  border-color: hsl(var(--accent2) / 0.5);
+}
+
+.aiHealthLine{
+  padding: 2px 0;
+}
+
+.aiHealthLine.state-ok{
+  color: hsl(var(--success) / 0.92);
+}
+
+.aiHealthLine.state-fail{
+  color: hsl(var(--danger) / 0.92);
+}
+
+.aiHealthLine.state-checking{
+  color: hsl(var(--warning) / 0.92);
+}
+
+.aiBottleneckPanel{
+  margin: 0 12px 10px;
+  border: 1px solid hsl(var(--danger) / 0.4);
+  border-radius: 12px;
+  background: linear-gradient(180deg, hsl(var(--danger) / 0.12), hsl(var(--quality-panel-bg) / 0.66));
+  padding: 10px 12px;
+}
+
+.aiBottleneckHead{
+  font-weight: 800;
+  color: hsl(var(--danger) / 0.9);
+  margin-bottom: 6px;
+}
+
+.aiBottleneckList{
+  display: grid;
+  gap: 6px;
+}
+
+.aiBottleneckItem{
+  border-radius: 8px;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.38);
+  padding: 6px 8px;
+  color: hsl(var(--text) / 0.95);
+  background: hsl(var(--quality-card-bg) / 0.82);
+}
+
+.aiBottleneckItem.sev-high{
+  border-color: rgba(248,113,113,.45);
+}
+
+.aiBottleneckItem.sev-medium{
+  border-color: rgba(245,158,11,.40);
+}
+
+.aiBottleneckItem.sev-low{
+  border-color: rgba(96,165,250,.34);
+}
+
+.qualityPanel{
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(38vh, calc(100vh - 200px));
+}
+
+.qualityIssueList{
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.qualityIssueCard{
+  border-color: hsl(var(--quality-card-border) / 0.72) !important;
+  background: hsl(var(--quality-card-bg) / 0.84);
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.qualityIssueCard.is-active{
+  border-color: hsl(var(--quality-active-border) / 0.74);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--quality-active-border) / 0.18),
+    hsl(var(--quality-active-bg) / 0.62)
+  );
+  box-shadow: inset 0 0 0 1px hsl(var(--quality-active-border) / 0.26);
+}
+
+.qualityIssueDetails > summary{
+  list-style: none;
+}
+
+.qualityIssueDetails > summary::-webkit-details-marker{
+  display: none;
+}
+
+.coverageMiniMap{
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 18;
+  width: min(320px, calc(100% - 24px));
+  border: 1px solid hsl(var(--quality-panel-border) / 0.56);
+  border-radius: 12px;
+  background: linear-gradient(180deg, hsl(var(--quality-panel-bg) / 0.95), hsl(var(--quality-panel-bg) / 0.9));
+  box-shadow: 0 10px 32px hsl(var(--bg) / 0.34);
+  backdrop-filter: blur(6px);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.coverageMiniMapHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coverageMiniMapTitle{
+  font-size: 11px;
+  font-weight: 800;
+  color: hsl(var(--text) / 0.94);
+  letter-spacing: .02em;
+}
+
+.coverageMiniMapCount{
+  min-width: 20px;
+  height: 18px;
+  border-radius: 999px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.58);
+  color: hsl(var(--text) / 0.92);
+  background: hsl(var(--panel2) / 0.7);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.coverageMiniMapLegend{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.coverageMiniMapLegendItem{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: hsl(var(--muted) / 0.94);
+  font-size: 10px;
+}
+
+.coverageMiniMapLegendSwatch{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.coverageMiniMapLegendSwatch.fpcCoverageReady{
+  background: hsl(var(--diagram-coverage-low) / 0.26);
+  border-color: hsl(var(--diagram-coverage-low) / 0.76);
+}
+
+.coverageMiniMapLegendSwatch.fpcCoverageWarn{
+  background: hsl(var(--diagram-coverage-med) / 0.26);
+  border-color: hsl(var(--diagram-coverage-med) / 0.76);
+}
+
+.coverageMiniMapLegendSwatch.fpcCoverageRisk{
+  background: hsl(var(--diagram-coverage-high) / 0.25);
+  border-color: hsl(var(--diagram-coverage-high) / 0.76);
+}
+
+.coverageMiniMapEmpty{
+  border: 1px dashed hsl(var(--quality-panel-border) / 0.44);
+  border-radius: 9px;
+  padding: 8px;
+  color: hsl(var(--muted) / 0.92);
+  font-size: 11px;
+}
+
+.coverageMiniMapGrid{
+  max-height: 170px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.coverageMiniMapMarker{
+  border: 1px solid hsl(var(--quality-panel-border) / 0.5);
+  border-radius: 9px;
+  background: hsl(var(--quality-panel-bg) / 0.78);
+  min-height: 28px;
+  padding: 4px 6px;
+  text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.coverageMiniMapMarker:hover{
+  transform: translateY(-1px);
+}
+
+.coverageMiniMapMarkerTitle{
+  color: hsl(var(--text) / 0.96);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coverageMiniMapMarkerMeta{
+  font-size: 10px;
+  color: hsl(var(--text) / 0.9);
+  border-radius: 999px;
+  padding: 0 6px;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.58);
+  background: hsl(var(--panel2) / 0.72);
+}
+
+.coverageMiniMapMarkerFlags{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.coverageMiniMapFlag{
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+}
+
+.coverageMiniMapFlag.is-error{
+  color: hsl(var(--danger) / 0.96);
+  border-color: hsl(var(--danger) / 0.54);
+  background: hsl(var(--danger) / 0.14);
+}
+
+.coverageMiniMapFlag.is-ai{
+  color: hsl(var(--diagram-ai) / 0.96);
+  border-color: hsl(var(--diagram-ai) / 0.54);
+  background: hsl(var(--diagram-ai) / 0.14);
+}
+
+.coverageMiniMapFlag.is-notes{
+  color: hsl(var(--diagram-notes) / 0.96);
+  border-color: hsl(var(--diagram-notes) / 0.54);
+  background: hsl(var(--diagram-notes) / 0.14);
+}
+
+.coverageMiniMapFlag.is-missing{
+  color: hsl(var(--diagram-coverage-med) / 0.96);
+  border-color: hsl(var(--diagram-coverage-med) / 0.54);
+  background: hsl(var(--diagram-coverage-med) / 0.16);
+}
+
+.coverageMiniMapMarker.fpcCoverageReady{
+  border-color: hsl(var(--diagram-coverage-low) / 0.5);
+  box-shadow: inset 0 0 0 1px hsl(var(--diagram-coverage-low) / 0.2);
+}
+
+.coverageMiniMapMarker.fpcCoverageWarn{
+  border-color: hsl(var(--diagram-coverage-med) / 0.52);
+  box-shadow: inset 0 0 0 1px hsl(var(--diagram-coverage-med) / 0.22);
+}
+
+.coverageMiniMapMarker.fpcCoverageRisk{
+  border-color: hsl(var(--diagram-coverage-high) / 0.54);
+  box-shadow: inset 0 0 0 1px hsl(var(--diagram-coverage-high) / 0.24);
+}
+
+.attentionPanel{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 26;
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  border: 1px solid hsl(var(--quality-panel-border) / 0.56);
+  border-radius: 14px;
+  background: linear-gradient(180deg, hsl(var(--quality-panel-bg) / 0.97), hsl(var(--quality-panel-bg) / 0.92));
+  box-shadow: 0 14px 44px hsl(var(--bg) / 0.42);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.attentionPanelHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.attentionPanelTitle{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: hsl(var(--text) / 0.97);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
+.attentionPanelCount{
+  min-width: 22px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--diagram-quality) / 0.56);
+  color: hsl(var(--diagram-quality) / 0.92);
+  background: hsl(var(--diagram-quality) / 0.16);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.attentionPanelFilters{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attentionPanelFilter{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.5);
+  border-radius: 999px;
+  background: hsl(var(--panel2) / 0.72);
+  color: hsl(var(--text) / 0.94);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.attentionPanelFilter input{
+  margin: 0;
+  accent-color: hsl(var(--diagram-quality));
+}
+
+.attentionPanelEmpty{
+  border: 1px dashed hsl(var(--quality-panel-border) / 0.5);
+  border-radius: 10px;
+  color: hsl(var(--muted) / 0.95);
+  font-size: 12px;
+  padding: 10px;
+}
+
+.attentionPanelList{
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.attentionItem{
+  border: 1px solid hsl(var(--quality-panel-border) / 0.48);
+  border-radius: 11px;
+  background: hsl(var(--quality-card-bg) / 0.82);
+  padding: 8px 9px;
+  display: grid;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.attentionItem:hover{
+  transform: translateY(-1px);
+  border-color: hsl(var(--diagram-quality) / 0.58);
+  box-shadow: 0 6px 18px hsl(var(--diagram-quality) / 0.24);
+}
+
+.attentionItem:focus-visible{
+  outline: 2px solid hsl(var(--diagram-quality) / 0.72);
+  outline-offset: 1px;
+}
+
+.attentionItemHead{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.attentionItemTitle{
+  color: hsl(var(--text) / 0.98);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.attentionItemFlags{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.attentionFlag{
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.54);
+  background: hsl(var(--panel2) / 0.76);
+  color: hsl(var(--text) / 0.92);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.attentionFlag.is-quality{
+  border-color: hsl(var(--diagram-quality) / 0.58);
+  color: hsl(var(--diagram-quality) / 0.96);
+  background: hsl(var(--diagram-quality) / 0.16);
+}
+
+.attentionFlag.is-ai{
+  border-color: hsl(var(--diagram-ai) / 0.58);
+  color: hsl(var(--diagram-ai) / 0.96);
+  background: hsl(var(--diagram-ai) / 0.16);
+}
+
+.attentionFlag.is-notes{
+  border-color: hsl(var(--diagram-notes) / 0.58);
+  color: hsl(var(--diagram-notes) / 0.96);
+  background: hsl(var(--diagram-notes) / 0.16);
+}
+
+.attentionItemLane{
+  color: hsl(var(--muted) / 0.96);
+  font-size: 11px;
+}
+
+.attentionItemReasons{
+  margin: 0;
+  padding-left: 16px;
+  color: hsl(var(--text) / 0.82);
+  font-size: 11px;
+  display: grid;
+  gap: 2px;
+}
+
+.attentionItemActions{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.apiClarifyPanel{
+  margin: 0 12px 10px;
+  border: 1px solid hsl(var(--accent2) / 0.42);
+  border-radius: 12px;
+  background: linear-gradient(180deg, hsl(var(--accent2) / 0.14), hsl(var(--quality-panel-bg) / 0.7));
+  padding: 10px 12px;
+}
+
+.apiClarifyHead{
+  font-weight: 800;
+  color: hsl(var(--text) / 0.96);
+  margin-bottom: 6px;
+}
+
+.apiClarifyList{
+  display: grid;
+  gap: 6px;
+}
+
+.apiClarifyInfo{
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.42);
+  border-radius: 8px;
+  background: hsl(var(--quality-card-bg) / 0.82);
+  color: hsl(var(--text) / 0.92);
+}
+
+.apiClarifyActions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.apiClarifyItem{
+  border: 1px solid hsl(var(--quality-panel-border) / 0.42);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: hsl(var(--quality-card-bg) / 0.84);
+  color: hsl(var(--text) / 0.95);
+}
+
+.apiClarifyBanner{
+  margin: 0 12px 10px;
+  border: 1px solid hsl(var(--accent2) / 0.42);
+  border-radius: 10px;
+  background: hsl(var(--quality-panel-bg) / 0.8);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.apiReviewPage{
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid hsl(var(--accent2) / 0.38);
+  border-radius: 12px;
+  background: linear-gradient(180deg, hsl(var(--accent2) / 0.14), hsl(var(--quality-panel-bg) / 0.72));
+  padding: 10px 12px;
+}
+
+.llmReviewPage{
+  border-color: hsl(var(--diagram-notes) / 0.4);
+  background: linear-gradient(180deg, hsl(var(--diagram-notes) / 0.14), hsl(var(--quality-panel-bg) / 0.72));
+}
+
+.apiReviewHead{
+  display: grid;
+  gap: 8px;
+}
+
+.apiReviewTitle{
+  font-weight: 800;
+  color: hsl(var(--text) / 0.96);
+}
+
+.apiReviewMeta{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: hsl(var(--text) / 0.9);
+  font-size: 12px;
+}
+
+.apiReviewActions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.apiReviewInfo{
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid hsl(var(--quality-panel-border) / 0.42);
+  border-radius: 8px;
+  background: hsl(var(--quality-card-bg) / 0.82);
+  color: hsl(var(--text) / 0.9);
+}
+
+.apiReviewList{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.apiReviewEmpty{
+  border: 1px solid hsl(var(--quality-panel-border) / 0.42);
+  border-radius: 8px;
+  padding: 10px;
+  color: hsl(var(--muted) / 0.9);
+  background: hsl(var(--quality-card-bg) / 0.8);
+}
+
+.apiReviewItem{
+  border: 1px solid hsl(var(--quality-panel-border) / 0.42);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: hsl(var(--quality-card-bg) / 0.84);
+  color: hsl(var(--text) / 0.95);
+}
+
+.apiReviewItemHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.djs-element.fpcBottleneckHigh .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #ff6b6b !important;
+  stroke-width: 3px !important;
+}
+
+.djs-element.fpcBottleneckMedium .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #f59e0b !important;
+  stroke-width: 3px !important;
+}
+
+.djs-element.fpcBottleneckLow .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #60a5fa !important;
+  stroke-width: 3px !important;
+}
+
+.djs-element.fpcReportStopMarker .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #ef4444 !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 7px rgba(239,68,68,.42));
+}
+
+.djs-connection.fpcReportPathFlowOk .djs-visual > path {
+  stroke: #22c55e !important;
+  stroke-width: 3px !important;
+}
+
+.djs-connection.fpcReportPathFlowOut .djs-visual > path {
+  stroke: #f59e0b !important;
+  stroke-width: 3px !important;
+}
+
+.djs-connection.fpcReportPathFlowMiss .djs-visual > path {
+  stroke: #ef4444 !important;
+  stroke-width: 3px !important;
+  stroke-dasharray: 6 4;
+}
+
+.fpcBottleneckTag{
+  min-width: 42px;
+  text-align: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  border: 1px solid transparent;
+  color: #fff;
+  box-shadow: 0 1px 6px rgba(2,6,23,.45);
+  letter-spacing: .02em;
+}
+
+.fpcBottleneckTag.hint{
+  min-width: 0;
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.fpcBottleneckTag.high{
+  background: rgba(220,38,38,.92);
+  border-color: rgba(254,202,202,.55);
+}
+
+.fpcBottleneckTag.medium{
+  background: rgba(217,119,6,.92);
+  border-color: rgba(253,230,138,.55);
+}
+
+.fpcBottleneckTag.low{
+  background: rgba(37,99,235,.9);
+  border-color: rgba(191,219,254,.55);
+}
+
+.djs-element.fpcNodeFocus .djs-visual > :is(rect, circle, ellipse, polygon, path){
+  stroke: #22d3ee !important;
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 8px rgba(34,211,238,.5));
+}
+
+.djs-element.fpcQualityIssueFocus .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.djs-connection.fpcQualityIssueFocus .djs-visual > path {
+  stroke: hsl(var(--diagram-quality)) !important;
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 10px hsl(var(--diagram-quality-glow) / 0.62));
+}
+
+.djs-element.fpcAttentionJumpFocus .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.djs-connection.fpcAttentionJumpFocus .djs-visual > path {
+  stroke: hsl(var(--diagram-jump)) !important;
+  stroke-width: 5px !important;
+  filter: drop-shadow(0 0 13px hsl(var(--diagram-jump-glow) / 0.72));
+  animation: fpcAttentionJumpPulse .88s ease-out 1;
+}
+
+@keyframes fpcAttentionJumpPulse{
+  0%{
+    filter: drop-shadow(0 0 4px hsl(var(--diagram-jump-glow) / 0.38));
+  }
+  55%{
+    filter: drop-shadow(0 0 16px hsl(var(--diagram-jump-glow) / 0.85));
+  }
+  100%{
+    filter: drop-shadow(0 0 13px hsl(var(--diagram-jump-glow) / 0.72));
+  }
+}
+
+.djs-element.fpcQualityProblem .djs-visual > :is(rect, circle, ellipse, polygon, path),
+.djs-connection.fpcQualityProblem .djs-visual > path {
+  stroke: hsl(var(--diagram-quality)) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 8px hsl(var(--diagram-quality-glow) / 0.52));
+}
+
+.djs-element.fpcElementSelected .djs-visual > :is(rect, circle, ellipse, polygon, path, line, polyline){
+  stroke: hsl(var(--diagram-select)) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 8px hsl(var(--diagram-select-glow) / 0.44));
+}
+
+.djs-connection.fpcElementSelected .djs-visual > path {
+  stroke: hsl(var(--diagram-select)) !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 8px hsl(var(--diagram-select-glow) / 0.44));
+}
+
+.djs-element.fpcInterviewNode .djs-visual > :is(rect, circle, ellipse, polygon){
+  stroke: hsl(var(--diagram-select) / 0.86) !important;
+  stroke-width: 2.4px !important;
+}
+
+.djs-element.fpcSendTask .djs-visual > rect{
+  fill: hsl(var(--bg-elevated) / 0.22) !important;
+  stroke: hsl(var(--text) / 0.88) !important;
+  stroke-width: 1.7px !important;
+}
+
+.djs-element.fpcReceiveTask .djs-visual > rect{
+  fill: hsl(var(--bg-panel) / 0.7) !important;
+  stroke: hsl(var(--muted) / 0.8) !important;
+  stroke-width: 1.45px !important;
+}
+
+.djs-element.fpcTaskLightBg .djs-visual > rect{
+  fill: hsl(var(--bg-elevated) / 0.24) !important;
+  stroke: hsl(var(--text) / 0.84) !important;
+}
+
+.djs-element.fpcTaskLightBg .djs-visual [fill="#000000"],
+.djs-element.fpcTaskLightBg .djs-visual [fill="#000"],
+.djs-element.fpcTaskLightBg .djs-visual [fill="black"]{
+  fill: #eef6ff !important;
+}
+
+.djs-element.fpcTaskLightBg .djs-visual [stroke="#000000"],
+.djs-element.fpcTaskLightBg .djs-visual [stroke="#000"],
+.djs-element.fpcTaskLightBg .djs-visual [stroke="black"]{
+  stroke: #eef6ff !important;
+}
+
+.djs-element.fpcStartEvent .djs-visual circle{
+  stroke-width: 2.2px !important;
+}
+
+.djs-element.fpcEndEvent .djs-visual circle{
+  stroke-width: 4px !important;
+}
+
+.fpcInterviewChip{
+  min-width: 130px;
+  max-width: 280px;
+  border-radius: 10px;
+  border: 1px solid hsl(var(--diagram-select) / 0.42);
+  background: linear-gradient(180deg, hsl(var(--menu-bg-elevated) / 0.94), hsl(var(--quality-panel-bg) / 0.84));
+  box-shadow: 0 4px 14px hsl(var(--bg) / 0.34);
+  padding: 6px 8px;
+  color: hsl(var(--text) / 0.96);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.fpcInterviewChipSub{
+  display: inline-block;
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-bottom: 4px;
+  border: 1px solid hsl(var(--accent2) / 0.48);
+  background: hsl(var(--accent2) / 0.2);
+  font-weight: 800;
+  color: hsl(var(--text) / 0.96);
+}
+
+.fpcInterviewChipComment{
+  color: hsl(var(--text) / 0.9);
+  margin-bottom: 3px;
+}
+
+.fpcInterviewChipLane{
+  color: hsl(var(--muted) / 0.94);
+  font-weight: 700;
+}
+
+.fpcInterviewSubprocessBox{
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1.8px dashed var(--sp-color, rgba(56,189,248,.85));
+  background: color-mix(in srgb, var(--sp-color, rgba(56,189,248,.2)) 14%, hsl(var(--bg-panel) / 0.2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sp-color, rgba(56,189,248,.45)) 34%, transparent);
+  pointer-events: none;
+  position: relative;
+}
+
+.fpcInterviewSubprocessLabel{
+  position: absolute;
+  top: -11px;
+  left: 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--sp-color, rgba(56,189,248,.45)) 42%, transparent);
+  background: linear-gradient(180deg, hsl(var(--menu-bg-elevated) / 0.94), hsl(var(--quality-panel-bg) / 0.82));
+  padding: 1px 9px;
+  color: hsl(var(--text) / 0.96);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  line-height: 1.5;
+  letter-spacing: .01em;
+}
+
+@media (max-width: 960px){
+  .qualityPanel{
+    max-height: min(46vh, calc(100vh - 170px));
+  }
+
+  .attentionPanel{
+    width: calc(100% - 18px);
+    top: 9px;
+    right: 9px;
+    max-height: calc(100% - 18px);
+    border-radius: 12px;
+    padding: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .djs-element.fpcAttentionJumpFocus .djs-visual > :is(rect, circle, ellipse, polygon, path),
+  .djs-connection.fpcAttentionJumpFocus .djs-visual > path {
+    animation: none !important;
+  }
+}

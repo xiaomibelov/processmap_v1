@@ -1,0 +1,655 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_tobe_soup_v03" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Kimi" exporterVersion="1.0">
+  <bpmn:collaboration id="Collaboration_tobe">
+    <bpmn:participant id="Participant_tobe" name="TO BE Супы (РТК) — формат v0.3" processRef="Process_tobe_soup" />
+    <bpmn:textAnnotation id="TA_entities">
+      <bpmn:text>Справочник сущностей процесса (process_entities): containers: container_1 (food_container — исходная тара), container_2 (serving_container — тара покупателя); equipment: storage_1 (fridge_storage), opening_equipment_1 (container_opener), heating_equipment_1 (microwave), dispensing_equipment_1 (container_dispenser), transfer_station_1 (transfer_station), closing_equipment_1 (container_closing_station); zones: waste_zone_1 (disposal_zone), packaging_zone_1 (packaging_zone).</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_recipe">
+      <bpmn:text>recipe_context (задаётся для SKU, подставляется при создании process_instance): sku_id, portion_qty, source_container_type, heating_power, heat_time_sec, target_temp_c (=75). Поле recipe_params в задачах — это ссылки на имена параметров recipe_context, без ${}-подстановок (v0.3).</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_notes">
+      <bpmn:text>Не моделируется намеренно (v0.3): захват/перехват (стандартная декомпозиция move), открытие урны, контроль «плотно закрыто» и пролива (execution_contract + Quality Policy), повторы/recovery САУ РТК. Ограничение числа догревов и эскалация — Quality Policy / process_visible_errors (открытый вопрос №28 формата).</bpmn:text>
+    </bpmn:textAnnotation>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_tobe_soup" isExecutable="false">
+    <bpmn:documentation>TO BE процесс разогрева супа в РТК, приведён к формату v0.3. Только operation_code из Operation Catalog: get_from_storage, move, open_container, open_equipment, close_equipment, set_equipment, start_equipment, measure_temperature, check, transfer, close_container, publish_event. Убраны: validator_profile_id, actor_kind, ручные operation_id, ${recipe_context...}-подстановки, seal_method, dish_sku_id, grasp_object. Проверки готовности/выполнения и локальное восстановление — в Operation Catalog и САУ РТК. Упаковка заказа — отдельный общий процесс (v0.3 §16), запускается событием ready_for_packaging.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_tobe">
+      <bpmn:lane id="Lane_equip" name="Оборудование и станции">
+        <bpmn:flowNodeRef>Act_get1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_open_c1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_open_mw1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_close_mw1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_set_mw</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_p1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_start_mw</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_get2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_p2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_open_mw2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_measure</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_g1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_close_mw2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_start_mw2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_check</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_g2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_close_mw3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_close_cont</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_wf" name="Workflow / Оркестратор">
+        <bpmn:flowNodeRef>Event_start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_restart_catch</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_m0</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_wait_heat</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_wait_heat2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_publish</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_end</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_robot" name="Манипуляторы РТК">
+        <bpmn:flowNodeRef>Act_move1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_move2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_move2c</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_move3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_dispose_def</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_restart_throw</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_transfer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_move4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_move5</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Act_move6</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Event_start" name="Заказ на суп (message: order_created)">
+      <bpmn:messageEventDefinition />
+    </bpmn:startEvent>
+    <bpmn:intermediateCatchEvent id="Event_restart_catch" name="RESTART_SOUP">
+      <bpmn:linkEventDefinition id="LinkDef_restart_catch" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="GW_m0" />
+    <bpmn:intermediateCatchEvent id="Event_wait_heat" name="Нагрев завершён (heating_finished)">
+      <bpmn:messageEventDefinition />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="Event_wait_heat2" name="Догрев завершён (heating_finished)">
+      <bpmn:messageEventDefinition />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="Act_publish" name="Опубликовать событие ready_for_packaging">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="publish_event" />
+          <camunda:property name="params.event_code" value="ready_for_packaging" />
+          <camunda:property name="params.payload_ref" value="container_2" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_end" name="Контейнер передан в упаковку">
+
+    </bpmn:endEvent>
+    <bpmn:task id="Act_get1" name="Получить контейнер-1 из хранения">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="get_from_storage" />
+          <camunda:property name="params.item_ref" value="container_1" />
+          <camunda:property name="params.target_ref" value="storage_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_open_c1" name="Вскрыть контейнер-1">
+      <bpmn:documentation>Метод вскрытия (крышка/плёнка) выбирается САУ РТК по source_container_type из recipe_context — ветвление в схеме не требуется.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="open_container" />
+          <camunda:property name="params.container_ref" value="container_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_open_mw1" name="Открыть СВЧ">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="open_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_close_mw1" name="Закрыть СВЧ">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="close_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_set_mw" name="Установить режим нагрева">
+      <bpmn:documentation>Значения heating_power и heat_time_sec берутся из recipe_context при создании process_instance (без ${}-подстановок).</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="set_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+          <camunda:property name="recipe_params" value="heating_power; heat_time_sec" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:parallelGateway id="GW_p1" />
+    <bpmn:task id="Act_start_mw" name="Запустить СВЧ">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="start_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_get2" name="Получить контейнер-2 из устройства выдачи">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="get_from_storage" />
+          <camunda:property name="params.item_ref" value="container_2" />
+          <camunda:property name="params.target_ref" value="dispensing_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:parallelGateway id="GW_p2" />
+    <bpmn:task id="Act_open_mw2" name="Открыть СВЧ после нагрева">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="open_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_measure" name="Измерить температуру супа">
+      <bpmn:documentation>Рецептурная проверка (≥75 °C): метод измерения (щуп/тепловизор/датчик) выбирается конфигурацией кухни. target_temp_c — из recipe_context.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="measure_temperature" />
+          <camunda:property name="params.container_ref" value="container_1" />
+          <camunda:property name="recipe_params" value="target_temp_c" />
+          <camunda:property name="outputs.measured_temp_c" value="measured_temp_c" />
+          <camunda:property name="outputs.temperature_ok" value="temperature_ok" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="GW_g1" name="Температура ≥ 75 °C?" />
+    <bpmn:task id="Act_close_mw2" name="Закрыть СВЧ (догрев)">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="close_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_start_mw2" name="Запустить СВЧ (догрев)">
+      <bpmn:documentation>Режим догрева (время/мощность) задаётся recipe_context или политикой исполнения; ограничение числа догревов и эскалация — Quality Policy / process_visible_errors.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="start_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_check" name="Проверить целостность контейнера-1">
+      <bpmn:documentation>Нет протечки/деформации тары после нагрева (как в AS IS). Метод — СТЗ/датчики, ниже схемы.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="check" />
+          <camunda:property name="params.check_code" value="container_integrity" />
+          <camunda:property name="params.object_ref" value="container_1" />
+          <camunda:property name="params.expected_value" value="intact" />
+          <camunda:property name="outputs.check_ok" value="container_intact" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="GW_g2" name="Контейнер цел?" />
+    <bpmn:task id="Act_close_mw3" name="Закрыть СВЧ">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="close_equipment" />
+          <camunda:property name="params.equipment_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_close_cont" name="Закрыть контейнер-2">
+      <bpmn:documentation>Метод закрытия (крышка/запайка/комбинированное устройство) НЕ указывается: выбирается по типу container_2 и конфигурации кухни (v0.3, close_container).</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="close_container" />
+          <camunda:property name="params.container_ref" value="container_2" />
+          <camunda:property name="params.target_ref" value="closing_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move1" name="Перенести контейнер-1 в устройство вскрытия">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_1" />
+          <camunda:property name="params.target_ref" value="opening_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move2" name="Перенести контейнер-1 в СВЧ">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_1" />
+          <camunda:property name="params.target_ref" value="heating_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move2c" name="Перенести контейнер-2 в станцию перетаривания">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_2" />
+          <camunda:property name="params.target_ref" value="transfer_station_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move3" name="Перенести контейнер-1 в станцию перетаривания">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_1" />
+          <camunda:property name="params.target_ref" value="transfer_station_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_dispose_def" name="Утилизировать контейнер-1 (дефект)">
+      <bpmn:documentation>Ветка дефекта тары из AS IS: утилизация + рестарт процесса по новой единице продукта.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_1" />
+          <camunda:property name="params.target_ref" value="waste_zone_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:intermediateThrowEvent id="Event_restart_throw" name="RESTART_SOUP">
+      <bpmn:linkEventDefinition id="LinkDef_restart_throw" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:task id="Act_transfer" name="Перетарить суп из контейнера-1 в контейнер-2">
+      <bpmn:documentation>dish_sku_id не требуется (v0.3). Контроль пролива — execution_contract операции transfer и Quality Policy.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="transfer" />
+          <camunda:property name="params.source_container_ref" value="container_1" />
+          <camunda:property name="params.target_container_ref" value="container_2" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move4" name="Переместить контейнер-1 в зону утилизации">
+      <bpmn:documentation>Открытие урны — часть execution_contract перемещения в зону утилизации, отдельной задачей не моделируется.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_1" />
+          <camunda:property name="params.target_ref" value="waste_zone_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move5" name="Перенести контейнер-2 в станцию закрытия">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_2" />
+          <camunda:property name="params.target_ref" value="closing_equipment_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="Act_move6" name="Перенести контейнер-2 в зону упаковки">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_code" value="move" />
+          <camunda:property name="params.object_ref" value="container_2" />
+          <camunda:property name="params.target_ref" value="packaging_zone_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="F_start_m0" sourceRef="Event_start" targetRef="GW_m0">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_restart_m0" sourceRef="Event_restart_catch" targetRef="GW_m0">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_m0_get1" sourceRef="GW_m0" targetRef="Act_get1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_get1_mv1" sourceRef="Act_get1" targetRef="Act_move1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv1_opc1" sourceRef="Act_move1" targetRef="Act_open_c1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_opc1_omw1" sourceRef="Act_open_c1" targetRef="Act_open_mw1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_omw1_mv2" sourceRef="Act_open_mw1" targetRef="Act_move2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv2_cmw1" sourceRef="Act_move2" targetRef="Act_close_mw1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_cmw1_set" sourceRef="Act_close_mw1" targetRef="Act_set_mw">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_set_p1" sourceRef="Act_set_mw" targetRef="GW_p1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_p1_smw" sourceRef="GW_p1" targetRef="Act_start_mw">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_p1_get2" sourceRef="GW_p1" targetRef="Act_get2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_smw_wait1" sourceRef="Act_start_mw" targetRef="Event_wait_heat">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_get2_mv2c" sourceRef="Act_get2" targetRef="Act_move2c">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_wait1_p2" sourceRef="Event_wait_heat" targetRef="GW_p2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv2c_p2" sourceRef="Act_move2c" targetRef="GW_p2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_p2_omw2" sourceRef="GW_p2" targetRef="Act_open_mw2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_omw2_meas" sourceRef="Act_open_mw2" targetRef="Act_measure">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_meas_g1" sourceRef="Act_measure" targetRef="GW_g1">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_g1_chk" name="Да" sourceRef="GW_g1" targetRef="Act_check">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${temperature_ok == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_g1_cmw2" name="Нет (догрев)" sourceRef="GW_g1" targetRef="Act_close_mw2">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${temperature_ok == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_cmw2_smw2" sourceRef="Act_close_mw2" targetRef="Act_start_mw2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_smw2_wait2" sourceRef="Act_start_mw2" targetRef="Event_wait_heat2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_wait2_omw2" sourceRef="Event_wait_heat2" targetRef="Act_open_mw2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_chk_g2" sourceRef="Act_check" targetRef="GW_g2">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_g2_mv3" name="Да" sourceRef="GW_g2" targetRef="Act_move3">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${container_intact == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_g2_disp" name="Нет (дефект)" sourceRef="GW_g2" targetRef="Act_dispose_def">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${container_intact == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_disp_throw" sourceRef="Act_dispose_def" targetRef="Event_restart_throw">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv3_cmw3" sourceRef="Act_move3" targetRef="Act_close_mw3">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_cmw3_tr" sourceRef="Act_close_mw3" targetRef="Act_transfer">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_tr_mv4" sourceRef="Act_transfer" targetRef="Act_move4">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv4_mv5" sourceRef="Act_move4" targetRef="Act_move5">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv5_cct" sourceRef="Act_move5" targetRef="Act_close_cont">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_cct_mv6" sourceRef="Act_close_cont" targetRef="Act_move6">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_mv6_pub" sourceRef="Act_move6" targetRef="Act_publish">
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="F_pub_end" sourceRef="Act_publish" targetRef="Event_end">
+    </bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_tobe">
+      <bpmndi:BPMNShape id="Participant_di" bpmnElement="Participant_tobe" isHorizontal="true">
+        <dc:Bounds x="-330" y="-80" width="5020" height="1440" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_equip_di" bpmnElement="Lane_equip" isHorizontal="true">
+        <dc:Bounds x="-300" y="-80" width="4990" height="610" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_wf_di" bpmnElement="Lane_wf" isHorizontal="true">
+        <dc:Bounds x="-300" y="530" width="4990" height="230" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_robot_di" bpmnElement="Lane_robot" isHorizontal="true">
+        <dc:Bounds x="-300" y="760" width="4990" height="600" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_start_di" bpmnElement="Event_start">
+        <dc:Bounds x="120" y="600" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_restart_catch_di" bpmnElement="Event_restart_catch">
+        <dc:Bounds x="120" y="690" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_m0_di" bpmnElement="GW_m0">
+        <dc:Bounds x="300" y="600" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_wait_heat_di" bpmnElement="Event_wait_heat">
+        <dc:Bounds x="2000" y="600" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_wait_heat2_di" bpmnElement="Event_wait_heat2">
+        <dc:Bounds x="3190" y="600" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_publish_di" bpmnElement="Act_publish">
+        <dc:Bounds x="4380" y="580" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_end_di" bpmnElement="Event_end">
+        <dc:Bounds x="4550" y="600" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_get1_di" bpmnElement="Act_get1">
+        <dc:Bounds x="470" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_open_c1_di" bpmnElement="Act_open_c1">
+        <dc:Bounds x="810" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_open_mw1_di" bpmnElement="Act_open_mw1">
+        <dc:Bounds x="980" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_close_mw1_di" bpmnElement="Act_close_mw1">
+        <dc:Bounds x="1320" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_set_mw_di" bpmnElement="Act_set_mw">
+        <dc:Bounds x="1490" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_p1_di" bpmnElement="GW_p1">
+        <dc:Bounds x="1660" y="165" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_start_mw_di" bpmnElement="Act_start_mw">
+        <dc:Bounds x="1830" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_get2_di" bpmnElement="Act_get2">
+        <dc:Bounds x="1830" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_p2_di" bpmnElement="GW_p2">
+        <dc:Bounds x="2170" y="165" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_open_mw2_di" bpmnElement="Act_open_mw2">
+        <dc:Bounds x="2340" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_measure_di" bpmnElement="Act_measure">
+        <dc:Bounds x="2510" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_g1_di" bpmnElement="GW_g1">
+        <dc:Bounds x="2680" y="165" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_close_mw2_di" bpmnElement="Act_close_mw2">
+        <dc:Bounds x="2850" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_start_mw2_di" bpmnElement="Act_start_mw2">
+        <dc:Bounds x="3020" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_check_di" bpmnElement="Act_check">
+        <dc:Bounds x="2850" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_g2_di" bpmnElement="GW_g2">
+        <dc:Bounds x="3020" y="165" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_close_mw3_di" bpmnElement="Act_close_mw3">
+        <dc:Bounds x="3360" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_close_cont_di" bpmnElement="Act_close_cont">
+        <dc:Bounds x="4040" y="190" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move1_di" bpmnElement="Act_move1">
+        <dc:Bounds x="640" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move2_di" bpmnElement="Act_move2">
+        <dc:Bounds x="1150" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move2c_di" bpmnElement="Act_move2c">
+        <dc:Bounds x="2000" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move3_di" bpmnElement="Act_move3">
+        <dc:Bounds x="3190" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_dispose_def_di" bpmnElement="Act_dispose_def">
+        <dc:Bounds x="3190" y="1180" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_restart_throw_di" bpmnElement="Event_restart_throw">
+        <dc:Bounds x="3380" y="1200" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_transfer_di" bpmnElement="Act_transfer">
+        <dc:Bounds x="3530" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move4_di" bpmnElement="Act_move4">
+        <dc:Bounds x="3700" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move5_di" bpmnElement="Act_move5">
+        <dc:Bounds x="3870" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Act_move6_di" bpmnElement="Act_move6">
+        <dc:Bounds x="4210" y="980" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_entities_di" bpmnElement="TA_entities">
+        <dc:Bounds x="-330" y="1400" width="980" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_recipe_di" bpmnElement="TA_recipe">
+        <dc:Bounds x="-330" y="1570" width="980" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_notes_di" bpmnElement="TA_notes">
+        <dc:Bounds x="-330" y="1700" width="980" height="110" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="F_start_m0_di" bpmnElement="F_start_m0">
+        <di:waypoint x="138" y="618" />
+        <di:waypoint x="325" y="625" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_restart_m0_di" bpmnElement="F_restart_m0">
+        <di:waypoint x="138" y="708" />
+        <di:waypoint x="325" y="625" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_m0_get1_di" bpmnElement="F_m0_get1">
+        <di:waypoint x="325" y="625" />
+        <di:waypoint x="520" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_get1_mv1_di" bpmnElement="F_get1_mv1">
+        <di:waypoint x="520" y="230" />
+        <di:waypoint x="690" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv1_opc1_di" bpmnElement="F_mv1_opc1">
+        <di:waypoint x="690" y="1020" />
+        <di:waypoint x="860" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_opc1_omw1_di" bpmnElement="F_opc1_omw1">
+        <di:waypoint x="860" y="230" />
+        <di:waypoint x="1030" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_omw1_mv2_di" bpmnElement="F_omw1_mv2">
+        <di:waypoint x="1030" y="230" />
+        <di:waypoint x="1200" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv2_cmw1_di" bpmnElement="F_mv2_cmw1">
+        <di:waypoint x="1200" y="1020" />
+        <di:waypoint x="1370" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_cmw1_set_di" bpmnElement="F_cmw1_set">
+        <di:waypoint x="1370" y="230" />
+        <di:waypoint x="1540" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_set_p1_di" bpmnElement="F_set_p1">
+        <di:waypoint x="1540" y="230" />
+        <di:waypoint x="1685" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_p1_smw_di" bpmnElement="F_p1_smw">
+        <di:waypoint x="1685" y="190" />
+        <di:waypoint x="1880" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_p1_get2_di" bpmnElement="F_p1_get2">
+        <di:waypoint x="1685" y="190" />
+        <di:waypoint x="1880" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_smw_wait1_di" bpmnElement="F_smw_wait1">
+        <di:waypoint x="1880" y="230" />
+        <di:waypoint x="2018" y="618" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_get2_mv2c_di" bpmnElement="F_get2_mv2c">
+        <di:waypoint x="1880" y="460" />
+        <di:waypoint x="2050" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_wait1_p2_di" bpmnElement="F_wait1_p2">
+        <di:waypoint x="2018" y="618" />
+        <di:waypoint x="2195" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv2c_p2_di" bpmnElement="F_mv2c_p2">
+        <di:waypoint x="2050" y="1020" />
+        <di:waypoint x="2195" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_p2_omw2_di" bpmnElement="F_p2_omw2">
+        <di:waypoint x="2195" y="190" />
+        <di:waypoint x="2390" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_omw2_meas_di" bpmnElement="F_omw2_meas">
+        <di:waypoint x="2390" y="230" />
+        <di:waypoint x="2560" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_meas_g1_di" bpmnElement="F_meas_g1">
+        <di:waypoint x="2560" y="230" />
+        <di:waypoint x="2705" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_g1_chk_di" bpmnElement="F_g1_chk">
+        <di:waypoint x="2705" y="190" />
+        <di:waypoint x="2900" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_g1_cmw2_di" bpmnElement="F_g1_cmw2">
+        <di:waypoint x="2705" y="190" />
+        <di:waypoint x="2900" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_cmw2_smw2_di" bpmnElement="F_cmw2_smw2">
+        <di:waypoint x="2900" y="100" />
+        <di:waypoint x="3070" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_smw2_wait2_di" bpmnElement="F_smw2_wait2">
+        <di:waypoint x="3070" y="100" />
+        <di:waypoint x="3208" y="618" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_wait2_omw2_di" bpmnElement="F_wait2_omw2">
+        <di:waypoint x="3208" y="600" />
+        <di:waypoint x="2390" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_chk_g2_di" bpmnElement="F_chk_g2">
+        <di:waypoint x="2900" y="230" />
+        <di:waypoint x="3045" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_g2_mv3_di" bpmnElement="F_g2_mv3">
+        <di:waypoint x="3045" y="190" />
+        <di:waypoint x="3240" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_g2_disp_di" bpmnElement="F_g2_disp">
+        <di:waypoint x="3045" y="190" />
+        <di:waypoint x="3240" y="1220" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_disp_throw_di" bpmnElement="F_disp_throw">
+        <di:waypoint x="3240" y="1220" />
+        <di:waypoint x="3398" y="1218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv3_cmw3_di" bpmnElement="F_mv3_cmw3">
+        <di:waypoint x="3240" y="1020" />
+        <di:waypoint x="3410" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_cmw3_tr_di" bpmnElement="F_cmw3_tr">
+        <di:waypoint x="3410" y="230" />
+        <di:waypoint x="3580" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_tr_mv4_di" bpmnElement="F_tr_mv4">
+        <di:waypoint x="3580" y="1020" />
+        <di:waypoint x="3750" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv4_mv5_di" bpmnElement="F_mv4_mv5">
+        <di:waypoint x="3750" y="1020" />
+        <di:waypoint x="3920" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv5_cct_di" bpmnElement="F_mv5_cct">
+        <di:waypoint x="3920" y="1020" />
+        <di:waypoint x="4090" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_cct_mv6_di" bpmnElement="F_cct_mv6">
+        <di:waypoint x="4090" y="230" />
+        <di:waypoint x="4260" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_mv6_pub_di" bpmnElement="F_mv6_pub">
+        <di:waypoint x="4260" y="1020" />
+        <di:waypoint x="4430" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F_pub_end_di" bpmnElement="F_pub_end">
+        <di:waypoint x="4430" y="620" />
+        <di:waypoint x="4568" y="618" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

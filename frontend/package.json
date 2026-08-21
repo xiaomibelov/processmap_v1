@@ -1,0 +1,45 @@
+{
+  "name": "foodproc-process-copilot-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node scripts/generate-build-info.mjs",
+    "build": "vite build",
+    "preview": "vite preview --port 5173",
+    "test": "node --test \"src/**/*.test.mjs\"",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:enterprise": "../scripts/e2e_enterprise.sh"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.6",
+    "@lezer/highlight": "^1.2.3",
+    "@tanstack/react-query": "^5.101.2",
+    "bpmn-js": "^18.12.0",
+    "camunda-bpmn-moddle": "^7.0.1",
+    "jazz-tools": "https://registry.npmjs.org/jazz-tools/-/jazz-tools-0.20.14.tgz",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-window": "^1.8.11",
+    "swagger-ui-react": "^4.19.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.24",
+    "jsdom": "^28.1.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.9"
+  }
+}

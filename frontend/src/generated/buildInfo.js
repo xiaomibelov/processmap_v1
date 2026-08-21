@@ -1,0 +1,10 @@
+export const PROCESSMAP_BUILD_INFO = {
+  "branch": "main",
+  "sha": "8fa9c6b704794b2eb4cc4299490aeac414f1590f",
+  "shaShort": "8fa9c6b7",
+  "timestamp": "2026-06-13T17:33:23Z",
+  "contourId": "feat-checkbox-property-card",
+  "dirty": false,
+  "host": "processmap.ru"
+};
+export default PROCESSMAP_BUILD_INFO;

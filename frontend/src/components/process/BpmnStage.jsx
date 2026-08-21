@@ -1,0 +1,5932 @@
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useFeatureFlag } from "../../features/config/featureFlagsContext";
+import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+
+import { apiPatchSession } from "../../lib/api/sessionApi";
+import { traceProcess } from "../../features/process/lib/processDebugTrace";
+import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
+import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
+import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
+import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
+import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
+import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
+import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
+import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
+import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
+import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
+import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
+import {
+  runImmediateEditorFanout,
+} from "../../features/process/bpmn/stage/fanout/postStagingFanout";
+import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync";
+import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
+import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/stateMachine/useDiagramLoadStateMachine";
+import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
+import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
+import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
+import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
+import { setV2OverlayClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
+import {
+  bindModelerStageEvents,
+  bindViewerStageEvents,
+} from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
+import { bindSubprocessNavigationEvents } from "../../features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents";
+import { extractOverlaysFromBpmn } from "../../components/process/utils/bpmnOverlayParser";
+import {
+  renderModelerDiagram,
+  renderNewDiagramInModelerRuntime,
+  renderViewerDiagram,
+} from "../../features/process/bpmn/stage/orchestration/bpmnRenderRuntimeLifecycle";
+import { readOverlayCanvasZoom } from "../../features/process/bpmn/stage/decor/overlayLayoutModel.js";
+import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
+import {
+  saveBpmnSnapshot,
+  getLatestBpmnSnapshot,
+} from "../../features/process/bpmn/snapshots/bpmnSnapshots";
+import { applyOpsToModeler } from "../../features/process/bpmn/ops/applyOps";
+import { elementNotesCount, normalizeElementNotesMap } from "../../features/notes/elementNotes";
+import { measureInterviewPerf } from "./interview/perf";
+import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
+import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
+import zeebeModdleDescriptor from "../../features/process/camunda/zeebeModdleDescriptor";
+import { enqueueSessionPatchCasWrite } from "../../features/process/stage/utils/sessionPatchCasCoordinator";
+import {
+  canonicalRobotMetaMapString,
+  extractRobotMetaFromBpmn,
+  extractRobotMetaMapFromBpmnXml,
+  getRobotMetaStatus,
+  hydrateRobotMetaFromBpmn,
+  normalizeRobotMetaMap,
+  parseRobotMetaJson,
+  robotMetaMissingFields,
+  syncRobotMetaToBpmn,
+} from "../../features/process/robotmeta/robotMeta";
+import {
+  normalizeCamundaExtensionState,
+  extractManagedCamundaExtensionStateFromBusinessObject,
+  extractCamundaExtensionsMapFromBpmnXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+  syncCamundaExtensionsToBpmn,
+  upsertCamundaExtensionStateByElementId,
+} from "../../features/process/camunda/camundaExtensions";
+import { normalizeExecutionPlanVersionList } from "../../features/process/robotmeta/executionPlan";
+import { normalizeHybridLayerMap } from "../../features/process/hybrid/hybridLayerUi";
+import { buildExecutionGraphFromInstance } from "../../features/process/playback/buildExecutionGraph";
+import {
+  readContextMenuNativeEvent,
+  resolveBpmnContextMenuTarget,
+} from "../../features/process/bpmn/context-menu/resolveBpmnContextMenuTarget";
+import { shouldOpenBpmnContextMenu } from "../../features/process/bpmn/context-menu/shouldOpenBpmnContextMenu";
+import { createBpmnContextMenuActionExecutor } from "../../features/process/bpmn/context-menu/executeBpmnContextMenuAction";
+import { createBackendBpmnClipboardController } from "../../features/process/bpmn/clipboard/backendBpmnClipboardController";
+import {
+  canCopyBpmnElement,
+} from "../../features/process/bpmn/copy-paste/bpmnElementClipboard";
+import {
+  normalizeTechnicalBpmnLabelsInXml,
+  readableBpmnText,
+} from "../../features/process/bpmn/bpmnIdentity";
+import { disableBpmnZoomScroll } from "../../features/process/bpmn/runtime/zoomScrollLifecycle";
+import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
+import { deriveElementProcessContext } from "../../features/process/stage/search/diagramSearchHierarchy";
+import { buildPropertiesOverlayPreview } from "../../features/process/camunda/propertyDictionaryModel";
+
+import "bpmn-js/dist/assets/diagram-js.css";
+import "bpmn-js/dist/assets/bpmn-js.css";
+import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
+import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
+import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
+import {
+  patchOverlaysPrototype,
+  setShowOverlaysDuringPan,
+} from "../../features/process/bpmn/stage/patches/patchOverlayPanPerf";
+import { instrumentBpmnInst, wrapWithProfiler } from "../../features/process/bpmn/stage/profiling/panProfiler";
+import {
+  asArray,
+  asObject,
+  getOverlayMeasurementContainer,
+  toText,
+  publishE2ESaveProbe,
+  cloneJsonValue,
+  isEditableKeyTarget,
+  readStepTimeMinutes,
+  readStepTimeSeconds,
+  normalizeStepTimeUnit,
+  normalizeLoose,
+  normalizeAiQuestionStatus,
+  normalizeAiQuestionItems,
+  normalizeAiQuestionsByElementMap,
+  normalizeFlowTierMetaMap,
+  normalizeNodePathMetaMap,
+  aiQuestionStats,
+  shouldLogAiOverlayTrace,
+  logAiOverlayTrace,
+  shouldTraceSelectionContinuity,
+  traceSelectionContinuity,
+  colorFromKey,
+  DIAGRAM_FLASH_EVENT,
+  createFlashRuntimeState,
+  createPlaybackDecorRuntimeState,
+  localKey,
+  isLocalSessionId,
+  safeBpmnId,
+  escapeXmlAttr,
+  validateBpmnXmlText,
+  fnv1aHex,
+} from "../../features/process/bpmn/stage/runtimeHelpers/bpmnStagePureHelpers";
+
+
+patchOverlaysPrototype();
+import { maybeStartPanProfilerFromUrl } from "../../features/process/bpmn/stage/profiling/panProfiler";
+maybeStartPanProfilerFromUrl();
+
+const shapeTitleLookupCache = new WeakMap();
+const CONTEXT_MENU_HANDLED_FLAG = "__fpcBpmnContextHandled";
+
+
+function invalidateShapeTitleLookup(registry) {
+  if (!registry || typeof registry !== "object") return;
+  shapeTitleLookupCache.delete(registry);
+}
+
+
+function buildInterviewDecorSignature(draftRaw, aiModeEnabled, displayModeRaw) {
+  const draft = asObject(draftRaw);
+  const interview = asObject(draft?.interview);
+  const steps = asArray(interview?.steps);
+  const stepSig = steps
+    .map((step, idx) => {
+      const stepObj = asObject(step);
+      const stepId = toText(stepObj?.id) || `#${idx}`;
+      const nodeId = toText(stepObj?.node_bind_id || stepObj?.node_id || stepObj?.nodeId);
+      const duration = toText(stepObj?.step_time_sec || stepObj?.duration_sec || stepObj?.step_time_min || stepObj?.duration_min);
+      return `${stepId}:${nodeId}:${duration}`;
+    })
+    .join("|");
+
+  const aiMap = asObject(interview?.ai_questions_by_element || interview?.aiQuestionsByElementId);
+  const aiSig = Object.keys(aiMap)
+    .map((nodeId) => toText(nodeId))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ru"))
+    .map((nodeId) => {
+      const list = asArray(aiMap[nodeId]);
+      const done = list.reduce((acc, item) => acc + Number(asObject(item)?.status === "done"), 0);
+      return `${nodeId}:${list.length}:${done}`;
+    })
+    .join("|");
+
+  const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+  const notesSig = Object.keys(notesMap)
+    .map((nodeId) => toText(nodeId))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ru"))
+    .map((nodeId) => `${nodeId}:${asArray(asObject(notesMap[nodeId])?.items).length}`)
+    .join("|");
+
+  const nodes = asArray(draft?.nodes);
+  const nodeSig = nodes
+    .map((rawNode, idx) => {
+      const node = asObject(rawNode);
+      const nodeId = toText(node?.id) || `node_${idx + 1}`;
+      const stepSeconds = readStepTimeSeconds(node);
+      return `${nodeId}:${Number.isFinite(stepSeconds) ? stepSeconds : ""}`;
+    })
+    .join("|");
+
+  return fnv1aHex(
+    `${toText(displayModeRaw)}|${aiModeEnabled ? 1 : 0}|s:${steps.length}:${fnv1aHex(stepSig)}|`
+    + `a:${fnv1aHex(aiSig)}|n:${fnv1aHex(notesSig)}|d:${nodes.length}:${fnv1aHex(nodeSig)}`,
+  );
+}
+
+function shouldLogBpmnTrace() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_DEBUG_BPMN__) return true;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_bpmn") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function shouldLogPackDebug() {
+  if (typeof window === "undefined") return false;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_packs") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logPackDebug(tag, payload = {}) {
+  if (!shouldLogPackDebug()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[PACKS] ${String(tag || "trace")} ${suffix}`.trim());
+}
+
+function logBpmnTrace(tag, xmlText, meta = null) {
+  if (!shouldLogBpmnTrace()) return;
+  const xml = String(xmlText || "");
+  const extra = meta && typeof meta === "object"
+    ? Object.entries(meta)
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(" ")
+    : "";
+  const suffix = extra ? ` ${extra}` : "";
+  // eslint-disable-next-line no-console
+  console.debug(`[BPMN] ${String(tag || "unknown")} len=${xml.length} hash=${fnv1aHex(xml)}${suffix}`);
+}
+
+let runtimeInstanceSeq = 0;
+let runtimeContainerSeq = 0;
+
+function ensureContainerKey(node) {
+  if (!node || typeof node !== "object") return "";
+  if (!node.__fpcContainerKey) {
+    runtimeContainerSeq += 1;
+    node.__fpcContainerKey = `container_${runtimeContainerSeq}`;
+  }
+  return String(node.__fpcContainerKey || "");
+}
+
+function logRuntimeTrace(tag, meta = {}) {
+  if (!shouldLogBpmnTrace()) return;
+  const suffix = Object.entries(meta || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[RUNTIME] ${String(tag || "event")} ${suffix}`.trim());
+}
+
+function logEnsureTrace(tag, meta = {}) {
+  if (!shouldLogBpmnTrace()) return;
+  const suffix = Object.entries(meta || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[ENSURE] ${String(tag || "event")} ${suffix}`.trim());
+}
+
+function logImportTrace(tag, meta = {}) {
+  if (!shouldLogBpmnTrace()) return;
+  const suffix = Object.entries(meta || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[IMPORT] ${String(tag || "event")} ${suffix}`.trim());
+}
+
+function seedFromActors(roles = [], startRole = "", poolTitle = "") {
+  const clean = roles.map((r) => String(r || "").trim()).filter(Boolean);
+  const laneNames = clean.length ? clean : ["Actor"];
+  const startLaneName = String(startRole || "").trim();
+  const startLaneIndex = Math.max(0, laneNames.includes(startLaneName) ? laneNames.indexOf(startLaneName) : 0);
+  const endLaneIndex = Math.max(0, laneNames.length - 1);
+  const participantName = escapeXmlAttr(String(poolTitle || "").trim());
+
+  const poolX = 140;
+  const poolY = 90;
+  const poolW = 1600;
+  const laneH = 150;
+  const poolH = laneNames.length * laneH;
+
+  const startX = poolX + 140;
+  const startY = poolY + startLaneIndex * laneH + Math.floor(laneH / 2) - 18;
+  const endX = poolX + poolW - 230;
+  const endY = poolY + endLaneIndex * laneH + Math.floor(laneH / 2) - 18;
+  const midX = Math.max(startX + 260, Math.round((startX + endX) / 2));
+
+  const lanesXml = laneNames
+    .map((name, i) => {
+      const id = `Lane_${i + 1}`;
+      const refs = [];
+      if (i === startLaneIndex) refs.push("<bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>");
+      if (i === endLaneIndex) refs.push("<bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef>");
+      return `<bpmn:lane id="${id}" name="${name}">
+  ${refs.join("\n  ")}
+</bpmn:lane>`;
+    })
+    .join("\n");
+
+  const laneShapesXml = laneNames
+    .map((_, i) => {
+      const id = `Lane_${i + 1}`;
+      const y = poolY + i * laneH;
+      const laneX = poolX + 30;
+      const laneW = Math.max(poolW - 30, 120);
+      return `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}" isHorizontal="true">
+  <dc:Bounds x="${laneX}" y="${y}" width="${laneW}" height="${laneH}" />
+</bpmndi:BPMNShape>`;
+    })
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_1"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_1" name="${participantName}" processRef="Process_1" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_1">
+${lanesXml}
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="StartEvent_1" name="Стартовое событие" />
+    <bpmn:endEvent id="EndEvent_1" name="Процесс завершён" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="Participant_1_di" bpmnElement="Participant_1" isHorizontal="true">
+        <dc:Bounds x="${poolX}" y="${poolY}" width="${poolW}" height="${poolH}" />
+      </bpmndi:BPMNShape>
+
+${laneShapesXml}
+
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="${startX}" y="${startY}" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="${endX}" y="${endY}" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="${startX + 36}" y="${startY + 18}" />
+        <di:waypoint x="${midX}" y="${startY + 18}" />
+        <di:waypoint x="${midX}" y="${endY + 18}" />
+        <di:waypoint x="${endX}" y="${endY + 18}" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+}
+
+function _getCanvasSnapshotRaw(inst) {
+  try {
+    const canvas = inst?.get?.("canvas");
+    const registry = inst?.get?.("elementRegistry");
+    const container = canvas?._container;
+    // Avoid getBoundingClientRect() — it forces a full synchronous layout
+    // recalculation on every pan frame. clientWidth/Height is cached and
+    // orders of magnitude cheaper when the container size hasn't changed.
+    const width = Number(container?.clientWidth || 0);
+    const height = Number(container?.clientHeight || 0);
+    const vb = canvas?.viewbox?.() || {};
+    const zoom = Number(canvas?.zoom?.() || 0);
+    const count = Array.isArray(registry?.getAll?.()) ? registry.getAll().length : 0;
+    return {
+      width,
+      height,
+      zoom: Number.isFinite(zoom) ? zoom : 0,
+      viewbox: {
+        x: Number(vb?.x || 0),
+        y: Number(vb?.y || 0),
+        width: Number(vb?.width || 0),
+        height: Number(vb?.height || 0),
+      },
+      count,
+    };
+  } catch {
+    return {
+      width: 0,
+      height: 0,
+      zoom: 0,
+      viewbox: { x: 0, y: 0, width: 0, height: 0 },
+      count: 0,
+    };
+  }
+}
+const getCanvasSnapshot = wrapWithProfiler("BpmnStage.getCanvasSnapshot", _getCanvasSnapshotRaw);
+
+function emitCurrentViewboxSnapshot(inst, emitViewboxChanged, mode, meta = {}) {
+  if (typeof emitViewboxChanged !== "function") return;
+  const snap = getCanvasSnapshot(inst);
+  emitViewboxChanged({
+    mode: String(mode || "").trim() || "editor",
+    suppressed: true,
+    snapshot: snap,
+    ...meta,
+  });
+}
+
+function isAnyShapeInViewport(inst) {
+  try {
+    const canvas = inst?.get?.("canvas");
+    const registry = inst?.get?.("elementRegistry");
+    const vb = canvas?.viewbox?.();
+    const elements = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+    const shape = elements.find((el) => {
+      if (!el || Array.isArray(el?.waypoints) || el.type === "label") return false;
+      const cx = Number(el.x || 0) + Number(el.width || 0) / 2;
+      const cy = Number(el.y || 0) + Number(el.height || 0) / 2;
+      return Number.isFinite(cx) && Number.isFinite(cy)
+        && cx >= Number(vb?.x || 0)
+        && cx <= Number(vb?.x || 0) + Number(vb?.width || 0)
+        && cy >= Number(vb?.y || 0)
+        && cy <= Number(vb?.y || 0) + Number(vb?.height || 0);
+    });
+    return !!shape;
+  } catch {
+    return false;
+  }
+}
+
+function logViewAction(tag, before, after, meta = {}) {
+  if (!shouldLogBpmnTrace()) return;
+  const extra = Object.entries(meta || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(
+    `[VIEW] ${String(tag || "op")} ${extra} `
+    + `before_zoom=${before.zoom} after_zoom=${after.zoom} `
+    + `before_vb=${before.viewbox.x},${before.viewbox.y},${before.viewbox.width},${before.viewbox.height} `
+    + `after_vb=${after.viewbox.x},${after.viewbox.y},${after.viewbox.width},${after.viewbox.height} `
+    + `container=${after.width}x${after.height} registry=${after.count}`,
+  );
+}
+
+function waitAnimationFrame() {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      resolve();
+      return;
+    }
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function asRectMetrics(node) {
+  if (!node || typeof node.getBoundingClientRect !== "function") {
+    return { width: 0, height: 0 };
+  }
+  const rect = node.getBoundingClientRect();
+  return {
+    width: Number(rect?.width || 0),
+    height: Number(rect?.height || 0),
+  };
+}
+
+function asStyleMetrics(node) {
+  if (typeof window === "undefined" || !node || typeof window.getComputedStyle !== "function") {
+    return {
+      display: "",
+      visibility: "",
+      opacity: "",
+      overflow: "",
+    };
+  }
+  try {
+    const style = window.getComputedStyle(node);
+    return {
+      display: String(style?.display || ""),
+      visibility: String(style?.visibility || ""),
+      opacity: String(style?.opacity || ""),
+      overflow: String(style?.overflow || ""),
+    };
+  } catch {
+    return {
+      display: "",
+      visibility: "",
+      opacity: "",
+      overflow: "",
+    };
+  }
+}
+
+function formatRect(rect) {
+  return `${Math.round(Number(rect?.width || 0))}x${Math.round(Number(rect?.height || 0))}`;
+}
+
+function compactStyleToken(style = {}) {
+  return `display=${String(style.display || "-")} visibility=${String(style.visibility || "-")} opacity=${String(style.opacity || "-")} overflow=${String(style.overflow || "-")}`;
+}
+
+function getParentVisibilityChain(node, maxDepth = 3) {
+  const out = [];
+  let cur = node?.parentElement || null;
+  let depth = 0;
+  while (cur && depth < maxDepth) {
+    const style = asStyleMetrics(cur);
+    const rect = asRectMetrics(cur);
+    out.push(`p${depth}{${compactStyleToken(style)} rect=${formatRect(rect)}}`);
+    cur = cur.parentElement || null;
+    depth += 1;
+  }
+  return out;
+}
+
+function hasHiddenParentStyles(node, maxDepth = 3) {
+  let cur = node?.parentElement || null;
+  let depth = 0;
+  while (cur && depth < maxDepth) {
+    const style = asStyleMetrics(cur);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+      return true;
+    }
+    cur = cur.parentElement || null;
+    depth += 1;
+  }
+  return false;
+}
+
+function isNonZeroVisibleLayout(node, minWidth = 20, minHeight = 20) {
+  const rect = asRectMetrics(node);
+  const style = asStyleMetrics(node);
+  const visibleByStyle = style.display !== "none"
+    && style.visibility !== "hidden"
+    && style.opacity !== "0";
+  const sized = rect.width > Number(minWidth || 20) && rect.height > Number(minHeight || 20);
+  return {
+    ok: visibleByStyle && sized,
+    rect,
+    style,
+  };
+}
+
+function logLayoutTrace(meta = {}) {
+  if (!shouldLogBpmnTrace()) return;
+  const suffix = Object.entries(meta || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[LAYOUT] ${suffix}`.trim());
+}
+
+function logVisChainTrace(meta = {}) {
+  if (!shouldLogBpmnTrace()) return;
+  const suffix = Object.entries(meta || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[VIS_CHAIN] ${suffix}`.trim());
+}
+
+async function waitForNonZeroRect(getNode, options = {}) {
+  const timeoutMsRaw = Number(options?.timeoutMs ?? 2000);
+  const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 2000;
+  const minWidth = Number.isFinite(Number(options?.minWidth)) ? Number(options.minWidth) : 20;
+  const minHeight = Number.isFinite(Number(options?.minHeight)) ? Number(options.minHeight) : 20;
+  const sid = String(options?.sid || "-");
+  const token = Number(options?.token || 0);
+  const reason = String(options?.reason || "layout_wait").trim() || "layout_wait";
+  const startedAt = Date.now();
+  let attempt = 0;
+  let last = {
+    ok: false,
+    rect: { width: 0, height: 0 },
+    style: { display: "", visibility: "", opacity: "", overflow: "" },
+    djsRect: { width: 0, height: 0 },
+    svgRect: { width: 0, height: 0 },
+    viewportRect: { width: 0, height: 0 },
+    chain: [],
+    parentHidden: false,
+  };
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const node = typeof getNode === "function" ? getNode() : getNode;
+    const base = isNonZeroVisibleLayout(node, minWidth, minHeight);
+    const djsContainer = node?.querySelector?.(".djs-container") || null;
+    const djsCanvas = djsContainer?.querySelector?.(".djs-canvas") || null;
+    const svg = djsContainer?.querySelector?.("svg") || node?.querySelector?.("svg") || null;
+    const viewport = svg?.querySelector?.("g.viewport") || svg?.querySelector?.("g.djs-viewport") || null;
+    const djsRect = asRectMetrics(djsContainer);
+    const svgRect = asRectMetrics(svg);
+    const viewportRect = asRectMetrics(djsCanvas || viewport || null);
+    const chain = getParentVisibilityChain(node, 3);
+    const parentHidden = hasHiddenParentStyles(node, 3);
+    const ready = !!base.ok && !parentHidden;
+    last = {
+      ok: ready,
+      rect: base.rect,
+      style: base.style,
+      djsRect,
+      svgRect,
+      viewportRect,
+      chain,
+      parentHidden,
+    };
+
+    if (attempt === 0 || ready || attempt % 5 === 0) {
+      logLayoutTrace({
+        sid,
+        token,
+        reason,
+        attempt,
+        ready: ready ? 1 : 0,
+        containerRect: formatRect(base.rect),
+        djsRect: formatRect(djsRect),
+        svgRect: formatRect(svgRect),
+        viewportRect: formatRect(viewportRect),
+        parentHidden: parentHidden ? 1 : 0,
+        display: base.style.display || "-",
+        visibility: base.style.visibility || "-",
+        opacity: base.style.opacity || "-",
+        overflow: base.style.overflow || "-",
+      });
+      logVisChainTrace({
+        sid,
+        token,
+        reason,
+        parent0: chain[0] || "-",
+        parent1: chain[1] || "-",
+        parent2: chain[2] || "-",
+      });
+    }
+
+    if (ready) {
+      return { ok: true, attempts: attempt + 1, elapsedMs: Date.now() - startedAt, ...last };
+    }
+
+    attempt += 1;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+
+  logLayoutTrace({
+    sid,
+    token,
+    reason,
+    attempt,
+    ready: 0,
+    timeout: 1,
+    containerRect: formatRect(last.rect),
+    djsRect: formatRect(last.djsRect),
+    svgRect: formatRect(last.svgRect),
+    viewportRect: formatRect(last.viewportRect),
+    parentHidden: last.parentHidden ? 1 : 0,
+  });
+  logVisChainTrace({
+    sid,
+    token,
+    reason,
+    timeout: 1,
+    parent0: last.chain?.[0] || "-",
+    parent1: last.chain?.[1] || "-",
+    parent2: last.chain?.[2] || "-",
+  });
+  return { ok: false, attempts: attempt, elapsedMs: Date.now() - startedAt, ...last };
+}
+
+function probeCanvas(inst, tag = "", options = {}) {
+  const tab = String(options?.tab || "-");
+  const sid = String(options?.sid || "-");
+  const token = Number(options?.token || 0);
+  const cycleIndex = Number(options?.cycleIndex || 0);
+  const reason = String(options?.reason || "").trim() || "-";
+  const expectElements = options?.expectElements === true;
+  let probe = {
+    registryCount: 0,
+    containerWidth: 0,
+    containerHeight: 0,
+    djsWidth: 0,
+    djsHeight: 0,
+    svgWidth: 0,
+    svgHeight: 0,
+    viewportWidth: 0,
+    viewportHeight: 0,
+    zoom: 0,
+    viewbox: { x: 0, y: 0, width: 0, height: 0 },
+    transform: "",
+    disp: "",
+    vis: "",
+    op: "",
+    overflow: "",
+    parent0: "",
+    parent1: "",
+    parent2: "",
+    bboxWidth: 0,
+    bboxHeight: 0,
+    containerKey: "",
+    invisible: false,
+  };
+  try {
+    const canvas = inst?.get?.("canvas");
+    const registry = inst?.get?.("elementRegistry");
+    const container = canvas?._container;
+    const containerRect = asRectMetrics(container);
+    const containerKey = ensureContainerKey(container);
+    const style = asStyleMetrics(container);
+    const djsContainer = container?.querySelector?.(".djs-container") || null;
+    const djsCanvas = djsContainer?.querySelector?.(".djs-canvas") || null;
+    const djsRect = asRectMetrics(djsContainer);
+    const svg = djsContainer?.querySelector?.("svg") || container?.querySelector?.("svg") || null;
+    const viewport = svg?.querySelector?.("g.viewport") || svg?.querySelector?.("g.djs-viewport") || null;
+    const elementsLayer = svg?.querySelector?.("g.djs-elements")
+      || svg?.querySelector?.("g[class^='layer-root-']")
+      || svg?.querySelector?.("g.layer-root")
+      || null;
+    const svgRect = asRectMetrics(svg);
+    const viewportRect = asRectMetrics(djsCanvas || viewport || null);
+    const ctm = typeof viewport?.getCTM === "function" ? viewport.getCTM() : null;
+    const transformAttr = String(viewport?.getAttribute?.("transform") || "");
+    const transform = transformAttr || (ctm
+      ? `matrix(${Number(ctm.a || 0)},${Number(ctm.b || 0)},${Number(ctm.c || 0)},${Number(ctm.d || 0)},${Number(ctm.e || 0)},${Number(ctm.f || 0)})`
+      : "");
+    const vb = canvas?.viewbox?.() || {};
+    const zoom = Number(canvas?.zoom?.() || 0);
+    const parentChain = getParentVisibilityChain(container, 3);
+    let elementsBBox = { width: 0, height: 0 };
+    let hasElementsBBox = false;
+    try {
+      if (elementsLayer && typeof elementsLayer.getBBox === "function") {
+        const box = elementsLayer.getBBox();
+        elementsBBox = {
+          width: Number(box?.width || 0),
+          height: Number(box?.height || 0),
+        };
+        hasElementsBBox = true;
+      }
+    } catch {
+      elementsBBox = { width: 0, height: 0 };
+      hasElementsBBox = false;
+    }
+
+    const registryCount = Array.isArray(registry?.getAll?.()) ? registry.getAll().length : 0;
+    const zoomInvalid = !Number.isFinite(zoom) || zoom <= 0;
+    const ctmInvalid = ctm
+      ? !Number.isFinite(Number(ctm.a)) || !Number.isFinite(Number(ctm.d)) || Number(ctm.a) <= 0 || Number(ctm.d) <= 0
+      : false;
+    const hiddenStyle = style.display === "none"
+      || style.visibility === "hidden"
+      || style.opacity === "0";
+    const svgMissing = svgRect.width <= 0 || svgRect.height <= 0;
+    const viewportMissing = viewportRect.width <= 0 || viewportRect.height <= 0;
+    const containerMissing = containerRect.width <= 0 || containerRect.height <= 0;
+    const bboxEmpty = hasElementsBBox && elementsBBox.width <= 0 && elementsBBox.height <= 0;
+    const missingExpectedElements = expectElements && registryCount <= 0;
+
+    const invisible = missingExpectedElements
+      || (registryCount > 0
+        && (svgMissing || viewportMissing || containerMissing || hiddenStyle || zoomInvalid || ctmInvalid || bboxEmpty));
+
+    probe = {
+      registryCount,
+      containerWidth: containerRect.width,
+      containerHeight: containerRect.height,
+      djsWidth: djsRect.width,
+      djsHeight: djsRect.height,
+      svgWidth: svgRect.width,
+      svgHeight: svgRect.height,
+      viewportWidth: viewportRect.width,
+      viewportHeight: viewportRect.height,
+      zoom: Number.isFinite(zoom) ? zoom : 0,
+      viewbox: {
+        x: Number(vb?.x || 0),
+        y: Number(vb?.y || 0),
+        width: Number(vb?.width || 0),
+        height: Number(vb?.height || 0),
+      },
+      transform,
+      disp: style.display,
+      vis: style.visibility,
+      op: style.opacity,
+      overflow: style.overflow,
+      parent0: parentChain[0] || "",
+      parent1: parentChain[1] || "",
+      parent2: parentChain[2] || "",
+      bboxWidth: elementsBBox.width,
+      bboxHeight: elementsBBox.height,
+      containerKey,
+      invisible,
+    };
+  } catch {
+    probe = {
+      ...probe,
+      invisible: true,
+    };
+  }
+  if (shouldLogBpmnTrace()) {
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[PROBE] tag=${String(tag || "-")} i=${cycleIndex} tab=${tab} sid=${sid} token=${token} reason=${reason} `
+      + `reg=${probe.registryCount} rect=${probe.containerWidth}x${probe.containerHeight} `
+      + `djs=${probe.djsWidth}x${probe.djsHeight} svg=${probe.svgWidth}x${probe.svgHeight} viewport=${probe.viewportWidth}x${probe.viewportHeight} `
+      + `disp=${probe.disp || "-"} vis=${probe.vis || "-"} op=${probe.op || "-"} ovf=${probe.overflow || "-"} `
+      + `zoom=${probe.zoom} viewbox=${probe.viewbox.x},${probe.viewbox.y},${probe.viewbox.width},${probe.viewbox.height} `
+      + `bbox=${probe.bboxWidth}x${probe.bboxHeight} containerKey=${probe.containerKey || "-"} `
+      + `transform=${probe.transform || "-"} expectEls=${expectElements ? 1 : 0} invisible=${probe.invisible ? 1 : 0}`,
+    );
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[VIS_CHAIN] sid=${sid} token=${token} reason=${reason} tag=${String(tag || "-")} `
+      + `parent0=${probe.parent0 || "-"} parent1=${probe.parent1 || "-"} parent2=${probe.parent2 || "-"}`,
+    );
+  }
+  return probe;
+}
+
+async function safeFit(inst, options = {}) {
+  const reason = String(options?.reason || "fit").trim() || "fit";
+  const tab = String(options?.tab || "-");
+  const sid = String(options?.sid || "-");
+  const token = Number(options?.token || 0);
+  const suppress = typeof options?.suppressViewbox === "function"
+    ? options.suppressViewbox
+    : null;
+  let attempt = 0;
+  while (attempt <= 10) {
+    try {
+      const canvas = inst.get("canvas");
+      const container = canvas?._container;
+      const w = Number(container?.clientWidth || 0);
+      const h = Number(container?.clientHeight || 0);
+      if ((!w || !h) && attempt < 10) {
+        await new Promise((r) => setTimeout(r, 70));
+        attempt += 1;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      const before = getCanvasSnapshot(inst);
+      suppress?.(1);
+      try {
+        canvas.zoom("fit-viewport");
+        const z = canvas.zoom();
+        if (!Number.isFinite(z)) canvas.zoom(1);
+      } finally {
+        suppress?.(-1);
+      }
+      const after = getCanvasSnapshot(inst);
+      logViewAction("fit", before, after, { reason, tab, sid, token });
+      return;
+    } catch {
+      return;
+    }
+  }
+}
+
+function logCanvasMetrics(inst, tag = "", sid = "") {
+  if (!shouldLogBpmnTrace()) return;
+  try {
+    const canvas = inst?.get?.("canvas");
+    const registry = inst?.get?.("elementRegistry");
+    const container = canvas?._container;
+    const rect = container?.getBoundingClientRect?.();
+    const width = Number(rect?.width || container?.clientWidth || 0);
+    const height = Number(rect?.height || container?.clientHeight || 0);
+    const count = Array.isArray(registry?.getAll?.()) ? registry.getAll().length : 0;
+    // eslint-disable-next-line no-console
+    console.debug(`[BPMN] ${String(tag || "canvas")} sid=${String(sid || "-")} width=${width} height=${height} elementRegistryCount=${count}`);
+  } catch {
+  }
+}
+
+async function ensureCanvasVisibleAndFit(inst, tag = "", sid = "", options = {}) {
+  return viewportRecovery.ensureCanvasVisibleAndFit(
+    {
+      helpers: {
+        getCanvasSnapshot,
+        waitForNonZeroRect,
+        probeCanvas,
+        safeFit,
+        logCanvasMetrics,
+        isAnyShapeInViewport,
+        logViewAction,
+      },
+    },
+    inst,
+    {
+      ...options,
+      tag,
+      sid,
+    },
+  );
+}
+
+const BpmnStage = forwardRef(function BpmnStage({
+  sessionId,
+  activeProjectId,
+  view,
+  draft,
+  reloadKey,
+  bpmnXmlCacheRef = null,
+  onDiagramMutation,
+  onElementSelectionChange,
+  onElementNotesRemap,
+  onAiQuestionsByElementChange,
+  onSessionSync,
+  getBaseDiagramStateVersion = null,
+  rememberDiagramStateVersion = null,
+  onSaveLifecycleEvent,
+  aiQuestionsModeEnabled,
+  diagramDisplayMode = "normal",
+  stepTimeUnit = "min",
+  robotMetaOverlayEnabled = false,
+  robotMetaOverlayFilters = { ready: true, incomplete: true },
+  robotMetaStatusByElementId = {},
+  selectedPropertiesOverlayPreview = null,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
+  v2OverlaysEnabled = false,
+  v2OverlaysExpanded = false,
+  onV2OverlayPropertiesRequest = null,
+  onDiagramContextMenuRequest = null,
+  onDiagramContextMenuDismiss = null,
+  onNavigateToSubprocess = null,
+  childSessionDiscussionAggregates = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
+  showOverlaysDuringPan = false,
+}, ref) {
+  const viewerEl = useRef(null);
+  const editorEl = useRef(null);
+
+  const viewerRef = useRef(null);
+  const modelerRef = useRef(null);
+  const viewerInitPromiseRef = useRef(null);
+  const modelerInitPromiseRef = useRef(null);
+  const modelerRuntimeRef = useRef(null);
+  const modelerDecorBoundInstanceRef = useRef(null);
+  const viewerDecorBoundInstanceRef = useRef(null);
+  const viewerStageEventsUnbindRef = useRef(null);
+  const modelerStageEventsUnbindRef = useRef(null);
+  const viewerSubprocessUnbindRef = useRef(null);
+  const modelerSubprocessUnbindRef = useRef(null);
+  const bpmnStoreRef = useRef(null);
+  const bpmnCoordinatorRef = useRef(null);
+  const bpmnPersistenceRef = useRef(null);
+  const bpmnStoreUnsubRef = useRef(null);
+  const viewboxListenersRef = useRef(new Set());
+  const viewerCullerRef = useRef(null);
+  const modelerCullerRef = useRef(null);
+  const activeSessionRef = useRef("");
+  const prevSessionRef = useRef("");
+  const loadTokenRef = useRef(0);
+  const pendingFocusElementIdRef = useRef("");
+  const appliedFocusElementIdRef = useRef("");
+  const pendingRestoreViewportRef = useRef(null);
+  const lastRestoredViewportSessionRef = useRef("");
+  const draftRef = useRef(draft);
+
+  const [xml, setXml] = useState("");
+  const [xmlDraft, setXmlDraft] = useState("");
+  const [xmlDirty, setXmlDirty] = useState(false);
+  const [xmlSaveBusy, setXmlSaveBusy] = useState(false);
+  const [srcHint, setSrcHint] = useState("");
+  const [err, setErr] = useState("");
+  const {
+    isReady: loadStateIsReady,
+    transition: loadTransition,
+    loadState,
+    errorReason,
+  } = useDiagramLoadStateMachine({ warmTimeoutMs: 0, coldTimeoutMs: 0 });
+  const diagramReady = loadStateIsReady;
+  const bottlenecksRef = useRef([]);
+  const markerStateRef = useRef({ viewer: [], editor: [] });
+  const overlayStateRef = useRef({ viewer: [], editor: [] });
+  const interviewMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const interviewOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const interviewDecorSignatureRef = useRef({ viewer: "", editor: "" });
+  const taskTypeMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const linkEventMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const linkEventStyledStateRef = useRef({ viewer: [], editor: [] });
+  const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
+  const userNotesDecorStateRef = useRef({ viewer: {}, editor: {} });
+  const elementThreadCountsRef = useRef({});
+  const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
+  const stepTimeDecorSignatureRef = useRef({ viewer: "", editor: "" });
+  const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
+  const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
+  const propertiesOverlayZoomBucketRef = useRef({ viewer: "", editor: "" });
+  const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
+  const playbackDecorStateRef = useRef({
+    viewer: createPlaybackDecorRuntimeState(),
+    editor: createPlaybackDecorRuntimeState(),
+  });
+  const searchHighlightMarkerStateRef = useRef({
+    viewer: { passive: [], active: "" },
+    editor: { passive: [], active: "" },
+  });
+  const playbackBboxCacheRef = useRef({ viewer: {}, editor: {} });
+  const focusMarkerStateRef = useRef({ viewer: [], editor: [] });
+  const aiQuestionPanelStateRef = useRef({
+    viewer: { overlayId: null, elementId: "" },
+    editor: { overlayId: null, elementId: "" },
+  });
+  const aiQuestionPanelTargetRef = useRef({ viewer: "", editor: "" });
+  const selectedMarkerStateRef = useRef({ viewer: "", editor: "" });
+  const onDiagramMutationRef = useRef(onDiagramMutation);
+  const onElementSelectionChangeRef = useRef(onElementSelectionChange);
+  const onV2OverlayPropertiesRequestRef = useRef(onV2OverlayPropertiesRequest);
+  const selectionImportGuardRef = useRef({ viewer: "", editor: "" });
+  const contextMenuInteractionRef = useRef({ contextMenuOpenedAtMs: 0 });
+  const onElementNotesRemapRef = useRef(onElementNotesRemap);
+  const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
+  const onSessionSyncRef = useRef(onSessionSync);
+  const onSaveLifecycleEventRef = useRef(onSaveLifecycleEvent);
+  const onDiagramContextMenuRequestRef = useRef(onDiagramContextMenuRequest);
+  const onDiagramContextMenuDismissRef = useRef(onDiagramContextMenuDismiss);
+  const onNavigateToSubprocessRef = useRef(onNavigateToSubprocess);
+  const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
+
+  useEffect(() => {
+    setShowOverlaysDuringPan(showOverlaysDuringPan);
+  }, [showOverlaysDuringPan]);
+  const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
+  const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
+  const robotMetaOverlayEnabledRef = useRef(!!robotMetaOverlayEnabled);
+  const robotMetaOverlayFiltersRef = useRef(asObject(robotMetaOverlayFilters));
+  const robotMetaStatusByElementIdRef = useRef(asObject(robotMetaStatusByElementId));
+  const selectedPropertiesOverlayPreviewRef = useRef(asObject(selectedPropertiesOverlayPreview));
+  const propertiesOverlayAlwaysEnabledRef = useRef(!!propertiesOverlayAlwaysEnabled);
+  const propertiesOverlayAlwaysPreviewByElementIdRef = useRef(asObject(propertiesOverlayAlwaysPreviewByElementId));
+  const replaceCommandStateRef = useRef({
+    oldId: "",
+    oldType: "",
+    hadNotes: false,
+    oldNotesEntry: null,
+    oldBounds: null,
+    source: "",
+    ts: 0,
+  });
+  const templateInsertCamundaSeedInFlightRef = useRef(0);
+  const templateInsertCamundaClearGuardRef = useRef({ ids: [], expiresAt: 0 });
+  const importCamundaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
+  const copyPasteRobotMetaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
+  const suppressCommandStackRef = useRef(0);
+  const suppressViewboxEventRef = useRef(0);
+  const modelerReadyRef = useRef(false);
+  const viewerReadyRef = useRef(false);
+  const userViewportTouchedRef = useRef(false);
+  const prevOverlaySigRef = useRef({ viewer: "", editor: "" });
+  const lastStoreEventRef = useRef({
+    source: "",
+    reason: "",
+    rev: 0,
+    hash: "",
+  });
+  const lastModelerXmlHashRef = useRef("");
+  const modelerInstanceMetaRef = useRef({ id: 0, containerKey: "" });
+  const viewerInstanceMetaRef = useRef({ id: 0, containerKey: "" });
+  const ensureVisiblePromiseRef = useRef(null);
+  const ensureVisibleCycleRef = useRef(0);
+  const ensureEpochRef = useRef(0);
+  const renderRunRef = useRef(0);
+  const modelerImportInFlightRef = useRef({ sid: "", xmlHash: "", promise: null });
+  const robotMetaHydrateStateRef = useRef({ key: "" });
+  const camundaHydrateStateRef = useRef({ key: "" });
+  const prevViewRef = useRef(view);
+  const runtimeTokenRef = useRef(0);
+  const runtimeStatusRef = useRef({
+    token: 0,
+    ready: false,
+    destroyed: false,
+  });
+  const userMutationObservedRef = useRef(false);
+  const saveCountersRef = useRef({
+    requested: 0,
+    skipped_not_ready: 0,
+    executed_savexml: 0,
+    persist_started: 0,
+    persist_done: 0,
+    persist_fail: 0,
+    store_updated: 0,
+  });
+  const focusStateRef = useRef({
+    viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+    editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+  });
+  const flashStateRef = useRef({
+    viewer: createFlashRuntimeState(),
+    editor: createFlashRuntimeState(),
+  });
+  const prefersReducedMotionRef = useRef(false);
+
+  function _emitViewboxChangedRaw(payload = {}) {
+    const listeners = viewboxListenersRef.current;
+    if (!(listeners instanceof Set) || !listeners.size) return;
+    listeners.forEach((listener) => {
+      try {
+        listener(payload);
+      } catch {
+      }
+    });
+  }
+  const emitViewboxChanged = wrapWithProfiler("BpmnStage.emitViewboxChanged", _emitViewboxChangedRaw);
+
+  useEffect(() => {
+    onDiagramMutationRef.current = onDiagramMutation;
+  }, [onDiagramMutation]);
+
+  useEffect(() => {
+    onV2OverlayPropertiesRequestRef.current = onV2OverlayPropertiesRequest;
+  }, [onV2OverlayPropertiesRequest]);
+
+  // V2 overlay cards are display-only DOM; a click on a card opens the
+  // properties popover for its element through the same pipeline the
+  // context-menu "open_properties" action uses.
+  useEffect(() => {
+    setV2OverlayClickHandler(({ elementId }) => {
+      onV2OverlayPropertiesRequestRef.current?.(elementId);
+    });
+    return () => setV2OverlayClickHandler(null);
+  }, []);
+
+  useEffect(() => {
+    onElementSelectionChangeRef.current = onElementSelectionChange;
+  }, [onElementSelectionChange]);
+
+  useEffect(() => {
+    onElementNotesRemapRef.current = onElementNotesRemap;
+  }, [onElementNotesRemap]);
+
+  useEffect(() => {
+    onAiQuestionsByElementChangeRef.current = onAiQuestionsByElementChange;
+  }, [onAiQuestionsByElementChange]);
+
+  useEffect(() => {
+    onSessionSyncRef.current = onSessionSync;
+  }, [onSessionSync]);
+
+  useEffect(() => {
+    onSaveLifecycleEventRef.current = onSaveLifecycleEvent;
+  }, [onSaveLifecycleEvent]);
+
+  useEffect(() => {
+    onDiagramContextMenuRequestRef.current = onDiagramContextMenuRequest;
+  }, [onDiagramContextMenuRequest]);
+
+  useEffect(() => {
+    onDiagramContextMenuDismissRef.current = onDiagramContextMenuDismiss;
+  }, [onDiagramContextMenuDismiss]);
+
+  useEffect(() => {
+    onNavigateToSubprocessRef.current = onNavigateToSubprocess;
+  }, [onNavigateToSubprocess]);
+
+  useEffect(() => {
+    const next = String(focusElementId || "").trim();
+    if (next && next !== appliedFocusElementIdRef.current) {
+      pendingFocusElementIdRef.current = next;
+    }
+  }, [focusElementId]);
+
+  useEffect(() => {
+    if (restoreViewportSnapshot) {
+      pendingRestoreViewportRef.current = restoreViewportSnapshot;
+    }
+  }, [restoreViewportSnapshot]);
+
+  useEffect(() => {
+    aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
+  }, [aiQuestionsModeEnabled]);
+
+  useEffect(() => {
+    diagramDisplayModeRef.current = String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal";
+  }, [diagramDisplayMode]);
+
+  useEffect(() => {
+    stepTimeUnitRef.current = normalizeStepTimeUnit(stepTimeUnit);
+  }, [stepTimeUnit]);
+
+  useEffect(() => {
+    robotMetaOverlayEnabledRef.current = !!robotMetaOverlayEnabled;
+  }, [robotMetaOverlayEnabled]);
+
+  useEffect(() => {
+    robotMetaOverlayFiltersRef.current = asObject(robotMetaOverlayFilters);
+  }, [robotMetaOverlayFilters]);
+
+  useEffect(() => {
+    robotMetaStatusByElementIdRef.current = asObject(robotMetaStatusByElementId);
+  }, [robotMetaStatusByElementId]);
+
+  useEffect(() => {
+    selectedPropertiesOverlayPreviewRef.current = asObject(selectedPropertiesOverlayPreview);
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+  }, [selectedPropertiesOverlayPreview]);
+
+  useEffect(() => {
+    propertiesOverlayAlwaysEnabledRef.current = !!propertiesOverlayAlwaysEnabled;
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+  }, [propertiesOverlayAlwaysEnabled]);
+
+  useEffect(() => {
+    propertiesOverlayAlwaysPreviewByElementIdRef.current = asObject(propertiesOverlayAlwaysPreviewByElementId);
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+  }, [propertiesOverlayAlwaysPreviewByElementId]);
+
+  const v2OverlayState = useV2OverlayState({
+    v2OverlaysEnabled,
+    v2OverlaysExpanded,
+    sessionId,
+    threadCountsRef: elementThreadCountsRef,
+    applyNotes: (kind) => {
+      const inst = kind === "viewer" ? viewerRef.current : modelerRef.current;
+      if (inst) applyUserNotesDecor(inst, kind);
+    },
+  });
+
+  const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
+  const v2PropertyPreviewMapRef = useRef({});
+  useEffect(() => {
+    const combined = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
+    const selected = asObject(selectedPropertiesOverlayPreview);
+    const selectedElementId = toText(selected?.elementId);
+    // Include the selected preview even when it is empty/disabled so the V2
+    // overlay resolver knows the element is intentionally property-less and
+    // does not fall back to stale modeler/XML overlays.
+    if (selectedElementId && selected) {
+      combined[selectedElementId] = selected;
+    }
+    v2PropertyPreviewMapRef.current = combined;
+  }, [propertiesOverlayAlwaysPreviewByElementId, selectedPropertiesOverlayPreview]);
+
+  // Per-field chip filter (property-panel-redesign): null = no filter
+  // configured; the V2 resolver treats both null and [] as "nothing hidden".
+  const v2HiddenFieldsRef = useRef(null);
+  v2HiddenFieldsRef.current = Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null;
+
+  const overlayLifecycle = useOverlayLifecycle({
+    v2EnabledRef: v2OverlayState.enabledRef,
+    v2ExpandedRef: v2OverlayState.expandedRef,
+    useExtensionOverlays,
+    propertyPreviewMapRef: v2PropertyPreviewMapRef,
+    hiddenFieldsRef: v2HiddenFieldsRef,
+  });
+
+  const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
+    if (!useExtensionOverlays) return;
+    if (!v2OverlayState.enabledRef.current) return;
+    if (!inst || !hasDefinitionsLoaded(inst)) return;
+    const kind = mode === "viewer" ? "viewer" : "editor";
+    try {
+      overlayLifecycle.mountFromBpmn(inst, kind);
+    } catch {
+      // Overlay remount failures are non-critical.
+    }
+  }, [useExtensionOverlays, overlayLifecycle, v2OverlayState.enabledRef]);
+
+  useViewportResizeController({
+    viewerContainerRef: viewerEl,
+    editorContainerRef: editorEl,
+    getActiveInstance: () => (view === "viewer" ? viewerRef.current : modelerRef.current),
+    view,
+  });
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+
+
+  /* diagramReady now sourced from useDiagramLoadStateMachine.isReady */
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      prefersReducedMotionRef.current = false;
+      return undefined;
+    }
+    let mql;
+    try {
+      mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+    } catch {
+      prefersReducedMotionRef.current = false;
+      return undefined;
+    }
+    const apply = () => {
+      prefersReducedMotionRef.current = !!mql.matches;
+    };
+    apply();
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", apply);
+      return () => mql.removeEventListener("change", apply);
+    }
+    if (typeof mql.addListener === "function") {
+      mql.addListener(apply);
+      return () => mql.removeListener(apply);
+    }
+    return undefined;
+  }, []);
+
+  const wiring = createBpmnWiring(
+    () => ({
+      refs: {
+        bpmnStoreRef,
+        bpmnStoreUnsubRef,
+        lastStoreEventRef,
+        bpmnPersistenceRef,
+        bpmnCoordinatorRef,
+        modelerRuntimeRef,
+        activeSessionRef,
+        suppressCommandStackRef,
+        ensureVisibleCycleRef,
+        modelerReadyRef,
+        runtimeTokenRef,
+        modelerRef,
+        draftRef,
+      },
+      state: {
+        setXml,
+        setXmlDraft,
+        setXmlDirty,
+      },
+      values: {
+        xml,
+        xmlDraft,
+        draft,
+        sessionId,
+        activeProjectId,
+      },
+      readOnly: {
+        draftRef,
+        getBaseDiagramStateVersion,
+        rememberDiagramStateVersion,
+      },
+      api: {
+        saveBpmnSnapshot,
+        getLatestBpmnSnapshot,
+        apiGetBpmnXml,
+        apiPutBpmnXml,
+      },
+      callbacks: {
+        localKey,
+        isLocalSessionId,
+        logBpmnTrace,
+        bumpSaveCounter,
+        onCoordinatorTrace,
+        shouldLogBpmnTrace,
+        probeCanvas,
+        emitDiagramMutation,
+        trackRuntimeStatus,
+        fnv1aHex,
+      },
+    }),
+    {
+      forceTaskResizeRulesModule,
+      pmModdleDescriptor,
+      camundaModdleDescriptor,
+      zeebeModdleDescriptor,
+    },
+  );
+
+  function ensureBpmnStore() {
+    return wiring.ensureBpmnStore();
+  }
+
+  function onCoordinatorTrace(event, payload = {}) {
+    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
+    const sid = String(sessionId || "");
+    const meta = payload && typeof payload === "object" ? payload : {};
+    const runtimeStatus = asObject(modelerRuntimeRef.current?.getStatus?.() || runtimeStatusRef.current);
+    const coordinatorDebug = asObject(bpmnCoordinatorRef.current?.getDebugState?.());
+    const projectId = String(draftRef.current?.project_id || draftRef.current?.projectId || activeProjectId || "");
+    const traceableCausalEvent = [
+      "SAVE_SCHEDULED",
+      "SAVE_REQUESTED",
+      "SAVE_SKIPPED_NOT_READY",
+      "SAVE_EXECUTED",
+      "SAVE_PERSIST_STARTED",
+      "SAVE_PERSIST_DONE",
+      "SAVE_PERSIST_FAIL",
+      "PENDING_SAVE_SET",
+      "PENDING_SAVE_REPLAY",
+      "API_PUT_BPMN_XML_ENTRY",
+      "API_PUT_BPMN_XML_RESULT",
+    ].includes(String(event || "").trim());
+    if (traceableCausalEvent) {
+      traceProcess("bpmn.causal_trace", {
+        sid,
+        project_id: projectId,
+        event: String(event || "unknown"),
+        source_hint: String(srcHint || ""),
+        is_bootstrap_phase: runtimeStatus?.ready && runtimeStatus?.defs ? 0 : 1,
+        is_hydrating: String(srcHint || "").includes("bootstrap") || String(srcHint || "").includes("reload") ? 1 : 0,
+        runtime_ready: runtimeStatus?.ready ? 1 : 0,
+        runtime_defs: runtimeStatus?.defs ? 1 : 0,
+        runtime_token: Number(runtimeStatus?.token || 0),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+        has_pending_autosave: coordinatorDebug?.pendingSave ? 1 : 0,
+        autosave_queue_rev: Number(coordinatorDebug?.saveQueuedRev || 0),
+        save_in_flight: coordinatorDebug?.saveInFlight ? 1 : 0,
+        payload: cloneJsonValue(meta),
+      });
+    }
+    if (
+      event === "SAVE_REQUESTED"
+      || event === "SAVE_EXECUTED"
+      || event === "SAVE_PERSIST_STARTED"
+      || event === "SAVE_PERSIST_DONE"
+      || event === "SAVE_PERSIST_FAIL"
+      || event === "SAVE_PERSIST_SKIPPED_UNCHANGED"
+    ) {
+      emitSaveLifecycleEvent(event, { sid, ...meta });
+    }
+    if (event === "SAVE_REQUESTED") {
+      const count = bumpSaveCounter("requested");
+      logBpmnTrace("SAVE_REQUESTED", storeXml, { sid, ...meta, count });
+      return;
+    }
+    if (event === "SAVE_SKIPPED_NOT_READY") {
+      const count = bumpSaveCounter("skipped_not_ready");
+      logBpmnTrace("SAVE_SKIPPED_NOT_READY", storeXml, { sid, ...meta, count });
+      return;
+    }
+    if (event === "SAVE_EXECUTED") {
+      const count = bumpSaveCounter("executed_savexml");
+      logBpmnTrace("SAVE_EXECUTED", storeXml, { sid, ...meta, count });
+      logBpmnTrace("SAVE_EXECUTED_SAVEXML", storeXml, { sid, ...meta, count });
+      return;
+    }
+    if (event === "REV_BUMP") {
+      logBpmnTrace("REV_BUMP", storeXml, { sid, ...meta });
+      return;
+    }
+    if (event === "SAVE_PERSIST_STARTED") {
+      const count = bumpSaveCounter("persist_started");
+      logBpmnTrace("SAVE_PERSIST_STARTED", storeXml, { sid, ...meta, count });
+      return;
+    }
+    if (event === "SAVE_PERSIST_DONE") {
+      const count = bumpSaveCounter("persist_done");
+      logBpmnTrace("SAVE_PERSIST_DONE", storeXml, { sid, ...meta, count });
+      return;
+    }
+    if (event === "SAVE_PERSIST_FAIL") {
+      const count = bumpSaveCounter("persist_fail");
+      logBpmnTrace("SAVE_PERSIST_FAIL", storeXml, { sid, ...meta, count });
+      return;
+    }
+    logBpmnTrace(event, storeXml, { sid, ...meta });
+  }
+
+  function trackRuntimeStatus(status, fallbackReason = "") {
+    const sid = String(sessionId || "");
+    const reason = String(status?.reason || fallbackReason || "").trim() || "status";
+    const prev = asObject(runtimeStatusRef.current);
+    const nextToken = Number(status?.token || 0);
+    const nextReady = !!status?.ready && !!status?.defs;
+    const nextDestroyed = !!status?.destroyed;
+
+    if (Number(prev.token || 0) !== nextToken) {
+      const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
+      logBpmnTrace("TOKEN_CHANGED", storeXml, {
+        sid,
+        from: Number(prev.token || 0),
+        to: nextToken,
+        reason,
+      });
+    }
+    if (!prev.ready && nextReady) {
+      const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
+      logBpmnTrace("RUNTIME_READY", storeXml, {
+        sid,
+        token: nextToken,
+        reason,
+      });
+    }
+    if (!prev.destroyed && nextDestroyed) {
+      const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || xmlDraft || xml || "");
+      logBpmnTrace("RUNTIME_DESTROYED", storeXml, {
+        sid,
+        token: nextToken,
+        reason,
+      });
+    }
+
+    runtimeStatusRef.current = {
+      token: nextToken,
+      ready: nextReady,
+      destroyed: nextDestroyed,
+    };
+    /* diagramReady now sourced from useDiagramLoadStateMachine.isReady */
+  }
+
+  function ensureBpmnPersistence() {
+    return wiring.ensureBpmnPersistence();
+  }
+
+  function ensureBpmnCoordinator() {
+    return wiring.ensureBpmnCoordinator();
+  }
+
+  function ensureModelerRuntime() {
+    return wiring.ensureModelerRuntime();
+  }
+
+  function bumpSaveCounter(key) {
+    const k = String(key || "").trim();
+    if (!k) return 0;
+    const prev = asObject(saveCountersRef.current);
+    const next = Number(prev[k] || 0) + 1;
+    saveCountersRef.current = { ...prev, [k]: next };
+    return next;
+  }
+
+  function emitSaveLifecycleEvent(event, payload = {}) {
+    const callback = onSaveLifecycleEventRef.current;
+    if (typeof callback !== "function") return;
+    try {
+      callback({
+        event: String(event || ""),
+        payload: payload && typeof payload === "object" ? payload : {},
+        at: Date.now(),
+      });
+    } catch {
+    }
+  }
+
+  function suppressViewboxEvents(delta) {
+    const d = Number(delta || 0);
+    if (!Number.isFinite(d) || d === 0) return;
+    suppressViewboxEventRef.current = Math.max(0, Number(suppressViewboxEventRef.current || 0) + d);
+  }
+
+  function getInstanceMeta(inst) {
+    if (inst && inst === modelerRef.current) {
+      return asObject(modelerInstanceMetaRef.current);
+    }
+    if (inst && inst === viewerRef.current) {
+      return asObject(viewerInstanceMetaRef.current);
+    }
+    return { id: 0, containerKey: "" };
+  }
+
+  function logStaleGuard(reason, extra = {}) {
+    if (!shouldLogBpmnTrace()) return;
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[STALE_GUARD] skipped_apply sid=${String(activeSessionRef.current || "-")} reason=${String(reason || "stale")} ${Object.entries(extra || {}).map(([k, v]) => `${k}=${String(v)}`).join(" ")}`.trim(),
+    );
+  }
+
+  function applyXmlSnapshot(nextXml, nextSrcHint = "") {
+    const raw = String(nextXml || "");
+    // eslint-disable-next-line no-console
+    console.debug("[BpmnStage] applyXmlSnapshot", { len: raw.length, source: nextSrcHint, xmlStateLen: String(xml || "").length });
+    setXml(raw);
+    setXmlDraft(raw);
+    setXmlDirty(false);
+    if (nextSrcHint) setSrcHint(nextSrcHint);
+    ensureBpmnCoordinator().syncExternalXml(raw, nextSrcHint || "external", {
+      bumpRev: false,
+      dirty: false,
+    });
+  }
+
+  function emitDiagramMutation(kind, payload = {}) {
+    const cb = onDiagramMutationRef.current;
+    if (typeof cb !== "function") return;
+    const mutationKind = String(kind || "").trim() || "diagram.change";
+    traceProcess("bpmn.emit_mutation", {
+      sid: String(sessionId || ""),
+      mutation_kind: mutationKind,
+      payload_keys: Object.keys(payload || {}),
+    });
+    userMutationObservedRef.current = true;
+    cb({
+      kind: mutationKind,
+      ...payload,
+      at: Date.now(),
+    });
+  }
+
+  function updateXmlDraft(nextDraft) {
+    const raw = String(nextDraft || "");
+    setXmlDraft(raw);
+    setXmlDirty(raw !== String(xml || ""));
+    if (shouldLogBpmnTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[XMLDRAFT_SET] sid=${String(sessionId || "-")} source=typing len=${raw.length} hash=${fnv1aHex(raw)} dirty=${raw !== String(xml || "") ? 1 : 0}`,
+      );
+    }
+    if (raw !== String(xml || "")) {
+      emitDiagramMutation("xml.edit", { source: "xml_editor" });
+    }
+  }
+
+  async function withSuppressedCommandStack(task) {
+    suppressCommandStackRef.current += 1;
+    try {
+      return await task();
+    } finally {
+      suppressCommandStackRef.current = Math.max(0, suppressCommandStackRef.current - 1);
+    }
+  }
+
+  function hasDefinitionsLoaded(inst) {
+    if (!inst || typeof inst.getDefinitions !== "function") return false;
+    try {
+      const defs = inst.getDefinitions();
+      return !!defs;
+    } catch {
+      return false;
+    }
+  }
+
+  function severityClass(severity) {
+    const s = String(severity || "low").toLowerCase();
+    if (s === "high") return "fpcBottleneckHigh";
+    if (s === "medium") return "fpcBottleneckMedium";
+    return "fpcBottleneckLow";
+  }
+
+  function severityTag(severity) {
+    const s = String(severity || "low").toLowerCase();
+    if (s === "high") return "HOT";
+    if (s === "medium") return "RISK";
+    return "WATCH";
+  }
+
+  function isShapeElement(el) {
+    return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
+  }
+
+  function isConnectionElement(el) {
+    return !!el && Array.isArray(el?.waypoints);
+  }
+
+  function isContainerElement(el) {
+    if (!el) return false;
+    const rawType = String(el?.businessObject?.$type || el?.type || "").trim().toLowerCase();
+    if (!rawType) return false;
+    const simpleType = String(rawType.split(":").pop() || rawType).trim();
+    // Lane, participant, process and collaboration ARE selectable (Camunda
+    // Modeler parity: clicking a pool/lane selects it; clicking empty canvas
+    // selects the root process). Only laneSet stays a non-selectable container.
+    return simpleType === "laneset";
+  }
+
+  function isSelectableElement(el) {
+    if (!el) return false;
+    if (String(el?.type || "").trim().toLowerCase() === "label") return false;
+    if (isContainerElement(el)) return false;
+    return true;
+  }
+
+  function hasLinkEventDefinition(boRaw) {
+    const bo = asObject(boRaw);
+    const defs = asArray(bo.eventDefinitions);
+    return defs.some((def) => String(def?.$type || "").trim() === "bpmn:LinkEventDefinition");
+  }
+
+  function readLinkEventRole(el) {
+    const type = String(el?.businessObject?.$type || el?.type || "").trim();
+    if (type === "bpmn:IntermediateCatchEvent") return "catch";
+    if (type === "bpmn:IntermediateThrowEvent") return "throw";
+    return "";
+  }
+
+  function normalizeLinkPairKey(raw) {
+    return String(raw || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function readLinkEventPairName(el) {
+    const bo = asObject(el?.businessObject);
+    const defs = asArray(bo.eventDefinitions);
+    for (let i = 0; i < defs.length; i += 1) {
+      const def = defs[i];
+      if (String(def?.$type || "").trim() !== "bpmn:LinkEventDefinition") continue;
+      const byDef = String(def?.name || "").trim();
+      if (byDef) return byDef;
+    }
+    return String(bo?.name || "").trim();
+  }
+
+  function linkPairColorFromName(pairKeyRaw) {
+    const pairKey = normalizeLinkPairKey(pairKeyRaw);
+    if (!pairKey) {
+      return "#94a3b8";
+    }
+    const palette = [
+      "#8b5cf6",
+      "#0ea5e9",
+      "#22c55e",
+      "#f59e0b",
+      "#ec4899",
+      "#14b8a6",
+      "#eab308",
+      "#6366f1",
+      "#10b981",
+      "#f97316",
+      "#06b6d4",
+      "#a855f7",
+    ];
+    const hashHex = fnv1aHex(pairKey);
+    const hashNum = Number.parseInt(hashHex.slice(0, 8), 16);
+    if (!Number.isFinite(hashNum)) return palette[0];
+    return palette[Math.abs(hashNum) % palette.length];
+  }
+
+  function readLaneNameForElement(el) {
+    let cur = el?.parent || null;
+    while (cur) {
+      const bo = asObject(cur?.businessObject);
+      const type = String(bo?.$type || cur?.type || "").trim().toLowerCase();
+      if (type.includes("lane")) {
+        return String(bo?.name || cur?.id || "").trim();
+      }
+      cur = cur?.parent || null;
+    }
+    return "";
+  }
+
+  function readLaneIdForElement(el) {
+    let cur = el?.parent || null;
+    while (cur) {
+      const bo = asObject(cur?.businessObject);
+      const type = String(bo?.$type || cur?.type || "").trim().toLowerCase();
+      if (type.includes("lane")) {
+        return String(cur?.id || "").trim();
+      }
+      cur = cur?.parent || null;
+    }
+    return "";
+  }
+
+  function sequenceFlowsBetween(fromElement, toElement) {
+    return asArray(fromElement?.outgoing).filter((conn) => {
+      if (!isConnectionElement(conn)) return false;
+      const type = String(conn?.businessObject?.$type || conn?.type || "").toLowerCase();
+      if (!type.includes("sequenceflow")) return false;
+      return String(conn?.target?.id || "") === String(toElement?.id || "");
+    });
+  }
+
+  function buildInsertBetweenCandidate(inst, selectedRaw = []) {
+    const selected = asArray(selectedRaw).filter((el) => isSelectableElement(el));
+    if (!selected.length) return null;
+
+    if (selected.length === 1 && isConnectionElement(selected[0])) {
+      const flow = selected[0];
+      const from = flow?.source || null;
+      const to = flow?.target || null;
+      if (!from || !to) return null;
+      const laneId = readLaneIdForElement(to) || readLaneIdForElement(from);
+      const laneName = readLaneNameForElement(to) || readLaneNameForElement(from);
+      return {
+        available: true,
+        fromId: String(from?.id || ""),
+        toId: String(to?.id || ""),
+        flowId: String(flow?.id || ""),
+        when: String(flow?.businessObject?.name || ""),
+        laneId,
+        laneName,
+        source: "flow_selection",
+      };
+    }
+
+    const shapes = selected.filter((el) => isShapeElement(el));
+    if (shapes.length !== 2) return null;
+    const [a, b] = shapes;
+    const ab = sequenceFlowsBetween(a, b);
+    const ba = sequenceFlowsBetween(b, a);
+
+    let from = null;
+    let to = null;
+    let flows = [];
+    if (ab.length && !ba.length) {
+      from = a;
+      to = b;
+      flows = ab;
+    } else if (ba.length && !ab.length) {
+      from = b;
+      to = a;
+      flows = ba;
+    } else {
+      return null;
+    }
+
+    if (!from || !to || !flows.length) return null;
+
+    const laneId = readLaneIdForElement(to) || readLaneIdForElement(from);
+    const laneName = readLaneNameForElement(to) || readLaneNameForElement(from);
+    if (flows.length > 1) {
+      return {
+        available: false,
+        fromId: String(from?.id || ""),
+        toId: String(to?.id || ""),
+        flowId: "",
+        when: "",
+        laneId,
+        laneName,
+        source: "two_nodes_selection",
+        error: "multiple_edges_ambiguous",
+      };
+    }
+    return {
+      available: true,
+      fromId: String(from?.id || ""),
+      toId: String(to?.id || ""),
+      flowId: String(flows[0]?.id || ""),
+      when: String(flows[0]?.businessObject?.name || ""),
+      laneId,
+      laneName,
+      source: "two_nodes_selection",
+    };
+  }
+
+  // A process-like root (bpmn:Process / bpmn:Collaboration) wraps every shape
+  // on the canvas, so the usual fpcElementSelected marker would light up the
+  // whole diagram. Signal its selection with a container-level class instead.
+  function toggleProcessSelectedDecor(inst, on) {
+    try {
+      const container = inst?.get?.("canvas")?.getContainer?.();
+      container?.classList?.toggle("fpcProcessSelected", !!on);
+    } catch {
+    }
+  }
+
+  function clearSelectedDecor(inst, kind) {
+    if (!inst) return;
+    const id = String(selectedMarkerStateRef.current[kind] || "");
+    clearSelectionFocusDecor(inst, kind);
+    toggleProcessSelectedDecor(inst, false);
+    if (!id) return;
+    try {
+      const canvas = inst.get("canvas");
+      canvas.removeMarker(id, "fpcElementSelected");
+    } catch {
+    }
+    selectedMarkerStateRef.current[kind] = "";
+  }
+
+  function clearSelectionFocusDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      asArray(focusMarkerStateRef.current[kind]).forEach((entry) => {
+        const elementId = String(entry?.elementId || "").trim();
+        const className = String(entry?.className || "").trim();
+        if (!elementId || !className) return;
+        canvas.removeMarker(elementId, className);
+      });
+    } catch {
+    }
+    focusMarkerStateRef.current[kind] = [];
+  }
+
+  function markFocusDecor(canvas, kind, elementId, className) {
+    const eid = String(elementId || "").trim();
+    const cls = String(className || "").trim();
+    if (!eid || !cls) return;
+    try {
+      canvas.addMarker(eid, cls);
+      focusMarkerStateRef.current[kind].push({ elementId: eid, className: cls });
+    } catch {
+    }
+  }
+
+  function applySelectionFocusDecor(inst, kind, selectedEl) {
+    if (!inst || !selectedEl) return;
+    clearSelectionFocusDecor(inst, kind);
+    // A process-like root has no neighbors; dimming every other element on a
+    // plain canvas click would be hostile. Previous dim was cleared above.
+    if (isProcessLikeElement(selectedEl)) return;
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const selectedId = String(selectedEl?.id || "").trim();
+      if (!selectedId) return;
+
+      const focusNodes = new Set();
+      const primaryEdges = new Set();
+      const allSelectableIds = new Set();
+      const all = asArray(registry?.getAll?.());
+      all.forEach((item) => {
+        if (!isSelectableElement(item)) return;
+        const id = String(item?.id || "").trim();
+        if (!id) return;
+        allSelectableIds.add(id);
+      });
+
+      const enqueueNeighborEdge = (connRaw) => {
+        const conn = connRaw && isConnectionElement(connRaw) ? connRaw : null;
+        if (!conn) return;
+        const connId = String(conn.id || "").trim();
+        if (connId) primaryEdges.add(connId);
+        const srcId = String(conn?.source?.id || "").trim();
+        const tgtId = String(conn?.target?.id || "").trim();
+        if (srcId && srcId !== selectedId) focusNodes.add(srcId);
+        if (tgtId && tgtId !== selectedId) focusNodes.add(tgtId);
+      };
+
+      if (isConnectionElement(selectedEl)) {
+        const sourceId = String(selectedEl?.source?.id || "").trim();
+        const targetId = String(selectedEl?.target?.id || "").trim();
+        if (sourceId) focusNodes.add(sourceId);
+        if (targetId) focusNodes.add(targetId);
+        const selectedConnId = String(selectedEl.id || "").trim();
+        if (selectedConnId) primaryEdges.add(selectedConnId);
+      } else {
+        asArray(selectedEl?.outgoing).forEach(enqueueNeighborEdge);
+        asArray(selectedEl?.incoming).forEach(enqueueNeighborEdge);
+      }
+
+      focusNodes.forEach((nodeId) => {
+        markFocusDecor(canvas, kind, nodeId, "fpcFocusNeighbor");
+      });
+      primaryEdges.forEach((edgeId) => {
+        markFocusDecor(canvas, kind, edgeId, "fpcFocusEdgePrimary");
+      });
+
+      allSelectableIds.forEach((id) => {
+        if (id === selectedId) return;
+        if (focusNodes.has(id)) return;
+        if (primaryEdges.has(id)) return;
+        markFocusDecor(canvas, kind, id, "fpcFocusDim");
+      });
+    } catch {
+    }
+  }
+
+  function setSelectedDecor(inst, kind, elementId) {
+    if (!inst) return;
+    clearSelectedDecor(inst, kind);
+    const eid = String(elementId || "").trim();
+    if (!eid) return;
+    try {
+      const registry = inst.get("elementRegistry");
+      const el = registry.get(eid);
+      if (!isSelectableElement(el)) return;
+      if (isProcessLikeElement(el)) {
+        // No addMarker here: the root gfx contains every shape, and the
+        // fpcElementSelected CSS uses descendant selectors.
+        toggleProcessSelectedDecor(inst, true);
+        selectedMarkerStateRef.current[kind] = eid;
+        return;
+      }
+      // Skip selection decor for off-screen elements (gfx detached by viewport culling)
+      if (!isGfxInDom(inst, el)) {
+        selectedMarkerStateRef.current[kind] = eid;
+        return;
+      }
+      const canvas = inst.get("canvas");
+      canvas.addMarker(eid, "fpcElementSelected");
+      applySelectionFocusDecor(inst, kind, el);
+      selectedMarkerStateRef.current[kind] = eid;
+    } catch {
+    }
+  }
+
+  function isSearchTargetElement(element) {
+    if (!element) return false;
+    if (String(element?.type || "").toLowerCase() === "label") return false;
+    return isShapeElement(element) || isConnectionElement(element);
+  }
+
+  function listSearchableElementsOnInstance(inst) {
+    if (!inst) return [];
+    try {
+      const registry = inst.get("elementRegistry");
+      const all = asArray(registry?.getAll?.());
+      const labelByTargetId = new Map();
+      all.forEach((elementRaw) => {
+        const element = asObject(elementRaw);
+        if (String(element?.type || "").toLowerCase() !== "label") return;
+        const targetId = toText(element?.labelTarget?.id || element?.businessObject?.labelTarget?.id);
+        if (!targetId || labelByTargetId.has(targetId)) return;
+        const labelText = toText(element?.businessObject?.name || element?.businessObject?.text || element?.businessObject?.label);
+        if (!labelText) return;
+        labelByTargetId.set(targetId, labelText);
+      });
+
+      const result = [];
+      const seen = new Set();
+      all.forEach((elementRaw) => {
+        const element = asObject(elementRaw);
+        if (!isSearchTargetElement(element)) return;
+        const elementId = toText(element?.id);
+        if (!elementId || seen.has(elementId)) return;
+        const bo = asObject(element?.businessObject);
+        const type = toText(bo?.$type || element?.type);
+        if (!type.toLowerCase().startsWith("bpmn:")) return;
+        const name = toText(bo?.name);
+        const label = toText(
+          labelByTargetId.get(elementId)
+            || element?.label?.businessObject?.name
+            || element?.label?.businessObject?.text
+            || element?.businessObject?.label
+            || element?.businessObject?.text,
+        );
+        result.push({
+          elementId,
+          name,
+          label,
+          title: toText(label || name || elementId) || elementId,
+          type,
+          typeLabel: toText(type.split(":").pop()) || type,
+          ...deriveElementProcessContext(element),
+        });
+        seen.add(elementId);
+      });
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  function listSearchablePropertiesOnInstance(inst) {
+    if (!inst) return [];
+    try {
+      const registry = inst.get("elementRegistry");
+      const elements = listSearchableElementsOnInstance(inst);
+      const result = [];
+
+      elements.forEach((elementRow) => {
+        const elementId = toText(elementRow?.elementId);
+        if (!elementId) return;
+        const runtimeElement = registry?.get?.(elementId);
+        const extensionEntries = extractCamundaZeebePropertyEntriesFromBusinessObject(runtimeElement?.businessObject);
+        if (!extensionEntries.length) return;
+
+        extensionEntries.forEach((propertyRaw, propertyIndex) => {
+          const propertyName = toText(propertyRaw?.propertyName || propertyRaw?.name);
+          const propertyValue = toText(propertyRaw?.propertyValue || propertyRaw?.value);
+          const sourcePath = toText(propertyRaw?.sourcePath);
+          if (!propertyName && !propertyValue) return;
+          result.push({
+            searchId: `${elementId}::prop_${Math.max(0, Number(propertyIndex) || 0)}::${sourcePath || "entry"}`,
+            elementId,
+            elementTitle: toText(elementRow?.title) || elementId,
+            elementType: toText(elementRow?.type),
+            elementTypeLabel: toText(elementRow?.typeLabel),
+            propertyName,
+            propertyValue,
+            sourcePath,
+            propertyIndex: Math.max(0, Number(propertyIndex) || 0),
+            parentSubprocessId: toText(elementRow?.parentSubprocessId),
+            parentSubprocessName: toText(elementRow?.parentSubprocessName),
+            subprocessPath: asArray(elementRow?.subprocessPath),
+            subprocessPathLabel: toText(elementRow?.subprocessPathLabel),
+            subprocessDepth: Math.max(0, Number(elementRow?.subprocessDepth) || 0),
+            searchGroupKey: toText(elementRow?.searchGroupKey) || "main",
+            searchGroupLabel: toText(elementRow?.searchGroupLabel) || "Основной процесс",
+            isInsideSubprocess: elementRow?.isInsideSubprocess === true,
+          });
+        });
+      });
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  function clearSearchOverlayDimOnInstance(inst) {
+    if (!inst) return;
+    try {
+      const container = inst.get("canvas")?.getContainer?.();
+      if (!container) return;
+      container.querySelectorAll(".fpc-overlay-v2-host.fpcSearchOverlayDim").forEach((host) => {
+        host.classList.remove("fpcSearchOverlayDim");
+      });
+    } catch {
+      // DOM dim cleanup is best-effort.
+    }
+  }
+
+  function applySearchOverlayDimOnInstance(inst, matchIds) {
+    if (!inst) return;
+    try {
+      const container = inst.get("canvas")?.getContainer?.();
+      if (!container) return;
+      const matchSet = new Set(asArray(matchIds).map((idRaw) => toText(idRaw)).filter(Boolean));
+      container.querySelectorAll(".fpc-overlay-v2-host").forEach((host) => {
+        const elementId = toText(host?.dataset?.fpcElementId);
+        host.classList.toggle("fpcSearchOverlayDim", !matchSet.has(elementId));
+      });
+    } catch {
+      // DOM dim is best-effort; canvas markers remain the source of truth.
+    }
+  }
+
+  function clearSearchHighlightsOnInstance(inst, kind) {
+    if (!inst) return false;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const runtime = asObject(searchHighlightMarkerStateRef.current[mode]);
+    clearSearchOverlayDimOnInstance(inst);
+    try {
+      const canvas = inst.get("canvas");
+      asArray(runtime.passive).forEach((elementId) => {
+        const eid = toText(elementId);
+        if (!eid) return;
+        canvas.removeMarker(eid, "fpcSearchMatch");
+      });
+      const activeId = toText(runtime.active);
+      if (activeId) {
+        canvas.removeMarker(activeId, "fpcSearchActive");
+      }
+      searchHighlightMarkerStateRef.current[mode] = { passive: [], active: "" };
+      return true;
+    } catch {
+      searchHighlightMarkerStateRef.current[mode] = { passive: [], active: "" };
+      return false;
+    }
+  }
+
+  function setSearchHighlightsOnInstance(inst, kind, payload = {}) {
+    if (!inst) return false;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    clearSearchHighlightsOnInstance(inst, mode);
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const ids = Array.from(new Set(
+        asArray(payload?.matchElementIds)
+          .map((idRaw) => toText(idRaw))
+          .filter(Boolean),
+      ));
+      const passive = [];
+      ids.forEach((elementId) => {
+        const element = registry?.get?.(elementId);
+        if (!isSearchTargetElement(element)) return;
+        canvas.addMarker(elementId, "fpcSearchMatch");
+        passive.push(elementId);
+      });
+      const activeIdRaw = toText(payload?.activeElementId);
+      const activeElement = activeIdRaw ? registry?.get?.(activeIdRaw) : null;
+      const activeId = isSearchTargetElement(activeElement) ? activeIdRaw : "";
+      if (activeId) {
+        canvas.addMarker(activeId, "fpcSearchActive");
+      }
+      // Dim every V2 overlay card whose element is NOT a search match, so the
+      // matching property cards are the only ones that stay bright.
+      applySearchOverlayDimOnInstance(inst, activeId && !ids.includes(activeId) ? [...ids, activeId] : ids);
+      searchHighlightMarkerStateRef.current[mode] = {
+        passive,
+        active: activeId,
+      };
+      return true;
+    } catch {
+      searchHighlightMarkerStateRef.current[mode] = { passive: [], active: "" };
+      return false;
+    }
+  }
+
+  function getElementNotesMap() {
+    const d = asObject(draftRef.current);
+    return normalizeElementNotesMap(d.notes_by_element || d.notesByElementId);
+  }
+
+  function getElementNoteCount(elementId) {
+    return elementNotesCount(getElementNotesMap(), String(elementId || "").trim());
+  }
+
+  function getElementNoteEntry(elementId) {
+    const id = String(elementId || "").trim();
+    if (!id) return null;
+    const map = getElementNotesMap();
+    const entry = asObject(map[id]);
+    const items = asArray(entry.items).map((item) => ({ ...asObject(item) }));
+    if (!items.length) return null;
+    return {
+      items,
+      updatedAt: Number(entry.updatedAt || Date.now()),
+    };
+  }
+
+  function getAiQuestionsByElementMap() {
+    const d = asObject(draftRef.current);
+    const interview = asObject(d.interview);
+    return normalizeAiQuestionsByElementMap(interview.ai_questions_by_element || interview.aiQuestionsByElementId);
+  }
+
+  function getAiQuestionsForElement(elementId) {
+    const eid = toText(elementId);
+    if (!eid) return [];
+    const map = getAiQuestionsByElementMap();
+    return normalizeAiQuestionItems(map[eid]);
+  }
+
+  function getFlowTierMetaMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeFlowTierMetaMap(meta.flow_meta);
+  }
+
+  function getNodePathMetaMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeNodePathMetaMap(meta.node_path_meta);
+  }
+
+  function getRobotMetaMap() {
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
+    return normalizeRobotMetaMap(meta.robot_meta_by_element_id);
+  }
+
+  function resolveSourceRobotMetaState(elementIdRaw, draftLike = null) {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const draftValue = asObject(draftLike || draftRef.current);
+    const currentMeta = asObject(draftValue.bpmn_meta);
+    const currentMap = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    if (currentMap[elementId]) return currentMap[elementId];
+    const draftXml = String(draftValue?.bpmn_xml || "");
+    if (!draftXml) return null;
+    const extractedMap = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(draftXml));
+    return extractedMap[elementId] || null;
+  }
+
+  function getCamundaExtensionsMap() {
+    // Derive the authoritative Camunda extension map from the BPMN XML (the same
+    // source the backend uses). Reading from draft.bpmn_meta is unsafe here
+    // because meta can lag behind the XML after a property-only save, causing
+    // syncCamundaExtensionsToModeler to replay stale managed entries onto the
+    // modeler and overwrite the server-side deletion.
+    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
+    const draftXml = String(draftRef.current?.bpmn_xml || "");
+    const xml = storeXml.trim() ? storeXml : draftXml;
+    if (xml.trim()) {
+      return normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(xml));
+    }
+    const meta = asObject(draftRef.current?.bpmn_meta);
+    return normalizeCamundaExtensionsMap(meta.camunda_extensions_by_element_id);
+  }
+
+  function resolveSourceCamundaExtensionState(elementIdRaw, draftLike = null) {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const draftValue = asObject(draftLike || draftRef.current);
+    const currentMeta = asObject(draftValue.bpmn_meta);
+    const currentMap = normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id);
+    if (currentMap[elementId]) return currentMap[elementId];
+    const draftXml = String(draftValue?.bpmn_xml || "");
+    if (!draftXml) return null;
+    const extractedMap = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(draftXml));
+    return extractedMap[elementId] || null;
+  }
+
+  function resolveCamundaStateFromSemanticPayload(payloadRaw) {
+    const payload = asObject(payloadRaw);
+    const extensionElements = asObject(payload.extensionElements);
+    const values = asArray(extensionElements.values);
+    if (!values.length) return null;
+    const extensionProperties = [];
+    const extensionListeners = [];
+    values.forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const type = toText(entry?.$type || entry?.type).toLowerCase();
+      if (type === "camunda:properties") {
+        asArray(entry.values).forEach((itemRaw) => {
+          const item = asObject(itemRaw);
+          const name = toText(item?.name);
+          if (!name) return;
+          extensionProperties.push({
+            name,
+            value: String(item?.value ?? ""),
+          });
+        });
+        return;
+      }
+      if (type !== "camunda:executionlistener") return;
+      const event = toText(entry?.event);
+      const classValue = toText(entry?.class);
+      const expressionValue = toText(entry?.expression);
+      const delegateExpressionValue = toText(entry?.delegateExpression);
+      if (event && classValue) {
+        extensionListeners.push({ event, type: "class", value: classValue });
+        return;
+      }
+      if (event && expressionValue) {
+        extensionListeners.push({ event, type: "expression", value: expressionValue });
+        return;
+      }
+      if (event && delegateExpressionValue) {
+        extensionListeners.push({ event, type: "delegateExpression", value: delegateExpressionValue });
+      }
+    });
+    if (!extensionProperties.length && !extensionListeners.length) return null;
+    return normalizeCamundaExtensionState({
+      properties: {
+        extensionProperties,
+        extensionListeners,
+      },
+      preservedExtensionElements: [],
+    });
+  }
+
+  function buildBpmnMetaWithCamundaExtensions(currentMetaRaw, camundaExtensionsByElementIdRaw) {
+    const currentMeta = asObject(currentMetaRaw);
+    return {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(camundaExtensionsByElementIdRaw),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+  }
+
+  function syncDraftCamundaExtensionsMap(nextMapRaw, source = "camunda_extensions_map_sync") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    const currentDraft = asObject(draftRef.current);
+    const nextMeta = buildBpmnMetaWithCamundaExtensions(currentDraft.bpmn_meta, nextMapRaw);
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    if (sid) {
+      onSessionSyncRef.current?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: source,
+      });
+    }
+    return nextMeta;
+  }
+
+  function refreshPropertiesOverlayPreviewFromCamundaMap(nextMapRaw, elementIdsRaw = []) {
+    if (propertiesOverlayAlwaysEnabledRef.current !== true) return { ok: true, refreshed: 0, skipped: true };
+    const elementIds = Array.from(new Set(
+      asArray(elementIdsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!elementIds.length) return { ok: true, refreshed: 0, reason: "empty_element_ids" };
+    const nextMap = normalizeCamundaExtensionsMap(nextMapRaw);
+    const nextPreviewMap = {
+      ...asObject(propertiesOverlayAlwaysPreviewByElementIdRef.current),
+    };
+    let refreshed = 0;
+    elementIds.forEach((elementId) => {
+      const preview = buildPropertiesOverlayPreview({
+        elementId,
+        extensionStateRaw: nextMap[elementId],
+        showPropertiesOverlay: true,
+      });
+      if (preview?.enabled && asArray(preview?.items).length) {
+        nextPreviewMap[elementId] = preview;
+        refreshed += 1;
+      } else if (Object.prototype.hasOwnProperty.call(nextPreviewMap, elementId)) {
+        delete nextPreviewMap[elementId];
+        refreshed += 1;
+      }
+    });
+    if (!refreshed) return { ok: true, refreshed: 0, reason: "no_preview_changes" };
+    propertiesOverlayAlwaysPreviewByElementIdRef.current = nextPreviewMap;
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+    return { ok: true, refreshed };
+  }
+
+  function resolveRobotMetaStateFromSemanticPayload(payloadRaw) {
+    const payload = asObject(payloadRaw);
+    const extensionElements = asObject(payload.extensionElements);
+    const values = asArray(extensionElements.values);
+    const robotMetaEntry = values.find((entry) => /pm:robotmeta$/i.test(toText(entry?.$type || entry?.type)));
+    if (!robotMetaEntry) return null;
+    return parseRobotMetaJson(String(robotMetaEntry?.json || "")) || null;
+  }
+
+  function buildCopyElementOptions({ inst = null, element = null } = {}) {
+    const activeInst = inst || modelerRef.current;
+    const elementId = toText(element?.id || element?.businessObject?.id);
+    const elementType = toText(element?.businessObject?.$type || element?.type).toLowerCase();
+    if (activeInst) {
+      syncRobotMetaToModeler(activeInst);
+      // Sync from the authoritative meta map. Do not preserve the selected
+      // element's current managed block: if a property was just deleted it must
+      // be removed from the modeler, not kept alive by a stale preserve guard.
+      syncCamundaExtensionsToModeler(activeInst);
+    }
+    let nativeTree = null;
+    if (activeInst && elementId && elementType.includes("subprocess")) {
+      try {
+        const copyPaste = activeInst.get?.("copyPaste");
+        if (copyPaste && typeof copyPaste.copy === "function") {
+          nativeTree = copyPaste.copy([element]);
+        }
+      } catch {
+        nativeTree = null;
+      }
+    }
+    return {
+      camundaExtensionState: elementId ? resolveSourceCamundaExtensionState(elementId) : null,
+      nativeTree,
+    };
+  }
+
+  function primeCopyPasteRobotMetaPreserveGuard(idsRaw = []) {
+    const ids = Array.from(new Set(
+      asArray(idsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    copyPasteRobotMetaPreserveGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readCopyPasteRobotMetaPreserveIds() {
+    const state = asObject(copyPasteRobotMetaPreserveGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function syncRobotMetaToModeler(inst, options = {}) {
+    const explicitPreserveIds = asArray(options?.preserveExistingForElementIds);
+    const copyPasteGuardIds = readCopyPasteRobotMetaPreserveIds();
+    const preserveExistingForElementIds = Array.from(new Set(
+      [...explicitPreserveIds, ...copyPasteGuardIds]
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    return syncRobotMetaToBpmn({
+      modeler: inst,
+      robotMetaByElementId: getRobotMetaMap(),
+      preserveExistingForElementIds,
+    });
+  }
+
+  function syncCamundaExtensionsToModeler(inst, options = {}) {
+    const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+    if (templateInsertSeedInFlight) {
+      return { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true, preservedManagedSkips: 0 };
+    }
+    const explicitPreserveIds = asArray(options?.preserveManagedForElementIds);
+    const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
+    const importPreserveGuardIds = readImportCamundaPreserveGuardIds();
+    const preserveManagedForElementIds = Array.from(new Set(
+      [...explicitPreserveIds, ...templateInsertGuardIds, ...importPreserveGuardIds]
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    // Allow callers (e.g. property save) to push an explicit extension map
+    // without waiting for the next render cycle's draftRef update.
+    const camundaExtensionsByElementId = options?.camundaExtensionsByElementId
+      ? normalizeCamundaExtensionsMap(options.camundaExtensionsByElementId)
+      : getCamundaExtensionsMap();
+    if (shouldLogBpmnTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(`[CAMUNDA_EXT] sync_to_modeler mapKeys=${JSON.stringify(Object.keys(camundaExtensionsByElementId))} preserve=${JSON.stringify(preserveManagedForElementIds)}`);
+    }
+    const syncResult = syncCamundaExtensionsToBpmn({
+      modeler: inst,
+      camundaExtensionsByElementId,
+      preserveManagedForElementIds,
+    });
+    if (shouldLogBpmnTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(`[CAMUNDA_EXT] sync_to_modeler_result`, syncResult);
+    }
+    const importGuardWasUsed = importPreserveGuardIds.length > 0;
+    const syncCompleted = Boolean(syncResult?.ok) && !Boolean(syncResult?.skipped);
+    if (
+      importGuardWasUsed
+      && syncCompleted
+      && Number(syncResult?.preservedManagedSkips || 0) === 0
+    ) {
+      clearImportCamundaPreserveGuard();
+    }
+    return syncResult;
+  }
+
+  function primeTemplateInsertCamundaClearGuard(remapRaw = {}) {
+    const remap = asObject(remapRaw);
+    const ids = Array.from(new Set(
+      Object.values(remap)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    templateInsertCamundaClearGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readTemplateInsertCamundaClearGuardIds() {
+    const state = asObject(templateInsertCamundaClearGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function clearTemplateInsertCamundaClearGuard() {
+    templateInsertCamundaClearGuardRef.current = { ids: [], expiresAt: 0 };
+  }
+
+  function primeImportCamundaPreserveGuard(idsRaw = []) {
+    const ids = Array.from(new Set(
+      asArray(idsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!ids.length) return;
+    importCamundaPreserveGuardRef.current = {
+      ids,
+      expiresAt: Date.now() + 15000,
+    };
+  }
+
+  function readImportCamundaPreserveGuardIds() {
+    const state = asObject(importCamundaPreserveGuardRef.current);
+    const expiresAt = Number(state.expiresAt || 0);
+    const ids = asArray(state.ids).map((value) => toText(value)).filter(Boolean);
+    if (!ids.length) return [];
+    if (expiresAt > 0 && Date.now() > expiresAt) {
+      importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      return [];
+    }
+    return ids;
+  }
+
+  function clearImportCamundaPreserveGuard() {
+    importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+  }
+
+  async function persistSessionMetaBoundary(nextMetaRaw, options = {}) {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return { ok: false, reason: "missing_context" };
+    if (isLocalSessionId(sid)) return { ok: true, local: true, skipped: true };
+    const source = toText(options?.source) || "bpmn_stage_session_meta_write";
+    const nextMeta = asObject(nextMetaRaw);
+    const syncPatchPayload = { bpmn_meta: nextMeta };
+    const currentDraft = asObject(draftRef.current);
+    const monotonicBaseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+    const draftBaseDiagramStateVersion = Number(
+      currentDraft?.diagram_state_version ?? currentDraft?.diagramStateVersion,
+    );
+    const baseDiagramStateVersion = Number.isFinite(monotonicBaseDiagramStateVersion)
+      ? monotonicBaseDiagramStateVersion
+      : draftBaseDiagramStateVersion;
+    if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+      syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+    }
+    const syncRes = await enqueueSessionPatchCasWrite({
+      sessionId: sid,
+      patch: syncPatchPayload,
+      apiPatchSession,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+    });
+    if (!syncRes?.ok) {
+      const errorPayload = asObject(syncRes?.data || syncRes?.errorDetails || syncRes?.details);
+      const serverCurrentVersion = Number(
+        syncRes?.server_current_version
+        ?? syncRes?.serverCurrentVersion
+        ?? errorPayload?.server_current_version
+        ?? errorPayload?.serverCurrentVersion,
+      );
+      if (Number.isFinite(serverCurrentVersion) && serverCurrentVersion >= 0) {
+        try {
+          rememberDiagramStateVersion?.(Math.round(serverCurrentVersion), { sessionId: sid });
+        } catch {
+          // no-op
+        }
+      }
+      return {
+        ok: false,
+        error: String(syncRes?.error || "session_meta_patch_failed"),
+        status: Number(syncRes?.status || 0),
+        errorDetails: errorPayload,
+      };
+    }
+    if (syncRes.session && typeof syncRes.session === "object") {
+      const ackVersion = Number(syncRes.session?.diagram_state_version ?? syncRes.session?.diagramStateVersion);
+      if (Number.isFinite(ackVersion) && ackVersion >= 0) {
+        try {
+          rememberDiagramStateVersion?.(Math.round(ackVersion), { sessionId: sid });
+        } catch {
+          // no-op
+        }
+      }
+      onSessionSyncRef.current?.({
+        ...syncRes.session,
+        _sync_source: `${source}_session_patch`,
+      });
+    }
+    return { ok: true, session: syncRes?.session || null };
+  }
+
+  function seedTemplateInsertCamundaExtensions(inst, payload = {}, inserted = {}) {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid || !inst) return { ok: false, seeded: 0, reason: "missing_context" };
+    const remap = asObject(inserted?.remap);
+    const templateNodes = asArray(asObject(asObject(payload?.pack).fragment).nodes);
+    if (!templateNodes.length || !Object.keys(remap).length) {
+      return { ok: true, seeded: 0, reason: "nothing_to_seed" };
+    }
+    const registry = inst.get?.("elementRegistry");
+    if (!registry || typeof registry.get !== "function") {
+      return { ok: false, seeded: 0, reason: "missing_registry" };
+    }
+
+    let nextMap = getCamundaExtensionsMap();
+    let seeded = 0;
+    const seededTargetIds = [];
+    templateNodes.forEach((node) => {
+      const sourceId = toText(node?.id);
+      if (!sourceId) return;
+      const targetId = toText(remap[sourceId]);
+      if (!targetId) return;
+      const target = registry.get(targetId);
+      if (!target || !isShapeElement(target)) return;
+      const state = extractManagedCamundaExtensionStateFromBusinessObject(target?.businessObject)
+        || resolveCamundaStateFromSemanticPayload(node?.semanticPayload || node?.semantic_payload);
+      const hasManagedData = state?.properties?.extensionProperties?.length || state?.properties?.extensionListeners?.length;
+      if (!hasManagedData) return;
+      const beforeSig = JSON.stringify(asObject(nextMap[targetId]));
+      const candidateMap = upsertCamundaExtensionStateByElementId(nextMap, targetId, state);
+      const afterSig = JSON.stringify(asObject(candidateMap[targetId]));
+      if (beforeSig === afterSig) return;
+      nextMap = candidateMap;
+      seeded += 1;
+      seededTargetIds.push(targetId);
+    });
+
+    if (!seeded) return { ok: true, seeded: 0, reason: "no_managed_entries" };
+
+    const nextMeta = syncDraftCamundaExtensionsMap(nextMap, "camunda_extensions_template_insert_seed");
+    refreshPropertiesOverlayPreviewFromCamundaMap(nextMap, seededTargetIds);
+
+    return { ok: true, seeded, seededTargetIds, nextMeta };
+  }
+
+  function hydrateRobotMetaFromImportedBpmn(inst, xmlText, source = "import_xml") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid || !inst) return { ok: false, reason: "missing_context" };
+
+    const currentSessionMap = getRobotMetaMap();
+    const xmlHash = fnv1aHex(String(xmlText || ""));
+    const currentSessionHash = fnv1aHex(canonicalRobotMetaMapString(currentSessionMap));
+    const preflightKey = `${sid}|${xmlHash}|${currentSessionHash}`;
+    if (robotMetaHydrateStateRef.current.key === preflightKey) {
+      return { ok: true, skipped: true, reason: "dedup" };
+    }
+
+    const warnings = [];
+    const extractedMap = extractRobotMetaFromBpmn({
+      modeler: inst,
+      onWarning: (code, detail = {}) => {
+        warnings.push({ code: String(code || ""), detail: asObject(detail) });
+      },
+    });
+
+    const hydration = hydrateRobotMetaFromBpmn({
+      extractedMap,
+      sessionMetaMap: currentSessionMap,
+    });
+    const nextMap = normalizeRobotMetaMap(hydration?.nextSessionMetaMap);
+    const nextHash = fnv1aHex(canonicalRobotMetaMapString(nextMap));
+    robotMetaHydrateStateRef.current.key = `${sid}|${xmlHash}|${nextHash}`;
+
+    warnings.forEach((warning) => {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] BPMN extract warning", {
+        sid,
+        source,
+        code: warning.code,
+        ...warning.detail,
+      });
+    });
+
+    const conflicts = asArray(hydration?.conflicts)
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    if (conflicts.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] BPMN robotMeta differs; session meta wins", {
+        sid,
+        source,
+        conflicts: conflicts.slice(0, 20),
+      });
+    }
+
+    if (!hydration?.adoptedFromBpmn || !Object.keys(nextMap).length) {
+      return { ok: true, adopted: false, extractedCount: Object.keys(extractedMap).length, conflicts: conflicts.length };
+    }
+
+    const currentMeta = asObject(asObject(draftRef.current).bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: nextMap,
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: "robot_meta_bpmn_hydrate",
+    });
+    return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length, conflicts: conflicts.length };
+  }
+
+  function hydrateCamundaExtensionsFromImportedBpmn(xmlText, source = "import_xml") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return { ok: false, reason: "missing_context" };
+
+    const currentSessionMap = getCamundaExtensionsMap();
+    const xmlHash = fnv1aHex(String(xmlText || ""));
+    const currentSessionHash = fnv1aHex(JSON.stringify(currentSessionMap));
+    const preflightKey = `${sid}|${xmlHash}|${currentSessionHash}`;
+    if (camundaHydrateStateRef.current.key === preflightKey) {
+      return { ok: true, skipped: true, reason: "dedup" };
+    }
+
+    const extractedMap = extractCamundaExtensionsMapFromBpmnXml(xmlText);
+    const extractedElementIds = Object.keys(normalizeCamundaExtensionsMap(extractedMap));
+    const hydration = hydrateCamundaExtensionsFromBpmn({
+      extractedMap,
+      sessionMetaMap: currentSessionMap,
+    });
+    const nextMap = normalizeCamundaExtensionsMap(hydration?.nextSessionMetaMap);
+    const nextHash = fnv1aHex(JSON.stringify(nextMap));
+    camundaHydrateStateRef.current.key = `${sid}|${xmlHash}|${nextHash}`;
+
+    if (!hydration?.adoptedFromBpmn || !Object.keys(nextMap).length) {
+      return { ok: true, adopted: false, extractedCount: Object.keys(extractedMap).length };
+    }
+
+    const currentDraft = asObject(draftRef.current);
+    const currentMeta = asObject(currentDraft.bpmn_meta);
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: nextMap,
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+    // Always reset the import preserve guard to the ids that actually have
+    // managed Camunda data in the freshly imported XML. If the new XML removed
+    // managed data for an element, the old guard must not block the modeler
+    // from being synchronized to the empty state.
+    primeImportCamundaPreserveGuard(extractedElementIds);
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    onSessionSyncRef.current?.({
+      id: sid,
+      session_id: sid,
+      bpmn_meta: nextMeta,
+      _sync_source: `camunda_extensions_${source}_hydrate`,
+    });
+    return { ok: true, adopted: true, extractedCount: Object.keys(extractedMap).length };
+  }
+
+  function cloneCompanionStateForCopiedElement({
+    sourceElementId: sourceElementIdRaw,
+    targetElementId: targetElementIdRaw,
+    remap: remapRaw = {},
+    semanticPayload: semanticPayloadRaw,
+    inst = null,
+  } = {}) {
+    const remapEntries = Object.entries(asObject(remapRaw))
+      .map(([sourceIdRaw, targetIdRaw]) => [toText(sourceIdRaw), toText(targetIdRaw)])
+      .filter(([sourceId, targetId]) => sourceId && targetId && sourceId !== targetId);
+    if (!remapEntries.length) {
+      const sourceElementId = toText(sourceElementIdRaw);
+      const targetElementId = toText(targetElementIdRaw);
+      if (sourceElementId && targetElementId && sourceElementId !== targetElementId) {
+        remapEntries.push([sourceElementId, targetElementId]);
+      }
+    }
+    if (!remapEntries.length) {
+      return { ok: false, reason: "missing_target" };
+    }
+    const currentDraft = asObject(draftRef.current);
+    const currentMeta = asObject(currentDraft.bpmn_meta);
+    const robotMetaMap = normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id);
+    const camundaMap = normalizeCamundaExtensionsMap(currentMeta?.camunda_extensions_by_element_id);
+    let nextRobotMeta = robotMetaMap;
+    let nextCamunda = camundaMap;
+    let copiedRobotMetaCount = 0;
+    let copiedCamundaCount = 0;
+    const targetIdsWithRobotMeta = [];
+    const targetIdsWithManagedCamunda = [];
+
+    remapEntries.forEach(([sourceElementId, targetElementId], index) => {
+      const sourceRobotMetaState = resolveSourceRobotMetaState(sourceElementId, currentDraft)
+        || (index === 0 ? resolveRobotMetaStateFromSemanticPayload(semanticPayloadRaw) : null);
+      const sourceCamundaState = nextCamunda[sourceElementId]
+        || resolveSourceCamundaExtensionState(sourceElementId, currentDraft)
+        || (index === 0 ? resolveCamundaStateFromSemanticPayload(semanticPayloadRaw) : null);
+
+      if (sourceRobotMetaState) {
+        const beforeSig = JSON.stringify(nextRobotMeta[targetElementId] || null);
+        const candidateMap = normalizeRobotMetaMap({
+          ...nextRobotMeta,
+          [targetElementId]: cloneJsonValue(sourceRobotMetaState),
+        });
+        const afterSig = JSON.stringify(candidateMap[targetElementId] || null);
+        if (beforeSig !== afterSig) {
+          nextRobotMeta = candidateMap;
+          copiedRobotMetaCount += 1;
+          targetIdsWithRobotMeta.push(targetElementId);
+        }
+      }
+
+      if (sourceCamundaState) {
+        const beforeSig = JSON.stringify(nextCamunda[targetElementId] || null);
+        const candidateMap = normalizeCamundaExtensionsMap({
+          ...nextCamunda,
+          [targetElementId]: cloneJsonValue(sourceCamundaState),
+        });
+        const afterSig = JSON.stringify(candidateMap[targetElementId] || null);
+        if (beforeSig !== afterSig) {
+          nextCamunda = candidateMap;
+          copiedCamundaCount += 1;
+          targetIdsWithManagedCamunda.push(targetElementId);
+        }
+      }
+    });
+
+    if (!copiedRobotMetaCount && !copiedCamundaCount) {
+      return { ok: true, skipped: true, copiedRobotMeta: false, copiedCamunda: false };
+    }
+
+    const nextMeta = {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: nextRobotMeta,
+      camunda_extensions_by_element_id: nextCamunda,
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (sid) {
+      onSessionSyncRef.current?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: "bpmn_copy_paste_companion_clone",
+      });
+      void persistSessionMetaBoundary(nextMeta, {
+        source: "bpmn_copy_paste_companion_clone",
+      }).then((persistResult) => {
+        if (!persistResult?.ok) {
+          // eslint-disable-next-line no-console
+          console.warn("[CAMUNDA_EXT] copy/paste companion clone persist failed", {
+            sid,
+            copiedRobotMeta: copiedRobotMetaCount,
+            copiedCamunda: copiedCamundaCount,
+            status: Number(persistResult?.status || 0),
+            error: String(persistResult?.error || "session_meta_patch_failed"),
+          });
+        }
+      }).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.warn("[CAMUNDA_EXT] copy/paste companion clone persist exception", {
+          sid,
+          copiedRobotMeta: copiedRobotMetaCount,
+          copiedCamunda: copiedCamundaCount,
+          error: String(error?.message || error || "session_meta_patch_failed"),
+        });
+      });
+    }
+
+    if (copiedRobotMetaCount) {
+      primeCopyPasteRobotMetaPreserveGuard(targetIdsWithRobotMeta);
+    }
+
+    const activeInst = inst || modelerRef.current;
+    if (activeInst) {
+      if (copiedRobotMetaCount) {
+        syncRobotMetaToModeler(activeInst, {
+          preserveExistingForElementIds: targetIdsWithRobotMeta,
+        });
+      }
+      if (copiedCamundaCount) {
+        syncCamundaExtensionsToModeler(activeInst, {
+          preserveManagedForElementIds: targetIdsWithManagedCamunda,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      copiedRobotMeta: copiedRobotMetaCount > 0,
+      copiedCamunda: copiedCamundaCount > 0,
+      copiedRobotMetaCount,
+      copiedCamundaCount,
+      remap: Object.fromEntries(remapEntries),
+    };
+  }
+
+  function isAiQuestionsModeOn() {
+    return !!aiQuestionsModeEnabledRef.current;
+  }
+
+  function isInterviewDecorModeOn() {
+    return String(diagramDisplayModeRef.current || "normal") === "interview";
+  }
+
+  function persistAiQuestionEntry(elementId, qid, patch = {}, meta = {}) {
+    const eid = toText(elementId);
+    const questionId = toText(qid);
+    if (!eid || !questionId) return false;
+
+    const currentMap = getAiQuestionsByElementMap();
+    const currentList = normalizeAiQuestionItems(currentMap[eid]);
+    const idx = currentList.findIndex((it) => toText(it?.qid) === questionId);
+    if (idx < 0) return false;
+
+    const prevItem = asObject(currentList[idx]);
+    const nextStatus = Object.prototype.hasOwnProperty.call(patch, "status")
+      ? normalizeAiQuestionStatus(patch?.status)
+      : normalizeAiQuestionStatus(prevItem?.status);
+    const nextComment = Object.prototype.hasOwnProperty.call(patch, "comment")
+      ? toText(patch?.comment)
+      : toText(prevItem?.comment);
+    if (nextStatus === normalizeAiQuestionStatus(prevItem?.status) && nextComment === toText(prevItem?.comment)) {
+      return false;
+    }
+
+    const nextItem = {
+      ...prevItem,
+      status: nextStatus,
+      comment: nextComment,
+      updatedAt: Date.now(),
+    };
+
+    const nextList = [...currentList];
+    nextList[idx] = nextItem;
+    const nextMap = {
+      ...currentMap,
+      [eid]: nextList.map((item) => ({
+        qid: toText(item?.qid),
+        text: toText(item?.text),
+        comment: toText(item?.comment),
+        status: normalizeAiQuestionStatus(item?.status),
+        createdAt: Number(item?.createdAt || Date.now()) || Date.now(),
+        updatedAt: Number(item?.updatedAt || item?.createdAt || Date.now()) || Date.now(),
+        source: toText(item?.source || "ai"),
+        stepId: toText(item?.stepId),
+      })),
+    };
+
+    const cb = onAiQuestionsByElementChangeRef.current;
+    if (typeof cb === "function") {
+      cb(nextMap, {
+        source: toText(meta?.source || "bpmn_ai_overlay"),
+        elementId: eid,
+        qid: questionId,
+      });
+    }
+
+    logAiOverlayTrace("persist", {
+      sid: String(sessionId || "-"),
+      elementId: eid,
+      qid: questionId,
+      status: nextStatus,
+      commentLen: nextComment.length,
+      source: toText(meta?.source || "bpmn_ai_overlay"),
+    });
+
+    return true;
+  }
+
+  function createAiQuestionPanelCtx() {
+    return {
+      refs: {
+        aiQuestionPanelStateRef,
+        aiQuestionPanelTargetRef,
+      },
+      callbacks: {
+        getInstance: (kind) => (kind === "editor" ? modelerRef.current : viewerRef.current),
+        getAiQuestionsForElement,
+        persistAiQuestionEntry,
+        aiQuestionStats,
+        logAiOverlayTrace,
+        getSessionId: () => sessionId,
+      },
+      getters: {
+        isShapeElement,
+      },
+      utils: {
+        asArray,
+        asObject,
+        toText,
+        normalizeAiQuestionStatus,
+      },
+    };
+  }
+
+  const aiQuestionPanelAdapter = useMemo(
+    () => createAiQuestionPanelAdapter(() => createAiQuestionPanelCtx()),
+    [],
+  );
+
+  function clearAiQuestionPanel(inst, kind, options = {}) {
+    return aiQuestionPanelAdapter.clearAiQuestionPanel(inst, kind, options);
+  }
+
+  function openAiQuestionPanel(inst, kind, elementId, options = {}) {
+    return aiQuestionPanelAdapter.openAiQuestionPanel(inst, kind, elementId, options);
+  }
+
+  function syncAiQuestionPanelWithSelection(inst, kind, element, source = "selection") {
+    if (!inst) return;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const eid = toText(element?.id);
+    if (!eid) {
+      clearAiQuestionPanel(inst, mode);
+      return;
+    }
+    const panelState = asObject(aiQuestionPanelStateRef.current[mode]);
+    const panelElementId = toText(panelState?.elementId);
+    const keepCurrentPanelOpen = !!panelState?.overlayId && panelElementId === eid;
+    const questions = getAiQuestionsForElement(eid);
+    if (!questions.length) {
+      clearAiQuestionPanel(inst, mode);
+      return;
+    }
+    const sourceText = toText(source).toLowerCase();
+    const explicitOpenSource = (
+      !sourceText
+      || sourceText.includes("ai_indicator_click")
+      || sourceText.includes("ai_badge_click")
+      || sourceText.includes("interview_ai_badge")
+    );
+    if (!explicitOpenSource && !keepCurrentPanelOpen) {
+      clearAiQuestionPanel(inst, mode);
+      return;
+    }
+    openAiQuestionPanel(inst, mode, eid, { source });
+  }
+
+  function emitElementSelectionChange(payload) {
+    const cb = onElementSelectionChangeRef.current;
+    if (typeof cb !== "function") return;
+    traceSelectionContinuity("selection_change_emit", {
+      nextSelectedId: String(payload?.id || "").trim() || "-",
+      viewerSelectedId: String(selectedMarkerStateRef.current.viewer || "").trim() || "-",
+      editorSelectedId: String(selectedMarkerStateRef.current.editor || "").trim() || "-",
+      source: String(payload?.source || (!payload ? "clear" : "unknown")).trim() || "-",
+    });
+    if (!payload || !payload.id) {
+      cb(null);
+      return;
+    }
+    cb(payload);
+  }
+
+  function emitElementSelection(el, source = "diagram_click", extra = {}) {
+    if (!isSelectableElement(el)) {
+      emitElementSelectionChange(null);
+      return;
+    }
+    const elementId = String(el?.id || "").trim();
+    if (!elementId) {
+      emitElementSelectionChange(null);
+      return;
+    }
+    const bo = asObject(el?.businessObject);
+    const name = readableBpmnText(
+      bo?.name,
+      el?.label?.businessObject?.name,
+      el?.label?.businessObject?.text,
+      el?.businessObject?.label,
+      el?.businessObject?.text,
+    );
+    const type = String(bo?.$type || el?.type || "").trim();
+    const laneName = readLaneNameForElement(el);
+    const aiStats = aiQuestionStats(getAiQuestionsForElement(elementId));
+    const selectedIds = asArray(extra?.selectedIds).map((x) => String(x || "").trim()).filter(Boolean);
+    const insertBetween = extra?.insertBetween && typeof extra.insertBetween === "object"
+      ? { ...extra.insertBetween }
+      : null;
+    emitElementSelectionChange({
+      id: elementId,
+      name,
+      type,
+      laneName,
+      selectedIds,
+      selectedCount: selectedIds.length || 1,
+      insertBetween,
+      noteCount: getElementNoteCount(elementId),
+      aiQuestionCount: aiStats.total,
+      aiQuestionDoneCount: aiStats.done,
+      aiQuestionMissingCommentCount: aiStats.withoutComment,
+      source,
+    });
+  }
+
+  function emitDiagramContextMenuDismiss(reason = "", payload = {}) {
+    const cb = onDiagramContextMenuDismissRef.current;
+    if (typeof cb !== "function") return;
+    const reasonIsPayload = reason && typeof reason === "object" && !Array.isArray(reason);
+    const payloadObj = reasonIsPayload ? asObject(reason) : asObject(payload);
+    const dismissReason = reasonIsPayload
+      ? toText(payloadObj?.reason)
+      : toText(reason || payloadObj?.reason);
+    cb({
+      sessionId: String(activeSessionRef.current || sessionId || ""),
+      reason: dismissReason || "runtime_event",
+      ...payloadObj,
+    });
+  }
+
+  function handleDiagramContextMenuEvent({ mode = "editor", scope = "", event: runtimeEvent, inst }) {
+    const cb = onDiagramContextMenuRequestRef.current;
+    if (typeof cb !== "function") return;
+
+    const nativeEvent = readContextMenuNativeEvent(runtimeEvent);
+    if (!nativeEvent || typeof nativeEvent !== "object") return;
+    if (nativeEvent[CONTEXT_MENU_HANDLED_FLAG] === true) return;
+
+    const openDecision = shouldOpenBpmnContextMenu({
+      nativeEvent,
+      inst,
+      interactionState: contextMenuInteractionRef.current,
+    });
+    if (openDecision?.ok !== true) return;
+
+    const target = resolveBpmnContextMenuTarget({
+      runtimeEvent,
+      scope,
+      inst,
+    });
+    if (String(target?.kind || "").toLowerCase() === "unsupported") return;
+
+    const accepted = cb({
+      sessionId: String(activeSessionRef.current || sessionId || ""),
+      mode: String(mode || "editor"),
+      scope: String(scope || "canvas"),
+      source: String(runtimeEvent?.type || "diagram.contextmenu"),
+      clientX: Number(nativeEvent?.clientX || 0),
+      clientY: Number(nativeEvent?.clientY || 0),
+      target,
+    }) === true;
+    if (accepted) {
+      nativeEvent[CONTEXT_MENU_HANDLED_FLAG] = true;
+      nativeEvent.preventDefault?.();
+      nativeEvent.stopPropagation?.();
+    }
+  }
+
+  const executeDiagramContextAction = useMemo(() => createBpmnContextMenuActionExecutor({
+    modelerRef,
+    ensureModeler,
+    emitDiagramMutation,
+    emitElementSelection,
+    buildInsertBetweenCandidate,
+    cloneCompanionStateForCopiedElement,
+    buildCopyElementOptions,
+    onNavigateToSubprocess: (elementId) => onNavigateToSubprocessRef.current?.(elementId),
+    backendClipboard: createBackendBpmnClipboardController({
+      getSessionId: () => String(activeSessionRef.current || sessionId || ""),
+      refreshAfterPaste: async ({ sessionId: pastedSessionId }) => {
+        const sid = String(pastedSessionId || activeSessionRef.current || sessionId || "").trim();
+        if (!sid) return { ok: false, error: "missing_session_id" };
+        const token = loadTokenRef.current + 1;
+        loadTokenRef.current = token;
+        await loadFromBackend(sid, token, {
+          forceRemote: true,
+          reason: "backend_clipboard_paste",
+        });
+        return { ok: true };
+      },
+    }),
+  }), [
+    modelerRef,
+    ensureModeler,
+    emitDiagramMutation,
+    emitElementSelection,
+    buildInsertBetweenCandidate,
+    cloneCompanionStateForCopiedElement,
+    buildCopyElementOptions,
+    sessionId,
+  ]);
+  function buildSettledSelectionFanoutSignature({ element, kind }) {
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const elementId = toText(element?.id);
+    if (!elementId) return `${mode}:-`;
+    const bo = asObject(element?.businessObject);
+    const aiQuestions = getAiQuestionsForElement(elementId);
+    const aiStats = aiQuestionStats(aiQuestions);
+    const aiSignature = asArray(aiQuestions)
+      .map((itemRaw) => {
+        const item = asObject(itemRaw);
+        return [
+          toText(item?.id),
+          toText(item?.status),
+          toText(item?.comment),
+          toText(item?.question || item?.text),
+        ].join(":");
+      })
+      .join("|");
+    return [
+      mode,
+      elementId,
+      toText(bo?.name || elementId),
+      toText(bo?.$type || element?.type),
+      readLaneNameForElement(element),
+      String(getElementNoteCount(elementId)),
+      String(aiStats.total),
+      String(aiStats.done),
+      String(aiStats.withoutComment),
+      aiSignature,
+    ].join("::");
+  }
+
+  function beginImportSelectionGuard(kind) {
+    const mode = kind === "viewer" ? "viewer" : "editor";
+    const selectedId = String(selectedMarkerStateRef.current[mode] || "").trim();
+    selectionImportGuardRef.current[mode] = selectedId;
+    traceSelectionContinuity("import_guard_begin", {
+      mode,
+      selectedId: selectedId || "-",
+    });
+    return selectedId;
+  }
+
+  function finishImportSelectionGuard(inst, kind, reason = "import_refresh") {
+    const mode = kind === "viewer" ? "viewer" : "editor";
+    const selectedId = String(selectionImportGuardRef.current[mode] || "").trim();
+    selectionImportGuardRef.current[mode] = "";
+    clearSelectedDecor(inst, mode);
+    if (!selectedId) {
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId: "-",
+        result: "clear_no_selection",
+      });
+      clearAiQuestionPanel(inst, mode);
+      emitElementSelectionChange(null);
+      return false;
+    }
+    try {
+      const registry = inst.get("elementRegistry");
+      const selected = registry?.get?.(selectedId);
+      if (!isSelectableElement(selected)) {
+        traceSelectionContinuity("import_guard_finish", {
+          mode,
+          reason,
+          selectedId,
+          result: "clear_missing_element",
+        });
+        clearAiQuestionPanel(inst, mode);
+        emitElementSelectionChange(null);
+        return false;
+      }
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId,
+        result: "restore",
+      });
+      setSelectedDecor(inst, mode, selectedId);
+      emitElementSelection(selected, `${mode}.${reason}`, {
+        selectedIds: [selectedId],
+        insertBetween: buildInsertBetweenCandidate(inst, [selected]),
+      });
+      syncAiQuestionPanelWithSelection(inst, mode, selected, `${mode}.${reason}`);
+      return true;
+    } catch {
+      traceSelectionContinuity("import_guard_finish", {
+        mode,
+        reason,
+        selectedId,
+        result: "clear_error",
+      });
+      clearAiQuestionPanel(inst, mode);
+      emitElementSelectionChange(null);
+      return false;
+    }
+  }
+
+  function readShapeBounds(el) {
+    if (!el) return null;
+    const x = Number(el?.x);
+    const y = Number(el?.y);
+    const width = Number(el?.width);
+    const height = Number(el?.height);
+    if (![x, y, width, height].every(Number.isFinite)) return null;
+    if (width <= 0 || height <= 0) return null;
+    return { x, y, width, height };
+  }
+
+  function isTaskLikeType(type) {
+    const t = String(type || "").trim();
+    return /task$/i.test(t);
+  }
+
+  function captureTemplatePackOnModeler(inst, options = {}) {
+    return templatePackAdapter.captureTemplatePackOnModeler(inst, options);
+  }
+
+  async function insertTemplatePackOnModeler(payload = {}) {
+    const coordinator = ensureBpmnCoordinator();
+    coordinator.beginSingleWriter?.("template_apply", {
+      ttlMs: 15000,
+      reason: "template_insert_start",
+    });
+    templateInsertCamundaSeedInFlightRef.current = Number(templateInsertCamundaSeedInFlightRef.current || 0) + 1;
+    try {
+      const inserted = await templatePackAdapter.insertTemplatePackOnModeler(payload);
+      if (!inserted?.ok) {
+        coordinator.endSingleWriter?.("template_apply", "template_insert_failed");
+        return inserted;
+      }
+      primeTemplateInsertCamundaClearGuard(inserted?.remap);
+      const activeModeler = modelerRef.current || await ensureModeler();
+      if (activeModeler) {
+        const seedResult = seedTemplateInsertCamundaExtensions(activeModeler, payload, inserted);
+        if (seedResult?.ok && Number(seedResult?.seeded || 0) > 0 && seedResult?.nextMeta) {
+          try {
+            const persistResult = await persistSessionMetaBoundary(seedResult.nextMeta, {
+              source: "camunda_extensions_template_insert_seed",
+            });
+            if (!persistResult?.ok) {
+              // eslint-disable-next-line no-console
+              console.warn("[CAMUNDA_EXT] template insert seed persist failed", {
+                sid: String(activeSessionRef.current || sessionId || ""),
+                seeded: Number(seedResult?.seeded || 0),
+                status: Number(persistResult?.status || 0),
+                error: String(persistResult?.error || "session_meta_patch_failed"),
+              });
+            }
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn("[CAMUNDA_EXT] template insert seed persist exception", {
+              sid: String(activeSessionRef.current || sessionId || ""),
+              seeded: Number(seedResult?.seeded || 0),
+              error: String(error?.message || error || "session_meta_patch_failed"),
+            });
+          }
+        }
+      }
+      // Prime the local XML/hash state from the live modeler so any post-insert
+      // session sync or draft update is recognized as already loaded. Without
+      // this, a stale hash causes the render effect to call renderModeler()
+      // (full XML re-import) which appears as a page reload / white screen on
+      // large diagrams.
+      try {
+        const xmlModeler = modelerRef.current || await ensureModeler();
+        if (xmlModeler && typeof xmlModeler.saveXML === "function") {
+          const xmlOut = await xmlModeler.saveXML({ format: true });
+          const currentXml = String(xmlOut?.xml || "");
+          if (currentXml.trim()) {
+            lastModelerXmlHashRef.current = fnv1aHex(currentXml);
+            setXml(currentXml);
+            setXmlDraft(currentXml);
+            setXmlDirty(false);
+            if (
+              bpmnStoreRef.current
+              && typeof bpmnStoreRef.current.setXml === "function"
+            ) {
+              bpmnStoreRef.current.setXml(currentXml, "template_insert", {
+                bumpRev: false,
+                dirty: true,
+              });
+            }
+            if (shouldLogBpmnTrace()) {
+              // eslint-disable-next-line no-console
+              console.debug(
+                `[BPMN] template_insert primed xml hash=${lastModelerXmlHashRef.current} len=${currentXml.length}`,
+              );
+            }
+          }
+        }
+      } catch (xmlPrimeError) {
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[BPMN] template_insert xml prime failed: ${String(xmlPrimeError?.message || xmlPrimeError)}`,
+          );
+        }
+      }
+      return inserted;
+    } finally {
+      templateInsertCamundaSeedInFlightRef.current = Math.max(
+        0,
+        Number(templateInsertCamundaSeedInFlightRef.current || 0) - 1,
+      );
+    }
+  }
+
+  async function applyCommandOpsOnModeler(payload = {}) {
+    return commandOpsAdapter.applyCommandOpsOnModeler(payload);
+  }
+
+  function logChangeElementTrace(stage, payload = {}) {
+    try {
+      if (typeof window !== "undefined" && (window.__FPC_E2E__ || shouldLogBpmnTrace())) {
+        const prev = Array.isArray(window.__FPC_CHANGE_ELEMENT_LOG__) ? window.__FPC_CHANGE_ELEMENT_LOG__ : [];
+        const next = [...prev, { ts: Date.now(), stage: String(stage || "-"), ...asObject(payload) }];
+        if (next.length > 120) next.splice(0, next.length - 120);
+        window.__FPC_CHANGE_ELEMENT_LOG__ = next;
+      }
+    } catch {
+    }
+    if (!shouldLogBpmnTrace()) return;
+    const suffix = Object.entries(payload || {})
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(" ");
+    // eslint-disable-next-line no-console
+    console.debug(`[CHANGE_ELEMENT] stage=${String(stage || "-")} ${suffix}`.trim());
+  }
+
+  function captureShapeReplacePre(ev, source = "pre") {
+    const ctx = asObject(ev?.context || ev);
+    const oldShape = ctx.oldShape || ctx.oldElement || ctx.shape || ctx.element || null;
+    const oldId = String(oldShape?.id || "").trim();
+    const oldType = String(oldShape?.businessObject?.$type || oldShape?.type || "").trim();
+    const oldBounds = readShapeBounds(oldShape);
+    const hadNotes = oldId ? getElementNoteCount(oldId) > 0 : false;
+    const oldNotesEntry = hadNotes ? getElementNoteEntry(oldId) : null;
+    replaceCommandStateRef.current = {
+      oldId,
+      oldType,
+      hadNotes,
+      oldNotesEntry,
+      oldBounds,
+      source,
+      ts: Date.now(),
+    };
+    logChangeElementTrace("pre", {
+      sid: String(sessionId || "-"),
+      source,
+      oldId: oldId || "-",
+      oldType: oldType || "-",
+      oldBounds: oldBounds ? formatRect(oldBounds) : "-",
+      oldNotes: hadNotes ? 1 : 0,
+    });
+  }
+
+  function applyShapeReplacePost(inst, ev, source = "post") {
+    if (!inst) return;
+    const ctx = asObject(ev?.context || ev);
+    const state = asObject(replaceCommandStateRef.current);
+    const registry = inst.get("elementRegistry");
+    const modeling = inst.get("modeling");
+    const newShape = ctx.newShape || ctx.newElement || ctx.shape || ctx.element || (state.oldId ? registry.get(state.oldId) : null);
+    const newId = String(newShape?.id || "").trim();
+    const newType = String(newShape?.businessObject?.$type || newShape?.type || "").trim();
+    const newBounds = readShapeBounds(newShape);
+    const oldBounds = state.oldBounds && typeof state.oldBounds === "object" ? state.oldBounds : null;
+    const oldId = String(state.oldId || "").trim();
+    const oldType = String(state.oldType || "").trim();
+    const oldNotes = !!state.hadNotes;
+    const oldNotesEntry = state.oldNotesEntry && typeof state.oldNotesEntry === "object"
+      ? state.oldNotesEntry
+      : null;
+    const newNotesCount = newId ? getElementNoteCount(newId) : 0;
+
+    logChangeElementTrace("post", {
+      sid: String(sessionId || "-"),
+      source,
+      oldId: oldId || "-",
+      newId: newId || "-",
+      oldType: oldType || "-",
+      newType: newType || "-",
+      oldBounds: oldBounds ? formatRect(oldBounds) : "-",
+      newBounds: newBounds ? formatRect(newBounds) : "-",
+      oldNotes: oldNotes ? 1 : 0,
+      newNotes: newNotesCount,
+    });
+
+    const shouldKeepTaskBounds = oldBounds
+      && newBounds
+      && isTaskLikeType(oldType)
+      && isTaskLikeType(newType);
+    const needsResize = shouldKeepTaskBounds
+      && (
+        Math.abs(Number(newBounds.width || 0) - Number(oldBounds.width || 0)) > 0.5
+        || Math.abs(Number(newBounds.height || 0) - Number(oldBounds.height || 0)) > 0.5
+        || Math.abs(Number(newBounds.x || 0) - Number(oldBounds.x || 0)) > 0.5
+        || Math.abs(Number(newBounds.y || 0) - Number(oldBounds.y || 0)) > 0.5
+      );
+
+    if (needsResize && typeof modeling?.resizeShape === "function") {
+      void withSuppressedCommandStack(async () => {
+        try {
+          const centerX = Number(oldBounds.x || 0) + Number(oldBounds.width || 0) / 2;
+          const centerY = Number(oldBounds.y || 0) + Number(oldBounds.height || 0) / 2;
+          const target = {
+            x: Math.round((centerX - Number(oldBounds.width || 0) / 2) * 100) / 100,
+            y: Math.round((centerY - Number(oldBounds.height || 0) / 2) * 100) / 100,
+            width: Number(oldBounds.width || 0),
+            height: Number(oldBounds.height || 0),
+          };
+          modeling.resizeShape(newShape, target);
+          logChangeElementTrace("resize_applied", {
+            sid: String(sessionId || "-"),
+            elementId: newId || "-",
+            targetBounds: formatRect(target),
+          });
+        } catch (error) {
+          logChangeElementTrace("resize_failed", {
+            sid: String(sessionId || "-"),
+            elementId: newId || "-",
+            err: String(error?.message || error || "resize_failed"),
+          });
+        }
+      });
+    }
+
+    if (oldNotes && oldId && newId && (oldId !== newId || newNotesCount === 0)) {
+      try {
+        const remapCb = onElementNotesRemapRef.current;
+        if (typeof remapCb === "function") {
+          void Promise.resolve(
+            remapCb(oldId, newId, {
+              source: "shape_replace",
+              oldType,
+              newType,
+              notesEntry: oldNotesEntry,
+              forceRestore: newNotesCount === 0,
+            }),
+          );
+        }
+      } catch {
+      }
+    }
+
+    if (newShape && isSelectableElement(newShape)) {
+      setSelectedDecor(inst, "editor", newId);
+      emitElementSelection(newShape, "editor.shape_replace");
+      syncAiQuestionPanelWithSelection(inst, "editor", newShape, "editor.shape_replace");
+    }
+    applyTaskTypeDecor(inst, "editor");
+    applyLinkEventDecor(inst, "editor");
+    applyHappyFlowDecor(inst, "editor");
+    applyUserNotesDecor(inst, "editor");
+    applyStepTimeDecor(inst, "editor");
+  }
+
+  function findShapeForHint(registry, hint) {
+    const ids = new Set();
+    asArray(hint?.elementIds)
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .forEach((x) => ids.add(x));
+
+    const nodeId = String(hint?.nodeId || "").trim();
+    if (nodeId) {
+      ids.add(nodeId);
+      ids.add(safeBpmnId(nodeId));
+    }
+
+    for (const id of ids) {
+      const el = registry.get(id);
+      if (isShapeElement(el)) return el;
+    }
+
+    const t = String(hint?.title || "").trim().toLowerCase();
+    if (!t) return null;
+    let titleLookup = shapeTitleLookupCache.get(registry);
+    if (!titleLookup) {
+      titleLookup = new Map();
+      const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+      all.forEach((el) => {
+        if (!isShapeElement(el)) return;
+        const name = String(el?.businessObject?.name || "").trim().toLowerCase();
+        if (!name || titleLookup.has(name)) return;
+        titleLookup.set(name, el);
+      });
+      shapeTitleLookupCache.set(registry, titleLookup);
+    }
+    return titleLookup.get(t) || null;
+  }
+
+  function findDiagramElementForHint(registry, hint) {
+    const ids = new Set();
+    asArray(hint?.elementIds)
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .forEach((x) => ids.add(x));
+
+    const nodeId = String(hint?.nodeId || "").trim();
+    if (nodeId) {
+      ids.add(nodeId);
+      ids.add(safeBpmnId(nodeId));
+    }
+
+    for (const id of ids) {
+      const el = registry.get(id);
+      if (!el || String(el?.type || "").toLowerCase() === "label") continue;
+      if (isShapeElement(el) || isConnectionElement(el)) return el;
+    }
+
+    return findShapeForHint(registry, hint);
+  }
+
+  function findShapeByNodeId(registry, nodeId) {
+    const nid = String(nodeId || "").trim();
+    if (!nid) return null;
+    const ids = [nid, safeBpmnId(nid)];
+    for (const id of ids) {
+      const el = registry.get(id);
+      if (isShapeElement(el)) return el;
+    }
+    return null;
+  }
+
+  function getActiveDecorBpmnXml() {
+    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
+    if (storeXml.trim()) return storeXml;
+    const liveDraft = String(xmlDraft || "");
+    if (liveDraft.trim()) return liveDraft;
+    const propXml = String(xml || "");
+    if (propXml.trim()) return propXml;
+    return String(draftRef.current?.bpmn_xml || "");
+  }
+
+  function createDecorCtx(inst, kind) {
+    return {
+      inst,
+      kind,
+      refs: {
+        interviewMarkerStateRef,
+        interviewOverlayStateRef,
+        interviewDecorSignatureRef,
+        happyFlowMarkerStateRef,
+        happyFlowStyledStateRef,
+        userNotesDecorStateRef,
+        stepTimeOverlayStateRef,
+        stepTimeDecorSignatureRef,
+        robotMetaDecorStateRef,
+        propertiesOverlayStateRef,
+        aiQuestionPanelTargetRef,
+      },
+      getters: {
+        getFlowTierMetaMap,
+        getNodePathMetaMap,
+        getRobotMetaMap,
+        getElementNotesMap,
+        getElementThreadCounts: () => elementThreadCountsRef.current,
+        findDiagramElementForHint,
+        findShapeByNodeId,
+        findShapeForHint,
+        isShapeElement,
+        isConnectionElement,
+        isSelectableElement,
+        isInterviewDecorModeOn,
+      },
+      callbacks: {
+        emitElementSelection,
+        emitDiagramMutation,
+        openAiQuestionPanel,
+        clearAiQuestionPanel,
+        setSelectedDecor,
+        measureInterviewPerf,
+      },
+      readOnly: {
+        draftRef,
+        getActiveBpmnXml: getActiveDecorBpmnXml,
+        diagramDisplayModeRef,
+        stepTimeUnitRef,
+        robotMetaOverlayEnabledRef,
+        robotMetaOverlayFiltersRef,
+        robotMetaStatusByElementIdRef,
+        selectedPropertiesOverlayPreviewRef,
+        propertiesOverlayAlwaysEnabledRef,
+        propertiesOverlayAlwaysPreviewByElementIdRef,
+        aiQuestionPanelTargetRef,
+        childSessionDiscussionAggregates,
+      },
+      utils: {
+        asArray,
+        asObject,
+        toText,
+        normalizeLoose,
+        normalizeAiQuestionItems,
+        normalizeAiQuestionsByElementMap,
+        aiQuestionStats,
+        readStepTimeMinutes,
+        readStepTimeSeconds,
+        normalizeStepTimeUnit,
+        getRobotMetaStatus,
+        robotMetaMissingFields,
+        colorFromKey,
+      },
+    };
+  }
+
+  function createPlaybackCtx() {
+    return {
+      refs: {
+        playbackDecorStateRef,
+        playbackBboxCacheRef,
+        focusStateRef,
+        flashStateRef,
+      },
+      getters: {
+        findShapeByNodeId,
+        findShapeForHint,
+        isShapeElement,
+      },
+      callbacks: {
+        clearSelectedDecor,
+      },
+      readOnly: {
+        prefersReducedMotionRef,
+      },
+      utils: {
+        asArray,
+        asObject,
+        toText,
+        createFlashRuntimeState,
+        createPlaybackDecorRuntimeState,
+      },
+    };
+  }
+
+  const playbackOverlayAdapter = useMemo(
+    () => createPlaybackOverlayAdapter(() => createPlaybackCtx()),
+    [],
+  );
+
+  function createTemplatePackCtx() {
+    return {
+      ensureModeler,
+      getModeler: () => modelerRef.current,
+      emitDiagramMutation,
+      logPackDebug,
+      getSessionId: () => sessionId,
+      readLaneNameForElement,
+      isShapeElement,
+      isConnectionElement,
+    };
+  }
+
+  const templatePackAdapter = useMemo(
+    () => createTemplatePackAdapter(createTemplatePackCtx()),
+    [
+      ensureModeler,
+      emitDiagramMutation,
+      logPackDebug,
+      sessionId,
+      readLaneNameForElement,
+      isShapeElement,
+      isConnectionElement,
+    ],
+  );
+
+  function createCommandOpsCtx() {
+    return {
+      getModelerOrEnsure: async () => modelerRef.current || await ensureModeler(),
+      applyOpsToModeler,
+      emitDiagramMutation,
+    };
+  }
+
+  const commandOpsAdapter = useMemo(
+    () => createCommandOpsAdapter(createCommandOpsCtx()),
+    [ensureModeler, emitDiagramMutation],
+  );
+
+  function clearInterviewDecor(inst, kind) {
+    return decorManager.clearInterviewDecor(createDecorCtx(inst, kind));
+  }
+
+  function clearTaskTypeDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      asArray(taskTypeMarkerStateRef.current[kind]).forEach((m) => {
+        canvas.removeMarker(m.elementId, m.className);
+      });
+      taskTypeMarkerStateRef.current[kind] = [];
+    } catch {
+    }
+  }
+
+  function applyTaskTypeDecor(inst, kind) {
+    if (!inst) return;
+    clearTaskTypeDecor(inst, kind);
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const elements = registry.filter((el) => isShapeElement(el));
+      const addTaskMarker = (elementId, className) => {
+        canvas.addMarker(elementId, className);
+        taskTypeMarkerStateRef.current[kind].push({ elementId, className });
+      };
+      const lightTaskTypes = new Set([
+        "bpmn:Task",
+        "bpmn:SendTask",
+        "bpmn:ReceiveTask",
+        "bpmn:ServiceTask",
+        "bpmn:ManualTask",
+        "bpmn:UserTask",
+        "bpmn:ScriptTask",
+        "bpmn:BusinessRuleTask",
+        "bpmn:CallActivity",
+      ]);
+
+      elements.forEach((el) => {
+        const t = String(el?.businessObject?.$type || "").trim();
+        if (t === "bpmn:SendTask") {
+          addTaskMarker(el.id, "fpcSendTask");
+        }
+        if (t === "bpmn:ReceiveTask") {
+          addTaskMarker(el.id, "fpcReceiveTask");
+        }
+        if (lightTaskTypes.has(t)) {
+          addTaskMarker(el.id, "fpcTaskLightBg");
+        }
+        if (t === "bpmn:StartEvent") {
+          addTaskMarker(el.id, "fpcStartEvent");
+        }
+        if (t === "bpmn:EndEvent") {
+          addTaskMarker(el.id, "fpcEndEvent");
+        }
+      });
+    } catch {
+    }
+  }
+
+  function clearLinkEventDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      asArray(linkEventMarkerStateRef.current[kind]).forEach((m) => {
+        canvas.removeMarker(m.elementId, m.className);
+      });
+      asArray(linkEventStyledStateRef.current[kind]).forEach((elementId) => {
+        const gfx = registry?.getGraphics?.(elementId);
+        if (!gfx || !gfx.style) return;
+        gfx.style.removeProperty("--fpc-link-accent");
+        gfx.removeAttribute("data-fpc-link-role");
+        gfx.removeAttribute("data-fpc-link-key");
+      });
+      linkEventMarkerStateRef.current[kind] = [];
+      linkEventStyledStateRef.current[kind] = [];
+    } catch {
+    }
+  }
+
+  function applyLinkEventDecor(inst, kind) {
+    if (!inst) return;
+    clearLinkEventDecor(inst, kind);
+    try {
+      const canvas = inst.get("canvas");
+      const registry = inst.get("elementRegistry");
+      const elements = registry.filter((el) => isShapeElement(el));
+      const addMarker = (elementId, className) => {
+        canvas.addMarker(elementId, className);
+        linkEventMarkerStateRef.current[kind].push({ elementId, className });
+      };
+
+      elements.forEach((el) => {
+        const bo = asObject(el?.businessObject);
+        if (!hasLinkEventDefinition(bo)) return;
+        const role = readLinkEventRole(el);
+        if (role !== "catch" && role !== "throw") return;
+
+        const pairNameRaw = readLinkEventPairName(el);
+        const pairKey = normalizeLinkPairKey(pairNameRaw);
+        const pairHash = fnv1aHex(pairKey || `link_${el.id}`).slice(0, 8);
+        const pairClass = `fpcLinkPair_${pairHash}`;
+        const accent = linkPairColorFromName(pairKey);
+
+        addMarker(el.id, "fpcLinkEvent");
+        addMarker(el.id, role === "catch" ? "fpcLinkEventCatch" : "fpcLinkEventThrow");
+        addMarker(el.id, pairClass);
+
+        const gfx = registry?.getGraphics?.(el.id);
+        if (gfx?.style) {
+          gfx.style.setProperty("--fpc-link-accent", accent);
+          if (pairKey) gfx.setAttribute("data-fpc-link-key", pairKey);
+          gfx.setAttribute("data-fpc-link-role", role);
+          linkEventStyledStateRef.current[kind].push(el.id);
+        }
+      });
+    } catch {
+    }
+  }
+
+  function clearHappyFlowDecor(inst, kind) {
+    return decorManager.clearHappyFlowDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyHappyFlowDecor(inst, kind) {
+    return decorManager.applyHappyFlowDecor(createDecorCtx(inst, kind));
+  }
+
+  function buildInterviewDecorPayload() {
+    return decorManager.buildInterviewDecorPayload(createDecorCtx(null, "viewer"));
+  }
+
+  function applyInterviewDecor(inst, kind, options = {}) {
+    return decorManager.applyInterviewDecor(createDecorCtx(inst, kind), options);
+  }
+
+  function clearUserNotesDecor(inst, kind) {
+    return decorManager.clearUserNotesDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyUserNotesDecor(inst, kind) {
+    return decorManager.applyUserNotesDecor(createDecorCtx(inst, kind));
+  }
+
+  function applySubprocessDiscussionDecor(inst, kind) {
+    return decorManager.applySubprocessDiscussionDecor(createDecorCtx(inst, kind));
+  }
+
+  function clearStepTimeDecor(inst, kind) {
+    return decorManager.clearStepTimeDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyStepTimeDecor(inst, kind) {
+    return decorManager.applyStepTimeDecor(createDecorCtx(inst, kind));
+  }
+
+  function clearRobotMetaDecor(inst, kind) {
+    return decorManager.clearRobotMetaDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyRobotMetaDecor(inst, kind) {
+    return decorManager.applyRobotMetaDecor(createDecorCtx(inst, kind));
+  }
+
+  function clearPropertiesOverlayDecor(inst, kind) {
+    return decorManager.clearPropertiesOverlayDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyPropertiesOverlayDecor(inst, kind) {
+    if (v2OverlayState.enabledRef.current) {
+      // While V2 overlays are enabled, the V2 layer owns property rendering.
+      // Keep the legacy property overlay layer empty so V2 cards are never
+      // suppressed (legacy/V2 mutual exclusion) or duplicated by legacy decor.
+      return decorManager.clearPropertiesOverlayDecor(createDecorCtx(inst, kind));
+    }
+    return decorManager.applyPropertiesOverlayDecor(createDecorCtx(inst, kind));
+  }
+
+  function applyPropertiesOverlayDecorForZoomChange(inst, kind) {
+    if (!inst) return;
+    const mode = kind === "editor" ? "editor" : "viewer";
+    const zoom = readOverlayCanvasZoom(inst);
+    const zoomBucket = String(Math.round(Number(zoom || 1) * 1000) / 1000);
+    if (propertiesOverlayZoomBucketRef.current[mode] === zoomBucket) return;
+    propertiesOverlayZoomBucketRef.current[mode] = zoomBucket;
+    applyPropertiesOverlayDecor(inst, mode);
+  }
+
+  function clearPlaybackDecor(inst, kind) {
+    return playbackOverlayAdapter.clearPlaybackDecor(inst, kind);
+  }
+
+  function preparePlaybackCache(inst, kind, timelineItemsRaw) {
+    return playbackOverlayAdapter.preparePlaybackCache(inst, kind, timelineItemsRaw);
+  }
+
+  function resolveParentSubprocessId(inst, elementIdRaw) {
+    const elementId = toText(elementIdRaw);
+    if (!inst || !elementId) return "";
+    try {
+      const registry = inst.get("elementRegistry");
+      const element = registry?.get?.(elementId);
+      if (!element) return "";
+      let bo = asObject(element?.businessObject);
+      if (!Object.keys(bo).length) return "";
+      while (bo && typeof bo === "object") {
+        const parent = asObject(bo?.$parent);
+        if (!Object.keys(parent).length) break;
+        const parentType = toText(parent?.$type).toLowerCase();
+        if (parentType.includes("subprocess")) return toText(parent?.id);
+        bo = parent;
+      }
+    } catch {
+    }
+    return "";
+  }
+
+  function resolveParentOfSubprocess(inst, subprocessIdRaw) {
+    const subprocessId = toText(subprocessIdRaw);
+    if (!inst || !subprocessId) return "";
+    try {
+      const registry = inst.get("elementRegistry");
+      const element = registry?.get?.(subprocessId);
+      if (!element) return "";
+      let bo = asObject(element?.businessObject);
+      while (bo && typeof bo === "object") {
+        const parent = asObject(bo?.$parent);
+        if (!Object.keys(parent).length) break;
+        const parentType = toText(parent?.$type).toLowerCase();
+        if (parentType.includes("subprocess")) return toText(parent?.id);
+        bo = parent;
+      }
+    } catch {
+    }
+    return "";
+  }
+
+  function centerPlaybackCamera(inst, kind, centerRaw, options = {}) {
+    return playbackOverlayAdapter.centerPlaybackCamera(inst, kind, centerRaw, options);
+  }
+
+  function applyPlaybackFrameOnInstance(inst, kind, payloadRaw = {}) {
+    return playbackOverlayAdapter.applyPlaybackFrameOnInstance(inst, kind, payloadRaw);
+  }
+
+  function clearFlashDecor(inst, kind) {
+    return playbackOverlayAdapter.clearFlashDecor(inst, kind);
+  }
+
+  function flashNodeOnInstance(inst, kind, nodeId, type = "accent", options = {}) {
+    return playbackOverlayAdapter.flashNodeOnInstance(inst, kind, nodeId, type, options);
+  }
+
+  function flashBadgeOnInstance(inst, kind, nodeId, badgeKind = "ai", options = {}) {
+    return playbackOverlayAdapter.flashBadgeOnInstance(inst, kind, nodeId, badgeKind, options);
+  }
+
+  function flashNode(nodeId, type = "accent", options = {}) {
+    const nid = toText(nodeId);
+    if (!nid) return false;
+    const viewerOk = flashNodeOnInstance(viewerRef.current, "viewer", nid, type, options);
+    const editorOk = flashNodeOnInstance(modelerRef.current, "editor", nid, type, options);
+    return viewerOk || editorOk;
+  }
+
+  function flashBadge(nodeId, kind = "ai", options = {}) {
+    const nid = toText(nodeId);
+    if (!nid) return false;
+    const viewerOk = flashBadgeOnInstance(viewerRef.current, "viewer", nid, kind, options);
+    const editorOk = flashBadgeOnInstance(modelerRef.current, "editor", nid, kind, options);
+    return viewerOk || editorOk;
+  }
+
+  function clearFocusDecor(inst, kind) {
+    return playbackOverlayAdapter.clearFocusDecor(inst, kind);
+  }
+
+  function focusNodeOnInstance(inst, kind, nodeId, options = {}) {
+    return playbackOverlayAdapter.focusNodeOnInstance(inst, kind, nodeId, options);
+  }
+
+
+  function clearBottleneckDecor(inst, kind) {
+    if (!inst) return;
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      asArray(markerStateRef.current[kind]).forEach((m) => {
+        canvas.removeMarker(m.elementId, m.className);
+      });
+      asArray(overlayStateRef.current[kind]).forEach((id) => {
+        overlays.remove(id);
+      });
+      markerStateRef.current[kind] = [];
+      overlayStateRef.current[kind] = [];
+    } catch {
+    }
+  }
+
+  function applyBottleneckDecor(inst, kind) {
+    if (!inst) return;
+    clearBottleneckDecor(inst, kind);
+    const hints = asArray(bottlenecksRef.current);
+    if (!hints.length) return;
+
+    try {
+      const canvas = inst.get("canvas");
+      const overlays = inst.get("overlays");
+      const registry = inst.get("elementRegistry");
+      const used = new Set();
+
+      hints.forEach((hint) => {
+        const el = findDiagramElementForHint(registry, hint);
+        if (!el || used.has(el.id)) return;
+        used.add(el.id);
+
+        const cls = String(hint?.markerClass || "").trim() || severityClass(hint?.severity);
+        canvas.addMarker(el.id, cls);
+        markerStateRef.current[kind].push({ elementId: el.id, className: cls });
+
+        if (hint?.hideTag) return;
+
+        const tag = document.createElement("div");
+        const aiHint = String(hint?.aiHint || hint?.ai_hint || "").trim();
+        const hasHint = !!aiHint;
+        tag.className = `fpcBottleneckTag ${String(hint?.severity || "low").toLowerCase()}${hasHint ? " hint" : ""}`;
+        tag.textContent = hasHint ? aiHint : severityTag(hint?.severity);
+        const title = [
+          String(hint?.title || "").trim(),
+          hasHint ? `AI: ${aiHint}` : "",
+          asArray(hint?.reasons).join("; "),
+        ].filter(Boolean).join(" · ");
+        if (title) tag.title = title;
+
+        const oid = overlays.add(el.id, {
+          position: { top: -14, right: -14 },
+          html: tag,
+        });
+        overlayStateRef.current[kind].push(oid);
+      });
+    } catch {
+    }
+  }
+
+  function destroyRuntime() {
+    const prevModeler = modelerRef.current;
+    const prevModelerMeta = asObject(modelerInstanceMetaRef.current);
+    const prevViewerMeta = asObject(viewerInstanceMetaRef.current);
+    const sidBeforeDestroy = String(activeSessionRef.current || sessionId || "-");
+    if (typeof bpmnStoreUnsubRef.current === "function") {
+      try {
+        bpmnStoreUnsubRef.current();
+      } catch {
+      }
+    }
+    bpmnStoreUnsubRef.current = null;
+    try {
+      bpmnCoordinatorRef.current?.destroy?.();
+    } catch {
+    }
+    bpmnCoordinatorRef.current = null;
+    bpmnStoreRef.current = null;
+    modelerDecorBoundInstanceRef.current = null;
+    viewerDecorBoundInstanceRef.current = null;
+    try { viewerStageEventsUnbindRef.current?.(); } catch {}
+    viewerStageEventsUnbindRef.current = null;
+    try { viewerSubprocessUnbindRef.current?.(); } catch {}
+    viewerSubprocessUnbindRef.current = null;
+    try { modelerStageEventsUnbindRef.current?.(); } catch {}
+    modelerStageEventsUnbindRef.current = null;
+    try { modelerSubprocessUnbindRef.current?.(); } catch {}
+    modelerSubprocessUnbindRef.current = null;
+    try { overlayLifecycle.uninstall(viewerRef.current); } catch {}
+    try { overlayLifecycle.uninstall(modelerRef.current); } catch {}
+    prevOverlaySigRef.current = { viewer: "", editor: "" };
+    const modelerRuntime = modelerRuntimeRef.current;
+    modelerRuntimeRef.current = null;
+    clearFocusDecor(viewerRef.current, "viewer");
+    clearFocusDecor(modelerRef.current, "editor");
+    clearSelectedDecor(viewerRef.current, "viewer");
+    clearSelectedDecor(modelerRef.current, "editor");
+    clearBottleneckDecor(viewerRef.current, "viewer");
+    clearBottleneckDecor(modelerRef.current, "editor");
+    overlayLifecycle.clear(viewerRef.current, "viewer");
+    overlayLifecycle.clear(modelerRef.current, "editor");
+    clearInterviewDecor(viewerRef.current, "viewer");
+    clearInterviewDecor(modelerRef.current, "editor");
+    clearTaskTypeDecor(viewerRef.current, "viewer");
+    clearTaskTypeDecor(modelerRef.current, "editor");
+    clearHappyFlowDecor(viewerRef.current, "viewer");
+    clearHappyFlowDecor(modelerRef.current, "editor");
+    clearUserNotesDecor(viewerRef.current, "viewer");
+    clearUserNotesDecor(modelerRef.current, "editor");
+    clearStepTimeDecor(viewerRef.current, "viewer");
+    clearStepTimeDecor(modelerRef.current, "editor");
+    clearRobotMetaDecor(viewerRef.current, "viewer");
+    clearRobotMetaDecor(modelerRef.current, "editor");
+    clearPlaybackDecor(viewerRef.current, "viewer");
+    clearPlaybackDecor(modelerRef.current, "editor");
+    clearFlashDecor(viewerRef.current, "viewer");
+    clearFlashDecor(modelerRef.current, "editor");
+    try {
+      viewerCullerRef.current?.dispose?.();
+    } catch {
+    }
+    viewerCullerRef.current = null;
+    try {
+      modelerCullerRef.current?.dispose?.();
+    } catch {
+    }
+    modelerCullerRef.current = null;
+    disableBpmnZoomScroll(viewerRef.current);
+    disableBpmnZoomScroll(modelerRef.current);
+    try {
+      disableBpmnZoomScroll(modelerRuntime?.getInstance?.());
+    } catch {
+    }
+    try {
+      viewerRef.current?.destroy?.();
+    } catch {
+    }
+    try {
+      modelerRuntime?.destroy?.();
+    } catch {
+    }
+    markerStateRef.current = { viewer: [], editor: [] };
+    overlayStateRef.current = { viewer: [], editor: [] };
+    interviewMarkerStateRef.current = { viewer: [], editor: [] };
+    interviewOverlayStateRef.current = { viewer: [], editor: [] };
+    interviewDecorSignatureRef.current = { viewer: "", editor: "" };
+    taskTypeMarkerStateRef.current = { viewer: [], editor: [] };
+    happyFlowMarkerStateRef.current = { viewer: [], editor: [] };
+    happyFlowStyledStateRef.current = { viewer: [], editor: [] };
+    userNotesDecorStateRef.current = { viewer: {}, editor: {} };
+    stepTimeOverlayStateRef.current = { viewer: [], editor: [] };
+    stepTimeDecorSignatureRef.current = { viewer: "", editor: "" };
+    robotMetaDecorStateRef.current = { viewer: {}, editor: {} };
+    propertiesOverlayStateRef.current = { viewer: {}, editor: {} };
+    propertiesOverlayZoomBucketRef.current = { viewer: "", editor: "" };
+    playbackDecorStateRef.current = {
+      viewer: createPlaybackDecorRuntimeState(),
+      editor: createPlaybackDecorRuntimeState(),
+    };
+    playbackBboxCacheRef.current = { viewer: {}, editor: {} };
+    focusMarkerStateRef.current = { viewer: [], editor: [] };
+    aiQuestionPanelStateRef.current = {
+      viewer: { overlayId: null, elementId: "" },
+      editor: { overlayId: null, elementId: "" },
+    };
+    aiQuestionPanelTargetRef.current = { viewer: "", editor: "" };
+    selectedMarkerStateRef.current = { viewer: "", editor: "" };
+    selectionImportGuardRef.current = { viewer: "", editor: "" };
+    focusStateRef.current = {
+      viewer: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+      editor: { elementId: "", timer: 0, markerClass: "fpcNodeFocus" },
+    };
+    flashStateRef.current = {
+      viewer: createFlashRuntimeState(),
+      editor: createFlashRuntimeState(),
+    };
+    viewerRef.current = null;
+    modelerRef.current = null;
+    viewerReadyRef.current = false;
+    modelerReadyRef.current = false;
+    userViewportTouchedRef.current = false;
+    lastModelerXmlHashRef.current = "";
+    modelerInstanceMetaRef.current = { id: 0, containerKey: "" };
+    viewerInstanceMetaRef.current = { id: 0, containerKey: "" };
+    suppressViewboxEventRef.current = 0;
+    ensureVisiblePromiseRef.current = null;
+    ensureVisibleCycleRef.current = 0;
+    ensureEpochRef.current += 1;
+    modelerImportInFlightRef.current = { sid: "", xmlHash: "", promise: null };
+    runtimeTokenRef.current += 1;
+    logRuntimeTrace("destroy", {
+      sid: sidBeforeDestroy,
+      mode: "modeler",
+      token: Number(runtimeTokenRef.current || 0),
+      instanceId: Number(prevModelerMeta.id || 0),
+      containerKey: String(prevModelerMeta.containerKey || "-"),
+    });
+    logRuntimeTrace("destroy", {
+      sid: sidBeforeDestroy,
+      mode: "viewer",
+      token: Number(runtimeTokenRef.current || 0),
+      instanceId: Number(prevViewerMeta.id || 0),
+      containerKey: String(prevViewerMeta.containerKey || "-"),
+    });
+    trackRuntimeStatus(
+      {
+        token: runtimeTokenRef.current,
+        ready: false,
+        defs: false,
+        destroyed: true,
+        reason: "destroyRuntime",
+      },
+      "destroyRuntime",
+    );
+    viewerInitPromiseRef.current = null;
+    modelerInitPromiseRef.current = null;
+    try {
+      if (viewerEl.current) viewerEl.current.innerHTML = "";
+    } catch {
+    }
+    try {
+      if (editorEl.current) editorEl.current.innerHTML = "";
+    } catch {
+    }
+    try {
+      if (typeof window !== "undefined" && window.__FPC_E2E_MODELER__ === prevModeler) {
+        window.__FPC_E2E_MODELER__ = null;
+      }
+    } catch {
+    }
+    try {
+      if (typeof window !== "undefined" && window.__FPC_E2E_RUNTIME__ === modelerRuntime) {
+        window.__FPC_E2E_RUNTIME__ = null;
+      }
+    } catch {
+    }
+  }
+
+  async function loadFromBackend(sid, token = 0, options = {}) {
+    const s = String(sid || "");
+    if (token && token !== loadTokenRef.current) return;
+    if (s !== activeSessionRef.current) return;
+    if (!s) {
+      applyXmlSnapshot("");
+      setSrcHint("");
+      setErr("");
+      return;
+    }
+
+    // Use the App-level BPMN XML cache when available to avoid a backend round-trip.
+    // This is the key path that makes subprocess return instantaneous.
+    const cachedXml = bpmnXmlCacheRef?.current?.get(s);
+    if (cachedXml?.trim()) {
+      applyXmlSnapshot(cachedXml, "cache");
+      setErr("");
+      logBpmnTrace("loadSnapshot.cache", cachedXml, {
+        sid: s,
+        status: 200,
+        rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
+      });
+      return;
+    }
+
+    const coordinator = ensureBpmnCoordinator();
+    const loaded = await coordinator.reload({
+      reason: options?.reason || "stage_load",
+      preferStore: options?.forceRemote === true ? false : options?.preferStore === true,
+      rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
+    });
+
+    if (token && token !== loadTokenRef.current) return;
+    if (s !== activeSessionRef.current) return;
+
+    if (!loaded?.ok) {
+      if (Number(loaded?.status) === 404) {
+        applyXmlSnapshot("");
+        setSrcHint("");
+        setErr(`Сессия ${s} не найдена. Обновите список сессий или создайте новую API-сессию.`);
+      } else {
+        setErr(String(loaded?.error || "failed to load bpmn"));
+      }
+      return;
+    }
+
+    if (!loaded.applied) {
+      const reason = String(loaded.reason || "");
+      if (reason === "store_priority" || reason === "older_rev" || reason === "dirty_local_newer") {
+        if (loaded.source) setSrcHint(String(loaded.source));
+        setErr("");
+        return;
+      }
+    }
+
+    const xmlText = String(loaded.xml || "");
+    const source = String(loaded.source || "backend");
+    setErr("");
+    if (source) setSrcHint(source);
+    logBpmnTrace(`loadSnapshot.${source}`, xmlText, {
+      sid: s,
+      status: Number(loaded.status || 200),
+      rev: Number(loaded.loadedRev || loaded.rev || 0),
+    });
+    if (bpmnXmlCacheRef?.current && xmlText.trim()) {
+      bpmnXmlCacheRef.current.set(s, xmlText);
+    }
+  }
+
+  async function ensureViewer() {
+    if (viewerRef.current) return viewerRef.current;
+    if (viewerInitPromiseRef.current) return viewerInitPromiseRef.current;
+    viewerInitPromiseRef.current = (async () => {
+      try {
+        disableBpmnZoomScroll(viewerRef.current);
+        if (viewerEl.current) viewerEl.current.innerHTML = "";
+      } catch {
+      }
+      const mod = await import("bpmn-js/lib/NavigatedViewer");
+      const Viewer = mod.default || mod;
+      const v = new Viewer({
+        container: viewerEl.current,
+        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor, zeebe: zeebeModdleDescriptor },
+        deferUpdate: true,
+      });
+      instrumentBpmnInst(v, "viewer");
+      runtimeInstanceSeq += 1;
+      viewerInstanceMetaRef.current = {
+        id: runtimeInstanceSeq,
+        containerKey: ensureContainerKey(viewerEl.current),
+      };
+      logRuntimeTrace("init", {
+        sid: String(activeSessionRef.current || sessionId || "-"),
+        mode: "viewer",
+        token: Number(runtimeTokenRef.current || 0),
+        instanceId: Number(viewerInstanceMetaRef.current.id || 0),
+        containerKey: String(viewerInstanceMetaRef.current.containerKey || "-"),
+      });
+      viewerReadyRef.current = false;
+      try {
+        const eventBus = v.get("eventBus");
+        if (viewerCullerRef.current) {
+          viewerCullerRef.current.dispose();
+          viewerCullerRef.current = null;
+        }
+        // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
+        // viewport culling caused shapes to disappear permanently on pan.
+        // viewerCullerRef.current = createViewportCuller(v, { ... });
+        if (viewerDecorBoundInstanceRef.current !== v) {
+          viewerStageEventsUnbindRef.current?.();
+          viewerSubprocessUnbindRef.current?.();
+          viewerStageEventsUnbindRef.current = bindViewerStageEvents({
+            eventBus,
+            inst: v,
+            isSelectableElement,
+            asArray,
+            selectionImportGuardRef,
+            traceSelectionContinuity,
+            clearSelectedDecor,
+            emitElementSelectionChange,
+            clearAiQuestionPanel,
+            setSelectedDecor,
+            buildInsertBetweenCandidate,
+            emitElementSelection,
+            syncAiQuestionPanelWithSelection,
+            suppressViewboxEventRef,
+            userViewportTouchedRef,
+            getCanvasSnapshot,
+            logViewAction,
+            view,
+            sessionId,
+            runtimeTokenRef,
+            emitViewboxChanged,
+            applyPropertiesOverlayDecorForZoomChange,
+            onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+            onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
+            contextMenuInteractionRef,
+            viewportCuller: viewerCullerRef.current,
+            onViewboxChangedForOverlays: handleViewboxChangedForOverlays,
+          });
+          viewerSubprocessUnbindRef.current = bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef);
+          viewerDecorBoundInstanceRef.current = v;
+        }
+        } catch {
+        }
+      viewerRef.current = v;
+      return v;
+    })();
+    try {
+      return await viewerInitPromiseRef.current;
+    } finally {
+      viewerInitPromiseRef.current = null;
+    }
+  }
+
+  async function ensureModeler() {
+    if (modelerRef.current) {
+      try {
+        if (typeof window !== "undefined") {
+          window.__FPC_E2E_MODELER__ = modelerRef.current;
+        }
+      } catch {
+      }
+      return modelerRef.current;
+    }
+    if (modelerInitPromiseRef.current) return modelerInitPromiseRef.current;
+    modelerInitPromiseRef.current = (async () => {
+      const runtime = ensureModelerRuntime();
+      const layoutReady = await waitForNonZeroRect(() => editorEl.current, {
+        sid: String(activeSessionRef.current || sessionId || "-"),
+        token: Number(runtimeTokenRef.current || 0),
+        reason: "ensure_modeler_init",
+        timeoutMs: 5000,
+      });
+      if (!layoutReady.ok) {
+        throw new Error("layout_not_ready_before_modeler_init");
+      }
+      try {
+        disableBpmnZoomScroll(modelerRef.current);
+        disableBpmnZoomScroll(runtime?.getInstance?.());
+        if (editorEl.current) editorEl.current.innerHTML = "";
+      } catch {
+      }
+      const m = await runtime.init(editorEl.current, { mode: "modeler" });
+      instrumentBpmnInst(m, "modeler");
+      runtimeInstanceSeq += 1;
+      modelerInstanceMetaRef.current = {
+        id: runtimeInstanceSeq,
+        containerKey: ensureContainerKey(editorEl.current),
+      };
+      logRuntimeTrace("init", {
+        sid: String(activeSessionRef.current || sessionId || "-"),
+        mode: "modeler",
+        token: Number(runtimeTokenRef.current || 0),
+        instanceId: Number(modelerInstanceMetaRef.current.id || 0),
+        containerKey: String(modelerInstanceMetaRef.current.containerKey || "-"),
+      });
+      const runtimeStatus = runtime.getStatus();
+      runtimeTokenRef.current = Number(runtimeStatus?.token || runtimeTokenRef.current || 0);
+      modelerReadyRef.current = !!runtimeStatus?.ready && !!runtimeStatus?.defs;
+      try {
+          if (m && modelerDecorBoundInstanceRef.current !== m) {
+            const eventBus = m.get("eventBus");
+            if (modelerCullerRef.current) {
+              modelerCullerRef.current.dispose();
+              modelerCullerRef.current = null;
+            }
+            // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
+            // viewport culling caused shapes to disappear permanently on pan.
+            // modelerCullerRef.current = createViewportCuller(m, { ... });
+          modelerStageEventsUnbindRef.current?.();
+          modelerSubprocessUnbindRef.current?.();
+          modelerStageEventsUnbindRef.current = bindModelerStageEvents({
+            eventBus,
+            inst: m,
+            isSelectableElement,
+            asArray,
+            selectionImportGuardRef,
+            traceSelectionContinuity,
+            clearSelectedDecor,
+            emitElementSelectionChange,
+            clearAiQuestionPanel,
+            setSelectedDecor,
+            buildInsertBetweenCandidate,
+            emitElementSelection,
+            syncAiQuestionPanelWithSelection,
+            suppressViewboxEventRef,
+            userViewportTouchedRef,
+            getCanvasSnapshot,
+            logViewAction,
+            view,
+            sessionId,
+            runtimeTokenRef,
+            emitViewboxChanged,
+            applyPropertiesOverlayDecorForZoomChange,
+            onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+            onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
+            contextMenuInteractionRef,
+            invalidateShapeTitleLookup,
+            runImmediateEditorFanout,
+            applyTaskTypeDecor,
+            applyLinkEventDecor,
+            applyHappyFlowDecor,
+            applyRobotMetaDecor,
+            captureShapeReplacePre,
+            applyShapeReplacePost,
+            viewportCuller: modelerCullerRef.current,
+            onViewboxChangedForOverlays: handleViewboxChangedForOverlays,
+          });
+          modelerSubprocessUnbindRef.current = bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef);
+          modelerDecorBoundInstanceRef.current = m;
+        }
+      } catch {
+      }
+      modelerRef.current = m;
+      try {
+        if (typeof window !== "undefined") {
+          window.__FPC_E2E_MODELER__ = m;
+        }
+      } catch {
+      }
+      return m;
+    })();
+    try {
+      return await modelerInitPromiseRef.current;
+    } finally {
+      modelerInitPromiseRef.current = null;
+    }
+  }
+
+  function createRenderLifecycleCtx() {
+    return {
+      loadTransition,
+      ensureViewer,
+      invalidateShapeTitleLookup,
+      viewerRef,
+      beginImportSelectionGuard,
+      runtimeTokenRef,
+      viewerReadyRef,
+      logRuntimeTrace,
+      activeSessionRef,
+      sessionId,
+      focusElementId: pendingFocusElementIdRef.current,
+      viewerInstanceMetaRef,
+      fnv1aHex,
+      logImportTrace,
+      logBpmnTrace,
+      finishImportSelectionGuard,
+      ensureCanvasVisibleAndFit,
+      suppressViewboxEvents,
+      probeCanvas,
+      ensureVisibleOnInstance,
+      emitCurrentViewboxSnapshot,
+      emitViewboxChanged,
+      applyTaskTypeDecor,
+      applyLinkEventDecor,
+      applyHappyFlowDecor,
+      applyRobotMetaDecor,
+      applyBottleneckDecor,
+      applyInterviewDecor,
+      applyUserNotesDecor,
+      applySubprocessDiscussionDecor,
+      applyStepTimeDecor,
+      modelerImportInFlightRef,
+      modelerInstanceMetaRef,
+      ensureModelerRuntime,
+      ensureModeler,
+      waitForNonZeroRect,
+      editorEl,
+      modelerReadyRef,
+      shouldLogBpmnTrace,
+      modelerRef,
+      hydrateRobotMetaFromImportedBpmn,
+      hydrateCamundaExtensionsFromImportedBpmn,
+      waitAnimationFrame,
+      lastModelerXmlHashRef,
+      applyXmlSnapshot,
+    };
+  }
+
+  function applyPendingFocusAndViewport() {
+    if (pendingFocusElementIdRef.current) {
+      appliedFocusElementIdRef.current = pendingFocusElementIdRef.current;
+      pendingFocusElementIdRef.current = "";
+      try {
+        onFocusElementApplied?.();
+      } catch {
+        // ignore callback errors
+      }
+    }
+    if (pendingRestoreViewportRef.current) {
+      const snapshot = pendingRestoreViewportRef.current;
+      pendingRestoreViewportRef.current = null;
+      imperativeApi.restoreViewport(snapshot);
+      try {
+        onRestoreViewportSnapshotApplied?.();
+      } catch {
+        // ignore callback errors
+      }
+    }
+  }
+
+  async function renderViewer(nextXml) {
+    const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
+    applyPendingFocusAndViewport();
+    if (useExtensionOverlays && result?.ok !== false) {
+      overlayLifecycle.mountFromBpmn(viewerRef.current, "viewer");
+    }
+    return result;
+  }
+
+  async function renderModeler(nextXml) {
+    const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
+    applyPendingFocusAndViewport();
+    if (useExtensionOverlays && result?.ok !== false) {
+      overlayLifecycle.mountFromBpmn(modelerRef.current, "editor");
+    }
+    return result;
+  }
+
+  async function renderNewDiagramInModeler() {
+    return renderNewDiagramInModelerRuntime(createRenderLifecycleCtx());
+  }
+
+  useEffect(() => {
+    if (!useExtensionOverlays) return;
+    try {
+      const previewMap = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
+      const selected = asObject(selectedPropertiesOverlayPreview);
+      const selectedElementId = toText(selected?.elementId);
+      if (selectedElementId && selected?.enabled === true && asArray(selected?.items).length) {
+        previewMap[selectedElementId] = selected;
+      }
+      const previewMapSig = JSON.stringify(previewMap);
+      const maybeRemount = (inst, kind) => {
+        if (!inst || !hasDefinitionsLoaded(inst)) return;
+        // Extract once per instance: the same list feeds both the change
+        // signature and the mount (previously the mount re-walked the whole
+        // registry — load-freeze audit, fix 1).
+        const extractedOverlays = extractOverlaysFromBpmn(inst, v2OverlaysEnabled);
+        const nextSig = JSON.stringify({
+          enabled: v2OverlaysEnabled,
+          overlays: extractedOverlays,
+          legacyAlways: propertiesOverlayAlwaysEnabled,
+          legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
+          previewMap: previewMapSig,
+          hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
+        });
+        if (prevOverlaySigRef.current[kind] === nextSig) return;
+        prevOverlaySigRef.current[kind] = nextSig;
+        overlayLifecycle.mountFromBpmn(inst, kind, extractedOverlays);
+      };
+      if (v2OverlaysEnabled) {
+        // Entering (or staying in) V2 mode: remove any legacy property
+        // overlays so they cannot suppress or duplicate V2 cards. The legacy
+        // decor is gated through applyPropertiesOverlayDecor while V2 is on,
+        // but pre-existing cards (e.g. present when V2 gets toggled on) must
+        // be cleared explicitly — BEFORE the V2 mount below, otherwise
+        // hasLegacyPropertyOverlay suppresses the fresh V2 hosts and the
+        // element ends up with no card at all.
+        // (Fix cherry-picked from PR #524, Tier 1b.)
+        if (viewerRef.current) clearPropertiesOverlayDecor(viewerRef.current, "viewer");
+        if (modelerRef.current) clearPropertiesOverlayDecor(modelerRef.current, "editor");
+      }
+      maybeRemount(viewerRef.current, "viewer");
+      maybeRemount(modelerRef.current, "editor");
+    } catch {
+      // Re-mount failures are non-critical.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    useExtensionOverlays,
+    draft?.bpmn_meta,
+    v2OverlaysEnabled,
+    propertiesOverlayAlwaysEnabled,
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysPreviewByElementId,
+    overlayHiddenFields,
+    overlayLifecycle,
+  ]);
+
+  function createViewportCtx() {
+    return {
+      refs: {
+        activeSessionRef,
+        ensureEpochRef,
+        runtimeTokenRef,
+        ensureVisiblePromiseRef,
+        ensureVisibleCycleRef,
+        modelerRef,
+        viewerRef,
+        modelerRuntimeRef,
+        modelerInitPromiseRef,
+        modelerDecorBoundInstanceRef,
+        modelerReadyRef,
+        viewerReadyRef,
+        userViewportTouchedRef,
+        viewerInitPromiseRef,
+        lastModelerXmlHashRef,
+        editorEl,
+        viewerEl,
+      },
+      values: {
+        sessionId,
+        view,
+      },
+      helpers: {
+        getCanvasSnapshot,
+        waitForNonZeroRect,
+        probeCanvas,
+        safeFit,
+        waitAnimationFrame,
+        isAnyShapeInViewport,
+        logCanvasMetrics,
+        logViewAction,
+      },
+      callbacks: {
+        suppressViewboxEvents,
+        getInstanceMeta,
+        logEnsureTrace,
+        logStaleGuard,
+        getRecoveryXmlCandidate,
+        ensureModelerRuntime,
+        ensureModeler,
+        ensureViewer,
+        fnv1aHex,
+        applyTaskTypeDecor,
+        applyLinkEventDecor,
+        applyHappyFlowDecor,
+        applyRobotMetaDecor,
+        applyBottleneckDecor,
+        applyInterviewDecor,
+        applyUserNotesDecor,
+        applyStepTimeDecor,
+      },
+    };
+  }
+
+  function getRecoveryXmlCandidate() {
+    return String(
+      bpmnStoreRef.current?.getState?.()?.xml
+      || xml
+      || xmlDraft
+      || draftRef.current?.bpmn_xml
+      || "",
+    );
+  }
+
+  async function recoverByReimport(inst, xmlText, reason, cycleIndex = 0, guard = null) {
+    return viewportRecovery.recoverByReimport(createViewportCtx(), inst, {
+      xmlText,
+      reason,
+      cycleIndex,
+      guard,
+    });
+  }
+
+  async function recoverByHardReset(inst, xmlText, reason, cycleIndex = 0, guard = null) {
+    return viewportRecovery.recoverByHardReset(createViewportCtx(), inst, {
+      xmlText,
+      reason,
+      cycleIndex,
+      guard,
+    });
+  }
+
+  async function ensureVisibleOnInstance(inst, options = {}) {
+    return viewportRecovery.ensureVisibleOnInstance(createViewportCtx(), inst, options);
+  }
+
+  async function persistXmlSnapshot(rawXml, hintBase = "backend") {
+    const sid = String(sessionId || "");
+    if (!sid) return { ok: false, error: "missing session id" };
+    const out = String(rawXml || "");
+    const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
+    const startedAt = Date.now();
+    const persistStartCount = bumpSaveCounter("persist_started");
+    emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
+      sid,
+      reason: hintBase,
+      rev,
+      xml_len: out.length,
+    });
+    traceProcess("bpmn.persist_xml_snapshot_start", {
+      sid,
+      hint: hintBase,
+      rev,
+      xml_len: out.length,
+    });
+    logBpmnTrace("SAVE_PERSIST_STARTED", out, {
+      sid,
+      source: hintBase,
+      rev,
+      count: persistStartCount,
+    });
+    logBpmnTrace("persist.put.before", out, { sid, hint: hintBase, rev });
+      const r = await ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase);
+    traceProcess("bpmn.persist_xml_snapshot_backend", {
+      sid,
+      hint: hintBase,
+      ok: !!r.ok,
+      rev,
+      xml_len: out.length,
+    });
+    if (!r.ok) {
+      const msg = String(r.error || "Не удалось сохранить BPMN на backend");
+      setErr(msg);
+      const persistFailCount = bumpSaveCounter("persist_fail");
+      logBpmnTrace("SAVE_PERSIST_FAIL", out, {
+        sid,
+        source: hintBase,
+        status: Number(r.status || 0),
+        rev,
+        ms: Date.now() - startedAt,
+        count: persistFailCount,
+      });
+      emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
+        sid,
+        reason: hintBase,
+        rev,
+        status: Number(r.status || 0),
+        error_code: String(r.errorCode || ""),
+        error_details: r.errorDetails && typeof r.errorDetails === "object" ? r.errorDetails : null,
+        xml_len: out.length,
+        error: msg,
+      });
+      return {
+        ok: false,
+        error: msg,
+        status: Number(r.status || 0),
+        errorCode: String(r.errorCode || ""),
+        errorDetails: r.errorDetails && typeof r.errorDetails === "object" ? r.errorDetails : null,
+      };
+    }
+    setErr("");
+    logBpmnTrace("persist.put.done", out, { sid, hint: hintBase, status: r.status || 200 });
+    const persistDoneCount = bumpSaveCounter("persist_done");
+    logBpmnTrace("SAVE_PERSIST_DONE", out, {
+      sid,
+      source: hintBase,
+      status: Number(r.status || 200),
+      rev: Number(r.storedRev || rev),
+      ms: Date.now() - startedAt,
+      count: persistDoneCount,
+    });
+    emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
+      sid,
+      reason: hintBase,
+      rev: Number(r.storedRev || rev),
+      status: Number(r.status || 200),
+      diagram_state_version: Number(r.diagramStateVersion || 0),
+      xml_len: out.length,
+    });
+    applyXmlSnapshot(out, `${hintBase}(saved)`);
+    return {
+      ok: true,
+      xml: out,
+      source: `${hintBase}(saved)`,
+      diagramStateVersion: Number(r.diagramStateVersion || 0),
+    };
+  }
+
+  async function saveLocalFromModeler(options = {}) {
+    const force = options?.force === true;
+    const source = String(options?.source || (force ? "tab_switch" : "autosave")).trim() || "autosave";
+    const persistReason = String(options?.persistReason || source).trim() || source;
+    const requestedXmlOverride = String(options?.xmlOverride || "");
+    const trigger = String(options?.trigger || "").trim() || "manual";
+    const requestedSaveOwner = toText(options?.saveOwner || options?.owner).toLowerCase();
+    const isTemplateApplySave = requestedSaveOwner === "template_apply" || source === "template_apply" || trigger === "template_apply";
+    const resolvedSaveOwner = isTemplateApplySave ? "template_apply" : requestedSaveOwner;
+    const sid = String(sessionId || "");
+    const allowForceFallback = isLocalSessionId(sid);
+    if (!sid) return { ok: false, error: "missing session id" };
+    ensureBpmnStore();
+    const runtime = ensureModelerRuntime();
+    const coordinator = ensureBpmnCoordinator();
+    if (resolvedSaveOwner) {
+      coordinator.beginSingleWriter?.(resolvedSaveOwner, {
+        ttlMs: 15000,
+        reason: `${source}:save_local`,
+      });
+    }
+    const fallbackXml = String(
+      bpmnStoreRef.current?.getState?.()?.xml
+      || xml
+      || xmlDraft
+      || draft?.bpmn_xml
+      || "",
+    );
+
+    try {
+      if (force) {
+        await ensureModeler();
+      } else {
+        const status = runtime.getStatus();
+        runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
+      }
+
+      const activeModeler = modelerRef.current || runtime.getInstance?.();
+      const viewportSnapshot = (activeModeler && modelerReadyRef.current)
+        ? getCanvasSnapshot(activeModeler)
+        : null;
+      const viewportMeta = (
+        viewportSnapshot
+        && Number.isFinite(viewportSnapshot.zoom)
+        && viewportSnapshot.zoom > 0
+        && viewportSnapshot.viewbox
+        && Number.isFinite(viewportSnapshot.viewbox.x)
+        && Number.isFinite(viewportSnapshot.viewbox.y)
+        && Number.isFinite(viewportSnapshot.viewbox.width)
+        && Number.isFinite(viewportSnapshot.viewbox.height)
+      )
+        ? { viewport: { zoom: viewportSnapshot.zoom, viewbox: { ...viewportSnapshot.viewbox } } }
+        : null;
+      const saveBpmnMeta = viewportMeta ? { ...viewportMeta } : undefined;
+      if (saveBpmnMeta && bpmnStoreRef.current?.markDirty) {
+        bpmnStoreRef.current.markDirty("viewport_snapshot");
+      }
+      let preFlushXml = "";
+      const robotSync = syncRobotMetaToModeler(activeModeler);
+      const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
+      const templateInsertClearGuardIds = readTemplateInsertCamundaClearGuardIds();
+      const camundaSync = templateInsertSeedInFlight
+        ? { ok: true, changed: 0, reason: "template_insert_seed_inflight", skipped: true }
+        : syncCamundaExtensionsToModeler(activeModeler, {
+          preserveManagedForElementIds: templateInsertClearGuardIds,
+        });
+      const camundaSyncCompleted = Boolean(camundaSync?.ok) && !Boolean(camundaSync?.skipped);
+      if (
+        templateInsertClearGuardIds.length
+        && camundaSyncCompleted
+        && Number(camundaSync?.preservedManagedSkips || 0) === 0
+      ) {
+        clearTemplateInsertCamundaClearGuard();
+      }
+      if (!robotSync?.ok && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.warn(`[ROBOT_META] sync_before_save_failed sid=${sid} reason=${String(robotSync?.reason || "unknown")}`);
+      }
+      if (!camundaSync?.ok && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.warn(`[CAMUNDA_EXT] sync_before_save_failed sid=${sid} reason=${String(camundaSync?.reason || "unknown")}`);
+      }
+      if (templateInsertSeedInFlight && shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(`[CAMUNDA_EXT] sync_before_save_skipped sid=${sid} reason=template_insert_seed_inflight`);
+      }
+      if (
+        !templateInsertSeedInFlight
+        && templateInsertClearGuardIds.length
+        && Number(camundaSync?.preservedManagedSkips || 0) > 0
+        && shouldLogBpmnTrace()
+      ) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[CAMUNDA_EXT] sync_before_save_preserved sid=${sid} preserved=${Number(camundaSync?.preservedManagedSkips || 0)}`,
+        );
+      }
+
+      if (activeModeler && typeof activeModeler.saveXML === "function") {
+        try {
+          const probeOut = await activeModeler.saveXML({ format: true });
+          preFlushXml = String(probeOut?.xml || "");
+          if (shouldLogBpmnTrace()) {
+            // eslint-disable-next-line no-console
+            console.debug(`[CAMUNDA_EXT] pre_flush_xml len=${preFlushXml.length} prop=${preFlushXml.includes("fromXmlProp")} activeSameRef=${activeModeler === modelerRef.current}`);
+          }
+          publishE2ESaveProbe({
+            sid,
+            source,
+            persistReason,
+            beforeFlushXml: preFlushXml,
+          });
+        } catch {
+          preFlushXml = "";
+          publishE2ESaveProbe({
+            sid,
+            source,
+            persistReason,
+            beforeFlushXml: "",
+          });
+        }
+      }
+
+      const currentState = bpmnStoreRef.current?.getState?.() || {};
+      const primaryCandidateXml = String(currentState.xml || fallbackXml || "");
+      const shouldUseCanonicalPrimaryPersist = shouldUseCanonicalPrimaryManualSave({
+        source,
+        persistReason,
+        canonicalXml: preFlushXml,
+        primaryCandidateXml,
+      });
+      if (shouldUseCanonicalPrimaryPersist) {
+        publishE2ESaveProbe({
+          sid,
+          source,
+          persistReason,
+          manualCanonicalPrimaryPersist: true,
+          manualCanonicalPrimaryCandidateXml: primaryCandidateXml,
+          manualCanonicalPrimaryXml: preFlushXml,
+        });
+      }
+
+      const primaryXmlOverride = requestedXmlOverride.trim()
+        ? requestedXmlOverride
+        : (shouldUseCanonicalPrimaryPersist ? preFlushXml : "");
+      const flushed = await coordinator.flushSave(persistReason, {
+        force,
+        trigger,
+        saveOwner: resolvedSaveOwner,
+        xmlOverride: primaryXmlOverride,
+        bpmnMeta: saveBpmnMeta,
+      });
+      const nextState = bpmnStoreRef.current?.getState?.() || {};
+      const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
+      const out = rawOut;
+      publishE2ESaveProbe({
+        sid,
+        source,
+        persistReason,
+        rawOut,
+        transformedOut: out,
+      });
+
+      if (!flushed?.ok) {
+        if (force && allowForceFallback && out.trim()) {
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_force_fallback`);
+          }
+          return { ok: true, xml: out, source: "fallback" };
+        }
+        if (resolvedSaveOwner) {
+          coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fail`);
+        }
+        return {
+          ok: false,
+          error: String(flushed?.error || "saveXML failed"),
+          status: Number(flushed?.status || 0),
+          errorCode: String(flushed?.errorCode || ""),
+          errorDetails: flushed?.errorDetails && typeof flushed.errorDetails === "object" ? flushed.errorDetails : null,
+          staleRetryAttempts: Number(flushed?.staleRetryAttempts || 0),
+          xml: out,
+        };
+      }
+
+      if (flushed.pending) {
+        return { ok: true, pending: true, xml: out, source: "pending" };
+      }
+
+      let finalOut = out;
+      let finalStoredRev = Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0);
+      let finalDiagramStateVersion = Number(flushed?.diagramStateVersion || 0);
+      let finalVersionSnapshot = (
+        flushed?.bpmnVersionSnapshot && typeof flushed.bpmnVersionSnapshot === "object"
+          ? flushed.bpmnVersionSnapshot
+          : null
+      );
+
+      if (force) {
+        coordinator.clearPendingWork?.(`${source}:after_force_flush`);
+      }
+
+      traceProcess("bpmn.save_modeler_xml", {
+        sid,
+        xml_len: finalOut.length,
+      });
+      const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
+      applyXmlSnapshot(finalOut, hint);
+      if (resolvedSaveOwner) {
+        coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_done`);
+      }
+      logBpmnTrace("saveXML.modeler.after", finalOut, { sid, trigger });
+      return {
+        ok: true,
+        xml: finalOut,
+        source: hint,
+        storedRev: finalStoredRev,
+        diagramStateVersion: finalDiagramStateVersion,
+        staleRetryApplied: flushed?.staleRetryApplied === true,
+        staleRetryAttempts: Number(flushed?.staleRetryAttempts || 0),
+        staleRetryChangedKeys: flushed?.staleRetryChangedKeys,
+        bpmnVersionSnapshot: finalVersionSnapshot,
+      };
+    } catch (e) {
+      const msg = String(e?.message || e || "saveXML failed");
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.error(`[BPMN] saveXML.modeler.error ${msg}\n${String(e?.stack || "")}`);
+      }
+      if (fallbackXml.trim()) {
+        if (force && allowForceFallback) {
+          const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
+          const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`, { bpmnMeta: saveBpmnMeta });
+          if (!persisted.ok) {
+            if (resolvedSaveOwner) {
+              coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_fail`);
+            }
+            return {
+              ok: false,
+              error: String(persisted.error || msg),
+              status: Number(persisted?.status || 0),
+              errorCode: String(persisted?.errorCode || ""),
+              errorDetails: persisted?.errorDetails && typeof persisted.errorDetails === "object" ? persisted.errorDetails : null,
+              xml: fallbackXml,
+            };
+          }
+          if (resolvedSaveOwner) {
+            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_done`);
+          }
+          return { ok: true, xml: fallbackXml, source: "fallback" };
+        }
+      }
+      if (resolvedSaveOwner) {
+        coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_error`);
+      }
+      return {
+        ok: false,
+        error: msg || "saveXML failed",
+        status: Number(e?.status || 0),
+        errorCode: String(e?.code || ""),
+        errorDetails: e?.details && typeof e.details === "object" ? e.details : null,
+      };
+    }
+  }
+
+  async function saveXmlDraftText(overrideValue) {
+    const raw = String(overrideValue ?? xmlDraft ?? "");
+    const vErr = validateBpmnXmlText(raw);
+    if (vErr) {
+      setErr(vErr);
+      logBpmnTrace("VALIDATION_FAIL", raw, {
+        sid: String(sessionId || ""),
+        source: "xml_save",
+        error: vErr,
+      });
+      return { ok: false, error: vErr };
+    }
+    setXmlSaveBusy(true);
+    try {
+      return await persistXmlSnapshot(raw, "backend");
+    } finally {
+      setXmlSaveBusy(false);
+    }
+  }
+
+  async function seedNew() {
+    await renderNewDiagramInModeler();
+    const runtime = ensureModelerRuntime();
+    const xmlRes = await runtime.getXml({ format: true });
+    if (xmlRes?.ok) {
+      const seeded = String(xmlRes.xml || "");
+      if (seeded.trim()) {
+        applyXmlSnapshot(seeded, "local");
+      }
+    }
+  }
+
+  function clearLocalOnly() {
+    const sid = String(sessionId || "");
+    if (!sid) return;
+    if (isLocalSessionId(sid)) {
+      localStorage.removeItem(localKey(sid));
+      setSrcHint("backend");
+    }
+  }
+
+  useEffect(() => {
+    const sid = String(sessionId || "");
+    const prevSid = String(activeSessionRef.current || "");
+    prevSessionRef.current = prevSid;
+    if (sid !== prevSid) {
+      lastRestoredViewportSessionRef.current = "";
+    }
+    if (shouldLogBpmnTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(`[SESSION] activate sid=${sid || "-"} prevSid=${prevSid || "-"} tab=${view === "xml" ? "xml" : "diagram"}`);
+    }
+
+    // Soft return path: if we have cached XML for the target session and a pending viewport
+    // snapshot to restore, keep the existing BPMN runtime alive and let the render effect
+    // re-import the cached XML. This avoids the visible flash caused by destroyRuntime().
+    const cachedXml = sid ? bpmnXmlCacheRef?.current?.get(sid) : null;
+    if (cachedXml?.trim() && restoreViewportSnapshot) {
+      activeSessionRef.current = sid;
+      userMutationObservedRef.current = false;
+      ensureEpochRef.current += 1;
+      robotMetaHydrateStateRef.current = { key: "" };
+      camundaHydrateStateRef.current = { key: "" };
+      importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      setErr("");
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[SESSION] soft_return sid=${sid || "-"} len=${cachedXml.length} hash=${fnv1aHex(cachedXml)}`,
+        );
+      }
+      return;
+    }
+
+    activeSessionRef.current = sid;
+    userMutationObservedRef.current = false;
+    ensureEpochRef.current += 1;
+    loadTransition("reset");
+    robotMetaHydrateStateRef.current = { key: "" };
+    camundaHydrateStateRef.current = { key: "" };
+    importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+    copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+    destroyRuntime();
+    setErr("");
+    const draftNow = asObject(draftRef.current);
+    const draftSid = String(draftNow?.session_id || draftNow?.id || "").trim();
+    const draftXml = sid && draftSid === sid ? String(draftNow?.bpmn_xml || "") : "";
+    if (draftXml.trim()) {
+      applyXmlSnapshot(draftXml, "draft_bootstrap");
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[SESSION] bootstrap sid=${sid || "-"} source=draft_bootstrap len=${draftXml.length} hash=${fnv1aHex(draftXml)}`,
+        );
+      }
+    } else {
+      setSrcHint("");
+      applyXmlSnapshot("");
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(`[SESSION] bootstrap sid=${sid || "-"} source=empty len=0 hash=${fnv1aHex("")}`);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const sid = String(sessionId || "");
+    const readProjectId = () => String(
+      draftRef.current?.project_id
+      || draftRef.current?.projectId
+      || activeProjectId
+      || "",
+    );
+    const onBeforeUnload = () => {
+      traceProcess("bpmn.lifecycle.beforeunload", {
+        sid,
+        project_id: readProjectId(),
+        view: String(view || "diagram"),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+      });
+    };
+    const onPageHide = (event) => {
+      traceProcess("bpmn.lifecycle.pagehide", {
+        sid,
+        project_id: readProjectId(),
+        persisted: event?.persisted ? 1 : 0,
+        view: String(view || "diagram"),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+      });
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+      traceProcess("bpmn.lifecycle.visibility_hidden", {
+        sid,
+        project_id: readProjectId(),
+        view: String(view || "diagram"),
+        user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
+      });
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [activeProjectId, sessionId, view]);
+
+  useEffect(() => {
+    const sid = String(sessionId || "");
+    activeSessionRef.current = sid;
+    userMutationObservedRef.current = false;
+    const token = loadTokenRef.current + 1;
+    loadTokenRef.current = token;
+    if (!sid) return;
+    loadFromBackend(sid, token, { reason: "session_reload" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, reloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const runId = renderRunRef.current + 1;
+    renderRunRef.current = runId;
+    const expectedSid = String(sessionId || "");
+    let staleLogged = false;
+
+    const isStale = (phase = "") => {
+      const sidNow = String(activeSessionRef.current || "");
+      const sidMismatch = !!expectedSid && !!sidNow && sidNow !== expectedSid;
+      const stale = cancelled || renderRunRef.current !== runId || sidMismatch;
+      if (stale && !staleLogged && shouldLogBpmnTrace()) {
+        staleLogged = true;
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[RENDER] stale_skip sid=${expectedSid || "-"} currentSid=${sidNow || "-"} runId=${runId} activeRun=${Number(renderRunRef.current || 0)} phase=${String(phase || "-")}`,
+        );
+      }
+      return stale;
+    };
+
+    async function run() {
+      if (!sessionId || isStale("start")) return;
+      const sid = String(sessionId || "");
+      const draftXml = String(draft?.bpmn_xml || "");
+      const resolvedXmlRaw = (xml && xml.trim()) ? xml : draftXml;
+      const resolvedXml = normalizeTechnicalBpmnLabelsInXml(resolvedXmlRaw, draft?.nodes);
+      const resolvedHash = fnv1aHex(resolvedXml);
+      // Property-only saves update bpmn_meta but do not change the diagram XML.
+      // The normal dependency array still fires because bpmn_meta/viewport object
+      // identity changes; skip the render when the XML is unchanged.
+      const skipRenderTs = Number(draft?._skip_bpmn_render || 0);
+      if (
+        skipRenderTs > 0
+        && Date.now() - skipRenderTs < 1000
+        && modelerRef.current
+        && modelerReadyRef.current
+        && hasDefinitionsLoaded(modelerRef.current)
+      ) {
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.debug(`[BPMN] render.skip property-only sid=${sid} hash=${resolvedHash}`);
+        }
+        return;
+      }
+      const storeEvent = lastStoreEventRef.current || {};
+      try {
+        if (view === "editor" || view === "diagram") {
+          const localSession = isLocalSessionId(sid);
+          if (!resolvedXml || !resolvedXml.trim()) {
+            // Wait until load source is resolved to avoid creating a transient empty diagram
+            // before backend/draft XML arrives.
+            if (!srcHint || isStale("modeler.no_xml")) return;
+            if (localSession) {
+              if (isStale("modeler.create_local.before")) return;
+              await renderNewDiagramInModeler();
+              if (isStale("modeler.create_local.after")) return;
+              return;
+            }
+            if (isStale("modeler.create_remote.before")) return;
+            await renderNewDiagramInModeler();
+            if (isStale("modeler.create_remote.after")) return;
+            return;
+          }
+          if ((!xml || !xml.trim()) && draftXml.trim()) {
+            applyXmlSnapshot(draftXml, srcHint || "draft");
+          }
+          const modelerHasDefinitions = !!modelerRef.current && hasDefinitionsLoaded(modelerRef.current);
+          const modelerReady = !!modelerRef.current && !!modelerReadyRef.current && modelerHasDefinitions;
+          const source = String(storeEvent.source || "");
+          const reason = String(storeEvent.reason || "");
+
+          function tryRestorePersistedViewport(restoreReason) {
+            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
+            const pvb = persistedViewport?.viewbox;
+            const valid = !!persistedViewport
+              && Number.isFinite(persistedViewport.zoom)
+              && persistedViewport.zoom > 0
+              && !!pvb
+              && Number.isFinite(pvb.x)
+              && Number.isFinite(pvb.y)
+              && Number.isFinite(pvb.width)
+              && Number.isFinite(pvb.height);
+            try {
+              if (typeof window !== "undefined") {
+                window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__ = window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__ || [];
+                window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__.push({
+                  reason: restoreReason,
+                  sid,
+                  runId,
+                  valid,
+                  hasUserTouch: userViewportTouchedRef.current,
+                  alreadyRestored: lastRestoredViewportSessionRef.current === sid,
+                  hasPending: !!pendingRestoreViewportRef.current,
+                  hasPropSnapshot: !!restoreViewportSnapshot,
+                  persistedViewport: valid ? JSON.parse(JSON.stringify(persistedViewport)) : null,
+                });
+              }
+            } catch {
+              // ignore
+            }
+            if (lastRestoredViewportSessionRef.current === sid) return;
+            if (userViewportTouchedRef.current) return;
+            if (restoreViewportSnapshot || pendingRestoreViewportRef.current) return;
+            if (!valid) return;
+            const snapshotRunId = runId;
+            window.requestAnimationFrame(() => {
+              window.setTimeout(() => {
+                if (renderRunRef.current !== snapshotRunId) return;
+                if (lastRestoredViewportSessionRef.current === sid) return;
+                if (userViewportTouchedRef.current) return;
+                try {
+                  imperativeApi.restoreViewport(persistedViewport);
+                  lastRestoredViewportSessionRef.current = sid;
+                  userViewportTouchedRef.current = true;
+                  if (shouldLogBpmnTrace()) {
+                    // eslint-disable-next-line no-console
+                    console.debug(`[BPMN] restored persisted viewport (${restoreReason})`, persistedViewport);
+                  }
+                } catch {
+                  // persisted viewport restore best-effort
+                }
+              }, 120);
+            });
+          }
+
+          const isInternalModelerUpdate = reason === "setXml"
+            && (
+              source === "runtime_change"
+              || source === "flush_save"
+              || source === "backend(saved)"
+              || source === "local(saved)"
+            );
+          if (modelerReady && isInternalModelerUpdate) {
+            lastModelerXmlHashRef.current = resolvedHash;
+            if (isStale("modeler.keep_view.before")) return;
+            await ensureCanvasVisibleAndFit(modelerRef.current, "renderModeler.keep_view", sid, {
+              reason: "editor_internal_update",
+              tab: "diagram",
+              token: runtimeTokenRef.current,
+              allowFit: false,
+              suppressViewbox: suppressViewboxEvents,
+            });
+            if (isStale("modeler.keep_view.after")) return;
+            return;
+          }
+          if (modelerHasDefinitions && lastModelerXmlHashRef.current === resolvedHash) {
+            if (isStale("modeler.same_hash.before")) return;
+            await ensureCanvasVisibleAndFit(modelerRef.current, "renderModeler.same_hash", sid, {
+              reason: "editor_same_hash",
+              tab: "diagram",
+              token: runtimeTokenRef.current,
+              allowFit: false,
+              suppressViewbox: suppressViewboxEvents,
+            });
+            if (isStale("modeler.same_hash.after")) return;
+            tryRestorePersistedViewport("same_hash");
+            return;
+          }
+          const preRenderSnapshot = modelerRef.current ? getCanvasSnapshot(modelerRef.current) : null;
+          const hadUserViewportTouch = userViewportTouchedRef.current === true;
+          userViewportTouchedRef.current = false;
+          if (isStale("modeler.render.before")) return;
+          await renderModeler(resolvedXml);
+          if (isStale("modeler.render.after")) return;
+          if (preRenderSnapshot && preRenderSnapshot.zoom > 0 && hadUserViewportTouch) {
+            const snapshotRunId = runId;
+            const restore = () => {
+              if (renderRunRef.current !== snapshotRunId) return;
+              try {
+                const canvas = modelerRef.current?.get?.("canvas");
+                if (canvas) {
+                  canvas.viewbox(preRenderSnapshot.viewbox);
+                  canvas.zoom(preRenderSnapshot.zoom);
+                  userViewportTouchedRef.current = true;
+                }
+              } catch {
+                // viewport recovery best-effort
+              }
+            };
+            window.requestAnimationFrame(() => {
+              window.setTimeout(restore, 120);
+            });
+          } else {
+            tryRestorePersistedViewport("render_modeler");
+          }
+        }
+      } catch (e) {
+        if (isStale("catch")) return;
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.error(`[BPMN] render.error ${String(e?.message || e)}\n${String(e?.stack || "")}`);
+        }
+        if (!cancelled) setErr(String(e?.message || e));
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, xml, sessionId, draft?.bpmn_xml, draft?.nodes, draft?.title, draft?.bpmn_meta?.viewport, srcHint]);
+
+  useEffect(() => {
+    const fromDraft = String(draft?.bpmn_xml || "");
+    if (xmlDirty) return;
+    if ((xml && xml.trim()) || !fromDraft.trim()) return;
+    applyXmlSnapshot(fromDraft, srcHint || "draft");
+  }, [draft?.bpmn_xml, xml, srcHint, xmlDirty]);
+
+  useEffect(() => {
+    const authoritativeXml = String(draft?._apply_bpmn_xml ? draft?.bpmn_xml || "" : "");
+    if (!authoritativeXml.trim()) return;
+    applyXmlSnapshot(authoritativeXml, String(draft?._sync_source || "saveBpmnState"));
+  }, [draft?._apply_bpmn_xml, draft?.bpmn_xml]);
+
+  useEffect(() => {
+    const prev = String(prevViewRef.current || "");
+    prevViewRef.current = view;
+    if ((view === "editor" || view === "diagram") && prev !== "editor" && prev !== "diagram") {
+      const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
+      const draftXml = String(draftRef.current?.bpmn_xml || "");
+      const runtimeStatus = modelerRuntimeRef.current?.getStatus?.() || {};
+      const xmlShown = storeXml.trim() ? storeXml : draftXml;
+      const inst = modelerRef.current || modelerRuntimeRef.current?.getInstance?.() || null;
+      const registryCount = Array.isArray(inst?.get?.("elementRegistry")?.getAll?.())
+        ? inst.get("elementRegistry").getAll().length
+        : 0;
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[DIAGRAM_ENTER] sid=${String(sessionId || "-")} source=view_enter `
+          + `bpmnLen=${xmlShown.length} bpmnHash=${fnv1aHex(xmlShown)} regCount=${registryCount} `
+          + `runtimeReadyAtEnter=${runtimeStatus?.ready && runtimeStatus?.defs ? 1 : 0}`,
+        );
+      }
+    }
+    if (view !== "xml" || prev === "xml") return;
+
+    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
+    const draftXml = String(draftRef.current?.bpmn_xml || "");
+    const currentXmlDraft = String(xmlDraft || "");
+    const fallbackXml = currentXmlDraft.trim()
+      ? currentXmlDraft
+      : (storeXml.trim() ? storeXml : (xml.trim() ? xml : draftXml));
+    const runtimeStatus = modelerRuntimeRef.current?.getStatus?.() || {};
+
+    let didInit = 0;
+    if (!currentXmlDraft.trim() && fallbackXml.trim()) {
+      didInit = 1;
+      setXmlDraft(fallbackXml);
+      setXmlDirty(false);
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[XMLDRAFT_SET] sid=${String(sessionId || "-")} source=enter_xml_init len=${fallbackXml.length} hash=${fnv1aHex(fallbackXml)} dirty=0`,
+        );
+      }
+    }
+
+    if (shouldLogBpmnTrace()) {
+      const shownXml = currentXmlDraft.trim() ? currentXmlDraft : fallbackXml;
+      const shownSource = currentXmlDraft.trim()
+        ? "xmlDraft"
+        : (storeXml.trim() ? "store" : (xml.trim() ? "xml_state" : (draftXml.trim() ? "draft" : "empty")));
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[XML_TAB_ENTER] sid=${String(sessionId || "-")} xmlShownSource=${shownSource} xmlShownLen=${shownXml.length} `
+        + `xmlShownHash=${fnv1aHex(shownXml)} didWeInitXmlDraftFromDraft=${didInit} didWeCallSaveFromModelerBeforeShow=1 `
+        + `runtimeReadyAtEnter=${runtimeStatus?.ready && runtimeStatus?.defs ? 1 : 0}`,
+      );
+    }
+  }, [view, xmlDraft, xml, sessionId]);
+
+  const interviewDecorSignature = useMemo(
+    () => buildInterviewDecorSignature(draft, aiQuestionsModeEnabled, diagramDisplayMode),
+    [
+      draft?.interview?.steps,
+      draft?.interview?.ai_questions_by_element,
+      draft?.interview?.aiQuestionsByElementId,
+      draft?.nodes,
+      draft?.notes_by_element,
+      draft?.notesByElementId,
+      aiQuestionsModeEnabled,
+      diagramDisplayMode,
+    ],
+  );
+
+  useEffect(() => {
+    applyInterviewDecor(viewerRef.current, "viewer", { signature: interviewDecorSignature });
+    applyInterviewDecor(modelerRef.current, "editor", { signature: interviewDecorSignature });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    interviewDecorSignature,
+  ]);
+
+  useEffect(() => {
+    applyHappyFlowDecor(viewerRef.current, "viewer");
+    applyHappyFlowDecor(modelerRef.current, "editor");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.bpmn_meta, view]);
+
+  useBpmnSettledDecorFanout({
+    viewerRef,
+    modelerRef,
+    modelerRuntimeRef,
+    modelerReadyRef,
+    view,
+    draft,
+    diagramDisplayMode,
+    stepTimeUnit,
+    robotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    robotMetaStatusByElementId,
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysEnabled,
+    propertiesOverlayAlwaysPreviewByElementId,
+    isInterviewDecorModeOn,
+    clearUserNotesDecor,
+    applyUserNotesDecor,
+    applyStepTimeDecor,
+    applyRobotMetaDecor,
+    applyPropertiesOverlayDecor,
+    clearPropertiesOverlayDecor,
+    selectedMarkerStateRef,
+    settledSelectionFanoutRef,
+    buildSettledSelectionFanoutSignature,
+    emitElementSelection,
+    syncAiQuestionPanelWithSelection,
+    syncCamundaExtensionsToModeler,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onFlash = (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+      const sid = toText(detail?.sid || detail?.sessionId);
+      const activeSid = toText(activeSessionRef.current || sessionId);
+      if (sid && activeSid && sid !== activeSid) return;
+      const nodeId = toText(detail?.elementId || detail?.nodeId || detail?.stepId);
+      if (!nodeId) return;
+      const type = toText(detail?.type || "accent") || "accent";
+      flashNode(nodeId, type, {
+        label: toText(detail?.label),
+      });
+      const badgeKind = toText(detail?.badgeKind || detail?.kind);
+      if (badgeKind) {
+        flashBadge(nodeId, badgeKind, {
+          label: toText(detail?.badgeLabel),
+        });
+      }
+    };
+    window.addEventListener(DIAGRAM_FLASH_EVENT, onFlash);
+    return () => window.removeEventListener(DIAGRAM_FLASH_EVENT, onFlash);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onEsc = (event) => {
+      if (String(event?.key || "") !== "Escape") return;
+      const target = event?.target;
+      const tag = String(target?.tagName || "").toLowerCase();
+      const editable = (
+        tag === "input"
+        || tag === "textarea"
+        || String(target?.getAttribute?.("contenteditable") || "").toLowerCase() === "true"
+      );
+      if (editable) return;
+      clearSelectedDecor(viewerRef.current, "viewer");
+      clearSelectedDecor(modelerRef.current, "editor");
+      clearAiQuestionPanel(viewerRef.current, "viewer");
+      clearAiQuestionPanel(modelerRef.current, "editor");
+      emitElementSelectionChange(null);
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onKeyDown = (event) => {
+      if (view !== "editor") return;
+      if (event?.defaultPrevented) return;
+      if (event?.repeat) return;
+      if (!(event?.ctrlKey || event?.metaKey) || event?.altKey) return;
+      if (isEditableKeyTarget(event?.target)) return;
+      const key = String(event?.key || "").toLowerCase();
+      if (key !== "c" && key !== "v") return;
+
+      const inst = modelerRef.current;
+      const currentSelection = asArray(inst?.get?.("selection")?.get?.());
+      const selectedElement = currentSelection[0] || null;
+
+      if (key === "c") {
+        if (!canCopyBpmnElement(selectedElement)) return;
+        event.preventDefault();
+        void Promise.resolve(executeDiagramContextAction({
+          actionId: "copy_element",
+          target: { id: toText(selectedElement?.id) },
+        }));
+        return;
+      }
+
+      event.preventDefault();
+      void Promise.resolve(executeDiagramContextAction({
+        actionId: "paste",
+        ...(selectedElement ? { target: { id: toText(selectedElement?.id) } } : {}),
+      }));
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [executeDiagramContextAction, view]);
+
+  useEffect(() => {
+    return () => {
+      destroyRuntime();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function createImperativeApiCtx() {
+    return {
+      refs: {
+        modelerRef,
+        viewerRef,
+        modelerRuntimeRef,
+        modelerReadyRef,
+        viewerReadyRef,
+        userViewportTouchedRef,
+        runtimeTokenRef,
+        activeSessionRef,
+        loadTokenRef,
+        bpmnCoordinatorRef,
+        viewboxListenersRef,
+        bottlenecksRef,
+      },
+      values: {
+        view,
+        sessionId,
+        xmlDirty,
+        xmlDraft,
+      },
+      state: {
+        setErr,
+      },
+      callbacks: {
+        asArray,
+        ensureModeler,
+        ensureViewer,
+        hasDefinitionsLoaded,
+        safeFit,
+        suppressViewboxEvents,
+        ensureVisibleOnInstance,
+        shouldLogBpmnTrace,
+        loadFromBackend,
+        isLocalSessionId,
+        clearLocalOnly,
+        apiDeleteBpmnXml,
+        applyBottleneckDecor,
+        clearBottleneckDecor,
+        listSearchableElementsOnInstance,
+        listSearchablePropertiesOnInstance,
+        setSearchHighlightsOnInstance,
+        clearSearchHighlightsOnInstance,
+        focusNodeOnInstance,
+        preparePlaybackCache,
+        buildExecutionGraphFromInstance,
+        applyPlaybackFrameOnInstance,
+        clearPlaybackDecor,
+        flashNode,
+        flashBadge,
+        captureTemplatePackOnModeler,
+        insertTemplatePackOnModeler,
+        applyCommandOpsOnModeler,
+        validateBpmnXmlText,
+        logBpmnTrace,
+        persistXmlSnapshot,
+        renderModeler,
+        renderViewer,
+        executeDiagramContextAction,
+        saveLocalFromModeler,
+        saveXmlDraftText,
+        seedNew,
+        getBaseDiagramStateVersion: () => getBaseDiagramStateVersion?.(),
+        rememberDiagramStateVersion: (version, opts) => rememberDiagramStateVersion?.(version, opts),
+        flushSave: (reason, opts) => ensureBpmnCoordinator().flushSave(reason, opts),
+      },
+    };
+  }
+
+  const imperativeApi = useMemo(
+    () => createBpmnStageImperativeApi(createImperativeApiCtx()),
+    [createImperativeApiCtx],
+  );
+
+  useImperativeHandle(ref, () => imperativeApi, [imperativeApi]);
+
+  const hasDiagram = hasDefinitionsLoaded(modelerRef.current) || hasDefinitionsLoaded(viewerRef.current);
+
+  return (
+    <div className="bpmnStage">
+      {err ? (
+        <div className="badge err" style={{ marginBottom: 10 }}>
+          {err}
+        </div>
+      ) : null}
+
+      <div className={view === "xml" ? "bpmnXmlEditorPage" : "hidden"}>
+        <BpmnXmlEditor
+          fullPage
+          xmlDraft={xmlDraft}
+          xml={xml}
+          xmlDirty={xmlDirty}
+          xmlSaveBusy={xmlSaveBusy}
+          onChange={updateXmlDraft}
+          onSave={saveXmlDraftText}
+          onReset={() => applyXmlSnapshot(xml, srcHint || "backend")}
+        />
+      </div>
+
+      <DiagramLoadBoundary loadState={loadState} errorReason={errorReason} hasDiagram={hasDiagram}>
+        <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
+          {diagramReady ? (
+            <div
+              data-testid="diagram-ready"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: "none",
+              }}
+            />
+          ) : null}
+          <div
+            className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
+            style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}
+          >
+            <div className="bpmnCanvas" ref={viewerEl} style={{ width: "100%", height: "100%" }} />
+          </div>
+          <div
+            className={"bpmnLayer bpmnLayer--editor " + ((view === "editor" || view === "diagram") ? "on" : "off")}
+            style={{ position: "absolute", inset: 0, display: (view === "editor" || view === "diagram") ? "block" : "none" }}
+          >
+            <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
+          </div>
+        </div>
+      </DiagramLoadBoundary>
+    </div>
+  );
+});
+
+export default BpmnStage;

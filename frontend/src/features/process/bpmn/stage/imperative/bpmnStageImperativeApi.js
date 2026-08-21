@@ -1,0 +1,1047 @@
+import { readableBpmnText } from "../../bpmnIdentity.js";
+import {
+  applyCamundaExtensionStateToModeler,
+  extractManagedCamundaExtensionStateFromBusinessObject,
+  normalizeCamundaExtensionState,
+} from "../../../camunda/camundaExtensions.js";
+
+function asObject(x) {
+  return x && typeof x === "object" && !Array.isArray(x) ? x : {};
+}
+
+function asArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+function toFiniteNumber(valueRaw, fallback = 0) {
+  const value = Number(valueRaw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clampNumber(valueRaw, minRaw, maxRaw) {
+  const min = toFiniteNumber(minRaw, 0);
+  const max = toFiniteNumber(maxRaw, min);
+  const value = toFiniteNumber(valueRaw, min);
+  if (min > max) return clampNumber(value, max, min);
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+function readContentBoundsFromRegistry(registry) {
+  const elements = asArray(registry?.getAll?.());
+  if (!elements.length) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  elements.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    if (element.type === "label") return;
+    if (Array.isArray(element.waypoints) && element.waypoints.length) {
+      element.waypoints.forEach((pointRaw) => {
+        const point = asObject(pointRaw);
+        const x = toFiniteNumber(point.x, Number.NaN);
+        const y = toFiniteNumber(point.y, Number.NaN);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+      return;
+    }
+
+    const x = toFiniteNumber(element.x, Number.NaN);
+    const y = toFiniteNumber(element.y, Number.NaN);
+    const width = Math.max(0, toFiniteNumber(element.width, 0));
+    const height = Math.max(0, toFiniteNumber(element.height, 0));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (!(width > 0) || !(height > 0)) return;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x + width);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y + height);
+  });
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null;
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+  };
+}
+
+function readCanvasSnapshot(inst) {
+  try {
+    const canvas = inst?.get?.("canvas");
+    const registry = inst?.get?.("elementRegistry");
+    const container = canvas?._container;
+    const rect = container?.getBoundingClientRect?.() || { left: 0, top: 0, width: 0, height: 0 };
+    const vb = asObject(canvas?.viewbox?.() || {});
+    const inner = asObject(vb.inner);
+    const outer = asObject(vb.outer);
+    const zoom = Number(canvas?.zoom?.() || 0);
+    const count = asArray(registry?.getAll?.()).length;
+    const contentBounds = readContentBoundsFromRegistry(registry);
+    const width = Number(rect?.width || container?.clientWidth || 0);
+    const height = Number(rect?.height || container?.clientHeight || 0);
+    const viewboxWidth = Math.max(0, toFiniteNumber(vb?.width, 0));
+    const viewboxHeight = Math.max(0, toFiniteNumber(vb?.height, 0));
+    const viewboxX = toFiniteNumber(vb?.x, 0);
+    const viewboxY = toFiniteNumber(vb?.y, 0);
+    return {
+      width: Number.isFinite(width) ? width : 0,
+      height: Number.isFinite(height) ? height : 0,
+      left: Number(rect?.left || 0),
+      top: Number(rect?.top || 0),
+      zoom: Number.isFinite(zoom) ? zoom : 0,
+      viewbox: {
+        x: viewboxX,
+        y: viewboxY,
+        width: viewboxWidth,
+        height: viewboxHeight,
+        inner: {
+          x: toFiniteNumber(inner.x, toFiniteNumber(contentBounds?.x, viewboxX)),
+          y: toFiniteNumber(inner.y, toFiniteNumber(contentBounds?.y, viewboxY)),
+          width: Math.max(viewboxWidth, toFiniteNumber(inner.width, toFiniteNumber(contentBounds?.width, viewboxWidth))),
+          height: Math.max(viewboxHeight, toFiniteNumber(inner.height, toFiniteNumber(contentBounds?.height, viewboxHeight))),
+        },
+        outer: {
+          width: Math.max(0, toFiniteNumber(outer.width, width)),
+          height: Math.max(0, toFiniteNumber(outer.height, height)),
+        },
+      },
+      count,
+    };
+  } catch {
+    return {
+      width: 0,
+      height: 0,
+      left: 0,
+      top: 0,
+      zoom: 0,
+      viewbox: {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        inner: { x: 0, y: 0, width: 0, height: 0 },
+        outer: { width: 0, height: 0 },
+      },
+      count: 0,
+    };
+  }
+}
+
+function readElementBounds(inst, elementIdRaw) {
+  const elementId = toText(elementIdRaw);
+  if (!elementId) return null;
+  try {
+    const registry = inst?.get?.("elementRegistry");
+    const el = registry?.get?.(elementId);
+    if (!el) return null;
+    if (Array.isArray(el?.waypoints) && el.waypoints.length) {
+      const xs = el.waypoints.map((pt) => Number(pt?.x || 0)).filter(Number.isFinite);
+      const ys = el.waypoints.map((pt) => Number(pt?.y || 0)).filter(Number.isFinite);
+      if (!xs.length || !ys.length) return null;
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+      };
+    }
+    const x = Number(el?.x || 0);
+    const y = Number(el?.y || 0);
+    const width = Number(el?.width || 0);
+    const height = Number(el?.height || 0);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (!(width > 0) || !(height > 0)) return null;
+    return { x, y, width, height };
+  } catch {
+    return null;
+  }
+}
+
+function toTypeLabel(typeRaw) {
+  const type = toText(typeRaw);
+  if (!type) return "";
+  const short = toText(type.split(":").pop());
+  return short || type;
+}
+
+function readVisibleLabelForElement(element) {
+  const directLabel = toText(
+    element?.label?.businessObject?.name
+      || element?.label?.businessObject?.text
+      || element?.label?.businessObject?.label,
+  );
+  if (directLabel) return directLabel;
+  return toText(
+    element?.businessObject?.label
+      || element?.businessObject?.text,
+  );
+}
+
+function readSearchableElementsFromRegistry(registry) {
+  const out = [];
+  const seen = new Set();
+  const all = asArray(registry?.getAll?.());
+
+  const labelByTargetId = new Map();
+  all.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    const isLabel = toText(element?.type).toLowerCase() === "label";
+    if (!isLabel) return;
+    const targetId = toText(element?.labelTarget?.id || element?.businessObject?.labelTarget?.id);
+    if (!targetId || labelByTargetId.has(targetId)) return;
+    const labelText = toText(element?.businessObject?.name || element?.businessObject?.text || element?.businessObject?.label);
+    if (!labelText) return;
+    labelByTargetId.set(targetId, labelText);
+  });
+
+  all.forEach((elementRaw) => {
+    const element = asObject(elementRaw);
+    const elementId = toText(element?.id);
+    if (!elementId || seen.has(elementId)) return;
+    const isLabel = toText(element?.type).toLowerCase() === "label";
+    if (isLabel) return;
+    const hasWaypoints = Array.isArray(element?.waypoints) && element.waypoints.length > 0;
+    const hasBounds = Number.isFinite(Number(element?.x)) && Number.isFinite(Number(element?.y));
+    if (!hasWaypoints && !hasBounds) return;
+    const bo = asObject(element?.businessObject);
+    const type = toText(bo?.$type || element?.type);
+    if (!type.toLowerCase().startsWith("bpmn:")) return;
+    const name = readableBpmnText(bo?.name);
+    const label = readableBpmnText(labelByTargetId.get(elementId), readVisibleLabelForElement(element));
+    const title = toText(label || name || "Элемент BPMN");
+    out.push({
+      elementId,
+      name,
+      label,
+      title,
+      type,
+      typeLabel: toTypeLabel(type),
+    });
+    seen.add(elementId);
+  });
+
+  return out;
+}
+
+function readUndoRedoAvailability(inst) {
+  try {
+    const commandStack = inst?.get?.("commandStack");
+    if (!commandStack || typeof commandStack !== "object") {
+      return { canUndo: false, canRedo: false };
+    }
+    const canUndo = typeof commandStack.canUndo === "function"
+      ? commandStack.canUndo() === true
+      : false;
+    const canRedo = typeof commandStack.canRedo === "function"
+      ? commandStack.canRedo() === true
+      : false;
+    return { canUndo, canRedo };
+  } catch {
+    return { canUndo: false, canRedo: false };
+  }
+}
+
+function getSelectionService(inst) {
+  try {
+    return inst?.get?.("selection") || null;
+  } catch {
+    return null;
+  }
+}
+
+function getRegistryService(inst) {
+  try {
+    return inst?.get?.("elementRegistry") || null;
+  } catch {
+    return null;
+  }
+}
+
+function readSelectedElementIds(inst) {
+  const selection = getSelectionService(inst);
+  const items = asArray(selection?.get?.());
+  return Array.from(new Set(items.map((item) => toText(item?.id)).filter(Boolean)));
+}
+
+function resolveSelectionPayload(inst, idsRaw) {
+  const registry = getRegistryService(inst);
+  const ids = Array.from(new Set(asArray(idsRaw).map((row) => toText(row)).filter(Boolean)));
+  const elements = ids
+    .map((id) => registry?.get?.(id))
+    .filter((item) => !!item);
+  return {
+    ids,
+    elements,
+    foundIds: elements.map((item) => toText(item?.id)).filter(Boolean),
+  };
+}
+
+function resolveCtx(ctxBase) {
+  if (typeof ctxBase === "function") return asObject(ctxBase());
+  return asObject(ctxBase);
+}
+
+function normalizeDiagramContextActionResult(resultRaw, fallbackErrorRaw) {
+  const fallbackError = toText(fallbackErrorRaw) || "context_action_failed";
+  const result = asObject(resultRaw);
+  if (result.ok === true) return result;
+  if (result.ok === false) {
+    return {
+      ...result,
+      error: toText(result.error) || fallbackError,
+    };
+  }
+  return { ok: false, error: fallbackError };
+}
+
+export function createBpmnStageImperativeApi(ctxBase) {
+  const ctx = resolveCtx(ctxBase);
+  const refs = asObject(ctx.refs);
+  const values = asObject(ctx.values);
+  const state = asObject(ctx.state);
+  const callbacks = asObject(ctx.callbacks);
+  const executeDiagramContextAction = (
+    typeof callbacks.executeDiagramContextAction === "function"
+      ? callbacks.executeDiagramContextAction
+      : null
+  );
+
+  const getReadyInstance = (preferredModeRaw = "") => {
+    const preferredMode = toText(preferredModeRaw).toLowerCase();
+    const modeler = refs.modelerRef?.current;
+    const viewer = refs.viewerRef?.current;
+    const modelerReady = modeler && !!refs.modelerReadyRef?.current && callbacks.hasDefinitionsLoaded?.(modeler);
+    const viewerReady = viewer && !!refs.viewerReadyRef?.current && callbacks.hasDefinitionsLoaded?.(viewer);
+    if (preferredMode === "editor" || preferredMode === "modeler") {
+      if (modelerReady) return modeler;
+      if (viewerReady) return viewer;
+    }
+    if (preferredMode === "viewer") {
+      if (viewerReady) return viewer;
+      if (modelerReady) return modeler;
+    }
+    if (values.view === "editor" || values.view === "diagram") {
+      if (modelerReady) return modeler;
+      if (viewerReady) return viewer;
+    }
+    if (values.view === "viewer") {
+      if (viewerReady) return viewer;
+      if (modelerReady) return modeler;
+    }
+    return modelerReady ? modeler : (viewerReady ? viewer : (modeler || viewer || null));
+  };
+
+  const getPreferredInstance = (preferredModeRaw = "") => {
+    const preferredMode = toText(preferredModeRaw).toLowerCase();
+    const modeler = refs.modelerRef?.current;
+    const viewer = refs.viewerRef?.current;
+    if (preferredMode === "editor" || preferredMode === "modeler" || preferredMode === "diagram") {
+      return modeler || viewer || null;
+    }
+    if (preferredMode === "viewer") {
+      return viewer || modeler || null;
+    }
+    if (values.view === "editor" || values.view === "diagram") {
+      return modeler || viewer || null;
+    }
+    return viewer || modeler || null;
+  };
+
+  const getActiveInstance = () => (values.view === "editor" ? refs.modelerRef?.current : refs.viewerRef?.current);
+  const getActiveLoader = () => (values.view === "editor" ? callbacks.ensureModeler?.() : callbacks.ensureViewer?.());
+  const getInstanceKind = (inst) => {
+    if (inst === refs.modelerRef?.current) return "editor";
+    if (inst === refs.viewerRef?.current) return "viewer";
+    return values.view === "editor" ? "editor" : "viewer";
+  };
+  const isInstanceReady = (inst) => {
+    if (!inst) return false;
+    if (inst === refs.modelerRef?.current) {
+      return !!refs.modelerReadyRef?.current && callbacks.hasDefinitionsLoaded?.(inst);
+    }
+    if (inst === refs.viewerRef?.current) {
+      return !!refs.viewerReadyRef?.current && callbacks.hasDefinitionsLoaded?.(inst);
+    }
+    return callbacks.hasDefinitionsLoaded?.(inst);
+  };
+  const runOnActiveInstance = (fn) => {
+    const inst = getActiveInstance();
+    if (inst && isInstanceReady(inst)) {
+      fn(inst);
+      return;
+    }
+    if (inst && !isInstanceReady(inst)) return;
+    const loader = getActiveLoader();
+    loader
+      ?.then((ready) => {
+        if (ready && isInstanceReady(ready)) fn(ready);
+      })
+      .catch(() => {
+      });
+  };
+  const runDiagramContextActionRequest = async (
+    payload = {},
+    fallbackErrorRaw = "context_action_unavailable",
+  ) => {
+    const fallbackError = toText(fallbackErrorRaw) || "context_action_failed";
+    if (typeof executeDiagramContextAction !== "function") {
+      return { ok: false, error: fallbackError };
+    }
+    try {
+      const result = await Promise.resolve(executeDiagramContextAction(payload));
+      return normalizeDiagramContextActionResult(result, fallbackError);
+    } catch (error) {
+      return {
+        ok: false,
+        error: toText(error?.message || error || fallbackError),
+      };
+    }
+  };
+
+  return {
+    zoomIn: () => {
+      if (values.view === "editor" && refs.modelerRuntimeRef?.current?.zoomIn?.()) return;
+      runOnActiveInstance((inst) => {
+        const canvas = inst.get("canvas");
+        const z = canvas.zoom();
+        canvas.zoom(Number.isFinite(z) ? z + 0.2 : 1.2);
+      });
+    },
+    zoomOut: () => {
+      if (values.view === "editor" && refs.modelerRuntimeRef?.current?.zoomOut?.()) return;
+      runOnActiveInstance((inst) => {
+        const canvas = inst.get("canvas");
+        const z = canvas.zoom();
+        canvas.zoom(Number.isFinite(z) ? Math.max(z - 0.2, 0.2) : 0.8);
+      });
+    },
+    fit: () => {
+      if (values.view === "editor" && refs.modelerRuntimeRef?.current?.fit?.()) {
+        refs.userViewportTouchedRef.current = false;
+        return;
+      }
+      runOnActiveInstance((inst) => {
+        refs.userViewportTouchedRef.current = false;
+        void callbacks.safeFit?.(inst, {
+          reason: "manual_fit",
+          tab: values.view === "xml" ? "xml" : "diagram",
+          sid: String(values.sessionId || ""),
+          token: refs.runtimeTokenRef?.current,
+          suppressViewbox: callbacks.suppressViewboxEvents,
+        });
+      });
+    },
+    restoreViewport: (snapshot) => {
+      runOnActiveInstance((inst) => {
+        const canvas = inst.get("canvas");
+        if (!canvas) return;
+        const vb = asObject(snapshot?.viewbox);
+        const zoom = Number(snapshot?.zoom);
+        if (!Number.isFinite(zoom) || zoom <= 0 || !Number.isFinite(vb?.x) || !Number.isFinite(vb?.y)) return;
+        callbacks.suppressViewboxEvents?.(1);
+        try {
+          const current = asObject(canvas.viewbox());
+          const outer = asObject(current.outer);
+          const width = Number.isFinite(outer.width) && outer.width > 0
+            ? outer.width / zoom
+            : vb.width;
+          const height = Number.isFinite(outer.height) && outer.height > 0
+            ? outer.height / zoom
+            : vb.height;
+          if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+          canvas.viewbox({
+            x: vb.x,
+            y: vb.y,
+            width,
+            height,
+          });
+        } finally {
+          callbacks.suppressViewboxEvents?.(-1);
+        }
+      });
+    },
+    refreshViewport: (options = {}) => {
+      runOnActiveInstance((inst) => {
+        void callbacks.ensureVisibleOnInstance?.(inst, {
+          reason: String(options?.reason || "tab_switch"),
+          tab: values.view === "xml" ? "xml" : "diagram",
+          cycleIndex: Number(options?.cycleIndex || 0),
+          expectedSid: String(options?.expectedSid || refs.activeSessionRef?.current || ""),
+        });
+      });
+    },
+    ensureVisible: (options = {}) => {
+      const reason = String(options?.reason || "ensure_visible");
+      const tabName = values.view === "xml" ? "xml" : "diagram";
+      const cycleIndex = Number(options?.cycleIndex || 0);
+      const force = options?.force === true;
+      return (async () => {
+        const activeInst = getActiveInstance();
+        if (activeInst && isInstanceReady(activeInst)) {
+          return await callbacks.ensureVisibleOnInstance?.(activeInst, {
+            reason,
+            tab: tabName,
+            cycleIndex,
+            force,
+            expectedSid: String(options?.expectedSid || refs.activeSessionRef?.current || ""),
+          });
+        }
+        let loaded = null;
+        try {
+          loaded = await getActiveLoader();
+        } catch {
+          loaded = null;
+        }
+        if (!loaded || !isInstanceReady(loaded)) {
+          return { ok: false, reason: "not_ready" };
+        }
+        return await callbacks.ensureVisibleOnInstance?.(loaded, {
+          reason,
+          tab: tabName,
+          cycleIndex,
+          force,
+          expectedSid: String(options?.expectedSid || refs.activeSessionRef?.current || ""),
+        });
+      })();
+    },
+    whenReady: async (options = {}) => {
+      const timeoutMsRaw = Number(options?.timeoutMs ?? 1800);
+      const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 1800;
+      const expectedSid = String(options?.expectedSid || "").trim();
+      const sidNow = String(refs.activeSessionRef?.current || values.sessionId || "");
+      const expectedToken = Number(refs.runtimeTokenRef?.current || 0);
+      if (callbacks.shouldLogBpmnTrace?.()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[WHEN_READY] wait sid=${sidNow || "-"} expectedSid=${expectedSid || "-"} token=${expectedToken} expectedToken=${expectedToken} timeoutMs=${timeoutMs}`,
+        );
+      }
+      const started = Date.now();
+      while (Date.now() - started <= timeoutMs) {
+        if (expectedSid && expectedSid !== String(refs.activeSessionRef?.current || "")) {
+          return false;
+        }
+        const runtime = refs.modelerRuntimeRef?.current;
+        const status = runtime?.getStatus?.() || {};
+        const inst = refs.modelerRef?.current;
+        if (inst && status?.ready && status?.defs) {
+          if (callbacks.shouldLogBpmnTrace?.()) {
+            // eslint-disable-next-line no-console
+            console.debug(
+              `[WHEN_READY] resolve sid=${String(refs.activeSessionRef?.current || values.sessionId || "-")} token=${Number(status?.token || 0)} `
+              + `reason=${status?.reason === "create.done" ? "createDiagram" : "import"}`,
+            );
+          }
+          return true;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+      }
+      if (callbacks.shouldLogBpmnTrace?.()) {
+        const status = refs.modelerRuntimeRef?.current?.getStatus?.() || {};
+        const inst = refs.modelerRef?.current;
+        const rect = inst?.get?.("canvas")?._container?.getBoundingClientRect?.() || { width: 0, height: 0 };
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[WHEN_READY] timeout sid=${String(values.sessionId || "-")} token=${Number(status?.token || 0)} expectedSid=${expectedSid || "-"} `
+          + `state ready=${status?.ready ? 1 : 0} defs=${status?.defs ? 1 : 0} hasInstance=${inst ? 1 : 0} `
+          + `rect=${Math.round(Number(rect.width || 0))}x${Math.round(Number(rect.height || 0))}`,
+        );
+      }
+      return false;
+    },
+    seedFromActors: () => callbacks.seedNew?.(),
+    saveLocal: (options) => callbacks.saveLocalFromModeler?.(options),
+    flushSave: (reason, options) => callbacks.flushSave?.(reason, options),
+    setDiagramMutationSaveActive: (active) => {
+      refs.bpmnCoordinatorRef?.current?.setDiagramMutationSaveActive?.(active === true);
+    },
+    getSaveDebugState: () => refs.bpmnCoordinatorRef?.current?.getDebugState?.() || null,
+    getRuntimeXmlSnapshot: async (options = {}) => {
+      const modeler = refs.modelerRef?.current || refs.modelerRuntimeRef?.current?.getInstance?.();
+      if (modeler && typeof modeler.saveXML === "function") {
+        const saveXmlTimeout = Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 5000;
+        const out = await Promise.race([
+          modeler.saveXML({ format: options?.format !== false }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("getRuntimeXmlSnapshot: saveXML timeout")), saveXmlTimeout)
+          ),
+        ]);
+        const xml = String(out?.xml || "");
+        if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
+          // eslint-disable-next-line no-console
+          console.debug(`[GET_RUNTIME_XML] source=modeler_saveXML len=${xml.length} prop=${xml.includes("fromXmlProp")} modelerRefSame=${modeler === refs.modelerRef?.current}`);
+        }
+        return {
+          ok: true,
+          xml,
+          token: Number(refs.modelerRuntimeRef?.current?.getStatus?.()?.token || 0),
+          source: "modeler_saveXML",
+        };
+      }
+      const runtime = refs.modelerRuntimeRef?.current;
+      if (!runtime || typeof runtime.getXml !== "function") {
+        return { ok: false, xml: "" };
+      }
+      const out = await runtime.getXml({ format: options?.format !== false });
+      return {
+        ...(out && typeof out === "object" ? out : { ok: false, xml: "" }),
+        source: "runtime_getXml",
+      };
+    },
+    getElementCamundaExtensionState: (elementIdRaw, options = {}) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId) return null;
+      const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return null;
+      try {
+        const registry = inst.get("elementRegistry");
+        const el = registry?.get?.(elementId);
+        if (!el) return null;
+        return normalizeCamundaExtensionState(
+          extractManagedCamundaExtensionStateFromBusinessObject(el.businessObject),
+        );
+      } catch {
+        return null;
+      }
+    },
+    applyElementCamundaExtensionsToModeler: (elementIdRaw, extensionStateRaw, options = {}) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId) return { ok: false, error: "missing_element_id" };
+      const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return { ok: false, error: "modeler_not_ready" };
+      return applyCamundaExtensionStateToModeler(elementId, extensionStateRaw, inst);
+    },
+    getBaseDiagramStateVersion: () => {
+      const fn = callbacks.getBaseDiagramStateVersion;
+      if (typeof fn === "function") return fn();
+      return undefined;
+    },
+    rememberDiagramStateVersion: (version, options = {}) => {
+      const fn = callbacks.rememberDiagramStateVersion;
+      if (typeof fn === "function") return fn(version, options);
+      return null;
+    },
+    isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
+    saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
+    hasXmlDraftChanges: () => !!values.xmlDirty,
+    getXmlDraft: () => String(values.xmlDraft || ""),
+    runDiagramContextAction: async (payload = {}) => await runDiagramContextActionRequest(
+      payload,
+      "context_action_unavailable",
+    ),
+    getUndoRedoState: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      const stateOut = readUndoRedoAvailability(inst);
+      return {
+        ...stateOut,
+        ready: !!inst,
+      };
+    },
+    undo: async () => {
+      return await runDiagramContextActionRequest({ actionId: "undo" }, "undo_failed");
+    },
+    redo: async () => {
+      return await runDiagramContextActionRequest({ actionId: "redo" }, "redo_failed");
+    },
+    resetBackend: () => {
+      const sid = String(values.sessionId || "");
+      if (!sid) return;
+      const token = refs.loadTokenRef.current + 1;
+      refs.loadTokenRef.current = token;
+      callbacks.loadFromBackend?.(sid, token, { forceRemote: true, reason: "manual_reset_backend" });
+    },
+    clearLocal: () => {
+      const sid = String(values.sessionId || "");
+      if (!sid) return;
+      if (callbacks.isLocalSessionId?.(sid)) {
+        callbacks.clearLocalOnly?.();
+        const token = refs.loadTokenRef.current + 1;
+        refs.loadTokenRef.current = token;
+        callbacks.loadFromBackend?.(sid, token, { forceRemote: true, reason: "clear_local" });
+        return;
+      }
+      (async () => {
+        const r = await callbacks.apiDeleteBpmnXml?.(sid);
+        if (!r?.ok) {
+          state.setErr?.(String(r?.error || "Не удалось очистить BPMN на backend"));
+          return;
+        }
+        state.setErr?.("");
+        const token = refs.loadTokenRef.current + 1;
+        refs.loadTokenRef.current = token;
+        callbacks.loadFromBackend?.(sid, token, { forceRemote: true, reason: "clear_backend" });
+      })();
+    },
+    setBottlenecks: (items) => {
+      refs.bottlenecksRef.current = callbacks.asArray?.(items) || [];
+      callbacks.applyBottleneckDecor?.(refs.viewerRef?.current, "viewer");
+      callbacks.applyBottleneckDecor?.(refs.modelerRef?.current, "editor");
+    },
+    clearBottlenecks: () => {
+      refs.bottlenecksRef.current = [];
+      callbacks.clearBottleneckDecor?.(refs.viewerRef?.current, "viewer");
+      callbacks.clearBottleneckDecor?.(refs.modelerRef?.current, "editor");
+    },
+    listSearchableElements: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return [];
+      if (typeof callbacks.listSearchableElementsOnInstance === "function") {
+        return asArray(callbacks.listSearchableElementsOnInstance(inst));
+      }
+      const registry = getRegistryService(inst);
+      return readSearchableElementsFromRegistry(registry);
+    },
+    listSearchableProperties: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return [];
+      if (typeof callbacks.listSearchablePropertiesOnInstance === "function") {
+        return asArray(callbacks.listSearchablePropertiesOnInstance(inst));
+      }
+      return [];
+    },
+    clearSearchHighlights: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const viewerOk = callbacks.clearSearchHighlightsOnInstance?.(refs.viewerRef?.current, "viewer") === true;
+      const editorOk = callbacks.clearSearchHighlightsOnInstance?.(refs.modelerRef?.current, "editor") === true;
+      if (viewerOk || editorOk) return true;
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return false;
+      return callbacks.clearSearchHighlightsOnInstance?.(inst, getInstanceKind(inst)) === true;
+    },
+    setSearchHighlights: (payload = {}, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const data = {
+        matchElementIds: asArray(payload?.matchElementIds || payload?.matches || payload?.ids),
+        activeElementId: toText(payload?.activeElementId || payload?.activeId),
+      };
+      const viewerOk = callbacks.setSearchHighlightsOnInstance?.(refs.viewerRef?.current, "viewer", data) === true;
+      const editorOk = callbacks.setSearchHighlightsOnInstance?.(refs.modelerRef?.current, "editor", data) === true;
+      if (viewerOk || editorOk) return true;
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return false;
+      return callbacks.setSearchHighlightsOnInstance?.(inst, getInstanceKind(inst), data) === true;
+    },
+    focusNode: (nodeId, options = {}) => {
+      const nid = String(nodeId || "").trim();
+      if (!nid) return false;
+      const markerClass = String(options?.markerClass || "").trim();
+      const centerInViewport = options?.centerInViewport === true;
+      if (values.view === "editor") {
+        const direct = markerClass || centerInViewport
+          ? false
+          : refs.modelerRuntimeRef?.current?.focus?.(nid);
+        if (direct) return true;
+      }
+      const viewerOk = callbacks.focusNodeOnInstance?.(refs.viewerRef?.current, "viewer", nid, options);
+      const editorOk = callbacks.focusNodeOnInstance?.(refs.modelerRef?.current, "editor", nid, options);
+      return !!viewerOk || !!editorOk;
+    },
+    findSubprocessAncestor: (nodeIdRaw) => {
+      const nodeId = String(nodeIdRaw || "").trim();
+      if (!nodeId) return null;
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return null;
+      try {
+        const registry = inst.get("elementRegistry");
+        const canvas = inst.get("canvas");
+        const rootElement = canvas?.getRootElement?.();
+        let element = registry?.get?.(nodeId);
+        while (element && element.parent) {
+          if (element.parent === rootElement) return null;
+          const parentType = String(element.parent.type || element.parent.$type || "").toLowerCase();
+          if (parentType.includes("subprocess") || parentType.includes("callactivity")) {
+            // A subprocess plane root's id may be synthesized (e.g. "SubProcess_1_plane");
+            // use the underlying business-object id so backend navigation works.
+            return String(element.parent.businessObject?.id || element.parent.id || "").trim() || null;
+          }
+          element = element.parent;
+        }
+      } catch {
+      }
+      // Collapsed subprocess children are not in the element registry on the
+      // parent diagram, so fall back to the semantic BPMN definitions tree.
+      try {
+        const definitions = inst.get("canvas")?.getRootElement?.()?.businessObject?.$parent;
+        const isSubprocessLike = (type) => String(type || "").toLowerCase().includes("subprocess")
+          || String(type || "").toLowerCase().includes("callactivity");
+        const find = (elements) => {
+          for (const el of elements || []) {
+            if (String(el?.id || "").trim() === nodeId) {
+              const parent = el?.$parent;
+              return isSubprocessLike(parent?.$type) ? String(parent.id || "").trim() || null : null;
+            }
+            if (Array.isArray(el?.flowElements) && el.flowElements.length) {
+              const nested = find(el.flowElements);
+              if (nested !== undefined) return nested;
+            }
+          }
+          return undefined;
+        };
+        for (const root of definitions?.rootElements || []) {
+          const result = find(root?.flowElements);
+          if (result !== undefined) return result;
+        }
+      } catch {
+      }
+      return null;
+    },
+    expandSubprocessAncestors: (nodeIdRaw) => {
+      const nodeId = toText(nodeIdRaw);
+      if (!nodeId) return { ok: false, error: "missing_id", expandedIds: [] };
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return { ok: false, error: "instance_not_ready", expandedIds: [] };
+      try {
+        const registry = inst.get("elementRegistry");
+        const modeling = inst.get("modeling");
+        const canvas = inst.get("canvas");
+        const definitions = canvas?.getRootElement?.()?.businessObject?.$parent;
+        const isSubprocessType = (type) => String(type || "").toLowerCase().includes("subprocess");
+
+        const collectAncestorIds = (elements, targetId, ancestors) => {
+          for (const item of elements || []) {
+            const itemId = String(item?.id || "").trim();
+            const nextAncestors = isSubprocessType(item?.$type) ? [...ancestors, itemId] : ancestors;
+            if (itemId === targetId) return nextAncestors;
+            if (Array.isArray(item?.flowElements) && item.flowElements.length) {
+              const nested = collectAncestorIds(item.flowElements, targetId, nextAncestors);
+              if (nested) return nested;
+            }
+          }
+          return null;
+        };
+
+        let ancestorIds = [];
+        for (const root of definitions?.rootElements || []) {
+          const result = collectAncestorIds(root?.flowElements, nodeId, []);
+          if (result) {
+            ancestorIds = result;
+            break;
+          }
+        }
+
+        const expandedIds = [];
+        for (const ancestorId of ancestorIds) {
+          const shape = registry?.get?.(ancestorId);
+          if (!shape || !isSubprocessType(shape.type || shape.$type)) continue;
+          if (shape.collapsed === true) {
+            modeling.toggleCollapse(shape);
+            expandedIds.push(String(shape.businessObject?.id || shape.id || "").trim());
+          }
+        }
+        return { ok: true, expanded: expandedIds.length > 0, expandedIds };
+      } catch (e) {
+        return { ok: false, error: String(e?.message || e || "expand_failed"), expandedIds: [] };
+      }
+    },
+    preparePlayback: (timelineItems = []) => {
+      callbacks.preparePlaybackCache?.(refs.viewerRef?.current, "viewer", timelineItems);
+      callbacks.preparePlaybackCache?.(refs.modelerRef?.current, "editor", timelineItems);
+      return true;
+    },
+    getPlaybackGraph: () => {
+      const inst = refs.viewerRef?.current || refs.modelerRef?.current;
+      return callbacks.buildExecutionGraphFromInstance?.(inst);
+    },
+    setPlaybackFrame: (payload = {}) => {
+      const viewerOk = callbacks.applyPlaybackFrameOnInstance?.(refs.viewerRef?.current, "viewer", payload);
+      const editorOk = callbacks.applyPlaybackFrameOnInstance?.(refs.modelerRef?.current, "editor", payload);
+      return !!viewerOk || !!editorOk;
+    },
+    clearPlayback: () => {
+      callbacks.clearPlaybackDecor?.(refs.viewerRef?.current, "viewer");
+      callbacks.clearPlaybackDecor?.(refs.modelerRef?.current, "editor");
+    },
+    flashNode: (nodeId, type = "accent", options = {}) => callbacks.flashNode?.(nodeId, type, options),
+    flashBadge: (nodeId, kind = "ai", options = {}) => callbacks.flashBadge?.(nodeId, kind, options),
+    getSelectedElementIds: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      return readSelectedElementIds(inst);
+    },
+    selectElements: (idsRaw, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) {
+        return { ok: false, error: "instance_not_ready", count: 0, ids: [] };
+      }
+      const selection = getSelectionService(inst);
+      if (!selection || typeof selection.select !== "function") {
+        return { ok: false, error: "selection_api_unavailable", count: 0, ids: [] };
+      }
+      const payload = resolveSelectionPayload(inst, idsRaw);
+      if (!payload.ids.length) {
+        selection.select([]);
+        return { ok: false, error: "no_ids", count: 0, ids: [] };
+      }
+      if (!payload.elements.length) {
+        return { ok: false, error: "elements_not_found", count: 0, ids: payload.ids };
+      }
+      selection.select(payload.elements);
+      if (options.focusFirst !== false && payload.foundIds[0]) {
+        callbacks.focusNodeOnInstance?.(inst, getInstanceKind(inst), payload.foundIds[0], {
+          markerClass: toText(options.markerClass),
+          source: toText(options.source || "template_apply"),
+        });
+      }
+      return {
+        ok: true,
+        count: payload.foundIds.length,
+        ids: payload.foundIds,
+        missingIds: payload.ids.filter((id) => !payload.foundIds.includes(id)),
+      };
+    },
+    captureTemplatePack: async (options = {}) => {
+      let inst = refs.modelerRef?.current;
+      if (!inst) {
+        try {
+          inst = await callbacks.ensureModeler?.();
+        } catch {
+          inst = null;
+        }
+      }
+      if (!inst) return { ok: false, error: "modeler_not_ready" };
+      return callbacks.captureTemplatePackOnModeler?.(inst, options);
+    },
+    insertTemplatePack: async (payload = {}) => {
+      try {
+        return await callbacks.insertTemplatePackOnModeler?.(payload);
+      } catch (error) {
+        return {
+          ok: false,
+          error: String(error?.message || error || "insert_failed"),
+        };
+      }
+    },
+    applyCommandOps: async (payload = {}) => {
+      try {
+        return await callbacks.applyCommandOpsOnModeler?.(payload);
+      } catch (error) {
+        return {
+          ok: false,
+          applied: 0,
+          failed: 0,
+          changedIds: [],
+          results: [],
+          error: String(error?.message || error || "apply_ops_failed"),
+        };
+      }
+    },
+    importXmlText: async (xmlText) => {
+      const raw = String(xmlText || "");
+      if (!raw.trim()) return false;
+      const vErr = callbacks.validateBpmnXmlText?.(raw);
+      if (vErr) {
+        state.setErr?.(`Импорт BPMN не удался: ${vErr}`);
+        callbacks.logBpmnTrace?.("VALIDATION_FAIL", raw, {
+          sid: String(values.sessionId || ""),
+          source: "xml_import",
+          error: vErr,
+        });
+        return false;
+      }
+
+      const saved = await callbacks.persistXmlSnapshot?.(raw, "import_bpmn");
+      if (!saved?.ok) {
+        state.setErr?.(`Импорт BPMN не удался: ${String(saved?.error || "не удалось сохранить на backend")}`);
+        return false;
+      }
+
+      try {
+        if (values.view === "editor" || values.view === "diagram") {
+          await callbacks.renderModeler?.(raw);
+        }
+        if (values.view === "viewer") {
+          await callbacks.renderViewer?.(raw);
+        }
+        return true;
+      } catch (e) {
+        state.setErr?.(`Импорт BPMN не удался: ${String(e?.message || e)}`);
+        return false;
+      }
+    },
+    getCanvasSnapshot: (options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      return readCanvasSnapshot(inst);
+    },
+    setCanvasViewboxX: (nextXRaw, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return false;
+      try {
+        const canvas = inst.get("canvas");
+        if (!canvas || typeof canvas.viewbox !== "function") return false;
+        const current = asObject(canvas.viewbox() || {});
+        const registry = inst.get("elementRegistry");
+        const contentBounds = readContentBoundsFromRegistry(registry);
+        const width = Math.max(0, toFiniteNumber(current.width, 0));
+        const height = Math.max(0, toFiniteNumber(current.height, 0));
+        if (!(width > 0) || !(height > 0)) return false;
+        const y = toFiniteNumber(current.y, 0);
+        const currentX = toFiniteNumber(current.x, 0);
+        const inner = asObject(current.inner);
+        const minX = toFiniteNumber(inner.x, toFiniteNumber(contentBounds?.x, currentX));
+        const innerWidth = Math.max(
+          width,
+          toFiniteNumber(inner.width, toFiniteNumber(contentBounds?.width, width)),
+        );
+        const maxX = minX + Math.max(0, innerWidth - width);
+        const nextX = clampNumber(nextXRaw, minX, maxX);
+        canvas.viewbox({
+          x: nextX,
+          y,
+          width,
+          height,
+        });
+        refs.userViewportTouchedRef.current = true;
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    getElementBounds: (elementId, options = {}) => {
+      const preferred = toText(options?.kind || options?.view || options?.mode).toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      return readElementBounds(inst, elementId);
+    },
+    onCanvasViewboxChanged: (listener) => {
+      if (typeof listener !== "function") return () => {};
+      const ref = refs.viewboxListenersRef;
+      if (!ref) return () => {};
+      if (!(ref.current instanceof Set)) ref.current = new Set();
+      ref.current.add(listener);
+      return () => {
+        try {
+          ref.current?.delete?.(listener);
+        } catch {
+        }
+      };
+    },
+  };
+}
+
+export default createBpmnStageImperativeApi;

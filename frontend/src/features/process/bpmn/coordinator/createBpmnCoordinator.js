@@ -1,0 +1,1154 @@
+import {
+  dedupCamundaProperties,
+  hasDuplicateCamundaProperties,
+} from "../../camunda/camundaExtensions.js";
+import createLocalMutationStaging from "./createLocalMutationStaging.js";
+import {
+  asArray,
+  asNumber,
+  asObject,
+  asText,
+  buildConflictReplayReason,
+  buildQueuedReplayReason,
+  classifySaveTrigger,
+  fnv1aHex,
+  isDiagramStateConflictResult,
+  isIntentPreservingReason,
+  isPublishManualSaveReason,
+  isStaleConflictFailure,
+  normalizeErrorCode,
+  normalizeErrorDetails,
+  readStaleConflictChangedKeys,
+  withTimeout,
+} from "./createBpmnCoordinator.helpers.js";
+
+export default function createBpmnCoordinator(options = {}) {
+  const store = options?.store;
+  const getRuntime = typeof options?.getRuntime === "function" ? options.getRuntime : () => null;
+  const getSessionId = typeof options?.getSessionId === "function" ? options.getSessionId : () => "";
+  const transformPersistedXml = typeof options?.transformPersistedXml === "function"
+    ? options.transformPersistedXml
+    : null;
+  const persistence = options?.persistence && typeof options.persistence === "object"
+    ? options.persistence
+    : {};
+  const debounceMs = asNumber(options?.debounceMs, 600);
+  const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
+  const dragThrottleMs = Math.max(0, asNumber(options?.dragThrottleMs, 5000));
+  const dragFinalDebounceMs = Math.max(0, asNumber(options?.dragFinalDebounceMs, 500));
+  const onTrace = typeof options?.onTrace === "function" ? options.onTrace : null;
+  const onRuntimeChange = typeof options?.onRuntimeChange === "function" ? options.onRuntimeChange : null;
+  const onRuntimeStatus = typeof options?.onRuntimeStatus === "function" ? options.onRuntimeStatus : null;
+
+  let runtimeUnsubChange = null;
+  let runtimeUnsubStatus = null;
+  let saveTimer = 0;
+  let pendingReplayTimer = 0;
+  let pendingSave = null;
+  let saveInFlight = false;
+  let dragThrottleTimer = 0;
+  let dragFinalTimer = 0;
+  let dragPendingStructural = false;
+  let lastDragSaveAt = 0;
+  let saveQueuedRev = 0;
+  let conflictReplayReason = "";
+  let flushPromise = null;
+  let singleWriterOwner = "";
+  let singleWriterExpiresAt = 0;
+  let diagramMutationSaveActive = false;
+  const localMutationStaging = createLocalMutationStaging({
+    getStore: () => store,
+    getRuntime,
+    getSessionId: currentSid,
+    onRuntimeChange: (ev) => onRuntimeChange?.(ev),
+    cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
+    emit: (event, payload) => emit(event, payload),
+    requestAutosave: (reason) => scheduleSave(reason),
+    getIsDragging,
+    asText,
+    asNumber,
+  });
+
+  function emit(event, payload = {}) {
+    if (!onTrace) return;
+    try {
+      onTrace(String(event || "unknown"), payload);
+    } catch {
+      // no-op
+    }
+  }
+
+  function clearSaveTimer() {
+    if (!saveTimer) return;
+    window.clearTimeout(saveTimer);
+    saveTimer = 0;
+  }
+
+  function clearDragTimers() {
+    if (dragThrottleTimer) {
+      window.clearTimeout(dragThrottleTimer);
+      dragThrottleTimer = 0;
+    }
+    if (dragFinalTimer) {
+      window.clearTimeout(dragFinalTimer);
+      dragFinalTimer = 0;
+    }
+  }
+
+  function clearPendingReplayTimer() {
+    if (!pendingReplayTimer) return;
+    window.clearTimeout(pendingReplayTimer);
+    pendingReplayTimer = 0;
+  }
+
+  function clearPendingSave() {
+    pendingSave = null;
+    clearPendingReplayTimer();
+  }
+
+  function clearDragPending() {
+    dragPendingStructural = false;
+  }
+
+  function clearConflictReplayReason() {
+    conflictReplayReason = "";
+  }
+
+  function currentSid() {
+    return asText(getSessionId?.() || "").trim();
+  }
+
+  function normalizeSaveOwner(value) {
+    return asText(value || "").trim().toLowerCase();
+  }
+
+  function clearSingleWriter(reason = "clear_single_writer") {
+    const owner = singleWriterOwner;
+    singleWriterOwner = "";
+    singleWriterExpiresAt = 0;
+    if (!owner) return;
+    emit("SAVE_SINGLE_WRITER_CLEARED", {
+      sid: currentSid(),
+      owner,
+      reason: asText(reason || "clear_single_writer"),
+    });
+  }
+
+  function readSingleWriterOwner() {
+    if (!singleWriterOwner) return "";
+    if (singleWriterExpiresAt > 0 && Date.now() > singleWriterExpiresAt) {
+      clearSingleWriter("expired");
+      return "";
+    }
+    return singleWriterOwner;
+  }
+
+  function beginSingleWriter(ownerRaw, options = {}) {
+    const owner = normalizeSaveOwner(ownerRaw);
+    if (!owner) return { ok: false, owner: "" };
+    const ttlMs = Math.max(1000, asNumber(options?.ttlMs, 15000));
+    singleWriterOwner = owner;
+    singleWriterExpiresAt = Date.now() + ttlMs;
+    clearSaveTimer();
+    clearPendingReplayTimer();
+    emit("SAVE_SINGLE_WRITER_SET", {
+      sid: currentSid(),
+      owner,
+      ttl_ms: ttlMs,
+      reason: asText(options?.reason || "single_writer_begin"),
+    });
+    return { ok: true, owner, expiresAt: singleWriterExpiresAt };
+  }
+
+  function endSingleWriter(ownerRaw = "", reason = "single_writer_end") {
+    const activeOwner = readSingleWriterOwner();
+    if (!activeOwner) return { ok: true, cleared: false };
+    const owner = normalizeSaveOwner(ownerRaw);
+    if (owner && owner !== activeOwner) {
+      return {
+        ok: false,
+        cleared: false,
+        owner: activeOwner,
+      };
+    }
+    clearSingleWriter(reason);
+    return { ok: true, cleared: true };
+  }
+
+  function resolveSaveOwner(options = {}) {
+    return normalizeSaveOwner(options?.saveOwner || options?.owner);
+  }
+
+  function getSingleWriterBlock(options = {}) {
+    const activeOwner = readSingleWriterOwner();
+    if (!activeOwner) return { blocked: false, activeOwner: "" };
+    const callerOwner = resolveSaveOwner(options);
+    if (callerOwner && callerOwner === activeOwner) {
+      return { blocked: false, activeOwner };
+    }
+    return { blocked: true, activeOwner };
+  }
+
+  function setPendingSave(entry) {
+    pendingSave = {
+      sessionId: asText(entry?.sessionId || "").trim(),
+      runtimeToken: asNumber(entry?.runtimeToken, 0),
+      targetRev: asNumber(entry?.targetRev, 0),
+      reason: asText(entry?.reason || "unknown"),
+      at: Date.now(),
+    };
+    emit("PENDING_SAVE_SET", pendingSave);
+  }
+
+  function isPendingMatch(status) {
+    if (!pendingSave) return false;
+    const sid = currentSid();
+    if (!sid || sid !== pendingSave.sessionId) return false;
+    const token = asNumber(status?.token, -1);
+    return token === asNumber(pendingSave.runtimeToken, -2);
+  }
+
+  function schedulePendingReplay() {
+    clearPendingReplayTimer();
+    pendingReplayTimer = window.setTimeout(() => {
+      pendingReplayTimer = 0;
+      void flushSave("pending_replay", { fromPending: true });
+    }, 90);
+  }
+
+  async function applyRuntimeChange(ev) {
+    await localMutationStaging.stageRuntimeChange(ev);
+  }
+
+  function applyRuntimeStatus(status) {
+    onRuntimeStatus?.(status);
+    if (!status?.ready || !status?.defs) return;
+    if (!isPendingMatch(status)) return;
+    emit("PENDING_SAVE_REPLAY", {
+      sessionId: pendingSave?.sessionId,
+      runtimeToken: pendingSave?.runtimeToken,
+      targetRev: pendingSave?.targetRev,
+    });
+    schedulePendingReplay();
+  }
+
+  async function persistRaw(sid, xml, rev, reason, options = {}) {
+    const saveRaw = persistence?.saveRaw;
+    if (typeof saveRaw !== "function") {
+      return { ok: false, error: "saveRaw unavailable", status: 0 };
+    }
+    return await saveRaw(sid, xml, rev, reason, options);
+  }
+
+  function preparePersistedXml(xmlText, meta = {}) {
+    const rawXml = asText(xmlText);
+    if (!transformPersistedXml) {
+      return {
+        xml: rawXml,
+        transformed: false,
+      };
+    }
+    try {
+      const nextXml = asText(transformPersistedXml(rawXml, meta));
+      if (!nextXml) {
+        return {
+          xml: rawXml,
+          transformed: false,
+        };
+      }
+      return {
+        xml: nextXml,
+        transformed: nextXml !== rawXml,
+      };
+    } catch {
+      return {
+        xml: rawXml,
+        transformed: false,
+      };
+    }
+  }
+
+  function cacheRaw(sid, xml, rev, reason) {
+    const cacheRawFn = persistence?.cacheRaw;
+    if (typeof cacheRawFn !== "function") return { ok: false, source: "runtime_cache" };
+    try {
+      return cacheRawFn(sid, xml, rev, reason);
+    } catch {
+      return { ok: false, source: "runtime_cache" };
+    }
+  }
+
+  async function loadRaw(sid, optionsForLoad = {}) {
+    const loadRawFn = persistence?.loadRaw;
+    if (typeof loadRawFn !== "function") {
+      return { ok: false, error: "loadRaw unavailable", status: 0 };
+    }
+    return await loadRawFn(sid, optionsForLoad);
+  }
+
+  async function doFlush(reason = "manual", options = {}) {
+    const sid = currentSid();
+    if (!sid || !store) {
+      return {
+        ok: false,
+        rev: 0,
+        status: 0,
+        errorCode: "missing_session",
+        error: "missing session",
+      };
+    }
+    const state = store.getState();
+    const runtime = getRuntime();
+    const status = runtime?.getStatus?.() || {};
+    const rev = asNumber(state?.rev, 0);
+
+    // Build persistOptions early so the "runtime not ready" fallback path can
+    // pass metadata (bpmnMeta/sourceAction) to saveRaw without hitting a
+    // temporal dead zone.
+    const persistOptions = {};
+    if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
+      persistOptions.bpmnMeta = options.bpmnMeta;
+    }
+    if (options?.sourceAction && typeof options.sourceAction === "string") {
+      persistOptions.sourceAction = options.sourceAction;
+    }
+
+    emit("SAVE_REQUESTED", {
+      sid,
+      reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      from_pending: options?.fromPending ? 1 : 0,
+      force: options?.force ? 1 : 0,
+      trigger: asText(options?.trigger || ""),
+      save_owner: resolveSaveOwner(options),
+      xml_override: asText(options?.xmlOverride).trim() ? 1 : 0,
+      save_in_flight: saveInFlight ? 1 : 0,
+      queued_rev: saveQueuedRev,
+      rev,
+      dirty: state?.dirty ? 1 : 0,
+      runtime_ready: status?.ready ? 1 : 0,
+      runtime_defs: status?.defs ? 1 : 0,
+      runtime_token: asNumber(status?.token, 0),
+    });
+
+    if (!status?.ready || !status?.defs) {
+      setPendingSave({
+        sessionId: sid,
+        runtimeToken: asNumber(status?.token, 0),
+        targetRev: rev,
+        reason,
+      });
+      emit("SAVE_SKIPPED_NOT_READY", {
+        sid,
+        reason,
+        rev,
+        runtime_ready: status?.ready ? 1 : 0,
+        runtime_defs: status?.defs ? 1 : 0,
+      });
+      const fallbackXml = asText(state?.xml || "");
+      if (fallbackXml.trim()) {
+        emit("SAVE_PERSIST_STARTED", {
+          sid,
+          reason: `${reason}:fallback`,
+          trigger_class: classifySaveTrigger(reason, options),
+          save_path: "not_ready_fallback",
+          from_pending: options?.fromPending ? 1 : 0,
+          rev,
+          xml_len: fallbackXml.length,
+        });
+        const startedAt = Date.now();
+        const persisted = await persistRaw(sid, fallbackXml, rev, `${reason}:fallback`, persistOptions);
+        if (persisted?.ok) {
+          emit("SAVE_PERSIST_DONE", {
+            sid,
+            reason: `${reason}:fallback`,
+            rev,
+            status: asNumber(persisted?.status, 200),
+            ms: Date.now() - startedAt,
+          });
+          // Keep dirty=true to force true runtime save when ready.
+        } else {
+          const status = asNumber(persisted?.status, 0);
+          const errorCode = asText(
+            persisted?.errorCode
+            || (status > 0 ? `http_${status}` : "persist_failed"),
+          );
+          const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
+          emit("SAVE_PERSIST_FAIL", {
+            sid,
+            reason: `${reason}:fallback`,
+            rev,
+            status,
+            error_code: errorCode,
+            error: asText(persisted?.error || "persist fallback failed"),
+            error_details: errorDetails,
+          });
+        }
+      }
+      return { ok: true, pending: true, rev };
+    }
+
+    const xmlOverride = asText(options?.xmlOverride);
+    let runtimeToken = 0;
+    let rawXml = xmlOverride;
+    if (!rawXml.trim()) {
+      // The durable flush path must never hang indefinitely: a busy or
+      // transiently broken modeler can block runtime.getXml() for 10+ seconds,
+      // which also blocks every subsequent save that queues behind flushPromise.
+      // Cap serialization and treat a timeout the same as a "not_ready" deferral.
+      let xmlRes;
+      try {
+        xmlRes = await withTimeout(
+          () => runtime.getXml({ format: true }),
+          5000,
+          "doFlush.runtime.getXml",
+        );
+      } catch (timeoutError) {
+        xmlRes = { ok: false, reason: "not_ready", error: String(timeoutError?.message || timeoutError) };
+      }
+      if (!xmlRes?.ok) {
+        if (xmlRes?.reason === "not_ready" || xmlRes?.reason === "stale") {
+          setPendingSave({
+            sessionId: sid,
+            runtimeToken: asNumber(runtime.getStatus?.()?.token, 0),
+            targetRev: rev,
+            reason,
+          });
+          emit("SAVE_SKIPPED_NOT_READY", {
+            sid,
+            reason,
+            rev,
+            runtime_ready: runtime.getStatus?.()?.ready ? 1 : 0,
+            runtime_defs: runtime.getStatus?.()?.defs ? 1 : 0,
+            save_reason: asText(xmlRes?.reason),
+          });
+          return { ok: true, pending: true, rev };
+        }
+        return {
+          ok: false,
+          rev,
+          status: asNumber(xmlRes?.status, 0),
+          errorCode: asText(xmlRes?.reason || "runtime_get_xml_failed"),
+          error: asText(xmlRes?.error || xmlRes?.reason || "getXml failed"),
+        };
+      }
+      rawXml = asText(xmlRes?.xml);
+      runtimeToken = asNumber(xmlRes?.token, 0);
+    }
+    const prepared = preparePersistedXml(rawXml, {
+      sid,
+      reason,
+      rev,
+      runtimeToken,
+      source: xmlOverride.trim() ? "flush_save_override" : "flush_save",
+      bpmnMeta: options?.bpmnMeta,
+    });
+    let xml = prepared.xml;
+    const currentXmlHash = fnv1aHex(xml);
+    const localHash = asText(state?.lastHash || state?.hash || "");
+    const localDirty = state?.dirty === true;
+    const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
+    const explicitPublishManualSave = isPublishManualSaveReason(reason);
+    const isPropertyOperation = typeof reason === "string" && reason.startsWith("property_");
+    if (
+      !explicitPublishManualSave
+      && !isPropertyOperation
+      && !localDirty
+      && currentXmlHash
+      && localHash
+      && currentXmlHash === localHash
+      && localLastSavedRev >= rev
+    ) {
+      emit("SAVE_PERSIST_SKIPPED_UNCHANGED", {
+        sid,
+        reason,
+        rev,
+        last_saved_rev: localLastSavedRev,
+        xml_len: xml.length,
+      });
+      return {
+        ok: true,
+        rev: localLastSavedRev || rev,
+        storedRev: localLastSavedRev || rev,
+        skipped: true,
+        unchanged: true,
+        xml,
+        hash: currentXmlHash,
+        xmlAlreadyTransformed: prepared.transformed,
+      };
+    }
+    if (hasDuplicateCamundaProperties(xml)) {
+      const dedupedXml = dedupCamundaProperties(xml);
+      emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
+        sid,
+        reason,
+        rev,
+        xml_len: xml.length,
+        deduped_xml_len: dedupedXml.length,
+      });
+      xml = dedupedXml;
+    }
+
+    const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
+    const targetRev = asNumber(refreshed?.rev, rev);
+    emit("SAVE_EXECUTED", {
+      sid,
+      reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      from_pending: options?.fromPending ? 1 : 0,
+      save_owner: resolveSaveOwner(options),
+      rev: targetRev,
+      runtime_token: runtimeToken,
+      xml_len: xml.length,
+    });
+    emit("SAVE_PERSIST_STARTED", {
+      sid,
+      reason,
+      trigger_class: classifySaveTrigger(reason, options),
+      save_path: "runtime_flush",
+      from_pending: options?.fromPending ? 1 : 0,
+      rev: targetRev,
+      xml_len: xml.length,
+    });
+    const startedAt = Date.now();
+    const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
+    const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
+    let staleRetryAttempts = 0;
+    let staleRetryChangedKeys = [];
+    let persisted = await persistRaw(sid, xml, targetRev, reason, persistOptions);
+    while (
+      !persisted?.ok
+      && staleConflictRetryEnabled
+      && staleRetryAttempts < staleConflictRetryMaxAttempts
+      && isStaleConflictFailure(persisted)
+    ) {
+      staleRetryAttempts += 1;
+      if (staleRetryChangedKeys.length === 0) {
+        staleRetryChangedKeys = readStaleConflictChangedKeys(persisted?.errorDetails);
+      }
+      emit("SAVE_STALE_CONFLICT_RETRY", {
+        sid,
+        reason,
+        rev: targetRev,
+        retry_attempt: staleRetryAttempts,
+        status: asNumber(persisted?.status, 0),
+        error_code: normalizeErrorCode(persisted?.errorCode),
+        error_details: normalizeErrorDetails(persisted?.errorDetails),
+        changed_keys: staleRetryChangedKeys,
+      });
+      persisted = await persistRaw(sid, xml, targetRev, reason, persistOptions);
+    }
+    if (!persisted?.ok) {
+      const status = asNumber(persisted?.status, 0);
+      const errorCode = asText(
+        persisted?.errorCode
+        || (status > 0 ? `http_${status}` : "persist_failed"),
+      );
+      const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
+      emit("SAVE_PERSIST_FAIL", {
+        sid,
+        reason,
+        rev: targetRev,
+        status,
+        error_code: errorCode,
+        error: asText(persisted?.error || "persist failed"),
+        error_details: errorDetails,
+        stale_retry_attempts: staleRetryAttempts,
+      });
+      return {
+        ok: false,
+        rev: targetRev,
+        status,
+        errorCode,
+        error: asText(persisted?.error || "persist failed"),
+        errorDetails,
+        staleRetryAttempts,
+      };
+    }
+    const storedRev = asNumber(persisted?.storedRev, targetRev);
+    const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
+    cacheRaw(sid, xml, storedRev, reason);
+    store.markSaved(storedRev, xmlHash);
+    if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= targetRev) {
+      clearPendingSave();
+    }
+    emit("SAVE_PERSIST_DONE", {
+      sid,
+      reason,
+      rev: storedRev,
+      status: asNumber(persisted?.status, 200),
+      diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
+      ms: Date.now() - startedAt,
+      stale_retry_applied: staleRetryAttempts > 0 ? 1 : 0,
+      stale_retry_attempts: staleRetryAttempts,
+      stale_retry_changed_keys: staleRetryChangedKeys,
+    });
+    return {
+      ok: true,
+      rev: storedRev,
+      storedRev,
+      diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
+      xml,
+      xmlAlreadyTransformed: prepared.transformed,
+      staleRetryApplied: staleRetryAttempts > 0,
+      staleRetryAttempts,
+      staleRetryChangedKeys,
+      bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
+        ? persisted.bpmnVersionSnapshot
+        : null,
+    };
+  }
+
+  function scheduleSave(reason = "autosave") {
+    if (!store) return;
+    const lane = getSingleWriterBlock();
+    if (lane.blocked) {
+      emit("SAVE_SKIPPED_SINGLE_WRITER", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+        active_owner: lane.activeOwner,
+      });
+      return;
+    }
+    // If a save is already in-flight, don't start a new timer — the in-flight
+    // flushSave will check saveQueuedRev after completion and re-flush if needed.
+    if (saveInFlight) {
+      emit("SAVE_SCHEDULE_COALESCED", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+      });
+      return;
+    }
+    if (diagramMutationSaveActive) {
+      emit("SAVE_SCHEDULE_DEFERRED_TO_MUTATION_LIFECYCLE", {
+        sid: currentSid(),
+        reason: asText(reason || "autosave"),
+      });
+      return;
+    }
+    const state = store.getState();
+    saveQueuedRev = Math.max(saveQueuedRev, asNumber(state?.rev, 0));
+    emit("SAVE_SCHEDULED", {
+      sid: currentSid(),
+      reason: asText(reason || "autosave"),
+      trigger_class: classifySaveTrigger(reason),
+      rev: asNumber(state?.rev, 0),
+      dirty: state?.dirty ? 1 : 0,
+      queued_rev: saveQueuedRev,
+      save_in_flight: saveInFlight ? 1 : 0,
+    });
+
+    const isAutosave = asText(reason || "").toLowerCase() === "autosave";
+    const dragging = isAutosave && getIsDragging();
+
+    if (dragging) {
+      // While the user is dragging, throttle structural autosaves and coalesce
+      // positional/structural changes into at most one PUT per dragThrottleMs.
+      dragPendingStructural = true;
+      if (!dragThrottleTimer && !dragFinalTimer) {
+        const sinceLast = lastDragSaveAt ? Date.now() - lastDragSaveAt : 0;
+        const delay = Math.max(0, dragThrottleMs - sinceLast);
+        dragThrottleTimer = window.setTimeout(() => {
+          dragThrottleTimer = 0;
+          lastDragSaveAt = Date.now();
+          const hadPending = dragPendingStructural;
+          dragPendingStructural = false;
+          if (hadPending) {
+            void flushSave("autosave");
+          }
+        }, delay);
+      }
+      return;
+    }
+
+    clearSaveTimer();
+    saveTimer = window.setTimeout(() => {
+      saveTimer = 0;
+      void flushSave(reason);
+    }, debounceMs);
+  }
+
+  function notifyDragStart() {
+    if (!store) return;
+    // A pending normal autosave should not fire mid-drag; convert it to the
+    // drag-throttle queue so it obeys the throttle/final-debounce rules.
+    if (saveTimer) {
+      clearSaveTimer();
+      dragPendingStructural = true;
+    }
+  }
+
+  function notifyDragEnd() {
+    if (!store) return;
+    // Cancel any in-flight drag throttle; the user has released the mouse.
+    if (dragThrottleTimer) {
+      window.clearTimeout(dragThrottleTimer);
+      dragThrottleTimer = 0;
+    }
+    // If there are structural changes that never got flushed during the drag,
+    // schedule one final debounced save shortly after mouseup.
+    if (dragPendingStructural && !dragFinalTimer && !saveInFlight) {
+      dragFinalTimer = window.setTimeout(() => {
+        dragFinalTimer = 0;
+        dragPendingStructural = false;
+        void flushSave("autosave");
+      }, dragFinalDebounceMs);
+    }
+  }
+
+  async function flushSave(reason = "manual", options = {}) {
+    const lane = getSingleWriterBlock(options);
+    if (lane.blocked) {
+      emit("SAVE_SKIPPED_SINGLE_WRITER", {
+        sid: currentSid(),
+        reason: asText(reason || "manual"),
+        active_owner: lane.activeOwner,
+      });
+      return {
+        ok: true,
+        skipped: true,
+        singleWriterBlocked: true,
+        activeOwner: lane.activeOwner,
+      };
+    }
+    clearSaveTimer();
+    if (!store) return { ok: false, rev: 0, error: "store unavailable" };
+    if (flushPromise) {
+      const hasXmlOverride = asText(options?.xmlOverride).trim().length > 0;
+      const maxWaitMs = hasXmlOverride ? 4000 : 8000;
+      await Promise.race([
+        flushPromise,
+        new Promise((resolve) => setTimeout(resolve, maxWaitMs)),
+      ]);
+    }
+    const run = (async () => {
+      saveInFlight = true;
+      try {
+        const incomingReason = asText(reason || "manual");
+        let effectiveReason = incomingReason;
+        if (conflictReplayReason && !isIntentPreservingReason(incomingReason)) {
+          effectiveReason = conflictReplayReason;
+          emit("SAVE_CONFLICT_INTENT_REPLAY", {
+            sid: currentSid(),
+            incoming_reason: incomingReason,
+            replay_reason: effectiveReason,
+          });
+          clearConflictReplayReason();
+        }
+        const result = await doFlush(effectiveReason, options);
+        const state = store.getState();
+        const localRev = asNumber(state?.rev, 0);
+        if (isDiagramStateConflictResult(result) && !result?.pending) {
+          const lastSavedRev = asNumber(state?.lastSavedRev, 0);
+          saveQueuedRev = Math.max(lastSavedRev, 0);
+          if (isIntentPreservingReason(effectiveReason)) {
+            conflictReplayReason = buildConflictReplayReason(effectiveReason);
+            emit("SAVE_CONFLICT_INTENT_ARMED", {
+              sid: currentSid(),
+              reason: conflictReplayReason,
+              status: asNumber(result?.status, 409),
+              error_code: asText(result?.errorCode || asObject(result?.errorDetails)?.code || "http_409"),
+            });
+          } else {
+            clearConflictReplayReason();
+          }
+          emit("SAVE_QUEUE_ABORTED_ON_CONFLICT", {
+            sid: currentSid(),
+            reason: asText(effectiveReason || "manual"),
+            local_rev: localRev,
+            last_saved_rev: lastSavedRev,
+            status: asNumber(result?.status, 409),
+            error_code: asText(result?.errorCode || asObject(result?.errorDetails)?.code || "http_409"),
+          });
+          return result;
+        }
+        if (result?.ok && !result?.pending) {
+          clearConflictReplayReason();
+        }
+        if (saveQueuedRev > asNumber(state?.lastSavedRev, 0) && !result?.pending) {
+          saveQueuedRev = Math.max(saveQueuedRev, localRev);
+          if (localRev > asNumber(state?.lastSavedRev, 0)) {
+            return await doFlush(buildQueuedReplayReason(effectiveReason), options);
+          }
+        }
+        return result;
+      } finally {
+        saveInFlight = false;
+      }
+    })();
+    flushPromise = run;
+    try {
+      return await run;
+    } finally {
+      if (flushPromise === run) flushPromise = null;
+    }
+  }
+
+  async function persistExplicitXml(xmlText, reason = "explicit_persist", options = {}) {
+    const lane = getSingleWriterBlock(options);
+    if (lane.blocked) {
+      emit("SAVE_SKIPPED_SINGLE_WRITER", {
+        sid: currentSid(),
+        reason: asText(reason || "explicit_persist"),
+        active_owner: lane.activeOwner,
+      });
+      return {
+        ok: true,
+        skipped: true,
+        singleWriterBlocked: true,
+        activeOwner: lane.activeOwner,
+      };
+    }
+    if (!store) return { ok: false, rev: 0, error: "store unavailable" };
+    if (flushPromise) {
+      await flushPromise;
+    }
+    const run = (async () => {
+      saveInFlight = true;
+      try {
+        const sid = currentSid();
+        if (!sid) {
+          return {
+            ok: false,
+            rev: 0,
+            status: 0,
+            errorCode: "missing_session",
+            error: "missing session",
+          };
+        }
+        const state = store.getState();
+        const rev = asNumber(options?.rev, asNumber(state?.rev, 0));
+        let xml = asText(xmlText);
+        emit("SAVE_EXECUTED", {
+          sid,
+          reason,
+          trigger_class: classifySaveTrigger(reason, options),
+          rev,
+          runtime_token: 0,
+          xml_len: xml.length,
+          explicit: 1,
+        });
+        emit("SAVE_PERSIST_STARTED", {
+          sid,
+          reason,
+          trigger_class: classifySaveTrigger(reason, options),
+          save_path: "explicit_persist",
+          rev,
+          xml_len: xml.length,
+        });
+        const startedAt = Date.now();
+        if (hasDuplicateCamundaProperties(xml)) {
+          const dedupedXml = dedupCamundaProperties(xml);
+          emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
+            sid,
+            reason,
+            rev,
+            xml_len: xml.length,
+            deduped_xml_len: dedupedXml.length,
+          });
+          xml = dedupedXml;
+        }
+        const explicitPersistOptions = {};
+        if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
+          explicitPersistOptions.bpmnMeta = options.bpmnMeta;
+        }
+        const persisted = await persistRaw(sid, xml, rev, reason, explicitPersistOptions);
+        if (!persisted?.ok) {
+          const status = asNumber(persisted?.status, 0);
+          const errorCode = asText(
+            persisted?.errorCode
+            || (status > 0 ? `http_${status}` : "persist_failed"),
+          );
+          const errorDetails = normalizeErrorDetails(persisted?.errorDetails);
+          emit("SAVE_PERSIST_FAIL", {
+            sid,
+            reason,
+            rev,
+            status,
+            error_code: errorCode,
+            error: asText(persisted?.error || "persist failed"),
+            error_details: errorDetails,
+          });
+          return {
+            ok: false,
+            rev,
+            status,
+            errorCode,
+            error: asText(persisted?.error || "persist failed"),
+            errorDetails,
+          };
+        }
+        const storedRev = asNumber(persisted?.storedRev, rev);
+        const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
+        cacheRaw(sid, xml, storedRev, reason);
+        store.markSaved(storedRev, xmlHash);
+        emit("SAVE_PERSIST_DONE", {
+          sid,
+          reason,
+          rev: storedRev,
+          status: asNumber(persisted?.status, 200),
+          diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
+          ms: Date.now() - startedAt,
+        });
+        return {
+          ok: true,
+          rev: storedRev,
+          storedRev,
+          diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
+          bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
+            ? persisted.bpmnVersionSnapshot
+            : null,
+        };
+      } finally {
+        saveInFlight = false;
+      }
+    })();
+    flushPromise = run;
+    try {
+      return await run;
+    } finally {
+      if (flushPromise === run) flushPromise = null;
+    }
+  }
+
+  function bindRuntime(runtime) {
+    if (typeof runtimeUnsubChange === "function") {
+      try {
+        runtimeUnsubChange();
+      } catch {
+      }
+    }
+    if (typeof runtimeUnsubStatus === "function") {
+      try {
+        runtimeUnsubStatus();
+      } catch {
+      }
+    }
+    runtimeUnsubChange = null;
+    runtimeUnsubStatus = null;
+    if (!runtime) return;
+    runtimeUnsubChange = runtime.onChange((ev) => {
+      void applyRuntimeChange(ev);
+    });
+    runtimeUnsubStatus = runtime.onStatus((status) => {
+      applyRuntimeStatus(status);
+    });
+  }
+
+  function unbindRuntime() {
+    if (typeof runtimeUnsubChange === "function") {
+      try {
+        runtimeUnsubChange();
+      } catch {
+      }
+    }
+    if (typeof runtimeUnsubStatus === "function") {
+      try {
+        runtimeUnsubStatus();
+      } catch {
+      }
+    }
+    runtimeUnsubChange = null;
+    runtimeUnsubStatus = null;
+  }
+
+  function syncExternalXml(xml, source = "external", options = {}) {
+    if (!store) return null;
+    // Authoritative external XML (e.g. after a property-only save or server sync)
+    // must not be overwritten by a stale autosave that was queued against the
+    // previous modeler state. Cancel any pending autosave.
+    clearSaveTimer();
+    clearPendingSave();
+    clearDragTimers();
+    clearDragPending();
+    saveQueuedRev = 0;
+    return store.setXml(xml, source, {
+      bumpRev: options?.bumpRev === true,
+      dirty: options?.dirty === true,
+      loadedRev: options?.loadedRev,
+    });
+  }
+
+  async function reload(optionsForReload = {}) {
+    const sid = currentSid();
+    if (!sid || !store) return { ok: false, error: "missing session", applied: false };
+    const state = store.getState();
+    const localXml = asText(state?.xml || "");
+    const localRev = asNumber(state?.rev, 0);
+    const localHash = asText(state?.lastHash || state?.hash || fnv1aHex(localXml));
+    const preferStore = optionsForReload?.preferStore === true;
+
+    if (preferStore && localXml.trim()) {
+      emit("LOAD_SKIPPED_STORE_PRIORITY", {
+        sid,
+        rev: localRev,
+        hash: localHash,
+      });
+      return {
+        ok: true,
+        applied: false,
+        reason: "store_priority",
+        source: "store",
+        xml: localXml,
+        rev: localRev,
+        hash: localHash,
+      };
+    }
+
+    emit("LOAD_REQUESTED", {
+      sid,
+      rev: localRev,
+      dirty: state?.dirty ? 1 : 0,
+    });
+    const loaded = await loadRaw(sid, optionsForReload);
+    if (!loaded?.ok) {
+      emit("LOAD_FAILED", {
+        sid,
+        status: asNumber(loaded?.status, 0),
+        error: asText(loaded?.error || "load failed"),
+      });
+      return {
+        ok: false,
+        applied: false,
+        status: asNumber(loaded?.status, 0),
+        error: asText(loaded?.error || "load failed"),
+      };
+    }
+
+    const loadedXml = asText(loaded?.xml || "");
+    const loadedRev = asNumber(loaded?.rev, 0);
+    const loadedHash = asText(loaded?.hash || fnv1aHex(loadedXml));
+    const source = asText(loaded?.source || "persistence");
+    const sourceReason = asText(loaded?.sourceReason || "");
+
+    if (loadedRev > 0 && loadedRev < localRev) {
+      emit("LOAD_SKIPPED_OLDER_REV", {
+        sid,
+        loaded_rev: loadedRev,
+        local_rev: localRev,
+        source,
+      });
+      return {
+        ok: true,
+        applied: false,
+        reason: "older_rev",
+        source,
+        xml: localXml,
+        rev: localRev,
+        hash: localHash,
+      };
+    }
+
+    if (state?.dirty && localXml.trim() && loadedHash && localHash && loadedHash !== localHash) {
+      emit("LOAD_SKIPPED_DIRTY_LOCAL", {
+        sid,
+        loaded_rev: loadedRev,
+        local_rev: localRev,
+        loaded_hash: loadedHash,
+        local_hash: localHash,
+        source,
+      });
+      return {
+        ok: true,
+        applied: false,
+        reason: "dirty_local_newer",
+        source,
+        xml: localXml,
+        rev: localRev,
+        hash: localHash,
+      };
+    }
+
+    const applied = store.setXml(loadedXml, source, {
+      bumpRev: false,
+      dirty: false,
+      loadedRev,
+    });
+    const appliedRev = asNumber(applied?.rev, localRev);
+    const markRev = loadedRev > 0 ? loadedRev : appliedRev;
+    store.markLoaded(markRev, loadedHash);
+    emit("LOAD_APPLIED", {
+      sid,
+      source,
+      source_reason: sourceReason,
+      loaded_rev: loadedRev,
+      local_rev: appliedRev,
+      hash: loadedHash,
+      xml_len: loadedXml.length,
+    });
+    return {
+      ok: true,
+      applied: true,
+      source,
+      sourceReason,
+      xml: loadedXml,
+      rev: appliedRev,
+      loadedRev: markRev,
+      hash: loadedHash,
+    };
+  }
+
+  function getDebugState() {
+    return {
+      pendingSave: pendingSave ? { ...pendingSave } : null,
+      saveInFlight,
+      saveQueuedRev,
+      conflictReplayReason,
+      singleWriterOwner: readSingleWriterOwner(),
+      singleWriterExpiresAt,
+      store: store?.getState?.() || null,
+    };
+  }
+
+  function isFlushing() {
+    return !!saveInFlight || !!flushPromise;
+  }
+
+  function clearPendingWork(reason = "manual_clear") {
+    clearSaveTimer();
+    clearDragTimers();
+    clearPendingSave();
+    clearConflictReplayReason();
+    clearDragPending();
+    const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
+    saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
+    emit("SAVE_QUEUE_CLEARED", {
+      reason: asText(reason || "manual_clear"),
+      last_saved_rev: lastSavedRev,
+    });
+  }
+
+  function destroy() {
+    clearPendingWork("destroy");
+    unbindRuntime();
+    flushPromise = null;
+    saveInFlight = false;
+    saveQueuedRev = 0;
+    lastDragSaveAt = 0;
+    clearConflictReplayReason();
+    clearSingleWriter("destroy");
+  }
+
+  function setDiagramMutationSaveActive(active) {
+    diagramMutationSaveActive = active === true;
+  }
+
+  return {
+    bindRuntime,
+    unbindRuntime,
+    scheduleSave,
+    notifyDragStart,
+    notifyDragEnd,
+    setDiagramMutationSaveActive,
+    flushSave,
+    persistExplicitXml,
+    beginSingleWriter,
+    endSingleWriter,
+    reload,
+    syncExternalXml,
+    getDebugState,
+    isFlushing,
+    clearPendingWork,
+    destroy,
+  };
+}

@@ -1,0 +1,4555 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import AppShell from "./components/AppShell";
+import ModeSwitchSegment from "./components/ModeSwitchSegment";
+import { apiRequest } from "./lib/apiCore";
+import TechnologistWorkspace from "./features/technologist/workspace/Workspace";
+import TobeLeaveConfirmModal from "./features/technologist/workspace/TobeLeaveConfirmModal";
+import {
+  TOBE_LEAVE_CANCEL,
+  TOBE_LEAVE_DISCARD,
+  TOBE_LEAVE_SAVE,
+  shouldConfirmTobeLeave,
+} from "./features/technologist/workspace/tobeLeaveGuard";
+import NotesPanel from "./components/NotesPanel";
+import NotesMvpPanel from "./components/NotesMvpPanel";
+import NoSession from "./components/stages/NoSession";
+import ProjectWizardModal from "./components/ProjectWizardModal";
+import SessionFlowModal from "./components/SessionFlowModal";
+import OrgSettingsModal from "./components/org/OrgSettingsModal";
+import Modal from "./shared/ui/Modal";
+import DeploymentNoticeModal from "./features/deployment-notices/components/DeploymentNoticeModal";
+import useSessionStore from "./features/sessions/hooks/useSessionStore";
+import {
+  normalizeElementNotesMap,
+  withAddedElementNote,
+  withElementNoteSummary,
+  withRemappedElementNotes,
+} from "./features/notes/elementNotes";
+import { deriveActorsFromBpmn } from "./features/process/lib/deriveActorsFromBpmn";
+import { createAiInputHash, executeAi } from "./features/ai/aiExecutor";
+
+import { uid } from "./lib/ids";
+import {
+  apiMeta,
+  apiListProjects,
+  apiCreateProject,
+  apiListProjectSessions,
+  apiCreateProjectSession,
+  apiPatchProject,
+  apiListSessions,
+  apiCreateSession,
+  apiGetSession,
+  apiGetBpmnXml,
+  apiPatchSession,
+  apiPostNote,
+  apiPreviewNotesExtraction,
+  apiApplyNotesExtraction,
+  apiDeleteProject,
+  apiDeleteSession,
+  apiAcknowledgeNoteMention,
+  apiListMyNoteMentions,
+  apiListNoteNotifications,
+  apiRecompute,
+  apiPutBpmnXml,
+  apiInferBpmnRtiers,
+  apiNavigateToSubprocess,
+  apiReturnToParent,
+} from "./lib/api";
+import {
+  getLatestBpmnSnapshot,
+  shouldAutoRestoreFromSnapshot,
+  overwriteBpmnSnapshot,
+} from "./features/process/bpmn/snapshots/bpmnSnapshots";
+import {
+  canonicalRobotMetaMapString,
+  extractRobotMetaMapFromBpmnXml,
+  normalizeRobotMetaMap,
+  removeRobotMetaByElementId,
+  upsertRobotMetaByElementId,
+  validateRobotMetaV1,
+} from "./features/process/robotmeta/robotMeta";
+import {
+  extractCamundaExtensionsMapFromBpmnXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+  removeCamundaExtensionStateByElementId,
+  upsertCamundaExtensionStateByElementId,
+} from "./features/process/camunda/camundaExtensions";
+import { saveBpmnState } from "./features/process/save/saveBpmnState";
+import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
+import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
+import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
+import {
+  emitPropertySaveEvent,
+} from "./features/process/save/propertySaveEvents";
+import {
+  normalizeCamundaPresentationMap,
+  removeCamundaPresentationByElementId,
+  shouldResetPropertiesOverlayPreviewForSelection,
+  upsertCamundaPresentationByElementId,
+} from "./features/process/camunda/camundaPresentation";
+import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
+import { useHiddenFields } from "./components/sidebar/displaySettings/useHiddenFields";
+import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
+import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
+import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
+import applySessionMetaHydration from "./features/session-meta/hydrate/applySessionMetaHydration";
+import { createSessionMetaConflictGuard } from "./features/session-meta/guards/sessionMetaConflictGuard";
+import useSessionMetaWriteGateway from "./features/session-meta/write/useSessionMetaWriteGateway";
+import { buildSessionMetaWriteEnvelope } from "./features/session-meta/write/sessionMetaMergePolicy";
+import { normalizeSessionCompanion } from "./features/process/session-companion/sessionCompanionContracts.js";
+import { requestProcessStageFlushBeforeLeave } from "./features/process/navigation/processLeaveFlush";
+import {
+  buildLeaveNavigationConfirmText,
+  deriveLeaveNavigationRisk,
+} from "./features/process/navigation/leaveNavigationGuardModel";
+import { useAuth } from "./features/auth/AuthProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import { projectSessionsQueryKey } from "./features/explorer/projectSessionsQuery.js";
+import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
+import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
+import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatus";
+import { shortUserFacingError } from "./features/process/lib/userFacingErrorText";
+import useSessionRouteOrchestration, {
+  pushSessionSelectionToUrl,
+  readSelectionFromUrl,
+  seedSessionParentHistoryToUrl,
+  shouldPreserveSelectionRouteDuringRestore,
+  writeSelectionToUrl,
+} from "./app/useSessionRouteOrchestration";
+import {
+  normalizeProcessMapProjectContext,
+  readProcessMapProjectContextFromHistory,
+  PROCESS_MAP_ROUTE_STATE_KEY,
+} from "./app/processMapRouteModel";
+import useBpmnXmlCache from "./features/process/bpmn/stage/cache/useBpmnXmlCache.js";
+import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
+import useSubprocessNavigation from "./features/process/bpmn/stage/navigation/useSubprocessNavigation.js";
+import useSessionStatusOptimisticUpdate from "./features/process/bpmn/stage/optimisticUpdate/useSessionStatusOptimisticUpdate.js";
+import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
+import useAppShellController from "./app/useAppShellController";
+import { buildSessionDebugProbeSnapshot } from "./app/sessionDebugProbe";
+import {
+  mergeGlobalNotesLists,
+  normalizeGlobalNotes,
+} from "./app/sessionGlobalNotes";
+import {
+  normalizeStepTimeMinutes,
+  normalizeStepTimeSeconds,
+  readNodeStepTimeMinutes,
+  readNodeStepTimeSeconds,
+} from "./app/nodeStepTime";
+import {
+  projectIdOf,
+  projectTitleOf,
+  sessionIdOf,
+} from "./app/projectSessionSelectors";
+import { useChildSessionNoteAggregatesByElementId } from "./lib/sessionNoteAggregates";
+import useSessionEvents from "./hooks/useSessionEvents";
+import {
+  emptyBpmnMeta,
+  mergeHybridV2Doc,
+  normalizeBpmnMeta,
+  normalizeExecutionPlans,
+  normalizeFlowMetaMap,
+  normalizeFlowTier,
+  normalizeNodePathEntry,
+  normalizeNodePathMetaMap,
+} from "./app/bpmnMetaNormalization";
+
+function isLocalSessionId(id) {
+  return typeof id === "string" && (id === "local" || id.startsWith("local_"));
+}
+
+function ensureArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
+function ensureObject(x) {
+  return x && typeof x === "object" && !Array.isArray(x) ? x : {};
+}
+
+function normalizeOpenProcessTab(tab) {
+  const value = String(tab || "").trim().toLowerCase();
+  if (value === "editor") return "diagram";
+  if (value === "diagram" || value === "interview" || value === "xml" || value === "doc" || value === "dod") return value;
+  return "";
+}
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function shouldLogDraftTrace() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_DEBUG_BPMN__) return true;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_bpmn") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function shouldLogCreateTrace() {
+  if (typeof window === "undefined") return false;
+  if (window.__FPC_DEBUG_CREATE__) return true;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_create") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function fnv1aHex(input) {
+  const src = String(input || "");
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < src.length; i += 1) {
+    hash ^= src.charCodeAt(i);
+    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function shortStack() {
+  try {
+    return String(new Error("draft_merge_trace").stack || "")
+      .split("\n")
+      .slice(2, 7)
+      .map((line) => line.trim())
+      .join(" | ");
+  } catch {
+    return "";
+  }
+}
+
+function logDraftTrace(tag, payload = {}) {
+  if (!shouldLogDraftTrace()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[${String(tag || "DRAFT").toUpperCase()}] ${suffix}`.trim());
+}
+
+function logCreateTrace(tag, payload = {}) {
+  if (!shouldLogCreateTrace()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[${String(tag || "CREATE_FLOW").toUpperCase()}] ${suffix}`.trim());
+}
+
+function logDiscussionFocusDiag(event, payload = {}) {
+  try {
+    // eslint-disable-next-line no-console
+    console.info("[DISCUSSION_FOCUS_DIAG]", event, payload);
+  } catch {
+  }
+}
+
+function shouldLogSnapshotTrace() {
+  if (typeof window === "undefined") return false;
+  try {
+    return String(window.localStorage?.getItem("fpc_debug_snapshots") || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logSnapshotTrace(tag, payload = {}) {
+  if (!shouldLogSnapshotTrace()) return;
+  const suffix = Object.entries(payload || {})
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+  // eslint-disable-next-line no-console
+  console.debug(`[SNAPSHOT] ${String(tag || "trace")} ${suffix}`.trim());
+}
+
+function normalizeOrgSettingsTab(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (value === "members" || value === "invites" || value === "audit" || value === "dictionary") return value;
+  return "members";
+}
+
+function readOrgSettingsTabFromUrl() {
+  if (typeof window === "undefined") return "members";
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    return normalizeOrgSettingsTab(params.get("tab"));
+  } catch {
+    return "members";
+  }
+}
+
+const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
+const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
+const SIDEBAR_DOCK_SIDE_KEY = "ui.sidebar.dock_side";
+const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
+const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
+const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
+function normalizeStepTimeUnit(raw) {
+  return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
+}
+
+function readStepTimeUnit() {
+  if (typeof window === "undefined") return "min";
+  try {
+    return normalizeStepTimeUnit(window.localStorage?.getItem(STEP_TIME_UNIT_KEY) || "min");
+  } catch {
+    return "min";
+  }
+}
+
+function writeStepTimeUnit(unit) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(STEP_TIME_UNIT_KEY, normalizeStepTimeUnit(unit));
+  } catch {
+  }
+}
+
+function bpmnMetaLocalStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${BPMN_META_LOCAL_KEY_PREFIX}${sid}` : "";
+}
+
+function propertiesOverlayAlwaysLocalStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX}${sid}` : "";
+}
+
+function readPropertiesOverlayAlwaysEnabled(sessionId) {
+  if (typeof window === "undefined") return false;
+  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return false;
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "").trim().toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  } catch {
+    return false;
+  }
+}
+
+function writePropertiesOverlayAlwaysEnabled(sessionId, value) {
+  if (typeof window === "undefined") return;
+  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
+  if (!key) return;
+  try {
+    window.localStorage?.setItem(key, value ? "1" : "0");
+  } catch {
+  }
+}
+
+function readLocalBpmnMeta(sessionId) {
+  if (typeof window === "undefined") return emptyBpmnMeta();
+  const key = bpmnMetaLocalStorageKey(sessionId);
+  if (!key) return emptyBpmnMeta();
+  try {
+    const raw = String(window.localStorage?.getItem(key) || "").trim();
+    if (!raw) return emptyBpmnMeta();
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeBpmnMeta(parsed);
+    // Camunda extensions are authoritative from server BPMN XML; never hydrate
+    // stale local copies into the read model.
+    delete normalized.camunda_extensions_by_element_id;
+    return normalized;
+  } catch {
+    return emptyBpmnMeta();
+  }
+}
+
+function writeLocalBpmnMeta(sessionId, meta) {
+  if (typeof window === "undefined") return;
+  const key = bpmnMetaLocalStorageKey(sessionId);
+  if (!key) return;
+  try {
+    const payload = normalizeBpmnMeta(meta);
+    // Do not cache Camunda extensions locally; they are derived from server XML
+    // and a stale local copy could resurrect deleted properties after reload.
+    delete payload.camunda_extensions_by_element_id;
+    window.localStorage?.setItem(key, JSON.stringify(payload));
+  } catch {
+  }
+}
+
+function isHardReloadNavigation() {
+  if (typeof window === "undefined") return false;
+  try {
+    const nav = window.performance?.getEntriesByType?.("navigation")?.[0];
+    const navType = String(nav?.type || "").toLowerCase();
+    return navType === "reload";
+  } catch {
+    return false;
+  }
+}
+
+function readLeftPanelHidden() {
+  if (typeof window === "undefined") return true;
+  // Hard reload always starts with closed sidebar.
+  if (isHardReloadNavigation()) return true;
+  try {
+    const openRaw = String(window.sessionStorage?.getItem(LEFT_PANEL_OPEN_KEY) || "").trim();
+    if (openRaw === "0") return true;
+    if (openRaw === "1") return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function readLeftPanelCompact() {
+  return false;
+}
+
+// A8: сторона дока левой панели, persist localStorage (default left).
+function readSidebarDockSide() {
+  if (typeof window === "undefined") return "left";
+  try {
+    return String(window.localStorage?.getItem(SIDEBAR_DOCK_SIDE_KEY) || "").trim() === "right" ? "right" : "left";
+  } catch {
+    return "left";
+  }
+}
+
+function ensureDraftShape(sessionId) {
+  return {
+    session_id: sessionId || null,
+    title: "",
+    roles: [],
+    start_role: "",
+    actors_derived: [],
+    nodes: [],
+    edges: [],
+    notes: [],
+    notes_by_element: {},
+    bpmn_meta: emptyBpmnMeta(),
+    interview: {},
+    questions: [],
+  };
+}
+
+function sessionToDraft(sid, session) {
+  const next = session || ensureDraftShape(sid);
+  const localMeta = normalizeBpmnMeta(readLocalBpmnMeta(sid));
+  const sessionMeta = normalizeBpmnMeta(ensureObject(next.bpmn_meta));
+  const xmlRobotMeta = normalizeRobotMetaMap(extractRobotMetaMapFromBpmnXml(next?.bpmn_xml || ""));
+  const xmlCamundaExtensions = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(next?.bpmn_xml || ""));
+  const { derivedReadMeta: normalizedMeta } = buildSessionMetaReadModel({
+    sessionMetaRaw: sessionMeta,
+    localMetaRaw: localMeta,
+    normalizeBpmnMeta,
+    normalizeHybridLayerMap,
+    mergeHybridV2Doc,
+    mergeDrawioMeta,
+    preferServerOverlay: true,
+  });
+  const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(sessionMeta.robot_meta_by_element_id)).length > 0;
+  const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
+  let effectiveRobotMeta = normalizedMeta.robot_meta_by_element_id;
+  const camundaHydration = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: xmlCamundaExtensions,
+    sessionMetaMap: normalizedMeta.camunda_extensions_by_element_id,
+    allowSeedFromBpmn: true,
+  });
+  let effectiveCamundaExtensions = normalizeCamundaExtensionsMap(camundaHydration.nextSessionMetaMap);
+  if (!Object.keys(effectiveRobotMeta).length && hasXmlRobotMeta) {
+    effectiveRobotMeta = xmlRobotMeta;
+  }
+  if (hasSessionRobotMeta && hasXmlRobotMeta) {
+    const sessionRobotCanonical = canonicalRobotMetaMapString(sessionMeta.robot_meta_by_element_id);
+    const xmlRobotCanonical = canonicalRobotMetaMapString(xmlRobotMeta);
+    if (sessionRobotCanonical !== xmlRobotCanonical && typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.warn("[ROBOT_META] BPMN robotMeta differs; session meta wins", { sessionId: String(sid || "") });
+    }
+  }
+  return {
+    ...ensureDraftShape(sid),
+    ...next,
+    session_id: sid,
+    roles: ensureArray(next.roles),
+    actors_derived: ensureArray(next.actors_derived),
+    nodes: ensureArray(next.nodes),
+    edges: ensureArray(next.edges),
+    notes: normalizeGlobalNotes(next.notes),
+    notes_by_element: normalizeElementNotesMap(next.notes_by_element || next.notesByElementId),
+    bpmn_meta: {
+      version: Number(normalizedMeta.version) > 0 ? Number(normalizedMeta.version) : 1,
+      viewport: normalizedMeta.viewport,
+      flow_meta: normalizedMeta.flow_meta,
+      node_path_meta: normalizedMeta.node_path_meta,
+      robot_meta_by_element_id: effectiveRobotMeta,
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(effectiveCamundaExtensions),
+      presentation_by_element_id: normalizeCamundaPresentationMap(normalizedMeta.presentation_by_element_id),
+      hybrid_layer_by_element_id: normalizedMeta.hybrid_layer_by_element_id,
+      hybrid_v2: normalizedMeta.hybrid_v2,
+      drawio: normalizeDrawioMeta(normalizedMeta.drawio),
+      execution_plans: normalizedMeta.execution_plans,
+      auto_pass_v1: ensureObject(normalizedMeta.auto_pass_v1),
+      session_companion_v1: normalizeSessionCompanion(normalizedMeta.session_companion_v1),
+    },
+    interview: ensureObject(next.interview),
+    questions: ensureArray(next.questions),
+  };
+}
+
+function normalizeDraftForStore(value) {
+  const next = ensureObject(value);
+  const sid = String(next.session_id || next.id || "").trim();
+  return sessionToDraft(sid || null, next);
+}
+
+function summarizeElementNotesMap(notesMap) {
+  const map = normalizeElementNotesMap(notesMap);
+  const keys = Object.keys(map).sort((a, b) => a.localeCompare(b, "ru"));
+  let noteCount = 0;
+  let maxUpdatedAt = 0;
+  const compact = keys.map((key) => {
+    const entry = ensureObject(map[key]);
+    const items = ensureArray(entry.items);
+    noteCount += items.length;
+    const updatedAt = Number(entry.updatedAt || 0);
+    if (Number.isFinite(updatedAt) && updatedAt > maxUpdatedAt) maxUpdatedAt = updatedAt;
+    const itemCompact = items
+      .map((it) => ({
+        id: String(it?.id || ""),
+        text: String(it?.text || ""),
+        updatedAt: Number(it?.updatedAt || 0),
+      }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id), "ru"));
+    return {
+      key,
+      updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+      items: itemCompact,
+    };
+  });
+  return {
+    keyCount: keys.length,
+    noteCount,
+    maxUpdatedAt: Number.isFinite(maxUpdatedAt) ? maxUpdatedAt : 0,
+    hash: fnv1aHex(JSON.stringify(compact)),
+  };
+}
+
+function normalizeAiQuestionsByElementForMerge(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out = {};
+  Object.keys(value).forEach((rawElementId) => {
+    const elementId = String(rawElementId || "").trim();
+    if (!elementId) return;
+    const rawEntry = value[rawElementId];
+    const rawList = Array.isArray(rawEntry)
+      ? rawEntry
+      : (Array.isArray(rawEntry?.items) ? rawEntry.items : []);
+    if (!rawList.length) return;
+    const byQid = {};
+    rawList.forEach((rawItem, idx) => {
+      const item = ensureObject(rawItem);
+      const qid = String(item?.qid || item?.id || item?.question_id || "").trim();
+      const text = String(item?.text || item?.question || "").trim();
+      if (!qid && !text) return;
+      const key = qid || `q_${idx + 1}_${fnv1aHex(text).slice(0, 8)}`;
+      byQid[key] = {
+        qid: key,
+        text,
+        comment: String(item?.comment || item?.answer || "").trim(),
+        status: String(item?.status || "open").trim() || "open",
+        createdAt: Number(item?.createdAt || item?.created_at || item?.ts || Date.now()) || Date.now(),
+        source: String(item?.source || "ai").trim() || "ai",
+        stepId: String(item?.stepId || item?.step_id || "").trim(),
+      };
+    });
+    const list = Object.values(byQid)
+      .filter((item) => String(item?.qid || "").trim() && String(item?.text || "").trim())
+      .sort((a, b) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
+    if (list.length) out[elementId] = list;
+  });
+  return out;
+}
+
+function mergeAiQuestionsByElementMaps(prevMapRaw, incomingMapRaw) {
+  const prevMap = normalizeAiQuestionsByElementForMerge(prevMapRaw);
+  const incomingMap = normalizeAiQuestionsByElementForMerge(incomingMapRaw);
+  const out = { ...prevMap };
+  Object.keys(incomingMap).forEach((elementId) => {
+    const prevList = ensureArray(out[elementId]).map((item) => ({ ...item }));
+    const byQid = {};
+    const byText = {};
+    prevList.forEach((item) => {
+      const qid = String(item?.qid || item?.id || "").trim();
+      if (qid) byQid[qid] = item;
+      const textKey = String(item?.text || "").trim().toLowerCase();
+      if (textKey) byText[textKey] = item;
+    });
+    ensureArray(incomingMap[elementId]).forEach((incoming) => {
+      const qid = String(incoming?.qid || incoming?.id || "").trim();
+      const text = String(incoming?.text || "").trim();
+      const textKey = text.toLowerCase();
+      const found = (qid && byQid[qid]) || (textKey && byText[textKey]) || null;
+      if (found) {
+        if (text) found.text = text;
+        if (!String(found?.comment || "").trim() && String(incoming?.comment || "").trim()) found.comment = String(incoming.comment).trim();
+        if (!String(found?.status || "").trim() && String(incoming?.status || "").trim()) found.status = String(incoming.status).trim();
+        if (!String(found?.stepId || "").trim() && String(incoming?.stepId || "").trim()) found.stepId = String(incoming.stepId).trim();
+        return;
+      }
+      const next = { ...incoming };
+      prevList.push(next);
+      if (qid) byQid[qid] = next;
+      if (textKey) byText[textKey] = next;
+    });
+    out[elementId] = prevList
+      .filter((item) => String(item?.qid || "").trim() && String(item?.text || "").trim())
+      .sort((a, b) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0));
+  });
+  return out;
+}
+
+function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
+  const prev = sessionToDraft(sid || null, prevDraft);
+  const incomingRaw = ensureObject(session);
+  const incomingPatchKeys = ensureArray(incomingRaw?._patch_payload_keys).map((key) => String(key || "").trim()).filter(Boolean);
+  const patchHasBpmnXml = incomingPatchKeys.includes("bpmn_xml");
+  const incoming = { ...incomingRaw };
+  delete incoming._sync_source;
+  delete incoming._source;
+  delete incoming._patch_payload_keys;
+  let next = sessionToDraft(sid || null, {
+    ...prev,
+    ...incoming,
+    session_id: sid || null,
+  });
+
+  const prevXml = String(prev?.bpmn_xml || "");
+  const incomingHasXml = hasOwn(incoming, "bpmn_xml");
+  const incomingXml = incomingHasXml ? String(incoming?.bpmn_xml || "") : "";
+  if (incomingHasXml && !incomingXml.trim() && prevXml.trim()) {
+    next = { ...next, bpmn_xml: prevXml };
+    logDraftTrace("MERGE_SKIP_EMPTY_BPMN_XML", {
+      sid: sid || "-",
+      source,
+      prevLen: prevXml.length,
+      prevHash: fnv1aHex(prevXml),
+    });
+  } else if (incomingHasXml && incomingXml.trim() && prevXml.trim()) {
+    const sourceKey = String(source || "").trim().toLowerCase();
+    const prevHash = fnv1aHex(prevXml);
+    const incomingHash = fnv1aHex(incomingXml);
+    const xmlChanged = incomingHash !== prevHash;
+    const prevRev = Number(prev?.bpmn_xml_version || prev?.version || 0);
+    const nextRev = Number(incoming?.bpmn_xml_version || incoming?.version || 0);
+    const incomingHasXmlRev = hasOwn(incoming, "bpmn_xml_version") || hasOwn(incoming, "version");
+    const isPatchSessionSource =
+      sourceKey === "patch_session" || sourceKey.endsWith("_session_patch");
+    const shouldSkipPatchXml =
+      isPatchSessionSource
+      && xmlChanged;
+
+    if (shouldSkipPatchXml) {
+      next = {
+        ...next,
+        bpmn_xml: prevXml,
+      };
+      logDraftTrace("MERGE_SKIP_PATCH_STALE_BPMN_XML", {
+        sid: sid || "-",
+        source,
+        prevLen: prevXml.length,
+        prevHash,
+        nextLen: incomingXml.length,
+        nextHash: incomingHash,
+        patchHasBpmnXml: patchHasBpmnXml ? 1 : 0,
+        incomingHasXmlRev: incomingHasXmlRev ? 1 : 0,
+        patchPayloadKeys: incomingPatchKeys.join(",") || "-",
+      });
+    } else if (prevRev > 0 && nextRev > 0 && nextRev < prevRev) {
+      next = {
+        ...next,
+        bpmn_xml: prevXml,
+        bpmn_xml_version: prevRev,
+      };
+      logDraftTrace("MERGE_SKIP_OLDER_BPMN_XML", {
+        sid: sid || "-",
+        source,
+        prevRev,
+        nextRev,
+        prevLen: prevXml.length,
+        prevHash: fnv1aHex(prevXml),
+      });
+    }
+  }
+
+  const prevActors = ensureArray(prev?.actors_derived);
+  const incomingHasActors = hasOwn(incoming, "actors_derived");
+  const incomingActors = ensureArray(incoming?.actors_derived);
+  if (prevActors.length > 0 && (!incomingHasActors || incomingActors.length === 0)) {
+    next = {
+      ...next,
+      actors_derived: prevActors,
+    };
+  } else if ((!incomingHasActors || incomingActors.length === 0) && String(next?.bpmn_xml || "").trim()) {
+    const xmlForDerive = String(next?.bpmn_xml || "");
+    const derivedActors = ensureArray(deriveActorsFromBpmn(xmlForDerive));
+    if (derivedActors.length > 0) {
+      next = {
+        ...next,
+        actors_derived: derivedActors,
+      };
+      logDraftTrace("MERGE_DERIVE_ACTORS", {
+        sid: sid || "-",
+        source,
+        xmlLen: xmlForDerive.length,
+        xmlHash: fnv1aHex(xmlForDerive),
+        actorsLen: derivedActors.length,
+      });
+    }
+  }
+
+  const prevElementNotes = normalizeElementNotesMap(prev?.notes_by_element || prev?.notesByElementId);
+  const incomingHasElementNotes = hasOwn(incoming, "notes_by_element") || hasOwn(incoming, "notesByElementId");
+  const incomingElementNotes = normalizeElementNotesMap(incoming?.notes_by_element || incoming?.notesByElementId);
+  if (incomingHasElementNotes && Object.keys(incomingElementNotes).length === 0 && Object.keys(prevElementNotes).length > 0) {
+    next = {
+      ...next,
+      notes_by_element: prevElementNotes,
+    };
+    logDraftTrace("MERGE_SKIP_EMPTY_NOTES_BY_ELEMENT", {
+      sid: sid || "-",
+      source,
+      beforeCount: Object.keys(prevElementNotes).length,
+    });
+  } else if (incomingHasElementNotes && Object.keys(incomingElementNotes).length > 0 && Object.keys(prevElementNotes).length > 0) {
+    const prevStats = summarizeElementNotesMap(prevElementNotes);
+    const incomingStats = summarizeElementNotesMap(incomingElementNotes);
+    const olderByTime = incomingStats.maxUpdatedAt > 0
+      && prevStats.maxUpdatedAt > 0
+      && incomingStats.maxUpdatedAt < prevStats.maxUpdatedAt;
+    const equalTimeButWeaker = incomingStats.maxUpdatedAt === prevStats.maxUpdatedAt
+      && incomingStats.hash !== prevStats.hash
+      && incomingStats.noteCount <= prevStats.noteCount;
+    if (olderByTime || equalTimeButWeaker) {
+      next = {
+        ...next,
+        notes_by_element: prevElementNotes,
+      };
+      logDraftTrace("MERGE_SKIP_OLDER_NOTES_BY_ELEMENT", {
+        sid: sid || "-",
+        source,
+        prevHash: prevStats.hash,
+        nextHash: incomingStats.hash,
+        prevNotes: prevStats.noteCount,
+        nextNotes: incomingStats.noteCount,
+        prevUpdatedAt: prevStats.maxUpdatedAt,
+        nextUpdatedAt: incomingStats.maxUpdatedAt,
+      });
+    }
+  }
+
+  const prevNotes = normalizeGlobalNotes(prev?.notes);
+  const incomingHasNotes = hasOwn(incoming, "notes");
+  const incomingNotes = normalizeGlobalNotes(incoming?.notes);
+  if (incomingHasNotes && incomingNotes.length === 0 && prevNotes.length > 0) {
+    next = {
+      ...next,
+      notes: prevNotes,
+    };
+    logDraftTrace("MERGE_SKIP_EMPTY_NOTES", {
+      sid: sid || "-",
+      source,
+      prevCount: prevNotes.length,
+    });
+  } else if (incomingHasNotes && prevNotes.length > 0) {
+    next = {
+      ...next,
+      notes: mergeGlobalNotesLists(prevNotes, incomingNotes),
+    };
+  } else {
+    next = {
+      ...next,
+      notes: normalizeGlobalNotes(next?.notes),
+    };
+  }
+
+  const prevInterview = ensureObject(prev?.interview);
+  const nextInterview = ensureObject(next?.interview);
+  const prevAiQuestionsByElement = normalizeAiQuestionsByElementForMerge(
+    prevInterview.ai_questions_by_element || prevInterview.aiQuestionsByElementId,
+  );
+  const incomingHasAiQuestionsByElement =
+    hasOwn(nextInterview, "ai_questions_by_element") || hasOwn(nextInterview, "aiQuestionsByElementId");
+  const incomingAiQuestionsByElement = normalizeAiQuestionsByElementForMerge(
+    nextInterview.ai_questions_by_element || nextInterview.aiQuestionsByElementId,
+  );
+  if (incomingHasAiQuestionsByElement || Object.keys(prevAiQuestionsByElement).length > 0) {
+    const mergedAiQuestionsByElement = mergeAiQuestionsByElementMaps(
+      prevAiQuestionsByElement,
+      incomingHasAiQuestionsByElement ? incomingAiQuestionsByElement : prevAiQuestionsByElement,
+    );
+    next = {
+      ...next,
+      interview: {
+        ...nextInterview,
+        ai_questions_by_element: mergedAiQuestionsByElement,
+      },
+    };
+  }
+
+  const prevBpmnMeta = ensureObject(prev?.bpmn_meta);
+  const nextBpmnMeta = ensureObject(next?.bpmn_meta);
+  const incomingBpmnMeta = ensureObject(incoming?.bpmn_meta);
+  const incomingHasBpmnMeta = hasOwn(incoming, "bpmn_meta");
+  const incomingHasPresentationMap = incomingHasBpmnMeta && hasOwn(incomingBpmnMeta, "presentation_by_element_id");
+  if (!incomingHasPresentationMap) {
+    const prevPresentationMap = normalizeCamundaPresentationMap(prevBpmnMeta.presentation_by_element_id);
+    if (Object.keys(prevPresentationMap).length > 0) {
+      next = {
+        ...next,
+        bpmn_meta: {
+          ...nextBpmnMeta,
+          presentation_by_element_id: prevPresentationMap,
+        },
+      };
+      logDraftTrace("MERGE_KEEP_PRESENTATION_BY_ELEMENT", {
+        sid: sid || "-",
+        source,
+        count: Object.keys(prevPresentationMap).length,
+      });
+    }
+  }
+
+  // Protect drawio state from stale server responses.
+  // Two cases:
+  // 1. Timestamp guard: if local draft has a newer last_saved_at, keep local version.
+  //    Handles: Interview tab PATCH response returning before drawio persist is committed.
+  // 2. Structural guard: if incoming would clear drawio_elements_v1 to empty but local
+  //    already has tracked elements, keep local version regardless of timestamp.
+  //    Handles: rapid toggle race where prevDrawioTs = 0 (draft not yet updated by persist
+  //    response) and an out-of-order stale response with elements=[] arrives.
+  if (incomingHasBpmnMeta) {
+    const prevDrawio = ensureObject(prevBpmnMeta.drawio);
+    const incomingDrawio = ensureObject(incomingBpmnMeta.drawio);
+    const prevDrawioTs = Date.parse(String(prevDrawio.last_saved_at || "")) || 0;
+    const incomingDrawioTs = Date.parse(String(incomingDrawio.last_saved_at || "")) || 0;
+    const prevElementCount = Array.isArray(prevDrawio.drawio_elements_v1) ? prevDrawio.drawio_elements_v1.length : 0;
+    const incomingElementCount = Array.isArray(incomingDrawio.drawio_elements_v1) ? incomingDrawio.drawio_elements_v1.length : 0;
+    const timestampRegression = prevDrawioTs > 0 && prevDrawioTs > incomingDrawioTs;
+    const structuralRegression = prevElementCount > 0 && incomingElementCount === 0 && !!prevDrawio.svg_cache;
+    if (timestampRegression || structuralRegression) {
+      next = {
+        ...next,
+        bpmn_meta: {
+          ...ensureObject(next.bpmn_meta),
+          drawio: prevDrawio,
+        },
+      };
+      logDraftTrace("MERGE_KEEP_FRESHER_DRAWIO", {
+        sid: sid || "-",
+        source,
+        prevDrawioTs,
+        incomingDrawioTs,
+        reason: [timestampRegression && "timestamp_regression", structuralRegression && "structural_regression"].filter(Boolean).join("+"),
+        prevElementCount,
+        incomingElementCount,
+      });
+    }
+  }
+
+  const afterXml = String(next?.bpmn_xml || "");
+  logDraftTrace("DRAFT_MERGE", {
+    sid: sid || "-",
+    source,
+    beforeLen: prevXml.length,
+    beforeHash: fnv1aHex(prevXml),
+    afterLen: afterXml.length,
+    afterHash: fnv1aHex(afterXml),
+  });
+
+  return next;
+}
+
+export default function App() {
+  const { user, orgs, activeOrgId, switchOrg, refreshOrgs } = useAuth();
+  const SESSION_MODE = "quick_skeleton";
+  const [backendHint, setBackendHint] = useState("");
+
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [projectRouteContext, setProjectRouteContext] = useState(() => readProcessMapProjectContextFromHistory());
+
+  const [sessions, setSessions] = useState([]);
+  const sessionStore = useSessionStore(ensureDraftShape(null), { normalize: normalizeDraftForStore });
+  const {
+    draft,
+    setDraft,
+    setDraftPersisted,
+    resetDraft,
+  } = sessionStore;
+
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [sessionFlowOpen, setSessionFlowOpen] = useState(false);
+  const [sessionFlowBusy, setSessionFlowBusy] = useState(false);
+  const [processTabIntent, setProcessTabIntent] = useState(null);
+  const [discussionLinkedElementFocusIntent, setDiscussionLinkedElementFocusIntent] = useState(null);
+  const [drawioCompanionFocusIntent, setDrawioCompanionFocusIntent] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const openSessionReqSeqRef = useRef(0);
+  const sessionMetaConflictGuardRef = useRef(createSessionMetaConflictGuard());
+  const suppressProjectAutoselectRef = useRef(false);
+  const initialProjectSelectionConsumedRef = useRef(false);
+  const {
+    initialSelectionRef,
+    requestedSessionIdRef,
+    activeSessionIdRef,
+    confirmedSessionIdRef,
+    setRequestedSessionId,
+    rememberActiveSessionId,
+    rememberConfirmedSessionId,
+    clearSessionRestoreMemory,
+  } = useSessionRouteOrchestration();
+  const projectWorkspaceHintsRef = useRef(new Map());
+  const rememberProjectRouteContext = useCallback((contextRaw) => {
+    const context = normalizeProcessMapProjectContext(contextRaw);
+    setProjectRouteContext(context);
+    if (context?.projectId && context?.workspaceId) {
+      projectWorkspaceHintsRef.current.set(context.projectId, context.workspaceId);
+    }
+    return context;
+  }, []);
+  const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
+  const [sessionNavNotice, setSessionNavNotice] = useState(null);
+  const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
+  const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
+  const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(() => readV2OverlayEnabled());
+  const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
+  // Persist the V2 overlay toggle across reloads (it was React-only state).
+  useEffect(() => {
+    writeV2OverlayEnabled(v2OverlaysEnabled);
+  }, [v2OverlaysEnabled]);
+  const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
+  // Set when an external writer (canvas properties popover) mutates camunda
+  // extension properties in the live modeler. NotesPanel uses it to merge
+  // the fresh model read into any unsaved sidebar draft.
+  const [bpmnExternalEditToken, setBpmnExternalEditToken] = useState(null);
+  const handleBpmnModelerExtensionChange = useCallback(({ elementId } = {}) => {
+    setBpmnModelerSyncEpoch((epoch) => epoch + 1);
+    setBpmnExternalEditToken((prev) => ({
+      seq: Number(prev?.seq || 0) + 1,
+      elementId: String(elementId || "").trim(),
+    }));
+  }, []);
+  const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
+  const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
+  const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
+  const [mentionNotifications, setMentionNotifications] = useState([]);
+  const [noteNotifications, setNoteNotifications] = useState([]);
+  const [noteNotificationsAvailable, setNoteNotificationsAvailable] = useState(false);
+  const [subprocessBreadcrumbs, setSubprocessBreadcrumbs] = useState([]);
+  const [focusElementId, setFocusElementId] = useState("");
+  const [isChangingSessionStatus, setIsChangingSessionStatus] = useState(false);
+  const [restoreViewportSnapshot, setRestoreViewportSnapshot] = useState(null);
+  const bpmnStageRef = useRef(null);
+  const getElementCamundaExtensionsFromModeler = useCallback((elementId) => {
+    const api = bpmnStageRef.current;
+    if (!api || typeof api.getElementCamundaExtensionState !== "function") return null;
+    return api.getElementCamundaExtensionState(elementId);
+  }, []);
+  const parentViewportSnapshotRef = useRef(new Map());
+  const sessionCacheRef = useRef(new Map());
+  const bpmnXmlCacheRef = useBpmnXmlCache();
+  const queryClient = useQueryClient();
+  const discussionLinkedElementFocusResolversRef = useRef(new Map());
+  const notesPanelRef = useRef(null);
+  const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
+  const activeOrgRole = useMemo(() => {
+    const oid = String(activeOrgId || "").trim();
+    if (!oid) return "";
+    const row = ensureArray(orgs).find((item) => String(item?.org_id || item?.id || "").trim() === oid);
+    return String(row?.role || "").trim().toLowerCase();
+  }, [activeOrgId, orgs]);
+  const activeOrgName = useMemo(() => {
+    const oid = String(activeOrgId || "").trim();
+    if (!oid) return "";
+    const row = ensureArray(orgs).find((item) => String(item?.org_id || item?.id || "").trim() === oid);
+    return String(row?.name || row?.org_name || oid).trim();
+  }, [activeOrgId, orgs]);
+  const workspacePermissions = useMemo(
+    () => buildWorkspacePermissions(activeOrgRole, Boolean(user?.is_admin)),
+    [activeOrgRole, user?.is_admin],
+  );
+  const canManageProjectEntities = workspacePermissions.canEdit;
+  const canInviteWorkspaceUsers = workspacePermissions.canManageInvites;
+  const canManageSharedTemplates = useMemo(() => {
+    return canCreateOrgTemplateForRole(activeOrgRole, Boolean(user?.is_admin));
+  }, [activeOrgRole, user?.is_admin]);
+  const draftSessionId = String(draft?.session_id || "").trim();
+  const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
+  // Per-field chip filter (property-panel-redesign port): per-session
+  // localStorage `fpc_overlay_hidden_fields_v1:{sid}`, preview-level only.
+  const { hiddenFields: overlayHiddenFields, toggleField: toggleOverlayField } = useHiddenFields(draftSessionId);
+  const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
+  const getSessionMetaBaseDiagramStateVersion = useCallback(() => Number(
+    draft?.diagram_state_version ?? draft?.diagramStateVersion,
+  ), [draft?.diagram_state_version, draft?.diagramStateVersion]);
+
+  const shortSessionMetaErr = useCallback((value) => (
+    shortUserFacingError(value, 160, "Не удалось сохранить session meta.")
+      || "Не удалось сохранить session meta."
+  ), []);
+  const ignoreSessionMetaErr = useCallback(() => {}, []);
+  const sessionMetaWriteGateway = useSessionMetaWriteGateway({
+    sid: draftSessionId,
+    isLocal: isSessionLocalMode,
+    normalizeMeta: normalizeBpmnMeta,
+    serializeMeta: serializeSessionMetaForBoundary,
+    getPersistedMeta: () => normalizeBpmnMeta(draft?.bpmn_meta),
+    getBaseDiagramStateVersion: getSessionMetaBaseDiagramStateVersion,
+    onSessionSync,
+    shortErr: shortSessionMetaErr,
+    setGenErr: ignoreSessionMetaErr,
+  });
+
+  const persistSessionMetaBoundary = useCallback(async (nextMetaRaw, options = {}) => {
+    const sid = String(draftSessionId || "").trim();
+    const source = String(options?.source || "app_session_meta_write");
+    const successHint = String(options?.successHint || "").trim();
+    const failureHint = String(options?.failureHint || "Не удалось сохранить session meta.");
+    const nextMeta = normalizeBpmnMeta(nextMetaRaw);
+    const result = await sessionMetaWriteGateway.persistSessionMeta(nextMeta, {
+      source,
+      onRollback: ({ prevMeta, writeSeq }) => {
+        if (!sid) return;
+        onSessionSync(buildSessionMetaWriteEnvelope({
+          sessionId: sid,
+          bpmnMeta: normalizeBpmnMeta(prevMeta),
+          source: `${source}_rollback`,
+          writeSeq,
+        }));
+      },
+    });
+    if (!result?.ok) {
+      const error = String(result?.error || failureHint || "Не удалось сохранить session meta.");
+      markFail(error);
+      return {
+        ok: false,
+        error,
+        status: Number(result?.status || 0),
+      };
+    }
+    if (successHint) markOk(successHint);
+    return {
+      ok: true,
+      session: result?.session || null,
+      writeSeq: Number(result?.writeSeq || 0),
+      local: result?.local === true,
+      skipped: result?.skipped === true,
+      stale: result?.stale === true,
+    };
+  }, [draftSessionId, markFail, markOk, onSessionSync, sessionMetaWriteGateway]);
+
+  const handleSaveAllBatch = useCallback(async () => {
+    const sid = String(draftSessionId || "").trim();
+    if (!sid || isLocalSessionId(sid)) {
+      return { ok: false, error: "Сессия не выбрана." };
+    }
+
+    const xmlSnap = await bpmnStageRef.current?.getRuntimeXmlSnapshot?.();
+    const xml = xmlSnap?.ok ? xmlSnap.xml : "";
+    if (!xml) {
+      return { ok: false, error: "Не удалось получить BPMN XML." };
+    }
+
+    const xmlResult = await saveBpmnState({
+      operation: "session_save",
+      sessionId: sid,
+      isLocal: false,
+      baseDiagramStateVersion: bpmnStageRef.current?.getBaseDiagramStateVersion?.() ?? 0,
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
+      projectId: draft?.project_id,
+      xml,
+      nextMeta: draft?.bpmn_meta,
+      apiPutBpmnXml,
+      flushSave: bpmnStageRef.current?.flushSave,
+      apiGetSession,
+      apiGetBpmnXml,
+      onSessionSync,
+      overwriteBpmnSnapshot,
+      backgroundSessionRefresh: true,
+      syncSource: "saveBpmnState:save_all",
+    });
+    if (!xmlResult?.ok) {
+      markFail(String(xmlResult?.error || "Не удалось сохранить BPMN."));
+      return {
+        ok: false,
+        error: xmlResult?.error,
+        status: xmlResult?.status,
+        phase: "xml",
+      };
+    }
+
+    const metaResult = await persistSessionMetaBoundary(draft?.bpmn_meta, {
+      source: "save_all",
+      successHint: "",
+    });
+    if (!metaResult?.ok) {
+      return {
+        ok: false,
+        error: metaResult?.error,
+        status: metaResult?.status,
+        phase: "meta",
+      };
+    }
+
+    const analysisPatch = draft?.interview?.analysis;
+    let analysisResult = { ok: true, skipped: true };
+    if (analysisPatch && typeof analysisPatch === "object" && Object.keys(analysisPatch).length > 0) {
+      analysisResult = await patchInterviewAnalysis(sid, analysisPatch, {
+        apiPatchSession,
+        getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+        rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
+        onSessionSync,
+      });
+      if (!analysisResult?.ok) {
+        markFail(String(analysisResult?.error || "Не удалось сохранить analysis."));
+        return {
+          ok: false,
+          error: analysisResult?.error,
+          status: analysisResult?.status,
+          phase: "analysis",
+        };
+      }
+    }
+
+    markOk("Сохранено.");
+    return {
+      ok: true,
+      xml: xmlResult,
+      meta: metaResult,
+      analysis: analysisResult,
+    };
+  }, [
+    draftSessionId,
+    draft?.bpmn_meta,
+    draft?.interview?.analysis,
+    draft?.project_id,
+    apiPutBpmnXml,
+    apiGetSession,
+    apiGetBpmnXml,
+    onSessionSync,
+    overwriteBpmnSnapshot,
+    persistSessionMetaBoundary,
+    markFail,
+    markOk,
+  ]);
+
+  function markOk(hint) {
+    setBackendHint(String(hint || ""));
+  }
+
+  function markFail(err) {
+    setBackendHint(String(err || "API error"));
+  }
+
+  function logNav(reason, payload = {}) {
+    if (typeof window === "undefined") return;
+    const isDev = Boolean(import.meta?.env?.DEV) || window.__FPC_DEBUG_NAV__;
+    if (!isDev) return;
+    const sid = String(payload?.sessionId ?? draft?.session_id ?? "").trim() || "-";
+    const pid = String(payload?.projectId ?? projectId ?? "").trim() || "-";
+    const route = `${window.location.pathname || ""}${window.location.search || ""}${window.location.hash || ""}`;
+    const extra = Object.entries(payload || {})
+      .filter(([k]) => k !== "sessionId" && k !== "projectId")
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(" ");
+    // eslint-disable-next-line no-console
+    console.debug(`[NAV] session=${sid} project=${pid} route=${route} reason=${String(reason || "-")}${extra ? ` ${extra}` : ""}`);
+  }
+
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    rememberActiveSessionId(sid);
+  }, [draft?.session_id, rememberActiveSessionId]);
+
+  useEffect(() => {
+    sessionMetaConflictGuardRef.current = createSessionMetaConflictGuard();
+  }, [draft?.session_id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_DRAFT__ = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    writeLocalBpmnMeta(sid, draft?.bpmn_meta);
+  }, [draft?.bpmn_meta, draft?.session_id]);
+
+  // Cache the loaded BPMN XML by session id so subprocess return can skip the backend fetch.
+  useEffect(() => {
+    const sid = String(draft?.session_id || draft?.id || "").trim();
+    const xml = String(draft?.bpmn_xml || "").trim();
+    if (sid && xml) {
+      bpmnXmlCacheRef.current.set(sid, xml);
+    }
+  }, [draft?.session_id, draft?.id, draft?.bpmn_xml]);
+
+  // After BPMN is persisted to the server, derived data (child sessions,
+  // explorer tree, drill-in breadcrumbs) must be reloaded so stale fragments
+  // do not survive the upload/save.
+  const handleBpmnSaved = useCallback(async (sessionId, projectId) => {
+    const sid = String(sessionId || "").trim();
+    const pid = String(projectId || "").trim();
+
+    // Drop runtime caches: child-session XML may have changed on the server.
+    try {
+      bpmnXmlCacheRef.current?.clear?.();
+    } catch {
+      /* noop */
+    }
+    try {
+      sessionCacheRef.current?.clear?.();
+    } catch {
+      /* noop */
+    }
+
+    // Invalidate explorer project-sessions so the session/subprocess tree
+    // refreshes when the user returns to the workspace.
+    if (pid) {
+      try {
+        await queryClient.invalidateQueries({ queryKey: projectSessionsQueryKey(pid) });
+      } catch {
+        /* noop */
+      }
+    }
+
+    // Rebuild drill-in breadcrumbs from the fresh navigation_stack.
+    if (sid) {
+      try {
+        const loaded = await apiGetSession(sid);
+        if (loaded.ok && loaded.session?.navigation_stack?.length > 0) {
+          setSubprocessBreadcrumbs(
+            loaded.session.navigation_stack.map((frame) => ({
+              session_id: frame.session_id,
+              name: frame.name || "",
+              element_id: frame.element_id_in_parent,
+            }))
+          );
+        }
+      } catch {
+        /* noop */
+      }
+    }
+  }, [queryClient]);
+
+  // Register runtime callbacks for the unified property CRUD boundary.
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) {
+      propertyCrudBoundary.reset();
+      return;
+    }
+    propertyCrudBoundary.registerRuntime({
+      getSessionId: () => sid,
+      getCurrentXml: () => draft?.bpmn_xml || bpmnXmlCacheRef.current.get(sid) || "",
+      getCurrentBpmnMeta: () => draft?.bpmn_meta || {},
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version, options) => {
+        bpmnStageRef.current?.rememberDiagramStateVersion?.(version, options);
+      },
+      getElementCamundaExtensionState: (elementId) => (
+        bpmnStageRef.current?.getElementCamundaExtensionState?.(elementId)
+      ),
+      applyElementCamundaExtensionsToModeler: (elementId, state) => (
+        bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, state)
+      ),
+      onSessionSync: (patch) => onSessionSync(patch),
+    });
+    propertyCrudBoundary.syncXml(draft?.bpmn_xml || "");
+  }, [draft?.session_id, draft?.bpmn_xml, draft?.bpmn_meta]);
+
+  async function refreshMeta() {
+    const r = await apiMeta();
+    if (r.ok) {
+      markOk("API OK");
+      return true;
+    }
+    markFail(r.error);
+    return false;
+  }
+
+  const sessionActivation = useSessionActivationOrchestration({
+    projectId,
+    setProjectId,
+    projects,
+    setProjects,
+    draft,
+    setDraftPersisted,
+    resetDraft,
+    setSessions,
+    sessionNavNotice,
+    setSessionNavNotice,
+    setSnapshotRestoreNotice,
+    refreshMeta,
+    markOk,
+    markFail,
+    logNav,
+    logCreateTrace,
+    logDraftTrace,
+    logSnapshotTrace,
+    ensureArray,
+    ensureObject,
+    ensureDraftShape,
+    sessionToDraft,
+    projectIdOf,
+    projectTitleOf,
+    sessionIdOf,
+    isLocalSessionId,
+    fnv1aHex,
+    routeOrchestration: {
+      initialSelectionRef,
+      requestedSessionIdRef,
+      activeSessionIdRef,
+      confirmedSessionIdRef,
+      setRequestedSessionId,
+      rememberActiveSessionId,
+      rememberConfirmedSessionId,
+      clearSessionRestoreMemory,
+    },
+    initialProjectSelectionConsumedRef,
+    suppressProjectAutoselectRef,
+    openSessionReqSeqRef,
+    projectWorkspaceHintsRef,
+    createLocalSessionId: () => `local_${uid()}`,
+    activeOrgId,
+    sessionCacheRef,
+  });
+
+  const {
+    openSession,
+    openWorkspaceSession: openWorkspaceSessionBase,
+    refreshProjects,
+    refreshSessions,
+    createLocalSession,
+    activationState,
+  } = sessionActivation;
+
+  const {
+    shellSessionId,
+    shellTransitionReason,
+    shellResetInfo,
+    sidebarActiveSection,
+    setSidebarActiveSection,
+    sidebarShortcutRequest,
+    setSidebarShortcutRequest,
+    selectedBpmnElement,
+    setSelectedBpmnElement,
+    selectedPropertiesOverlayPreview,
+    setSelectedPropertiesOverlayPreview,
+    selectedPropertiesOverlayAlwaysPreview,
+    setSelectedPropertiesOverlayAlwaysPreview,
+    processUiState,
+    setProcessUiState,
+    aiGenerateIntent,
+    setAiGenerateIntent,
+  } = useSessionShellOrchestration({
+    draftSessionId: draft?.session_id,
+    activationState,
+  });
+
+  // ── Real-time session events (SSE) ────────────────────────
+  useSessionEvents(
+    !isSessionLocalMode ? draftSessionId : "",
+    {
+      onDeleted: useCallback((deletedSessionId) => {
+        // P-1: если удалена ОТКРЫТАЯ сессия — НЕ навигируем принудительно:
+        // useSessionEvents уже пометил её в реестре мёртвых, и ProcessStage
+        // покажет экран мёртвой сессии с опциями восстановления (черновик,
+        // актуальная сессия). Редирект сохраняем для любой другой сессии.
+        if (String(deletedSessionId || "") === String(draftSessionId || "")) {
+          return;
+        }
+        setSessionNavNotice({
+          code: "SESSION_DELETED",
+          status: 404,
+          projectId: String(projectId || ""),
+          sessionId: String(deletedSessionId || ""),
+          message: "Другой пользователь удалил эту сессию. Работа с сессией завершена.",
+        });
+        returnToSessionList("session_deleted_by_other", {
+          flushBeforeLeave: false,
+          skipLeaveGuard: true,
+        });
+      }, [draftSessionId, projectId, setSessionNavNotice, returnToSessionList]),
+    },
+  );
+
+  const leaveNavigationRisk = useMemo(() => {
+    const direct = processUiState?.leaveNavigationRisk;
+    if (direct && typeof direct === "object" && typeof direct.unsafe === "boolean") {
+      return direct;
+    }
+    return deriveLeaveNavigationRisk({
+      hasSession: !!String(draft?.session_id || "").trim(),
+      saveSnapshotRaw: processUiState?.sessionSaveReadSnapshot,
+      saveUploadStatusRaw: processUiState?.saveUploadStatus,
+    });
+  }, [draft?.session_id, processUiState?.leaveNavigationRisk, processUiState?.saveUploadStatus, processUiState?.sessionSaveReadSnapshot]);
+
+  const confirmLeaveIfUnsafe = useCallback((source = "leave_navigation") => {
+    if (typeof window === "undefined") return true;
+    if (leaveNavigationRisk?.unsafe !== true) return true;
+    const message = buildLeaveNavigationConfirmText({
+      ...leaveNavigationRisk,
+      source,
+    });
+    return window.confirm(message);
+  }, [leaveNavigationRisk]);
+
+  const openSessionWithLeaveGuard = useCallback(async (sessionIdRaw, options = {}) => {
+    const targetSid = String(sessionIdRaw || "").trim();
+    const activeSid = String(draft?.session_id || "").trim();
+    const bypassLeaveGuard = options?.bypassLeaveGuard === true;
+    if (
+      !bypassLeaveGuard
+      && targetSid
+      && activeSid
+      && targetSid !== activeSid
+      && !confirmLeaveIfUnsafe("open_session")
+    ) {
+      return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
+    }
+    const openTab = normalizeOpenProcessTab(options?.openTab);
+    const result = await openSession(targetSid, options);
+    const source = String(options?.source || "manual_select").trim();
+    const shouldPushHistory = options?.pushHistory !== false && source !== "url_restore";
+    if (shouldPushHistory && targetSid && result?.ok !== false) {
+      pushSessionSelectionToUrl({
+        projectId: result?.projectId || projectId,
+        sessionId: result?.sessionId || targetSid,
+        projectContext: projectRouteContext,
+      });
+    }
+    const intentSid = String(result?.sessionId || targetSid || "").trim();
+    if (intentSid && openTab && result?.ok !== false) {
+      setProcessTabIntent({ sid: intentSid, tab: openTab, nonce: Date.now() });
+    }
+    return result;
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
+
+  const handleBreadcrumbNavigate = useCallback((targetSid, targetIndex) => {
+    const list = Array.isArray(subprocessBreadcrumbs) ? subprocessBreadcrumbs : [];
+    const index = typeof targetIndex === "number"
+      ? targetIndex
+      : list.findIndex((c) => String(c?.session_id || "").trim() === String(targetSid || "").trim());
+    if (index < 0 || index >= list.length) return;
+    const targetCrumb = list[index];
+    const targetSessionId = String(targetCrumb?.session_id || "").trim();
+    if (!targetSessionId) return;
+
+    const newStack = list.slice(0, index + 1);
+    setSubprocessBreadcrumbs(newStack);
+
+    const snapshot = parentViewportSnapshotRef.current?.get?.(targetSessionId) || null;
+    if (snapshot && setRestoreViewportSnapshot) {
+      setRestoreViewportSnapshot(snapshot);
+    }
+
+    const focusElementId = String(targetCrumb?.element_id || "").trim();
+    setFocusElementId(focusElementId);
+
+    const parentSessionId = index > 0 ? String(list[index - 1]?.session_id || "").trim() : "";
+
+    pushSessionSelectionToUrl({
+      projectId,
+      sessionId: targetSessionId,
+      parentSessionId,
+      focusElementId,
+      projectContext: projectRouteContext,
+    });
+
+    const cachedSession = sessionCacheRef.current?.get?.(targetSessionId) || null;
+    openSession(targetSessionId, {
+      source: "breadcrumb_navigation",
+      session: cachedSession,
+    });
+  }, [
+    subprocessBreadcrumbs,
+    parentViewportSnapshotRef,
+    setRestoreViewportSnapshot,
+    setFocusElementId,
+    setSubprocessBreadcrumbs,
+    pushSessionSelectionToUrl,
+    projectId,
+    projectRouteContext,
+    sessionCacheRef,
+    openSession,
+  ]);
+
+  const { navigateToSubprocess, returnToParent } = useSubprocessNavigation({
+    bpmnStageRef,
+    sessionCacheRef,
+    bpmnXmlCacheRef,
+    parentViewportSnapshotRef,
+    setSubprocessBreadcrumbs,
+    setFocusElementId,
+    setDiscussionLinkedElementFocusIntent,
+    pushSessionSelectionToUrl,
+    projectRouteContext,
+    projectId,
+    openSession,
+    setRestoreViewportSnapshot,
+    draft,
+    logNav,
+  });
+
+  const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
+    const row = ensureObject(sessionLike);
+    const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
+    const pid = String(row?.project_id || "").trim();
+    const openTab = normalizeOpenProcessTab(options?.openTab);
+    const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
+    const activeSid = String(draft?.session_id || "").trim();
+    const bypassLeaveGuard = options?.bypassLeaveGuard === true;
+    const nextProjectContext = rememberProjectRouteContext(row?.projectContext || row?.project_context || null);
+    if (
+      !bypassLeaveGuard
+      && sid
+      && activeSid
+      && sid !== activeSid
+      && !confirmLeaveIfUnsafe("open_workspace_session")
+    ) {
+      return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
+    }
+    const result = await openWorkspaceSessionBase(sessionLike, options);
+    const shouldPushHistory = options?.pushHistory !== false && source !== "url_restore";
+    if (shouldPushHistory && sid && result?.ok !== false) {
+      pushSessionSelectionToUrl({
+        projectId: result?.projectId || pid || projectId,
+        sessionId: result?.sessionId || sid,
+        projectContext: nextProjectContext,
+      });
+    }
+    const intentSid = String(result?.sessionId || sid || "").trim();
+    if (intentSid && openTab && result?.ok !== false) {
+      setProcessTabIntent({ sid: intentSid, tab: openTab, nonce: Date.now() });
+    }
+    const resultProjectId = String(result?.projectId || pid || projectId || "").trim();
+    return result?.ok === false ? result : { ok: true, ...ensureObject(result), projectId: resultProjectId, sessionId: intentSid || sid };
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase, projectId, rememberProjectRouteContext]);
+
+  const {
+    orgSettingsOpen,
+    setOrgSettingsOpen,
+    orgSettingsTab,
+    setOrgSettingsTab,
+    orgSettingsOperationKey,
+    orgSettingsDictionaryOnly,
+    setOrgSettingsDictionaryOnly,
+    orgPropertyDictionaryRevision,
+    openOrgSettings,
+    closeOrgSettings,
+    notifyOrgPropertyDictionaryChanged,
+    leftHidden,
+    setLeftHidden,
+    leftCompact,
+    dockSide,
+    handleToggleDockSide,
+    stepTimeUnit,
+    handleStepTimeUnitChange,
+    handleToggleLeft,
+    handleSidebarCompact,
+    closeLeftSidebar,
+  } = useAppShellController({
+    initialOrgSettingsOpen: () => typeof window !== "undefined" && String(window.location.pathname || "").startsWith("/app/org"),
+    initialOrgSettingsTab: readOrgSettingsTabFromUrl,
+    initialLeftHidden: readLeftPanelHidden,
+    initialLeftCompact: readLeftPanelCompact,
+    initialDockSide: readSidebarDockSide,
+    initialStepTimeUnit: readStepTimeUnit,
+    normalizeOrgSettingsTab,
+    normalizeStepTimeUnit,
+    writeStepTimeUnit,
+    leftPanelOpenKey: LEFT_PANEL_OPEN_KEY,
+    leftPanelCompactKey: LEFT_PANEL_COMPACT_KEY,
+    dockSideKey: SIDEBAR_DOCK_SIDE_KEY,
+    setSidebarActiveSection,
+    setSidebarShortcutRequest,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!window.__FPC_E2E__) return undefined;
+    const e2eOpenSession = async (sessionIdRaw) => {
+      const sid = String(sessionIdRaw || "").trim();
+      if (!sid) return { ok: false, error: "missing_session_id" };
+      try {
+        await openSession(sid, { source: "e2e_helper" });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: String(error?.message || error || "open_session_failed") };
+      }
+    };
+    window.__FPC_E2E_OPEN_SESSION__ = e2eOpenSession;
+    return () => {
+      if (window.__FPC_E2E_OPEN_SESSION__ === e2eOpenSession) {
+        window.__FPC_E2E_OPEN_SESSION__ = null;
+      }
+    };
+  }, [openSession]);
+
+  useEffect(() => {
+    setShowPropertiesOverlayAlways(readPropertiesOverlayAlwaysEnabled(draftSessionId));
+    setSelectedPropertiesOverlayAlwaysPreview(null);
+  }, [draftSessionId, setSelectedPropertiesOverlayAlwaysPreview]);
+
+  useEffect(() => {
+    writePropertiesOverlayAlwaysEnabled(draftSessionId, !!showPropertiesOverlayAlways);
+  }, [draftSessionId, showPropertiesOverlayAlways]);
+
+  const propertiesOverlayAlwaysPreviewByElementId = useMemo(() => {
+    if (!showPropertiesOverlayAlways) return {};
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const extensionMap = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const out = {};
+    Object.keys(extensionMap).forEach((rawElementId) => {
+      const elementId = String(rawElementId || "").trim();
+      if (!elementId) return;
+      const preview = buildPropertiesOverlayPreview({
+        elementId,
+        extensionStateRaw: extensionMap[rawElementId],
+        showPropertiesOverlay: true,
+        hiddenFields: overlayHiddenFields,
+      });
+      if (preview?.enabled && ensureArray(preview.items).length) {
+        out[elementId] = preview;
+      }
+    });
+    const draftPreview = ensureObject(selectedPropertiesOverlayAlwaysPreview);
+    const draftElementId = String(draftPreview.elementId || "").trim();
+    if (draftElementId) {
+      const draftItems = ensureArray(draftPreview.items);
+      if (draftPreview.enabled === true && draftItems.length) {
+        out[draftElementId] = {
+          ...draftPreview,
+          elementId: draftElementId,
+          items: draftItems,
+        };
+      } else {
+        delete out[draftElementId];
+      }
+    }
+    return out;
+  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
+
+  // A9: иконки свёрнутого сайдбара отражают реальный состав секций сайдбара
+  // (ид = ключ аккордеона — клик открывает панель сразу к нужной секции).
+  const sidebarHandleSections = useMemo(() => {
+    const hasActiveSession = !!String(shellSessionId || "").trim();
+    const selectedElementId = String(selectedBpmnElement?.id || "").trim();
+    const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const selectedNotesRaw = notesMap && typeof notesMap === "object" ? notesMap[selectedElementId] : null;
+    const selectedNotesCount = Array.isArray(selectedNotesRaw) ? selectedNotesRaw.length : 0;
+    const aiMapRaw = draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId || {};
+    const selectedAiRaw = aiMapRaw && typeof aiMapRaw === "object" ? aiMapRaw[selectedElementId] : null;
+    const selectedAiCount = Array.isArray(selectedAiRaw)
+      ? selectedAiRaw.length
+      : (Array.isArray(selectedAiRaw?.items) ? selectedAiRaw.items.length : 0);
+    const elementMuted = !hasActiveSession || !selectedElementId;
+    const item = (id, title, count, muted) => ({
+      id,
+      title,
+      count: Number(count || 0),
+      active: sidebarActiveSection === id,
+      muted,
+    });
+    return [
+      item("tobe", "TO BE", 0, !hasActiveSession),
+      item("properties", "Свойства", 0, !hasActiveSession),
+      item("paths", "Пути", 0, elementMuted),
+      item("time", "Время шага", 0, elementMuted),
+      item("robotmeta", "Robot Meta", 0, elementMuted),
+      item("notes", "Заметки", selectedNotesCount, elementMuted),
+      item("ai", "AI-вопросы", selectedAiCount, elementMuted),
+      item("advanced", "Шаблоны", 0, !hasActiveSession),
+    ];
+  }, [
+    shellSessionId,
+    selectedBpmnElement?.id,
+    draft?.notes_by_element,
+    draft?.notesByElementId,
+    draft?.interview?.ai_questions_by_element,
+    draft?.interview?.aiQuestionsByElementId,
+    sidebarActiveSection,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_SELECTED_ELEMENT_ID__ = String(selectedBpmnElement?.id || "").trim();
+  }, [selectedBpmnElement]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_SELECT_ELEMENT__ = (element) => {
+      focusElementNotes(element, "e2e_api", { openSidebar: false });
+    };
+    return () => {
+      window.__FPC_E2E_SELECT_ELEMENT__ = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!window.__FPC_E2E__) return undefined;
+    const readSnapshot = () => buildSessionDebugProbeSnapshot({
+      routeSelection: readSelectionFromUrl(window),
+      requestedSessionId: requestedSessionIdRef.current,
+      activeSessionId: activeSessionIdRef.current,
+      confirmedSessionId: confirmedSessionIdRef.current,
+      activationState,
+      shellSessionId,
+      shellTransitionReason,
+      shellResetInfo,
+      processStageSessionId: draft?.session_id,
+    });
+    window.__FPC_E2E_SESSION_SHELL__ = readSnapshot();
+    window.__FPC_E2E_GET_SESSION_SHELL__ = readSnapshot;
+    return () => {
+      if (window.__FPC_E2E_GET_SESSION_SHELL__ === readSnapshot) {
+        window.__FPC_E2E_GET_SESSION_SHELL__ = null;
+      }
+    };
+  }, [
+    activationState,
+    activeSessionIdRef,
+    confirmedSessionIdRef,
+    draft?.session_id,
+    requestedSessionIdRef,
+    shellResetInfo,
+    shellSessionId,
+    shellTransitionReason,
+  ]);
+
+  async function createBackendSession(preferredTitle = "", projectIdOverride = "", aiPrepQuestions = undefined, options = undefined) {
+    const pid = String(projectIdOverride || projectId || "");
+    if (!pid) return;
+
+    const now = new Date();
+    const ts = now.toLocaleString("ru-RU", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const proj = ensureArray(projects).find((p) => projectIdOf(p) === pid);
+    const projTitle = projectTitleOf(proj);
+    const title =
+      String(preferredTitle || "").trim() ||
+      (projTitle ? `${projTitle} · ${ts}` : `Сессия ${ts}`);
+
+    logCreateTrace("CREATE_SESSION", {
+      phase: "start",
+      projectId: pid,
+      title,
+      mode: SESSION_MODE,
+      prepCount: ensureArray(aiPrepQuestions).length,
+    });
+    const create = await apiCreateProjectSession(pid, SESSION_MODE, title, undefined, undefined, aiPrepQuestions, {
+      process_layer: String(options?.processLayer || "as_is"),
+      derived_from_session_id: String(options?.derivedFromSessionId || ""),
+    });
+    if (!create.ok) {
+      logCreateTrace("CREATE_SESSION", {
+        phase: "done",
+        projectId: pid,
+        ok: 0,
+        error: String(create.error || "api_create_project_session_failed"),
+      });
+      return markFail(create.error);
+    }
+
+    const sid = String(create.session_id || sessionIdOf(create.session) || "").trim();
+    if (!sid) {
+      logCreateTrace("CREATE_SESSION", {
+        phase: "done",
+        projectId: pid,
+        ok: 0,
+        error: "create session: empty id",
+      });
+      return markFail("create session: empty id");
+    }
+
+    await refreshSessions(pid);
+    await openSession(sid);
+    logCreateTrace("CREATE_SESSION", {
+      phase: "done",
+      projectId: pid,
+      sid,
+      ok: 1,
+    });
+    return sid;
+  }
+
+  async function runSessionFlow(payload) {
+    const pid = String(projectId || "");
+    if (!pid) return;
+    const title = String(payload?.title || "").trim();
+    const prepQuestions = ensureArray(payload?.ai_prep_questions);
+    const action = String(payload?.action || "interview").trim();
+
+    setSessionFlowBusy(true);
+    let success = false;
+    try {
+      const processLayer = String(payload?.process_layer || "as_is").trim() || "as_is";
+      const derivedFrom = String(payload?.derived_from_session_id || "").trim();
+      const sid = await createBackendSession(title, pid, prepQuestions, {
+        processLayer,
+        derivedFromSessionId: derivedFrom,
+      });
+      if (!sid) return false;
+      if (processLayer === "to_be") {
+        // W4: новая TO BE-сессия → сразу рабочее место (AS IS из связи или чистый лист)
+        const asIsSess = derivedFrom
+          ? (ensureArray(sessions).find((x) => String(x?.id || "") === derivedFrom) || null)
+          : null;
+        openTobeWorkspace(asIsSess ? { id: derivedFrom, title: String(asIsSess.title || "") } : null);
+      }
+
+      if (action === "generate") {
+        const recomputeExec = await executeAi({
+          toolId: "generate_process",
+          sessionId: sid,
+          projectId: pid,
+          inputHash: createAiInputHash({
+            sid,
+            source: "session_flow_generate",
+            prep_count: prepQuestions.length,
+          }),
+          payload: {
+            source: "session_flow_generate",
+          },
+          mode: "live",
+          run: () => apiRecompute(sid),
+        });
+        if (!recomputeExec.ok) {
+          markFail(recomputeExec?.error?.message || "recompute failed");
+          return false;
+        }
+        await openSession(sid);
+        setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+      } else {
+        setProcessTabIntent({ sid, tab: "interview", nonce: Date.now() });
+      }
+      setSessionFlowOpen(false);
+      markOk("API OK");
+      success = true;
+    } finally {
+      setSessionFlowBusy(false);
+    }
+    return success;
+  }
+
+  async function createProjectFromWizard(payload) {
+    const title =
+      String(payload?.title || payload?.name || "").trim() ||
+      `Проект ${new Date().toLocaleString("ru-RU")}`;
+    const passport = payload?.passport && typeof payload.passport === "object" ? payload.passport : {};
+    logCreateTrace("CREATE_PROJECT", {
+      phase: "start",
+      title,
+      passportKeys: Object.keys(passport).join(",") || "-",
+    });
+
+    const r = await apiCreateProject({ title, passport });
+    if (!r.ok) {
+      logCreateTrace("CREATE_PROJECT", {
+        phase: "done",
+        ok: 0,
+        title,
+        error: String(r.error || "api_create_project_failed"),
+      });
+      return markFail(r.error);
+    }
+
+    const pid = String(r.project?.id || "");
+    if (!pid) {
+      logCreateTrace("CREATE_PROJECT", {
+        phase: "done",
+        ok: 0,
+        title,
+        error: "create project: empty id",
+      });
+      return markFail("create project: empty id");
+    }
+
+    await refreshProjects();
+    setProjectId(pid);
+    await refreshSessions(pid);
+    logCreateTrace("CREATE_PROJECT", {
+      phase: "done",
+      ok: 1,
+      projectId: pid,
+      title,
+    });
+    markOk("API OK");
+    setWizardOpen(false);
+  }
+
+  function onSessionSync(session) {
+    const sid = String(session?.id || session?.session_id || draft?.session_id || "").trim();
+    if (!sid) return;
+    const activeSid = String(activeSessionIdRef.current || "").trim();
+    if (activeSid && sid !== activeSid) return;
+    const serverDiagramStateVersion = Number(session?.diagram_state_version ?? session?.diagramStateVersion ?? -1);
+    if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
+      bpmnStageRef.current?.rememberDiagramStateVersion?.(serverDiagramStateVersion, { sessionId: sid });
+    }
+    // Keep caches fresh instead of invalidating; status changes and saves both
+    // include the latest diagram, so subprocess return can stay zero-fetch.
+    if (sessionCacheRef.current) {
+      const existing = sessionCacheRef.current.get(sid);
+      const merged = { ...(existing && typeof existing === "object" ? existing : {}), ...session, id: sid, session_id: sid };
+      sessionCacheRef.current.set(sid, merged);
+    }
+    if (bpmnXmlCacheRef.current && session?.bpmn_xml) {
+      bpmnXmlCacheRef.current.set(sid, String(session.bpmn_xml));
+      // Child BPMN may have been synced back into the parent XML on the backend.
+      // Drop parent caches so that returning to the parent fetches the fresh XML.
+      const parentSid = String(draft?.parent_session_id || "").trim();
+      if (parentSid) {
+        bpmnXmlCacheRef.current.delete(parentSid);
+        sessionCacheRef.current?.delete(parentSid);
+      }
+    }
+    const source = String(session?._sync_source || session?._source || "session_sync");
+    setDraftPersisted((prevDraft) => {
+      const hydration = applySessionMetaHydration({
+        sid,
+        activeSessionId: activeSid,
+        source,
+        payloadRaw: session,
+        conflictGuard: sessionMetaConflictGuardRef.current,
+        mergeDraft: mergeSessionDraft,
+        prevDraft,
+      });
+      return hydration.nextDraft;
+    });
+  }
+
+  async function patchDraft(partial) {
+    const sid = String(draft?.session_id || "");
+    if (!sid || isLocalSessionId(sid)) {
+      setDraft((d) => ({ ...d, ...partial }));
+      return { ok: true, local: true };
+    }
+
+    const r = await apiPatchSession(sid, partial);
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "patch_failed") };
+    }
+    if (r.session && typeof r.session === "object") {
+      onSessionSync({
+        ...r.session,
+        _sync_source: "patch_draft_session",
+      });
+    } else {
+      onSessionSync({
+        id: sid,
+        session_id: sid,
+        ...partial,
+        _sync_source: "patch_draft_local",
+      });
+    }
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function saveActors({ roles, start_role }) {
+    const cleanRoles = ensureArray(roles).map((x) => String(x || "").trim()).filter(Boolean);
+    const start = String(start_role || "").trim();
+
+    await patchDraft({ roles: cleanRoles, start_role: start });
+  }
+
+  async function setStartRole(startRoleId) {
+    const start = String(startRoleId || "").trim();
+    return patchDraft({ start_role: start });
+  }
+
+  async function addNote(text) {
+    const sid = String(draft?.session_id || "");
+    const t = String(text || "").trim();
+    if (!sid || !t) return;
+
+    if (isLocalSessionId(sid)) {
+      return { ok: false, error: "Заметки доступны только для API-сессий." };
+    }
+
+    const noteExec = await executeAi({
+      toolId: "notes_extract_process",
+      sessionId: sid,
+      projectId: String(projectId || ""),
+      inputHash: createAiInputHash({
+        sid,
+        note: t,
+      }),
+      payload: { notes: t },
+      mode: "live",
+      run: () => apiPostNote(sid, { notes: t }),
+    });
+    if (!noteExec.ok) {
+      const error = String(noteExec?.error?.message || "Не удалось обработать заметку.");
+      markFail(error);
+      return { ok: false, error };
+    }
+    if (noteExec.cached) {
+      const error = "AI недоступен: показан cached ответ. Повторите отправку заметки.";
+      markFail(error);
+      return { ok: false, error };
+    }
+    const r = noteExec.result;
+    if (!r?.ok) {
+      const error = String(r?.error || "Не удалось сохранить заметку.");
+      markFail(error);
+      return { ok: false, error };
+    }
+
+    const sessionFromResp = r.session || r.result || {};
+    setDraftPersisted((d) => {
+      const pendingItem = {
+        text: t,
+        ts: Date.now(),
+        author: "you",
+      };
+      const optimistic = mergeGlobalNotesLists(d?.notes, [pendingItem]);
+      const merged = mergeGlobalNotesLists(optimistic, sessionFromResp.notes);
+      return { ...d, notes: merged };
+    });
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function previewNotesExtraction(text) {
+    const sid = String(draft?.session_id || "");
+    const t = String(text || "").trim();
+    if (!sid || !t) return { ok: false, error: "Нет текста для предпросмотра." };
+
+    if (isLocalSessionId(sid)) {
+      return { ok: false, error: "Предпросмотр разбора доступен только для API-сессий." };
+    }
+
+    const baseDiagramStateVersion = Number(draft?.diagram_state_version || 0);
+    const payload = {
+      notes: t,
+      options: { ui_source: "notes_panel" },
+    };
+    if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion > 0) {
+      payload.base_diagram_state_version = baseDiagramStateVersion;
+    }
+
+    const r = await apiPreviewNotesExtraction(sid, payload);
+    if (!r?.ok) {
+      const error = String(r?.error || "Не удалось построить предпросмотр разбора.");
+      markFail(error);
+      return { ok: false, error };
+    }
+
+    markOk("API OK");
+    return r;
+  }
+
+  async function applyNotesExtraction(payload = {}) {
+    const sid = String(draft?.session_id || "");
+    if (!sid) return { ok: false, error: "Нет активной сессии." };
+
+    if (isLocalSessionId(sid)) {
+      return { ok: false, error: "Применение разбора доступно только для API-сессий." };
+    }
+
+    const body = payload && typeof payload === "object" ? { ...payload } : {};
+    const r = await apiApplyNotesExtraction(sid, body);
+    if (!r?.ok) {
+      const conflict = Number(r?.status || 0) === 409;
+      const error = conflict
+        ? "Версия диаграммы изменилась. Обновите предпросмотр и повторите применение."
+        : String(r?.error || "Не удалось применить выбранный разбор.");
+      markFail(error);
+      return { ok: false, error, conflict, status: Number(r?.status || 0), detail: r?.data || null };
+    }
+
+    const sessionFromResp = r.session || r.result?.session || r.result?.result || {};
+    if (sessionFromResp && typeof sessionFromResp === "object") {
+      onSessionSync({
+        ...sessionFromResp,
+        _sync_source: "notes_extraction_apply",
+      });
+    }
+    markOk("API OK");
+    return { ok: true, result: r.result, session: sessionFromResp, changed_keys: r.changed_keys || [] };
+  }
+
+  function focusElementNotes(element, source = "diagram_click", options = {}) {
+    const selectedIds = ensureArray(element?.selectedIds)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    const next = element && typeof element === "object"
+      ? {
+          id: String(element.id || "").trim(),
+          name: String(element.name || element.id || "").trim(),
+          type: String(element.type || "").trim(),
+          laneName: String(element.laneName || element.lane || element.actorRole || "").trim(),
+          selectedIds,
+          selectedCount: Number(element.selectedCount || selectedIds.length || 1),
+          insertBetween: element?.insertBetween && typeof element.insertBetween === "object"
+            ? { ...element.insertBetween }
+            : null,
+        }
+      : null;
+    if (!next?.id) {
+      setSelectedBpmnElement(null);
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
+      return;
+    }
+    setSelectedBpmnElement(next);
+    const shouldOpenNotesPanel = (
+      source === "notes_marker_open"
+      || source === "selected_element_notes_open"
+    );
+    const shouldOpenSidebar = (
+      options?.openSidebar === true
+      || source === "header_open_notes"
+      || source === "header_open_ai"
+    );
+    if (shouldOpenSidebar) {
+      setLeftHidden((prev) => {
+        if (!prev) return false;
+        try {
+          window.sessionStorage?.setItem(LEFT_PANEL_OPEN_KEY, "1");
+        } catch {
+        }
+        return false;
+      });
+    }
+    if (source === "header_open_ai") {
+      setSidebarActiveSection("ai");
+    } else if (source === "header_open_notes") {
+      setSidebarActiveSection("notes");
+      setSidebarShortcutRequest("notes");
+    } else {
+      setSidebarActiveSection("selected");
+    }
+    if (shouldOpenNotesPanel) {
+      setNotesPanelOpenRequest({
+        requestKey: `${Date.now()}:${next.id}:${source}`,
+        scopeFilter: "selected_element",
+      });
+    }
+    setElementNotesFocusKey((x) => x + 1);
+    if (shouldLogDraftTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(`[UI] element_notes.focus sid=${String(draft?.session_id || "-")} elementId=${next.id} source=${source}`);
+    }
+  }
+
+  function openNotesDiscussions(options = {}) {
+    const scopeRaw = String(options?.scopeFilter || "all").trim();
+    const scopeFilter = (
+      scopeRaw === "session"
+      || scopeRaw === "diagram"
+      || scopeRaw === "selected_element"
+      || scopeRaw === "all"
+    ) ? scopeRaw : "all";
+    const source = String(options?.source || "toolbar_open_discussions").trim() || "toolbar_open_discussions";
+    const mode = String(options?.mode || "discussions").trim() === "notifications" ? "notifications" : "discussions";
+    const threadId = String(options?.threadId || options?.thread_id || "").trim();
+    const commentId = String(options?.commentId || options?.comment_id || "").trim();
+    const request = {
+      requestKey: `${Date.now()}:${scopeFilter}:${mode}:${source}`,
+      scopeFilter,
+      mode,
+      threadId,
+      commentId,
+    };
+    const openedFromRef = notesPanelRef.current?.openFromExternalRequest?.(request) === true;
+    setNotesPanelOpenRequest(request);
+    return openedFromRef;
+  }
+
+  const refreshMentionNotifications = useCallback(async () => {
+    if (!user?.id) {
+      setMentionNotifications([]);
+      setNoteNotifications([]);
+      setNoteNotificationsAvailable(false);
+      return;
+    }
+    const [mentionsResult, notificationsResult] = await Promise.allSettled([
+      apiListMyNoteMentions(20),
+      apiListNoteNotifications({ limit: 20, includeRead: true }),
+    ]);
+    if (mentionsResult.status === "fulfilled" && mentionsResult.value?.ok) {
+      setMentionNotifications(ensureArray(mentionsResult.value.items));
+    }
+    if (notificationsResult.status === "fulfilled" && notificationsResult.value?.ok) {
+      setNoteNotifications(ensureArray(notificationsResult.value.items));
+      setNoteNotificationsAvailable(true);
+    } else {
+      setNoteNotificationsAvailable(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void refreshMentionNotifications();
+  }, [activeOrgId, refreshMentionNotifications]);
+
+  useEffect(() => {
+    function handleMentionChanged() {
+      void refreshMentionNotifications();
+    }
+    window.addEventListener("processmap:note-mentions-changed", handleMentionChanged);
+    return () => window.removeEventListener("processmap:note-mentions-changed", handleMentionChanged);
+  }, [refreshMentionNotifications]);
+
+  async function openMentionNotification(item) {
+    const mention = ensureObject(item);
+    const mentionId = String(mention.id || "").trim();
+    const targetSessionId = String(mention.session_id || "").trim();
+    const targetThreadId = String(mention.thread_id || "").trim();
+    if (!mentionId || !targetSessionId || !targetThreadId) return;
+    const acknowledged = await apiAcknowledgeNoteMention(mentionId);
+    if (acknowledged?.ok) {
+      setMentionNotifications((prev) => ensureArray(prev).filter((row) => String(row?.id || "") !== mentionId));
+    }
+    const activeSid = String(draft?.session_id || "").trim();
+    if (targetSessionId && targetSessionId !== activeSid) {
+      const opened = await openSessionWithLeaveGuard(targetSessionId, { openTab: "diagram" });
+      if (!opened?.ok) return;
+    }
+    openNotesDiscussions({
+      source: "mention_notification",
+      scopeFilter: "all",
+      threadId: targetThreadId,
+      commentId: String(mention.comment_id || "").trim(),
+    });
+    window.dispatchEvent(new CustomEvent("processmap:note-mentions-changed"));
+  }
+
+  function completeDiscussionLinkedElementFocus(result = {}) {
+    const requestId = String(result?.requestId || result?.request_id || "").trim();
+    if (!requestId) return;
+    const pending = discussionLinkedElementFocusResolversRef.current.get(requestId);
+    if (!pending) return;
+    window.clearTimeout(pending.timeoutId);
+    discussionLinkedElementFocusResolversRef.current.delete(requestId);
+    logDiscussionFocusDiag("app-complete", { requestId, result });
+    pending.resolve({
+      ok: result?.ok !== false,
+      error: String(result?.error || "").trim(),
+    });
+  }
+
+  function focusDiscussionElementTarget(payload = {}, source = "discussion_linked_element") {
+    const targetId = String(payload?.element_id || payload?.elementId || "").trim();
+    if (!targetId) {
+      logDiscussionFocusDiag("app-bridge-missing-element", { source, payload });
+      return Promise.resolve({ ok: false, error: "missing_element_id" });
+    }
+    const sid = String(draft?.session_id || "").trim();
+    const nonce = Date.now();
+    if (!sid) {
+      logDiscussionFocusDiag("app-bridge-missing-session", { source, targetId });
+      return Promise.resolve({ ok: false, error: "missing_session_id" });
+    }
+    const requestId = `${sid}:${targetId}:${source}:${nonce}`;
+    logDiscussionFocusDiag("app-bridge", {
+      requestId,
+      sid,
+      targetId,
+      source,
+      threadId: String(payload?.thread_id || payload?.threadId || "").trim(),
+    });
+    const focusResult = new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        discussionLinkedElementFocusResolversRef.current.delete(requestId);
+        logDiscussionFocusDiag("app-timeout", { requestId, sid, targetId, source });
+        resolve({ ok: false, error: "focus_timeout" });
+      }, 7000);
+      discussionLinkedElementFocusResolversRef.current.set(requestId, { resolve, timeoutId });
+      setProcessTabIntent({ sid, tab: "diagram", nonce });
+      setDiscussionLinkedElementFocusIntent({
+        sid,
+        requestId,
+        elementId: targetId,
+        elementName: String(payload?.element_name || payload?.elementName || targetId).trim(),
+        elementType: String(payload?.element_type || payload?.elementType || "").trim(),
+        threadId: String(payload?.thread_id || payload?.threadId || "").trim(),
+        source,
+        nonce,
+      });
+    });
+    focusElementNotes({
+      id: targetId,
+      name: String(payload?.element_name || payload?.elementName || targetId).trim(),
+      type: String(payload?.element_type || payload?.elementType || "bpmn:Task").trim(),
+    }, source, { openSidebar: false });
+    return focusResult;
+  }
+
+  function focusDiscussionNotificationTarget(payload = {}) {
+    return focusDiscussionElementTarget(payload, "discussion_notification_open");
+  }
+
+  function focusDiscussionLinkedElement(payload = {}) {
+    return focusDiscussionElementTarget(payload, "discussion_linked_element");
+  }
+
+  function handleBpmnElementSelect(element) {
+    const selectedIds = ensureArray(element?.selectedIds)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    const next = element && typeof element === "object"
+      ? {
+          id: String(element.id || "").trim(),
+          name: String(element.name || element.id || "").trim(),
+          type: String(element.type || "").trim(),
+          laneName: String(element.laneName || element.lane || element.actorRole || "").trim(),
+          selectedIds,
+          selectedCount: Number(element.selectedCount || selectedIds.length || 1),
+          insertBetween: element?.insertBetween && typeof element.insertBetween === "object"
+            ? { ...element.insertBetween }
+            : null,
+        }
+      : null;
+    if (!next?.id) {
+      setSelectedBpmnElement(null);
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
+      return;
+    }
+    if (shouldResetPropertiesOverlayPreviewForSelection(selectedBpmnElement?.id, next.id)) {
+      setSelectedPropertiesOverlayPreview(null);
+      setSelectedPropertiesOverlayAlwaysPreview(null);
+    }
+    focusElementNotes(next, "diagram_select", { openSidebar: false });
+  }
+
+  const handleProcessUiStateChange = useCallback((nextState) => {
+    const next = nextState && typeof nextState === "object" ? nextState : null;
+    if (!next) return;
+    setProcessUiState((prev) => {
+      if (
+        prev
+        && prev.sid === next.sid
+        && prev.tab === next.tab
+        && prev.diagramMode === next.diagramMode
+        && prev.selectedElementId === next.selectedElementId
+        && prev.hasSession === next.hasSession
+        && prev.isLocal === next.isLocal
+        && prev.aiQuestionsBusy === next.aiQuestionsBusy
+        && prev.canGenerateAiQuestions === next.canGenerateAiQuestions
+        && prev.aiGenerateBlockReason === next.aiGenerateBlockReason
+        && prev.aiGenerateBlockReasonCode === next.aiGenerateBlockReasonCode
+        && prev.leaveNavigationRisk?.unsafe === next.leaveNavigationRisk?.unsafe
+        && prev.leaveNavigationRisk?.reason === next.leaveNavigationRisk?.reason
+        && prev.leaveNavigationRisk?.message === next.leaveNavigationRisk?.message
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const requestGenerateAiQuestionsFromSidebar = useCallback(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    setAiGenerateIntent({
+      sid,
+      nonce: Date.now(),
+      source: "notes_panel",
+    });
+  }, [draft?.session_id]);
+
+  function emitDiagramFlash(detail = {}) {
+    if (typeof window === "undefined") return;
+    const payload = detail && typeof detail === "object" ? detail : {};
+    window.dispatchEvent(new CustomEvent("fpc:diagram_flash", { detail: payload }));
+  }
+
+  async function addElementNote(elementId, text) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    const noteText = String(text || "").trim();
+    if (!eid || !noteText) return { ok: false, error: "Пустая заметка или элемент не выбран." };
+
+    const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withAddedElementNote(current, eid, noteText);
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      markOk("Локальная заметка сохранена.");
+      emitDiagramFlash({
+        sid,
+        elementId: eid,
+        type: "notes",
+        badgeKind: "notes",
+        label: "Note added",
+      });
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить заметку узла.") };
+    }
+    const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || nextMap);
+    setDraftPersisted((d) => ({ ...d, notes_by_element: serverMap }));
+    markOk("API OK");
+    emitDiagramFlash({
+      sid,
+      elementId: eid,
+      type: "notes",
+      badgeKind: "notes",
+      label: "Note added",
+    });
+    return { ok: true };
+  }
+
+  async function setElementNoteSummary(elementId, summaryText, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    if (!eid) return { ok: false, error: "Элемент не выбран." };
+    const summary = String(summaryText || "").trim();
+
+    const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withElementNoteSummary(current, eid, summary, {
+      templateKey: String(options?.templateKey || "").trim(),
+    });
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      markOk("Локальный TL;DR сохранён.");
+      emitDiagramFlash({
+        sid,
+        elementId: eid,
+        type: "notes",
+        badgeKind: "notes",
+        label: "Updated",
+      });
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить TL;DR.") };
+    }
+    const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || nextMap);
+    setDraftPersisted((d) => ({ ...d, notes_by_element: serverMap }));
+    markOk("API OK");
+    emitDiagramFlash({
+      sid,
+      elementId: eid,
+      type: "notes",
+      badgeKind: "notes",
+      label: "Updated",
+    });
+    return { ok: true };
+  }
+
+  async function setElementStepTime(elementId, stepTimeMinutes, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    if (!eid) return { ok: false, error: "Элемент не выбран." };
+
+    const requestedUnit = normalizeStepTimeUnit(options?.unit || "min");
+    if (stepTimeMinutes !== null && stepTimeMinutes !== undefined && String(stepTimeMinutes).trim() !== "") {
+      const num = Number(stepTimeMinutes);
+      if (!Number.isFinite(num) || num < 0 || !Number.isInteger(num)) {
+        return {
+          ok: false,
+          error: `Время шага должно быть целым числом ${requestedUnit === "sec" ? "секунд" : "минут"} (0 или больше).`,
+        };
+      }
+    }
+    if (options?.stepTimeSeconds !== null && options?.stepTimeSeconds !== undefined && String(options.stepTimeSeconds).trim() !== "") {
+      const secondsRaw = Number(options.stepTimeSeconds);
+      if (!Number.isFinite(secondsRaw) || secondsRaw < 0 || !Number.isInteger(secondsRaw)) {
+        return { ok: false, error: "Время шага в секундах должно быть целым числом (0 или больше)." };
+      }
+    }
+    const nextStepTime = normalizeStepTimeMinutes(stepTimeMinutes);
+    const nextStepTimeSec = nextStepTime === null
+      ? null
+      : normalizeStepTimeSeconds(
+        options?.stepTimeSeconds !== undefined
+          ? options.stepTimeSeconds
+          : nextStepTime * 60,
+      );
+
+    const baseNodes = ensureArray(draft?.nodes).map((node) => ({
+      ...ensureObject(node),
+      parameters: { ...ensureObject(node?.parameters) },
+    }));
+    let nodeFound = false;
+    let nodesChanged = false;
+    const nextNodes = baseNodes.map((node) => {
+      if (String(node?.id || "").trim() !== eid) return node;
+      nodeFound = true;
+      const nextNode = {
+        ...node,
+        parameters: { ...ensureObject(node?.parameters) },
+      };
+      const prevStepTime = readNodeStepTimeMinutes(node);
+      const prevStepTimeSec = readNodeStepTimeSeconds(node);
+      if (prevStepTime === nextStepTime && prevStepTimeSec === nextStepTimeSec) return nextNode;
+      nodesChanged = true;
+      if (nextStepTime === null) {
+        delete nextNode.step_time_min;
+        delete nextNode.stepTimeMin;
+        nextNode.duration_min = null;
+        delete nextNode.durationMin;
+        delete nextNode.step_time_sec;
+        delete nextNode.stepTimeSec;
+        nextNode.duration_sec = null;
+        delete nextNode.durationSec;
+        delete nextNode.parameters.step_time_min;
+        delete nextNode.parameters.stepTimeMin;
+        delete nextNode.parameters.duration_min;
+        delete nextNode.parameters.durationMin;
+        delete nextNode.parameters.step_time_sec;
+        delete nextNode.parameters.stepTimeSec;
+        delete nextNode.parameters.duration_sec;
+        delete nextNode.parameters.durationSec;
+        delete nextNode.parameters.duration;
+      } else {
+        nextNode.step_time_min = nextStepTime;
+        nextNode.duration_min = nextStepTime;
+        nextNode.step_time_sec = nextStepTimeSec;
+        nextNode.duration_sec = nextStepTimeSec;
+        nextNode.parameters.step_time_min = nextStepTime;
+        nextNode.parameters.duration_min = nextStepTime;
+        nextNode.parameters.step_time_sec = nextStepTimeSec;
+        nextNode.parameters.duration_sec = nextStepTimeSec;
+        nextNode.parameters.duration = nextStepTime;
+      }
+      return nextNode;
+    });
+    if (!nodeFound) return { ok: false, error: "Выбранный элемент не найден в списке BPMN-узлов." };
+
+    const baseInterview = ensureObject(draft?.interview);
+    const baseSteps = ensureArray(baseInterview.steps).map((step) => ({ ...ensureObject(step) }));
+    let stepsChanged = false;
+    const nextSteps = baseSteps.map((step) => {
+      const stepNodeId = String(step?.node_bind_id || step?.node_id || step?.nodeId || "").trim();
+      if (stepNodeId !== eid) return step;
+      const nextStep = { ...step };
+      const nextDurationValue = nextStepTime === null ? "" : String(nextStepTime);
+      const nextDurationSecValue = nextStepTimeSec === null ? "" : String(nextStepTimeSec);
+      if (String(nextStep.duration_min ?? "").trim() !== nextDurationValue) {
+        nextStep.duration_min = nextDurationValue;
+        stepsChanged = true;
+      }
+      if (String(nextStep.duration_sec ?? "").trim() !== nextDurationSecValue) {
+        nextStep.duration_sec = nextDurationSecValue;
+        stepsChanged = true;
+      }
+      if (nextStepTime === null) {
+        if (Object.prototype.hasOwnProperty.call(nextStep, "step_time_min")) {
+          delete nextStep.step_time_min;
+          stepsChanged = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(nextStep, "step_time_sec")) {
+          delete nextStep.step_time_sec;
+          stepsChanged = true;
+        }
+      } else {
+        if (Number(nextStep.step_time_min) !== nextStepTime) {
+          nextStep.step_time_min = nextStepTime;
+          stepsChanged = true;
+        }
+        if (Number(nextStep.step_time_sec) !== nextStepTimeSec) {
+          nextStep.step_time_sec = nextStepTimeSec;
+          stepsChanged = true;
+        }
+      }
+      return nextStep;
+    });
+    const nextInterview = stepsChanged ? { ...baseInterview, steps: nextSteps } : baseInterview;
+
+    if (!nodesChanged && !stepsChanged) return { ok: true, skipped: true };
+
+    setDraftPersisted((prev) => ({
+      ...prev,
+      nodes: nextNodes,
+      ...(stepsChanged ? { interview: nextInterview } : {}),
+    }));
+    emitDiagramFlash({
+      sid,
+      elementId: eid,
+      type: "sync",
+      label: "Время шага обновлено",
+    });
+
+    if (!sid || isLocalSessionId(sid)) {
+      markOk("Локальное время шага сохранено.");
+      return { ok: true };
+    }
+
+    // FIX-V: для XML-truth сессий nodes/edges не персистятся сервером
+    // (FIX-SAVE B5 отвечает 409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH). Время шага
+    // для таких сессий сохраняется через interview.steps; nodes обновляются
+    // только локально (уже применено выше через setDraftPersisted).
+    const isXmlTruthSession = String(draft?.bpmn_xml || "").trim() !== "";
+    const payload = {
+      ...(isXmlTruthSession ? {} : { nodes: nextNodes }),
+      ...(stepsChanged ? { interview: nextInterview } : {}),
+    };
+    if (Object.keys(payload).length === 0) {
+      markOk("Время шага сохранено.");
+      return { ok: true, local: true };
+    }
+    const r = await apiPatchSession(sid, payload);
+    if (!r.ok) {
+      setDraftPersisted((prev) => ({
+        ...prev,
+        nodes: baseNodes,
+        ...(stepsChanged ? { interview: baseInterview } : {}),
+      }));
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить время шага.") };
+    }
+
+    if (r.session && typeof r.session === "object") {
+      onSessionSync({
+        ...r.session,
+        _sync_source: "notespanel_step_time_update",
+      });
+    } else {
+      setDraftPersisted((prev) => ({
+        ...prev,
+        nodes: nextNodes,
+        ...(stepsChanged ? { interview: nextInterview } : {}),
+      }));
+    }
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function setFlowHappyPath(flowIdRaw, tierRaw, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const flowId = String(flowIdRaw || "").trim();
+    if (!flowId) return { ok: false, error: "Переход не выбран." };
+    const tier = normalizeFlowTier(tierRaw);
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const nextFlowMeta = { ...currentFlowMeta };
+    if (tier) {
+      const prev = ensureObject(nextFlowMeta[flowId]);
+      nextFlowMeta[flowId] = { ...prev, tier };
+    } else {
+      const prev = ensureObject(nextFlowMeta[flowId]);
+      const next = { ...prev };
+      delete next.tier;
+      if (next.rtier) nextFlowMeta[flowId] = next;
+      else delete nextFlowMeta[flowId];
+    }
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: nextFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "flow_happy_path_save",
+      successHint: sid && !isLocalSessionId(sid) ? "Уровень пути сохранён" : "Локальный уровень пути обновлён.",
+      failureHint: "Не удалось сохранить happy-path.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить happy-path.") };
+    }
+
+    const serverMeta = normalizeBpmnMeta(ensureObject(ensureObject(persistResult?.session).bpmn_meta));
+    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta.flow_meta);
+    const requestedTier = tier;
+    let normalizationNotice = "";
+    if (requestedTier && Object.keys(normalizedFlowMeta).length && normalizedFlowMeta[flowId]?.tier !== requestedTier) {
+      normalizationNotice = `Нормализация: ${requestedTier} скорректирован сервером.`;
+    }
+    if (normalizationNotice) markOk(normalizationNotice);
+    return {
+      ok: true,
+      normalizedConflicts: [],
+      normalizationNotice,
+    };
+  }
+
+  async function setNodePathAssignments(updatesRaw, options = {}) {
+    const sid = String(draft?.session_id || "");
+    const updatesInput = ensureArray(updatesRaw);
+    if (!updatesInput.length) return { ok: false, error: "Нет изменений для path-тегов." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const nextNodePathMeta = { ...currentNodePathMeta };
+    const apiUpdates = [];
+
+    updatesInput.forEach((rawUpdate) => {
+      const update = ensureObject(rawUpdate);
+      const nodeId = String(update.node_id || update.nodeId || "").trim();
+      if (!nodeId) return;
+      const normalizedEntry = normalizeNodePathEntry({
+        paths: Object.prototype.hasOwnProperty.call(update, "paths") ? update.paths : currentNodePathMeta[nodeId]?.paths,
+        sequence_key: Object.prototype.hasOwnProperty.call(update, "sequence_key") ? update.sequence_key : (
+          Object.prototype.hasOwnProperty.call(update, "sequenceKey") ? update.sequenceKey : currentNodePathMeta[nodeId]?.sequence_key
+        ),
+        source: Object.prototype.hasOwnProperty.call(update, "source") ? update.source : (options?.source || "manual"),
+      });
+
+      if (normalizedEntry) {
+        nextNodePathMeta[nodeId] = normalizedEntry;
+        apiUpdates.push({
+          node_id: nodeId,
+          paths: normalizedEntry.paths,
+          sequence_key: normalizedEntry.sequence_key || null,
+          source: normalizedEntry.source,
+        });
+      } else {
+        delete nextNodePathMeta[nodeId];
+        apiUpdates.push({
+          node_id: nodeId,
+          paths: [],
+          sequence_key: null,
+          source: String(update.source || options?.source || "manual"),
+        });
+      }
+    });
+
+    if (!apiUpdates.length) return { ok: false, error: "Нет валидных узлов для обновления." };
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: nextNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "node_path_meta_save",
+      successHint: sid && !isLocalSessionId(sid) ? "Разметка Paths сохранена" : "Локальная разметка Paths обновлена.",
+      failureHint: "Не удалось сохранить разметку Paths.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить разметку Paths.") };
+    }
+    return { ok: true, applied: apiUpdates.length };
+  }
+
+  async function setElementRobotMeta(elementIdRaw, robotMetaRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || robotMetaRaw === null;
+    let nextRobotMetaByElementId = currentRobotMetaByElementId;
+    if (shouldRemove) {
+      nextRobotMetaByElementId = removeRobotMetaByElementId(currentRobotMetaByElementId, elementId);
+    } else {
+      const validation = validateRobotMetaV1(robotMetaRaw);
+      if (!validation.ok) {
+        return { ok: false, error: `Некорректные поля Robot Meta: ${validation.errors.join("; ")}` };
+      }
+      nextRobotMetaByElementId = upsertRobotMetaByElementId(
+        currentRobotMetaByElementId,
+        elementId,
+        validation.value,
+      );
+    }
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: nextRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "robot_meta_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? (shouldRemove ? "Robot Meta удалена." : "Robot Meta сохранена.")
+        : (shouldRemove ? "Robot Meta удалена локально." : "Robot Meta сохранена локально."),
+      failureHint: "Не удалось сохранить Robot Meta.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Robot Meta.") };
+    }
+    return { ok: true };
+  }
+
+  async function setElementCamundaExtensions(elementIdRaw, extensionStateRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || extensionStateRaw === null;
+    const nextCamundaExtensionsByElementId = shouldRemove
+      ? removeCamundaExtensionStateByElementId(currentCamundaExtensionsByElementId, elementId)
+      : upsertCamundaExtensionStateByElementId(currentCamundaExtensionsByElementId, elementId, extensionStateRaw);
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: nextCamundaExtensionsByElementId,
+      presentation_by_element_id: currentPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+      viewport: draft?.bpmn_meta?.viewport,
+    };
+    const baseDiagramStateVersion = Number(
+      bpmnStageRef.current?.getBaseDiagramStateVersion?.()
+      ?? draft?.diagram_state_version
+      ?? draft?.bpmn_xml_version
+      ?? draft?.version
+      ?? 0,
+    );
+    const operation = shouldRemove
+      ? "property_delete"
+      : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
+    emitPropertySaveEvent({ type: "start", operation, elementId, sid });
+
+    // Wait for the live modeler to be ready before we mutate or serialize it.
+    // This prevents the property-only save from reading an empty XML snapshot
+    // when the modeler runtime has not finished importing the diagram yet.
+    try {
+      await bpmnStageRef.current?.whenReady?.({ timeoutMs: 2000, expectedSid: sid });
+    } catch {
+      // Best-effort; proceed. If the modeler is not ready the apply step below
+      // will fail and the save will abort without falling back to an XML merge.
+    }
+
+    // Capture the current modeler extension state so we can roll it back if the
+    // save fails or conflicts with a concurrent edit.
+    let modelerExtensionBackup = null;
+    try {
+      modelerExtensionBackup = bpmnStageRef.current?.getElementCamundaExtensionState?.(elementId);
+    } catch {
+      // Best-effort backup; rollback will be skipped if unavailable.
+    }
+
+    // Apply the optimistic extension state to the live modeler first so the
+    // serialized XML is always fresh and property duplication cannot happen.
+    let applyResult;
+    try {
+      applyResult = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      // Force the sidebar to re-read extension state from the live modeler
+      // instead of the pre-mutation memoized snapshot.
+      setBpmnModelerSyncEpoch((e) => e + 1);
+    } catch (error) {
+      applyResult = { ok: false, error: String(error?.message || error || "apply_failed") };
+    }
+    if (!applyResult?.ok) {
+      emitPropertySaveEvent({
+        type: "error",
+        operation,
+        elementId,
+        sid,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      });
+      return {
+        ok: false,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      };
+    }
+
+    const persistResult = await saveBpmnState({
+      operation,
+      sessionId: sid,
+      isLocal: isLocalSessionId(sid),
+      baseDiagramStateVersion,
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
+      projectId: draft?.project_id,
+      elementId,
+      currentCamundaExtensionsByElementId,
+      nextCamundaExtensionsByElementId,
+      currentMeta,
+      nextMeta: optimisticMeta,
+      getModelerXml: async () => {
+        const snap = await bpmnStageRef.current?.getRuntimeXmlSnapshot?.();
+        return snap?.ok ? snap.xml : "";
+      },
+      apiPutBpmnXml,
+      flushSave: bpmnStageRef.current?.flushSave,
+      apiGetSession,
+      apiGetBpmnXml,
+      onSessionSync,
+      overwriteBpmnSnapshot,
+      backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
+      onDurableSaveAck: options?.onDurableSaveAck,
+      onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
+      onBackgroundSessionSyncComplete: options?.onBackgroundSessionSyncComplete,
+      onBackgroundSessionSyncError: options?.onBackgroundSessionSyncError,
+      syncSource: "saveBpmnState:camunda_extensions",
+    });
+    if (!persistResult?.ok) {
+      const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
+      // Rollback the live modeler to the pre-save extension state so the next
+      // serialize/save does not resurrect the failed change.
+      if (modelerExtensionBackup) {
+        try {
+          bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, modelerExtensionBackup);
+          setBpmnModelerSyncEpoch((e) => e + 1);
+        } catch {
+          // Best-effort rollback.
+        }
+      }
+      emitPropertySaveEvent({
+        type: isConflict ? "conflict" : "error",
+        operation,
+        elementId,
+        sid,
+        status: Number(persistResult?.status || 0),
+        error: String(persistResult?.error || "Не удалось сохранить Properties."),
+      });
+      return {
+        ok: false,
+        status: Number(persistResult?.status || 0),
+        conflict: isConflict,
+        error: String(persistResult?.error || "Не удалось сохранить Properties."),
+      };
+    }
+    emitPropertySaveEvent({ type: "success", operation, elementId, sid, local: persistResult?.local === true });
+    markOk(sid && !isLocalSessionId(sid)
+      ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
+      : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
+    return {
+      ok: true,
+      local: persistResult?.local === true,
+      backgroundSessionRefresh: persistResult?.backgroundSessionRefresh === true,
+      backgroundSessionSyncPromise: persistResult?.backgroundSessionSyncPromise || null,
+    };
+  }
+
+  async function setElementCamundaPresentation(elementIdRaw, presentationRaw, options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    const elementId = String(elementIdRaw || "").trim();
+    if (!elementId) return { ok: false, error: "Не выбран BPMN-элемент." };
+
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
+    const currentNodePathMeta = normalizeNodePathMetaMap(currentMeta.node_path_meta);
+    const currentRobotMetaByElementId = normalizeRobotMetaMap(currentMeta.robot_meta_by_element_id);
+    const currentCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+    const currentPresentationByElementId = normalizeCamundaPresentationMap(currentMeta.presentation_by_element_id);
+    const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const shouldRemove = options?.remove === true || presentationRaw === null;
+    const nextPresentationByElementId = shouldRemove
+      ? removeCamundaPresentationByElementId(currentPresentationByElementId, elementId)
+      : upsertCamundaPresentationByElementId(currentPresentationByElementId, elementId, presentationRaw);
+
+    const optimisticMeta = {
+      version: Number(currentMeta.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: currentFlowMeta,
+      node_path_meta: currentNodePathMeta,
+      robot_meta_by_element_id: currentRobotMetaByElementId,
+      camunda_extensions_by_element_id: currentCamundaExtensionsByElementId,
+      presentation_by_element_id: nextPresentationByElementId,
+      hybrid_layer_by_element_id: currentHybridLayerByElementId,
+      hybrid_v2: currentMeta.hybrid_v2,
+      drawio: currentMeta.drawio,
+      execution_plans: currentExecutionPlans,
+    };
+    const persistResult = await persistSessionMetaBoundary(optimisticMeta, {
+      source: "camunda_presentation_save",
+      successHint: sid && !isLocalSessionId(sid)
+        ? "Настройка overlay сохранена."
+        : "Настройка overlay сохранена локально.",
+      failureHint: "Не удалось сохранить настройку overlay.",
+    });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить настройку overlay.") };
+    }
+    return { ok: true };
+  }
+
+  function guessScopeStartIdFromDraft(draftRaw) {
+    const interview = ensureObject(draftRaw?.interview);
+    const steps = ensureArray(interview.steps)
+      .map((step, idx) => {
+        const row = ensureObject(step);
+        const orderIndex = Number(row.order_index || row.order || idx + 1);
+        const nodeId = String(
+          row.bpmn_ref
+            || row.bpmnRef
+            || row.node_bind_id
+            || row.nodeBindId
+            || row.node_id
+            || row.nodeId
+            || "",
+        ).trim();
+        return {
+          nodeId,
+          orderIndex: Number.isFinite(orderIndex) && orderIndex > 0 ? Math.floor(orderIndex) : idx + 1,
+          idx,
+        };
+      })
+      .filter((row) => row.nodeId);
+    if (!steps.length) return "";
+    steps.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0) || Number(a.idx || 0) - Number(b.idx || 0));
+    return String(steps[0]?.nodeId || "").trim();
+  }
+
+  async function recalculateRtiers(options = {}) {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid || isLocalSessionId(sid)) {
+      return { ok: false, error: "Пересчёт R-tier доступен только для backend-сессии." };
+    }
+    const scopeStartId = String(options?.scopeStartId || guessScopeStartIdFromDraft(draft) || "").trim();
+    const payload = {};
+    if (scopeStartId) payload.scopeStartId = scopeStartId;
+    if (Array.isArray(options?.successEndIds) && options.successEndIds.length) payload.successEndIds = options.successEndIds;
+    if (Array.isArray(options?.failEndIds) && options.failEndIds.length) payload.failEndIds = options.failEndIds;
+
+    const result = await apiInferBpmnRtiers(sid, payload);
+    if (!result?.ok) {
+      markFail(result?.error || "Не удалось пересчитать R-tier.");
+      return { ok: false, error: String(result?.error || "Не удалось пересчитать R-tier.") };
+    }
+
+    const serverMeta = ensureObject(result.meta);
+    const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
+    const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
+    const normalizedFlowMeta = normalizeFlowMetaMap(serverMeta?.flow_meta);
+    const normalizedNodePathMeta = normalizeNodePathMetaMap(serverMeta?.node_path_meta);
+    const normalizedRobotMetaByElementId = normalizeRobotMetaMap(serverMeta?.robot_meta_by_element_id);
+    const normalizedCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(serverMeta?.camunda_extensions_by_element_id);
+    const normalizedPresentationByElementId = normalizeCamundaPresentationMap(serverMeta?.presentation_by_element_id || currentMeta.presentation_by_element_id);
+    const normalizedHybridLayerByElementId = normalizeHybridLayerMap(serverMeta?.hybrid_layer_by_element_id);
+    const normalizedExecutionPlans = normalizeExecutionPlans(serverMeta?.execution_plans);
+    const effectiveExecutionPlans = normalizedExecutionPlans.length ? normalizedExecutionPlans : currentExecutionPlans;
+    const nextMeta = {
+      version: Number(serverMeta?.version) > 0 ? Number(serverMeta.version) : 1,
+      flow_meta: normalizedFlowMeta,
+      node_path_meta: normalizedNodePathMeta,
+      robot_meta_by_element_id: normalizedRobotMetaByElementId,
+      camunda_extensions_by_element_id: normalizedCamundaExtensionsByElementId,
+      presentation_by_element_id: normalizedPresentationByElementId,
+      hybrid_layer_by_element_id: normalizedHybridLayerByElementId,
+      hybrid_v2: mergeHybridV2Doc(serverMeta?.hybrid_v2, currentMeta.hybrid_v2),
+      drawio: mergeDrawioMeta(serverMeta?.drawio, currentMeta.drawio),
+      execution_plans: effectiveExecutionPlans,
+    };
+    setDraftPersisted((prev) => ({
+      ...prev,
+      bpmn_meta: nextMeta,
+    }));
+    writeLocalBpmnMeta(sid, nextMeta);
+    markOk("R-tier пересчитан и сохранён.");
+    return { ok: true, inference: ensureObject(result.inference), meta: nextMeta };
+  }
+
+  async function updateElementAiQuestion(elementId, questionId, patch = {}) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    const qid = String(questionId || "").trim();
+    if (!eid || !qid) return { ok: false, error: "Не найден элемент или вопрос." };
+
+    const interviewNow = ensureObject(draft?.interview);
+    const aiMapNow = normalizeAiQuestionsByElementForMerge(
+      interviewNow.ai_questions_by_element || interviewNow.aiQuestionsByElementId,
+    );
+    const listNow = ensureArray(aiMapNow[eid]).map((item) => ({ ...item }));
+    const idx = listNow.findIndex((item) => String(item?.qid || item?.id || "").trim() === qid);
+    if (idx < 0) return { ok: false, error: "Вопрос для выбранного узла не найден." };
+
+    const prev = ensureObject(listNow[idx]);
+    const hasStatusPatch = hasOwn(patch, "status");
+    const hasCommentPatch = hasOwn(patch, "comment");
+    const nextStatus = hasStatusPatch
+      ? String(patch?.status || "").trim().toLowerCase() === "done" ? "done" : "open"
+      : String(prev?.status || "open").trim().toLowerCase() === "done" ? "done" : "open";
+    const nextComment = hasCommentPatch
+      ? String(patch?.comment || "").trim()
+      : String(prev?.comment || "").trim();
+
+    if (
+      nextStatus === (String(prev?.status || "open").trim().toLowerCase() === "done" ? "done" : "open")
+      && nextComment === String(prev?.comment || "").trim()
+    ) {
+      return { ok: true, skipped: true };
+    }
+
+    listNow[idx] = {
+      ...prev,
+      status: nextStatus,
+      comment: nextComment,
+      updatedAt: Date.now(),
+    };
+    const nextMap = {
+      ...aiMapNow,
+      [eid]: listNow,
+    };
+    const nextInterview = {
+      ...interviewNow,
+      ai_questions_by_element: nextMap,
+    };
+
+    setDraftPersisted((d) => ({
+      ...d,
+      interview: nextInterview,
+    }));
+
+    if (!sid || isLocalSessionId(sid)) {
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { interview: nextInterview });
+    if (!r.ok) {
+      setDraftPersisted((d) => ({
+        ...d,
+        interview: interviewNow,
+      }));
+      return { ok: false, error: String(r.error || "Не удалось сохранить AI-комментарий.") };
+    }
+
+    if (r.session && typeof r.session === "object") {
+      onSessionSync({
+        ...r.session,
+        _sync_source: "notespanel_ai_question_update",
+      });
+    }
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function remapElementNotes(oldElementId, newElementId, meta = {}) {
+    const sid = String(draft?.session_id || "");
+    const oldId = String(oldElementId || "").trim();
+    const newId = String(newElementId || "").trim();
+    if (!oldId || !newId) return { ok: true, moved: false };
+
+    const snapshotRaw = ensureObject(meta?.notesEntry);
+    const snapshotItems = ensureArray(snapshotRaw.items)
+      .map((item) => ({ ...ensureObject(item) }))
+      .filter((item) => String(item?.text || "").trim());
+    const snapshotEntry = snapshotItems.length
+      ? {
+          items: snapshotItems,
+          updatedAt: Number(snapshotRaw.updatedAt || Date.now()) || Date.now(),
+        }
+      : null;
+
+    const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    try {
+      if (typeof window !== "undefined" && (window.__FPC_E2E__ || shouldLogDraftTrace())) {
+        const prev = Array.isArray(window.__FPC_NOTES_REMAP_LOG__) ? window.__FPC_NOTES_REMAP_LOG__ : [];
+        const next = [
+          ...prev,
+          {
+            ts: Date.now(),
+            sid: sid || "-",
+            oldId,
+            newId,
+            forceRestore: meta?.forceRestore ? 1 : 0,
+            source: String(meta?.source || "shape_replace"),
+            currentKeys: Object.keys(current || {}),
+            hasSnapshot: snapshotEntry ? 1 : 0,
+          },
+        ];
+        if (next.length > 120) next.splice(0, next.length - 120);
+        window.__FPC_NOTES_REMAP_LOG__ = next;
+      }
+    } catch {
+    }
+    const hasOld = Object.prototype.hasOwnProperty.call(current, oldId)
+      && ensureArray(current?.[oldId]?.items).length > 0;
+    let nextMap = current;
+    if (oldId === newId) {
+      if (!snapshotEntry) return { ok: true, moved: false };
+      const currentCount = ensureArray(current?.[newId]?.items).length;
+      if (currentCount > 0 && !meta?.forceRestore) return { ok: true, moved: false };
+      nextMap = {
+        ...current,
+        [newId]: snapshotEntry,
+      };
+    } else {
+      if (!hasOld && !snapshotEntry) return { ok: true, moved: false };
+      nextMap = withRemappedElementNotes(current, oldId, newId);
+      if (snapshotEntry && ensureArray(nextMap?.[newId]?.items).length === 0) {
+        nextMap = {
+          ...nextMap,
+          [newId]: snapshotEntry,
+        };
+      }
+    }
+
+    if (shouldLogDraftTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[NOTES_REMAP] sid=${sid || "-"} oldId=${oldId} newId=${newId} source=${String(meta?.source || "shape_replace")} oldType=${String(meta?.oldType || "-")} newType=${String(meta?.newType || "-")} forceRestore=${meta?.forceRestore ? 1 : 0}`,
+      );
+    }
+    try {
+      if (typeof window !== "undefined" && (window.__FPC_E2E__ || shouldLogDraftTrace())) {
+        const prev = Array.isArray(window.__FPC_NOTES_REMAP_LOG__) ? window.__FPC_NOTES_REMAP_LOG__ : [];
+        const next = [
+          ...prev,
+          {
+            ts: Date.now(),
+            sid: sid || "-",
+            stage: "apply",
+            oldId,
+            newId,
+            nextKeys: Object.keys(nextMap || {}),
+            nextCount: ensureArray(nextMap?.[newId]?.items).length,
+          },
+        ];
+        if (next.length > 120) next.splice(0, next.length - 120);
+        window.__FPC_NOTES_REMAP_LOG__ = next;
+      }
+    } catch {
+    }
+
+    const reinforceNotesMap = () => {
+      setDraftPersisted((d) => {
+        const currentMap = normalizeElementNotesMap(d?.notes_by_element || d?.notesByElementId);
+        const currentCount = ensureArray(currentMap?.[newId]?.items).length;
+        if (currentCount > 0 && !meta?.forceRestore) return d;
+        return { ...d, notes_by_element: nextMap };
+      });
+    };
+
+    reinforceNotesMap();
+    try {
+      window.setTimeout(() => reinforceNotesMap(), 180);
+    } catch {
+    }
+    setSelectedBpmnElement((prev) => {
+      const prevId = String(prev?.id || "").trim();
+      if (prevId !== oldId) return prev;
+      return {
+        ...prev,
+        id: newId,
+        name: String(prev?.name || newId),
+      };
+    });
+
+    if (!sid || isLocalSessionId(sid)) {
+      return { ok: true, moved: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось перенести заметки узла.") };
+    }
+    const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || {});
+    const mergedServerMap = normalizeElementNotesMap({
+      ...serverMap,
+      ...nextMap,
+    });
+    if (oldId !== newId) {
+      delete mergedServerMap[oldId];
+    }
+    setDraftPersisted((d) => ({ ...d, notes_by_element: mergedServerMap }));
+    markOk("API OK");
+    return { ok: true, moved: true };
+  }
+
+  async function generateProcess() {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return { ok: false, error: "Сначала выберите сессию." };
+    if (isLocalSessionId(sid)) return { ok: false, error: "recompute доступен только для API-сессий." };
+    if (locked) return { ok: false, error: "Сначала настройте роли и start_role." };
+
+    const recomputeExec = await executeAi({
+      toolId: "generate_process",
+      sessionId: sid,
+      projectId: String(projectId || ""),
+      inputHash: createAiInputHash({
+        sid,
+        source: "app_generate_process",
+        bpmn_len: String(draft?.bpmn_xml || "").length,
+      }),
+      payload: {
+        source: "app_generate_process",
+      },
+      mode: "live",
+      run: () => apiRecompute(sid),
+    });
+    if (!recomputeExec.ok) {
+      const err = String(recomputeExec?.error?.message || "recompute failed");
+      markFail(err);
+      return { ok: false, error: err };
+    }
+    const r = recomputeExec.result;
+    if (!r?.ok) {
+      markFail(r?.error || "recompute failed");
+      return { ok: false, error: String(r?.error || "recompute failed") };
+    }
+
+    onSessionSync(r.result || {});
+    setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+    setReloadKey((x) => x + 1);
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function returnToSessionList(reason = "manual_return", options = {}) {
+    const shouldFlushBeforeLeave = options?.flushBeforeLeave !== false;
+    const shouldRunLeaveGuard = options?.skipLeaveGuard !== true;
+    const sid = String(draft?.session_id || "").trim();
+    // T2: выход «К проекту» из dirty TO BE — через тот же styled-модал.
+    if (shouldRunLeaveGuard && shouldConfirmTobeLeave({ tobeActive: !!tobeMode, dirty: tobeDirtyRef.current })) {
+      const tobeExit = await requestTobeExit(() => {});
+      if (!tobeExit?.ok) {
+        return { ok: false, cancelled: true, error: "tobe_leave_cancelled" };
+      }
+    }
+    if (sid && shouldRunLeaveGuard && !confirmLeaveIfUnsafe(reason)) {
+      return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
+    }
+    if (shouldFlushBeforeLeave && sid && !isLocalSessionId(sid)) {
+      const flushResult = await requestProcessStageFlushBeforeLeave({
+        sessionId: sid,
+        reason,
+        timeoutMs: 7000,
+      });
+      if (!flushResult?.ok) {
+        setSessionNavNotice({
+          code: "LEAVE_FLUSH_FAILED",
+          status: 0,
+          projectId: String(projectId || ""),
+          sessionId: sid,
+          message: "Не удалось сохранить изменения перед выходом в проект. Попробуйте снова.",
+        });
+        markFail(String(flushResult?.error || "flush_before_leave_failed"));
+        return { ok: false, error: String(flushResult?.error || "flush_before_leave_failed") };
+      }
+    }
+    logNav("return_to_session_list", { reason });
+    setSessionNavNotice(null);
+    closeLeftSidebar(`return_to_project:${reason}`);
+    clearSessionRestoreMemory();
+    resetDraft(ensureDraftShape(null));
+    return { ok: true };
+  }
+
+  async function deleteCurrentProject(options = {}) {
+    if (!workspacePermissions.canDeleteProject) return { ok: false, error: "forbidden" };
+    const pid = String(projectId || "");
+    if (!pid) return { ok: false, error: "Проект не выбран." };
+    const skipConfirm = !!options?.skipConfirm;
+    if (!skipConfirm) {
+      const ok = confirm("Удалить проект и все сессии?");
+      if (!ok) return { ok: false, cancelled: true };
+    }
+
+    const r = await apiDeleteProject(pid);
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "delete_project_failed") };
+    }
+
+    suppressProjectAutoselectRef.current = true;
+    setProjects((prev) => ensureArray(prev).filter((item) => projectIdOf(item) !== pid));
+    setProjectId("");
+    setSessions([]);
+    await returnToSessionList("project_deleted", { flushBeforeLeave: false, skipLeaveGuard: true });
+    await refreshProjects();
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function deleteCurrentSession(options = {}) {
+    if (!workspacePermissions.canDeleteSession) return { ok: false, error: "forbidden" };
+    const sid = String(draft?.session_id || "");
+    if (!sid || isLocalSessionId(sid)) {
+      await returnToSessionList("local_session_clear", { flushBeforeLeave: false, skipLeaveGuard: true });
+      return { ok: true };
+    }
+    const skipConfirm = !!options?.skipConfirm;
+    if (!skipConfirm) {
+      const currentStatus = String(draft?.interview?.status || "").trim().toLowerCase();
+      const message = currentStatus === "ready" || currentStatus === "archived"
+        ? "Удалить сессию с финальным статусом? Это действие необратимо."
+        : "Удалить сессию?";
+      const ok = confirm(message);
+      if (!ok) return { ok: false, cancelled: true };
+    }
+
+    const r = await apiDeleteSession(sid);
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "delete_session_failed") };
+    }
+
+    await returnToSessionList("session_deleted", { flushBeforeLeave: false, skipLeaveGuard: true });
+    await refreshSessions(projectId);
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  function openRenameDialog(scope) {
+    if (!canManageProjectEntities) return;
+    const kind = String(scope || "").trim();
+    if (!(kind === "project" || kind === "session")) return;
+    const currentValue = kind === "project"
+      ? String(projects.find((p) => projectIdOf(p) === String(projectId || ""))?.title || "").trim()
+      : String(draft?.title || sessions.find((s) => sessionIdOf(s) === String(draft?.session_id || ""))?.title || "").trim();
+    setRenameDialog({ open: true, scope: kind, value: currentValue, error: "", busy: false });
+  }
+
+  function openDeleteDialog(scope) {
+    if (!canManageProjectEntities) return;
+    const kind = String(scope || "").trim();
+    if (!(kind === "project" || kind === "session")) return;
+    setDeleteDialog({ open: true, scope: kind, error: "", busy: false });
+  }
+
+  async function submitRenameDialog() {
+    const scope = String(renameDialog?.scope || "").trim();
+    const nextTitle = String(renameDialog?.value || "").trim();
+    if (!nextTitle) {
+      setRenameDialog((prev) => ({ ...prev, error: "Введите название." }));
+      return;
+    }
+    setRenameDialog((prev) => ({ ...prev, busy: true, error: "" }));
+    try {
+      if (scope === "project") {
+        const pid = String(projectId || "").trim();
+        if (!pid) throw new Error("Проект не выбран.");
+        const r = await apiPatchProject(pid, { title: nextTitle });
+        if (!r.ok) throw new Error(String(r.error || "Не удалось переименовать проект."));
+        await refreshProjects();
+      } else if (scope === "session") {
+        const sid = String(draft?.session_id || shellSessionId || "").trim();
+        if (!sid || isLocalSessionId(sid)) throw new Error("Сессия не выбрана.");
+        const r = await apiPatchSession(sid, { title: nextTitle });
+        if (!r.ok) throw new Error(String(r.error || "Не удалось переименовать сессию."));
+        onSessionSync(r.session || { id: sid, title: nextTitle, _sync_source: "rename_session" });
+        await refreshSessions(projectId);
+      }
+      setRenameDialog({ open: false, scope: "", value: "", error: "", busy: false });
+      markOk("API OK");
+    } catch (error) {
+      setRenameDialog((prev) => ({ ...prev, busy: false, error: String(error?.message || error || "rename_failed") }));
+    }
+  }
+
+  async function submitDeleteDialog() {
+    const scope = String(deleteDialog?.scope || "").trim();
+    setDeleteDialog((prev) => ({ ...prev, busy: true, error: "" }));
+    try {
+      let result = { ok: false, error: "unknown_scope" };
+      if (scope === "project") {
+        result = await deleteCurrentProject({ skipConfirm: true });
+      } else if (scope === "session") {
+        result = await deleteCurrentSession({ skipConfirm: true });
+      }
+      if (!result?.ok) {
+        setDeleteDialog((prev) => ({ ...prev, busy: false, error: String(result?.error || "delete_failed") }));
+        return;
+      }
+      setDeleteDialog({ open: false, scope: "", error: "", busy: false });
+    } catch (error) {
+      setDeleteDialog((prev) => ({ ...prev, busy: false, error: String(error?.message || error || "delete_failed") }));
+    }
+  }
+
+  const { changeCurrentSessionStatus } = useSessionStatusOptimisticUpdate({
+    canChangeStatus: workspacePermissions.canChangeStatus,
+    draft,
+    isLocalSessionId,
+    setIsChangingSessionStatus,
+    setDraftPersisted,
+    onSessionSync,
+    refreshSessions,
+    projectId,
+    markFail,
+    markOk,
+    logNav,
+  });
+
+  // Sessions are valid even without predefined actors; keep editing flow open.
+  const locked = false;
+
+  const phase = useMemo(() => {
+    const sid = String(draft?.session_id || "");
+    if (!sid) return "no_session";
+    return "notes";
+  }, [draft]);
+
+  const currentProjectTitle = useMemo(() => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return "";
+    const found = projects.find((item) => projectIdOf(item) === pid);
+    return String(found?.title || found?.name || "").trim();
+  }, [projects, projectId]);
+
+  const currentProjectWorkspaceId = useMemo(() => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return "";
+    const found = projects.find((item) => projectIdOf(item) === pid);
+    return String(found?.workspace_id || projectWorkspaceHintsRef.current.get(pid) || "").trim();
+  }, [projects, projectId]);
+
+  const currentSessionTitle = useMemo(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return "";
+    const found = sessions.find((item) => sessionIdOf(item) === sid);
+    return String(found?.title || found?.name || draft?.title || "").trim();
+  }, [sessions, draft?.session_id, draft?.title]);
+
+  const consumeSnapshotRestoreNotice = useCallback((sessionIdRaw, nonceRaw = 0) => {
+    const sid = String(sessionIdRaw || "").trim();
+    const nonce = Number(nonceRaw || 0);
+    setSnapshotRestoreNotice((prev) => {
+      if (!prev || String(prev?.sid || "").trim() !== sid) return prev;
+      if (nonce > 0 && Number(prev?.nonce || 0) !== nonce) return prev;
+      return null;
+    });
+  }, []);
+
+  useEffect(() => {
+    setDrawioCompanionFocusIntent(null);
+  }, [projectId, draft?.session_id]);
+
+  // ---- WS3: режим TO BE на хост-канвасе ----
+  const [tobeMode, setTobeMode] = useState(null); // {asIsSessionId, asIsTitle, hostSid} | null
+  // fix(w4-current): эффект авто-входа/выхода реагирует ТОЛЬКО на смену session_id.
+  // Иначе он мгновенно гасил ручной вход в TO BE из сайдбара для текущей
+  // as_is-сессии (setTobeMode → re-run эффекта → setTobeMode(null) → моргание).
+  const tobeSidRef = useRef("");
+  const tobeClosedSidRef = useRef(""); // сессия, для которой пользователь сам закрыл TO BE
+
+  const openTobeWorkspace = useCallback((asIsSession) => {
+    // T2: свежее рабочее место — чистое
+    tobeDirtyRef.current = false;
+    setTobeDirty(false);
+    // W4.3: TO BE-сессия открывается со СВОЕЙ связанной AS IS (derived_from),
+    // а не с самой собой в роли AS IS.
+    if (asIsSession && String(asIsSession?.process_layer || "") === "to_be") {
+      const derivedId = String(asIsSession.derived_from_session_id || "").trim();
+      const derived = derivedId
+        ? (ensureArray(sessions).find((x) => String(x?.id || "") === derivedId) || null)
+        : null;
+      setTobeMode({
+        asIsSessionId: derived ? String(derived.id || "") : derivedId,
+        asIsTitle: derived ? String(derived.title || "") : "",
+        hostSid: String(asIsSession.id || ""),
+      });
+      return;
+    }
+    setTobeMode({
+      asIsSessionId: asIsSession ? String(asIsSession.id || "") : "",
+      asIsTitle: asIsSession ? String(asIsSession.title || "") : "",
+      hostSid: asIsSession ? String(asIsSession.id || "") : "",
+    });
+  }, [sessions]);
+
+  const closeTobeWorkspace = useCallback(() => {
+    // запоминаем ручное закрытие, чтобы эффект не переоткрыл TO BE автоматически
+    tobeClosedSidRef.current = String(draft?.session_id || "").trim();
+    setTobeMode(null);
+    tobeDirtyRef.current = false; // T2
+    setTobeDirty(false); // T2
+  }, [draft?.session_id]);
+
+  // ---- T2: единый guarded выход из TO BE (dirty → styled-модал) ----
+  // Решения владельца: origin входа не запоминаем (возврат всегда в «Схему»
+  // текущей сессии); кнопки-дубли («← К схеме», сегмент, «← Вернуться к
+  // сессии», ws-close) — alias на requestTobeExit; confirm — styled-модал.
+  const tobeDirtyRef = useRef(false);
+  const [tobeDirty, setTobeDirty] = useState(false);
+  const [tobeLeaveOpen, setTobeLeaveOpen] = useState(false);
+  const [tobeLeaveBusy, setTobeLeaveBusy] = useState(false);
+  const [tobeLeaveError, setTobeLeaveError] = useState("");
+  const tobeLeaveResolveRef = useRef(null);
+
+  const handleTobeDirtyChange = useCallback((value) => {
+    tobeDirtyRef.current = value === true;
+    setTobeDirty(value === true);
+  }, []);
+
+  const askTobeLeaveChoice = useCallback(() => {
+    setTobeLeaveError("");
+    setTobeLeaveBusy(false);
+    setTobeLeaveOpen(true);
+    return new Promise((resolve) => { tobeLeaveResolveRef.current = resolve; });
+  }, []);
+
+  const settleTobeLeave = useCallback((choice) => {
+    setTobeLeaveOpen(false);
+    const resolve = tobeLeaveResolveRef.current;
+    tobeLeaveResolveRef.current = null;
+    if (typeof resolve === "function") resolve(choice);
+  }, []);
+
+  // «Сохранить и выйти»: flush через T0-механизм (слушатель — само рабочее
+  // место TO BE); при сбое модал остаётся с честной ошибкой.
+  const handleTobeLeaveSave = useCallback(async () => {
+    const sid = String(draft?.session_id || "").trim();
+    setTobeLeaveBusy(true);
+    setTobeLeaveError("");
+    try {
+      const result = await requestProcessStageFlushBeforeLeave({
+        sessionId: sid,
+        reason: "tobe_leave_save",
+        timeoutMs: 7000,
+      });
+      if (!result?.ok) {
+        setTobeLeaveError(String(result?.error || result?.reason || "save_failed"));
+        setTobeLeaveBusy(false);
+        return;
+      }
+      setTobeLeaveBusy(false);
+      settleTobeLeave(TOBE_LEAVE_SAVE);
+    } catch (err) {
+      setTobeLeaveError(String(err?.message || err || "save_failed"));
+      setTobeLeaveBusy(false);
+    }
+  }, [draft?.session_id, settleTobeLeave]);
+
+  // Единый exit: без dirty — сразу proceed(); dirty — модал, выбор → proceed().
+  const requestTobeExit = useCallback(async (proceed) => {
+    const run = typeof proceed === "function" ? proceed : closeTobeWorkspace;
+    if (!shouldConfirmTobeLeave({ tobeActive: !!tobeMode, dirty: tobeDirtyRef.current })) {
+      run();
+      return { ok: true };
+    }
+    // модал уже открыт (двойной клик по выходам) — не плодим промисы
+    if (tobeLeaveResolveRef.current) return { ok: false, cancelled: true };
+    const choice = await askTobeLeaveChoice();
+    if (choice === TOBE_LEAVE_SAVE || choice === TOBE_LEAVE_DISCARD) {
+      run();
+      return { ok: true };
+    }
+    return { ok: false, cancelled: true };
+  }, [tobeMode, askTobeLeaveChoice, closeTobeWorkspace]);
+
+  // W4: открытие to_be-сессии автоматически включает рабочее место TO BE
+  // (её естественный вид — канвас TO BE с AS IS из derived_from);
+  // переход на ДРУГУЮ as_is-сессию — выход из режима.
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) { tobeSidRef.current = ""; return undefined; }
+    const sidChanged = tobeSidRef.current !== sid;
+    if (sidChanged) {
+      tobeSidRef.current = sid;
+      tobeClosedSidRef.current = ""; // новая сессия — сброс ручного закрытия
+    }
+    const sess = (ensureArray(sessions) || []).find((x) => String(x?.id || "") === sid);
+    if (sess && String(sess?.process_layer || "as_is") === "to_be") {
+      if (tobeClosedSidRef.current !== sid && String(tobeMode?.hostSid || "") !== sid) {
+        openTobeWorkspace(sess);
+      }
+      return undefined;
+    }
+    if (!sess) {
+      // сессия могла быть создана только что и ещё не попасть в список —
+      // дочитываем её напрямую, иначе авто-вход в рабочее место TO BE не сработает
+      if (tobeClosedSidRef.current === sid) return undefined;
+      let cancelled = false;
+      (async () => {
+        const r = await apiGetSession(sid);
+        if (cancelled || !r?.ok) return;
+        const fresh = r.session || {};
+        if (String(fresh?.process_layer || "as_is") === "to_be" && tobeClosedSidRef.current !== sid) {
+          openTobeWorkspace({
+            id: sid,
+            title: String(fresh?.title || ""),
+            process_layer: "to_be",
+            derived_from_session_id: String(fresh?.derived_from_session_id || ""),
+          });
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+    // as_is: выход из TO BE только при реальной СМЕНЕ сессии
+    // (ручной вход из сайдбара для текущей сессии не гасим)
+    if (sidChanged && tobeMode) {
+      setTobeMode(null);
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.session_id, sessions, tobeMode, openTobeWorkspace]);
+
+  // WS3.6: TO BE как отдельная сессия проекта (derived_from на уровне процесса)
+  const handleTobePublished = useCallback(async ({ templateId, version, templateName }) => {
+    try {
+      const bpmn = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}/bpmn`, { responseType: "blob" });
+      const xml = bpmn?.ok && bpmn.data ? await bpmn.data.text() : "";
+      if (!xml) return;
+      const created = await apiCreateProjectSession(
+        projectId,
+        "quick_skeleton",
+        `TO BE: ${templateName} v${version}`,
+        undefined,
+        undefined,
+        undefined,
+        {
+          process_layer: "to_be",
+          derived_from_session_id: String(tobeMode?.asIsSessionId || ""),
+          process_template_id: String(templateId),
+        },
+      );
+      const newSid = String(created?.session_id || created?.data?.id || "").trim();
+      if (!created?.ok || !newSid) return;
+      await apiPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
+    } catch {
+      // best-effort: связанная сессия — не блокер публикации
+    }
+  }, [projectId, tobeMode]);
+
+  // ---- UXF Блок 2: сегмент «Схема | TO BE» + точка входа (ux_concept.md §1/§3) ----
+  const tobeEntryView = useMemo(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return null;
+    const list = ensureArray(sessions);
+    const sess = list.find((x) => String(x?.id || "") === sid);
+    if (!sess) return null;
+    if (String(sess?.process_layer || "as_is") === "to_be") {
+      return {
+        label: "Открыть TO BE",
+        title: "Открыть рабочее место TO BE текущей сессии",
+        onEnter: () => openTobeWorkspace(sess),
+      };
+    }
+    const derived = list.find((x) => String(x?.process_layer || "") === "to_be"
+      && String(x?.derived_from_session_id || "") === sid);
+    if (derived) {
+      return {
+        label: "Открыть TO BE",
+        title: `Открыть существующий TO BE «${String(derived.title || "").trim()}»`,
+        onEnter: () => openTobeWorkspace(derived),
+      };
+    }
+    return {
+      label: "Создать TO BE",
+      title: "Создать TO BE из текущей схемы (рабочее место технолога)",
+      onEnter: () => openTobeWorkspace(sess),
+    };
+  }, [draft?.session_id, sessions, openTobeWorkspace]);
+
+  const modeSwitchView = useMemo(() => {
+    if (!tobeMode && !tobeEntryView) return null;
+    return {
+      mode: tobeMode ? "tobe" : "schema",
+      canEnterTobe: !!tobeEntryView,
+      enterTobeTitle: String(tobeEntryView?.title || ""),
+      onEnterTobe: () => tobeEntryView?.onEnter?.(),
+      onExitTobe: () => { void requestTobeExit(); },
+    };
+  }, [tobeMode, tobeEntryView, requestTobeExit]);
+
+  // UX-UPDATE: guard кнопки [Обновить] — при грязной TO BE показываем
+  // существующий requestTobeExit («Сохранить перед обновлением?»), reload
+  // выполняется только после подтверждения; чистая сессия — без модала.
+  const appUpdateGuardView = useMemo(() => {
+    if (!tobeMode) return null;
+    return async () => {
+      const result = await requestTobeExit(() => {});
+      return { ok: result?.ok === true };
+    };
+  }, [tobeMode, requestTobeExit]);
+
+  const tobeLeftPanel = tobeMode ? (
+    <div className="tobeLeft" data-testid="tobe-left-panel">
+      <div className="seg mb-2" role="presentation" data-testid="tobe-left-mode-switch-wrap">
+        <ModeSwitchSegment modeSwitch={modeSwitchView} className="w-full" />
+      </div>
+      <button
+        type="button"
+        className="secondaryBtn tobeLeft__back"
+        onClick={() => { void requestTobeExit(); }}
+        data-testid="tobe-left-back"
+        title="Вернуться в режим «Схема»"
+      >
+        ← К схеме
+      </button>
+      <div className="tobeLeft__context">
+        <div className="tobeLeft__title">
+          {tobeMode.asIsSessionId
+            ? `TO BE из «${String(tobeMode.asIsTitle || "…").trim()}»`
+            : "TO BE с чистого листа"}
+        </div>
+        <div className="tobeLeft__hint">Рабочее место технолога</div>
+      </div>
+      <div id="tobe-steps-slot" data-testid="tobe-steps-slot" />
+      <div id="tobe-sidebar-slot" data-testid="tobe-sidebar-slot" />
+    </div>
+  ) : null;
+
+  const left = useMemo(() => {
+    if (phase === "no_session") {
+      return (
+        <NoSession
+          backendHint={backendHint}
+          projectId={projectId}
+          onNewProject={() => setWizardOpen(true)}
+          onNewBackendSession={() => setSessionFlowOpen(true)}
+        />
+      );
+    }
+
+    return (
+      <NotesPanel
+        draft={draft}
+        projectId={projectId}
+        projectTitle={currentProjectTitle}
+        sessionTitle={currentSessionTitle}
+        selectedElement={selectedBpmnElement}
+        elementNotesFocusKey={elementNotesFocusKey}
+        onAddNote={addNote}
+        onPreviewNotesExtraction={previewNotesExtraction}
+        onApplyNotesExtraction={applyNotesExtraction}
+        onAddElementNote={addElementNote}
+        onSetElementStepTime={setElementStepTime}
+        onSetElementNoteSummary={setElementNoteSummary}
+        onUpdateElementAiQuestion={updateElementAiQuestion}
+        onSetStartRole={setStartRole}
+        processUiState={processUiState}
+        onRequestGenerateAiQuestions={requestGenerateAiQuestionsFromSidebar}
+        onSetFlowPathTier={setFlowHappyPath}
+        onSetNodePathAssignments={setNodePathAssignments}
+        onSetElementRobotMeta={setElementRobotMeta}
+        onSetElementCamundaExtensions={setElementCamundaExtensions}
+        onSetElementCamundaPresentation={setElementCamundaPresentation}
+        activeOrgId={activeOrgId}
+        onOpenOrgSettings={openOrgSettings}
+        orgPropertyDictionaryRevision={orgPropertyDictionaryRevision}
+        onOrgPropertyDictionaryChanged={notifyOrgPropertyDictionaryChanged}
+        onPropertiesOverlayPreviewChange={setSelectedPropertiesOverlayPreview}
+        onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
+        showPropertiesOverlayAlways={showPropertiesOverlayAlways}
+        onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
+        overlayHiddenFields={overlayHiddenFields}
+        onOverlayFieldToggle={toggleOverlayField}
+        v2OverlaysEnabled={v2OverlaysEnabled}
+        onShowV2OverlaysChange={setV2OverlaysEnabled}
+        v2OverlaysExpanded={v2OverlaysExpanded}
+        onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
+        bpmnExternalEditToken={bpmnExternalEditToken}
+        getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
+        onGoToDiagram={() => {
+          const sid = String(draft?.session_id || "").trim();
+          if (!sid) return;
+          setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+        }}
+        onFocusDrawioCompanion={(objectId) => {
+          const sid = String(draft?.session_id || "").trim();
+          const targetId = String(objectId || "").trim();
+          if (!sid || !targetId) return;
+          const nonce = Date.now();
+          setProcessTabIntent({ sid, tab: "diagram", nonce });
+          setDrawioCompanionFocusIntent({ sid, objectId: targetId, nonce });
+        }}
+        onProjectBreadcrumbClick={() => returnToSessionList("breadcrumb_project")}
+        onSessionBreadcrumbClick={() => {
+          const sid = String(draft?.session_id || "").trim();
+          if (!sid) return;
+          void openSessionWithLeaveGuard(sid, { source: "breadcrumb_session" });
+        }}
+        tobeActive={!!tobeMode}
+        tobeSessions={sessions}
+        onOpenTobeWorkspace={openTobeWorkspace}
+        onCloseTobeWorkspace={() => { void requestTobeExit(); }}
+        sidebarHidden={leftHidden}
+        sidebarCompact={leftCompact}
+        sidebarDockSide={dockSide}
+        onToggleDockSide={handleToggleDockSide}
+        onToggleSidebarCompact={handleSidebarCompact}
+        onToggleSidebarHidden={() => handleToggleLeft("sidebar_header")}
+        activeSectionId={sidebarActiveSection}
+        onActiveSectionChange={(sectionId) => {
+          const next = String(sectionId || "").trim();
+          if (!next) return;
+          setSidebarActiveSection(next);
+        }}
+        sidebarShortcutRequest={sidebarShortcutRequest}
+        onSidebarShortcutHandled={() => setSidebarShortcutRequest("")}
+        stepTimeUnit={stepTimeUnit}
+        onStepTimeUnitChange={handleStepTimeUnitChange}
+        onRenameProject={canManageProjectEntities ? (() => openRenameDialog("project")) : undefined}
+        onDeleteProject={workspacePermissions.canDeleteProject ? (() => openDeleteDialog("project")) : undefined}
+        onRenameSession={canManageProjectEntities ? (() => openRenameDialog("session")) : undefined}
+        onDeleteSession={workspacePermissions.canDeleteSession ? (() => openDeleteDialog("session")) : undefined}
+        onSaveAllBatch={handleSaveAllBatch}
+        disabled={locked}
+      />
+    );
+  }, [
+    phase,
+    backendHint,
+    draft,
+    locked,
+    projectId,
+    currentProjectTitle,
+    currentSessionTitle,
+    selectedBpmnElement,
+    processUiState,
+    elementNotesFocusKey,
+    leftCompact,
+    leftHidden,
+    sidebarActiveSection,
+    sidebarShortcutRequest,
+    stepTimeUnit,
+    handleStepTimeUnitChange,
+    requestGenerateAiQuestionsFromSidebar,
+    setFlowHappyPath,
+    setNodePathAssignments,
+    setElementRobotMeta,
+    openSession,
+    returnToSessionList,
+    openRenameDialog,
+    openDeleteDialog,
+    canManageProjectEntities,
+    workspacePermissions,
+    handleSaveAllBatch,
+  ]);
+
+  useEffect(() => {
+    refreshProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const { parentSessionId, focusElementId: focusId, sessionId: sid } = initialSelectionRef.current || {};
+    if (focusId) {
+      setFocusElementId(focusId);
+      if (typeof window !== "undefined") {
+        window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = focusId || "";
+      }
+    }
+    if (!sid) return;
+    void (async () => {
+      const loaded = await apiGetSession(sid);
+      if (loaded.ok && loaded.session?.navigation_stack?.length > 0) {
+        setSubprocessBreadcrumbs(
+          loaded.session.navigation_stack.map((frame) => ({
+            session_id: frame.session_id,
+            name: frame.name || "",
+            element_id: frame.element_id_in_parent,
+          }))
+        );
+      } else if (parentSessionId) {
+        setSubprocessBreadcrumbs([
+          { session_id: parentSessionId, name: "" },
+          { session_id: sid, name: "" },
+        ]);
+      } else if (loaded.ok) {
+        // Root process: show a single-item breadcrumb with the current session name.
+        setSubprocessBreadcrumbs([
+          { session_id: sid, name: loaded.session?.title || "" },
+        ]);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (focusElementId) {
+      setFocusElementId("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.session_id]);
+
+  useEffect(() => {
+    const nextOrg = String(activeOrgId || "").trim();
+    if (!nextOrg || nextOrg === activeOrgIdRef.current) return;
+    activeOrgIdRef.current = nextOrg;
+    setProjectId("");
+    setProjectRouteContext(null);
+    setSessions([]);
+    setSessionNavNotice(null);
+    clearSessionRestoreMemory();
+    resetDraft(ensureDraftShape(null));
+    void (async () => {
+      await refreshProjects();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrgId]);
+
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const draftSessionIdRef = useRef(draft?.session_id);
+  draftSessionIdRef.current = draft?.session_id;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const openSessionRef = useRef(openSession);
+  openSessionRef.current = openSession;
+  const returnToParentRef = useRef(returnToParent);
+  returnToParentRef.current = returnToParent;
+  const confirmLeaveIfUnsafeRef = useRef(confirmLeaveIfUnsafe);
+  confirmLeaveIfUnsafeRef.current = confirmLeaveIfUnsafe;
+  const returnToSessionListRef = useRef(returnToSessionList);
+  returnToSessionListRef.current = returnToSessionList;
+  const rememberProjectRouteContextRef = useRef(rememberProjectRouteContext);
+  rememberProjectRouteContextRef.current = rememberProjectRouteContext;
+  const setRequestedSessionIdRef = useRef(setRequestedSessionId);
+  setRequestedSessionIdRef.current = setRequestedSessionId;
+  const setProjectIdRef = useRef(setProjectId);
+  setProjectIdRef.current = setProjectId;
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    async function onPopState() {
+      const fromUrl = readSelectionFromUrl();
+      const pathname = String(window.location.pathname || "");
+      const orgOpen = pathname.startsWith("/app/org");
+      setOrgSettingsOpen(orgOpen);
+      if (orgOpen) {
+        const nextTab = readOrgSettingsTabFromUrl();
+        setOrgSettingsTab(nextTab);
+        setOrgSettingsDictionaryOnly((prev) => (nextTab === "dictionary" ? prev : false));
+      }
+      logNav("popstate", {
+        projectId: fromUrl.projectId || "-",
+        sessionId: fromUrl.sessionId || "-",
+      });
+      const currentProjectId = String(projectIdRef.current || "").trim();
+      const currentSessionId = String(draftSessionIdRef.current || "").trim();
+      const nextProjectId = String(fromUrl.projectId || "").trim();
+      const nextSessionId = String(fromUrl.sessionId || "").trim();
+      const nextProjectContext = readProcessMapProjectContextFromHistory();
+      const leavesCurrentSession = !!currentSessionId && nextSessionId !== currentSessionId;
+      const changesProject = !!nextProjectId && nextProjectId !== currentProjectId;
+      const clearsProjectSelection = !!currentProjectId && !nextProjectId && !orgOpen;
+      if (
+        (leavesCurrentSession || changesProject || clearsProjectSelection)
+        && !confirmLeaveIfUnsafeRef.current("popstate_navigation")
+      ) {
+        writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });
+        logNav("popstate_leave_guard_cancelled", {
+          projectId: currentProjectId || "-",
+          sessionId: currentSessionId || "-",
+        });
+        return;
+      }
+      if (leavesCurrentSession && !nextSessionId) {
+        const historyRoute = window.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
+        const parentSessionIdFromHistory = String(historyRoute?.parentSessionId || "").trim();
+        const currentParentSessionId = String(draftRef.current?.parent_session_id || "").trim();
+        const currentSessionProjectId = String(draftRef.current?.project_id || "").trim();
+        const targetParentSessionId = currentParentSessionId || parentSessionIdFromHistory;
+        // Only treat this as a subprocess return if we stay inside the same project.
+        const sameProjectForReturn = !nextProjectId || nextProjectId === currentSessionProjectId || nextProjectId === currentProjectId;
+        if (targetParentSessionId && returnToParentRef.current && sameProjectForReturn) {
+          logNav("popstate_return_to_parent", {
+            childSessionId: currentSessionId,
+            parentSessionId: targetParentSessionId,
+          });
+          if (nextProjectId && nextProjectId !== currentProjectId) {
+            setProjectIdRef.current(nextProjectId);
+          }
+          await returnToParentRef.current(currentSessionId, {
+            replaceHistory: true,
+            source: "popstate_navigation",
+          });
+          return;
+        }
+        if (parentSessionIdFromHistory) {
+          logNav("popstate_restore_parent_from_history", {
+            parentSessionId: parentSessionIdFromHistory,
+          });
+          if (nextProjectId && nextProjectId !== currentProjectId) {
+            setProjectIdRef.current(nextProjectId);
+          }
+          await openSessionRef.current(parentSessionIdFromHistory);
+          return;
+        }
+        rememberProjectRouteContextRef.current(nextProjectContext);
+        if (nextProjectId && nextProjectId !== currentProjectId) {
+          setProjectIdRef.current(nextProjectId);
+        }
+        const returned = await returnToSessionListRef.current("popstate_navigation", { skipLeaveGuard: true });
+        if (!returned?.ok) {
+          writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });
+          logNav("popstate_return_to_project_failed", {
+            projectId: currentProjectId || "-",
+            sessionId: currentSessionId || "-",
+            error: String(returned?.error || "return_failed"),
+          });
+          return;
+        }
+        return;
+      }
+      // Browser back landed directly on the parent session URL (common case when
+      // returning from a subprocess). Use returnToParent so that breadcrumbs,
+      // viewport snapshot and focus element are restored instead of a plain openSession.
+      if (
+        leavesCurrentSession
+        && nextSessionId
+        && returnToParentRef.current
+      ) {
+        const currentParentSessionId = String(draftRef.current?.parent_session_id || "").trim();
+        const currentSessionProjectId = String(draftRef.current?.project_id || "").trim();
+        const historyRoute = window.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
+        const parentSessionIdFromHistory = String(historyRoute?.parentSessionId || "").trim();
+        const expectedParentSessionId = currentParentSessionId || parentSessionIdFromHistory;
+        const sameProjectForReturn = nextProjectId === currentSessionProjectId || nextProjectId === currentProjectId;
+        if (nextSessionId === expectedParentSessionId && sameProjectForReturn) {
+          logNav("popstate_return_to_parent_by_session", {
+            childSessionId: currentSessionId,
+            parentSessionId: nextSessionId,
+          });
+          if (nextProjectId && nextProjectId !== currentProjectId) {
+            setProjectIdRef.current(nextProjectId);
+          }
+          await returnToParentRef.current(currentSessionId, {
+            replaceHistory: true,
+            source: "popstate_navigation",
+          });
+          return;
+        }
+      }
+      if (fromUrl.projectId && fromUrl.projectId !== currentProjectId) {
+        rememberProjectRouteContextRef.current(nextProjectContext);
+        setProjectIdRef.current(fromUrl.projectId);
+      }
+      if (!fromUrl.projectId && !orgOpen) {
+        setProjectRouteContext(null);
+      }
+      if (fromUrl.sessionId && fromUrl.sessionId !== currentSessionId) {
+        await openSessionRef.current(fromUrl.sessionId);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onBeforeUnload = (event) => {
+      if (leaveNavigationRisk?.unsafe !== true) return undefined;
+      event.preventDefault();
+      // Browser-defined static string; custom text is ignored in modern browsers.
+      event.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [leaveNavigationRisk?.unsafe]);
+
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    const fromUrl = readSelectionFromUrl();
+    const nextProjectId = String(fromUrl.projectId || "").trim();
+    const nextSessionId = String(fromUrl.sessionId || "").trim();
+    if (!nextProjectId || nextSessionId) return;
+    const currentProjectId = String(projectId || "").trim();
+    if (!confirmLeaveIfUnsafe("session_parent_route")) {
+      writeSelectionToUrl({ projectId: currentProjectId || nextProjectId, sessionId: sid });
+      logNav("session_parent_route_cancelled", {
+        projectId: currentProjectId || nextProjectId || "-",
+        sessionId: sid,
+      });
+      return;
+    }
+    if (nextProjectId && nextProjectId !== currentProjectId) {
+      setProjectId(nextProjectId);
+    }
+    void (async () => {
+      const returned = await returnToSessionList("session_parent_route", { skipLeaveGuard: true });
+      if (!returned?.ok) {
+        writeSelectionToUrl({ projectId: currentProjectId || nextProjectId, sessionId: sid });
+        logNav("session_parent_route_failed", {
+          projectId: currentProjectId || nextProjectId || "-",
+          sessionId: sid,
+          error: String(returned?.error || "return_failed"),
+        });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.session_id, projectId, confirmLeaveIfUnsafe, returnToSessionList]);
+
+  useEffect(() => {
+    const pid = String(projectId || "").trim();
+    const sid = String(draft?.session_id || "").trim();
+    const requestedSid = String(requestedSessionIdRef.current || "").trim();
+    const fromUrl = readSelectionFromUrl();
+    if (sid && fromUrl.projectId && !fromUrl.sessionId) {
+      logNav("selection_sync_preserve_parent_route", {
+        projectId: fromUrl.projectId,
+        sessionId: sid,
+      });
+      return;
+    }
+    if (shouldPreserveSelectionRouteDuringRestore({
+      projectId: pid,
+      sessionId: sid,
+      requestedSessionId: requestedSid,
+      urlProjectId: fromUrl.projectId,
+      urlSessionId: fromUrl.sessionId,
+    })) {
+      logNav("selection_sync_preserve_requested", {
+        projectId: pid || fromUrl.projectId || "-",
+        sessionId: requestedSid,
+      });
+      return;
+    }
+    writeSelectionToUrl({ projectId: pid, sessionId: sid });
+    logNav("selection_sync", { projectId: pid || "-", sessionId: sid || "-" });
+    if (sid) setRequestedSessionId(sid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, draft?.session_id]);
+
+  useEffect(() => {
+    const pid = String(projectId || "").trim();
+    const sid = String(draft?.session_id || "").trim();
+    if (!pid || !sid) return;
+    const result = seedSessionParentHistoryToUrl({ projectId: pid, sessionId: sid });
+    if (result?.action === "seed") {
+      logNav("session_parent_history_seed", {
+        projectId: pid,
+        sessionId: sid,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, draft?.session_id]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    refreshSessions(projectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const childDiscussionAggregates = useChildSessionNoteAggregatesByElementId(
+    sessionIdOf(draft),
+    sessions,
+  );
+
+  return (
+    <>
+      <AppShell
+        stageOverride={tobeMode ? (
+          <TechnologistWorkspace
+            embedded
+            asIsSource={tobeMode.asIsSessionId ? { sessionId: tobeMode.asIsSessionId, title: tobeMode.asIsTitle } : null}
+            onClose={() => { void requestTobeExit(); }}
+            onPublishedTobe={handleTobePublished}
+            onDirtyChange={handleTobeDirtyChange}
+          />
+        ) : null}
+        modeSwitch={modeSwitchView}
+        appUpdateGuard={appUpdateGuardView}
+        tobeEntry={tobeMode ? null : tobeEntryView}
+        draft={draft}
+        shellSessionId={shellSessionId}
+        locked={locked}
+        left={tobeMode ? tobeLeftPanel : left}
+        leftHidden={leftHidden}
+        leftCompact={phase === "notes" ? leftCompact : false}
+        dockSide={dockSide}
+        sidebarHandleSections={sidebarHandleSections}
+        onToggleLeft={handleToggleLeft}
+        onPatchDraft={patchDraft}
+        processTabIntent={processTabIntent}
+        aiGenerateIntent={aiGenerateIntent}
+        onProcessUiStateChange={handleProcessUiStateChange}
+        stepTimeUnit={stepTimeUnit}
+        reloadKey={reloadKey}
+        orgs={orgs}
+        activeOrgId={activeOrgId}
+        canInviteWorkspaceUsers={canInviteWorkspaceUsers}
+        canManageSharedTemplates={canManageSharedTemplates}
+        onOrgChange={async (orgId) => {
+          const next = String(orgId || "").trim();
+          if (!next || next === String(activeOrgId || "").trim()) return;
+          const switched = await switchOrg(next, { refreshMe: false });
+          if (!switched?.ok) {
+            markFail(String(switched?.error || "org_switch_failed"));
+          }
+        }}
+        onOpenOrgSettings={openOrgSettings}
+        projects={projects}
+        projectId={projectId}
+        projectWorkspaceId={currentProjectWorkspaceId}
+        projectRouteContext={projectRouteContext}
+        onProjectChange={async (pid) => {
+          const next = String(pid || "");
+          const activeSid = String(draft?.session_id || "").trim();
+          if (activeSid && !confirmLeaveIfUnsafe("project_change")) return;
+          logNav("project_change", { projectId: next || "-" });
+          if (!next.trim()) {
+            suppressProjectAutoselectRef.current = true;
+          }
+          setProjectRouteContext(null);
+          setProjectId(next);
+          setSessionNavNotice(null);
+          clearSessionRestoreMemory();
+          setSessions([]);
+          resetDraft(ensureDraftShape(null));
+        }}
+        onDeleteProject={workspacePermissions.canDeleteProject ? deleteCurrentProject : undefined}
+        canManageProjectEntities={canManageProjectEntities}
+        sessions={sessions}
+        sessionId={String(draft?.session_id || "")}
+        sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
+        onOpenSession={openSessionWithLeaveGuard}
+        onOpenWorkspaceSession={openWorkspaceSession}
+        onOpenDiscussionNotifications={(options = {}) => openNotesDiscussions({
+          scopeFilter: "all",
+          mode: "notifications",
+          source: "topbar_discussion_notifications",
+          threadId: options?.threadId || options?.thread_id || "",
+          commentId: options?.commentId || options?.comment_id || "",
+        })}
+        onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
+        onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
+        isChangingSessionStatus={isChangingSessionStatus}
+        bpmnStageRef={bpmnStageRef}
+        focusElementId={focusElementId}
+        onFocusElementApplied={() => setFocusElementId("")}
+        restoreViewportSnapshot={restoreViewportSnapshot}
+        onRestoreViewportSnapshotApplied={() => setRestoreViewportSnapshot(null)}
+        bpmnXmlCacheRef={bpmnXmlCacheRef}
+        onRefresh={async () => {
+          await refreshProjects();
+          await refreshSessions(projectId);
+          await refreshMentionNotifications();
+        }}
+        onBpmnSaved={handleBpmnSaved}
+        onNewProject={() => setWizardOpen(true)}
+        onNewBackendSession={() => setSessionFlowOpen(true)}
+        selectedBpmnElement={selectedBpmnElement}
+        onBpmnElementSelect={handleBpmnElementSelect}
+        onBpmnModelerExtensionChange={handleBpmnModelerExtensionChange}
+        onOpenElementNotes={focusElementNotes}
+        onOpenNotesDiscussions={openNotesDiscussions}
+        onElementNotesRemap={remapElementNotes}
+        onSessionSync={onSessionSync}
+        onRecalculateRtiers={recalculateRtiers}
+        snapshotRestoreNotice={snapshotRestoreNotice}
+        onSnapshotRestoreNoticeConsumed={consumeSnapshotRestoreNotice}
+        selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
+        propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
+        propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        overlayHiddenFields={overlayHiddenFields}
+        v2OverlaysEnabled={v2OverlaysEnabled}
+        v2OverlaysExpanded={v2OverlaysExpanded}
+        onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        drawioCompanionFocusIntent={drawioCompanionFocusIntent}
+        discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
+        onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
+        sessionNavNotice={sessionNavNotice}
+        onDismissSessionNavNotice={() => setSessionNavNotice(null)}
+        onReturnToSessionList={() => returnToSessionList("banner_action")}
+        subprocessBreadcrumbs={subprocessBreadcrumbs}
+        onBreadcrumbNavigate={handleBreadcrumbNavigate}
+        onReturnToParent={() => {
+          const sid = sessionIdOf(draft);
+          if (sid) returnToParent(sid);
+        }}
+        onNavigateToSubprocess={(elementId, targetElementId) => {
+          const sid = sessionIdOf(draft);
+          if (sid) navigateToSubprocess(sid, elementId, targetElementId);
+        }}
+        childSessionDiscussionAggregates={childDiscussionAggregates}
+        mentionNotifications={mentionNotifications}
+        noteNotifications={noteNotifications}
+        noteNotificationsAvailable={noteNotificationsAvailable}
+        onOpenMentionNotification={openMentionNotification}
+        onRefreshMentionNotifications={refreshMentionNotifications}
+      />
+
+      {/* UXF Блок 2: в TO BE-режиме обсуждения скрыты (ux_concept.md §1, принцип 2) */}
+      {!tobeMode ? (
+      <NotesMvpPanel
+        ref={notesPanelRef}
+        sessionId={String(draft?.session_id || "")}
+        sessionTitle={currentSessionTitle}
+        projectTitle={currentProjectTitle}
+        projectId={projectId}
+        sessions={sessions}
+        selectedElement={selectedBpmnElement}
+        legacyElementNotesMap={draft?.notes_by_element || draft?.notesByElementId || null}
+        onAddLegacyElementNote={addElementNote}
+        disabled={locked || isSessionLocalMode}
+        externalOpenRequest={notesPanelOpenRequest}
+        onOpenChange={setNotesDiscussionsOpen}
+        onFocusNotificationTarget={focusDiscussionNotificationTarget}
+        onFocusLinkedElement={focusDiscussionLinkedElement}
+        onNavigateToProject={() => setNotesDiscussionsOpen(false)}
+        onNavigateToSession={openSession}
+        currentUserId={user?.id}
+        mentionNotifications={mentionNotifications}
+        onOpenMentionNotification={openMentionNotification}
+      />
+      ) : null}
+
+      <OrgSettingsModal
+        open={orgSettingsOpen}
+        onClose={closeOrgSettings}
+        initialTab={orgSettingsTab}
+        dictionaryOnly={orgSettingsDictionaryOnly}
+        activeOrgId={activeOrgId}
+        activeOrgRole={activeOrgRole}
+        isAdmin={Boolean(user?.is_admin)}
+        orgName={activeOrgName}
+        onRequestRefreshOrgs={refreshOrgs}
+        initialOperationKey={orgSettingsOperationKey}
+        onDictionaryChanged={notifyOrgPropertyDictionaryChanged}
+      />
+
+      <ProjectWizardModal open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={createProjectFromWizard} />
+      <SessionFlowModal
+        open={sessionFlowOpen}
+        busy={sessionFlowBusy}
+        projectId={projectId}
+        onClose={() => setSessionFlowOpen(false)}
+        onSubmit={runSessionFlow}
+        projectSessions={sessions}
+      />
+
+      <TobeLeaveConfirmModal
+        open={tobeLeaveOpen}
+        busy={tobeLeaveBusy}
+        error={tobeLeaveError}
+        onSaveAndExit={() => { void handleTobeLeaveSave(); }}
+        onDiscardAndExit={() => settleTobeLeave(TOBE_LEAVE_DISCARD)}
+        onCancel={() => settleTobeLeave(TOBE_LEAVE_CANCEL)}
+      />
+
+      <DeploymentNoticeModal />
+
+      <Modal
+        open={!!renameDialog.open}
+        title={renameDialog.scope === "project" ? "Переименовать проект" : "Переименовать сессию"}
+        onClose={() => setRenameDialog({ open: false, scope: "", value: "", error: "", busy: false })}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => setRenameDialog({ open: false, scope: "", value: "", error: "", busy: false })}
+              disabled={renameDialog.busy}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="primaryBtn"
+              onClick={() => {
+                void submitRenameDialog();
+              }}
+              disabled={renameDialog.busy || !String(renameDialog.value || "").trim()}
+            >
+              {renameDialog.busy ? "Сохраняю..." : "Сохранить"}
+            </button>
+          </>
+        )}
+      >
+        <label htmlFor="rename-dialog-input" className="text-sm text-muted">Новое название</label>
+        <input
+          id="rename-dialog-input"
+          className="input mt-2 w-full"
+          value={renameDialog.value}
+          onChange={(event) => setRenameDialog((prev) => ({ ...prev, value: event.target.value, error: "" }))}
+          maxLength={120}
+          autoFocus
+        />
+        {renameDialog.error ? <div className="mt-2 text-xs text-danger">{renameDialog.error}</div> : null}
+      </Modal>
+
+      <Modal
+        open={!!deleteDialog.open}
+        title={deleteDialog.scope === "project" ? "Удалить проект" : "Удалить сессию"}
+        onClose={() => setDeleteDialog({ open: false, scope: "", error: "", busy: false })}
+        footer={(
+          <>
+            <button
+              type="button"
+              className="secondaryBtn"
+              onClick={() => setDeleteDialog({ open: false, scope: "", error: "", busy: false })}
+              disabled={deleteDialog.busy}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="primaryBtn danger"
+              onClick={() => {
+                void submitDeleteDialog();
+              }}
+              disabled={deleteDialog.busy}
+            >
+              {deleteDialog.busy ? "Удаляю..." : "Удалить"}
+            </button>
+          </>
+        )}
+      >
+        <div className="text-sm text-muted">
+          {deleteDialog.scope === "project"
+            ? "Удаление проекта необратимо. Связанные сессии будут удалены."
+            : "Удаление сессии необратимо."}
+        </div>
+        {deleteDialog.error ? <div className="mt-2 text-xs text-danger">{deleteDialog.error}</div> : null}
+      </Modal>
+    </>
+  );
+}

@@ -1,0 +1,428 @@
+/*
+  Legacy BPMN layer kept intentionally during Tailwind migration.
+  Scope: bpmn-js internals (.djs-*), BPMN overlays, marker classes (.fpc*).
+  Do not remove until full parity is verified across e2e runtime scenarios.
+*/
+
+@import "../app/02/02-02-bpmn-viewer-core.css";
+@import "../app/02/02-06-bpmn-dark-theme.css";
+@import "../app/04/04-03-llm-bottlenecks.css";
+@import "../app/05/05-02-bpmn-text-contrast.css";
+
+/* fpc: bpmn_n8n_like_background_v1
+   n8n-like canvas background on wrapper layer.
+   Keep SVG/djs layers transparent and interactive above it.
+*/
+.bpmnStage .bpmnStack {
+  position: relative;
+  isolation: isolate;
+  background: var(--bpmn-bg);
+}
+
+.bpmnStage .bpmnStack::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-color: var(--bpmn-bg);
+  background-image:
+    radial-gradient(130% 90% at 8% -8%, var(--bpmn-glow-a), transparent 62%),
+    radial-gradient(120% 80% at 95% 5%, var(--bpmn-glow-b), transparent 55%),
+    linear-gradient(135deg, var(--bpmn-grid-a) 0%, var(--bpmn-grid-b) 100%);
+  opacity: 0.85;
+}
+
+.bpmnStage .bpmnLayer {
+  z-index: 1;
+}
+
+.bpmnStage .bpmnLayer--diagram,
+.bpmnStage .bpmnLayer--editor {
+  background: transparent !important;
+}
+
+.bpmnStage .bpmnCanvas,
+.bpmnStage .bpmnCanvas .djs-container,
+.bpmnStage .bpmnCanvas .djs-container svg,
+.bpmnStage .bpmnCanvas .djs-container .djs-canvas {
+  background: transparent !important;
+}
+
+/* Lightweight V2 BPMN extension overlay: compact badge + hover tooltip.
+   Scope: only the V2 extension overlay renderer in BpmnStage.jsx.
+*/
+.fpc-overlay-badge-wrapper {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  z-index: 10000;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fpc-overlay-badge {
+  box-sizing: border-box;
+  min-width: 16px;
+  max-width: 20px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  pointer-events: auto;
+  user-select: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.fpc-overlay-tooltip {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  max-width: 260px;
+  padding: 6px 8px;
+  background: #fff9c4;
+  color: #333333;
+  border: 1px solid #fbc02d;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10001;
+  font-size: 11px;
+  line-height: 1.3;
+  pointer-events: auto;
+  user-select: none;
+  text-align: left;
+}
+
+.fpc-overlay-badge-wrapper:hover .fpc-overlay-tooltip,
+.fpc-overlay-badge-wrapper:focus-within .fpc-overlay-tooltip,
+.fpc-overlay-badge:hover + .fpc-overlay-tooltip {
+  display: block;
+}
+
+.fpc-overlay-tooltip__title {
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px dashed #fbc02d;
+}
+
+.fpc-overlay-tooltip__properties {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.fpc-overlay-tooltip__property {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 0;
+  word-break: break-word;
+}
+
+.fpc-overlay-tooltip__property-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: #555555;
+}
+
+.fpc-overlay-tooltip__property-value {
+  flex: 1 1 auto;
+  color: #333333;
+}
+
+/* V2 checkbox-driven property card rendered beside the BPMN element */
+.fpc-overlay-property-card-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 100;
+}
+
+.fpc-overlay-property-card-host:hover {
+  pointer-events: auto;
+}
+
+/* Let pointer events pass through overlay areas that are not explicitly
+   interactive so the underlying BPMN shape still receives hover/click events. */
+.djs-overlay-container {
+  pointer-events: none;
+}
+
+.fpc-overlay-property-card {
+  position: absolute;
+  top: 4px;
+  left: calc(100% + 4px);
+  box-sizing: border-box;
+  max-width: 160px;
+  max-height: 80px;
+  padding: 4px 6px;
+  background: #ffffff;
+  color: #374151;
+  border-left: 3px solid var(--fpc-overlay-accent, #888888);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  font-size: 10px;
+  line-height: 1.3;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+  transition: max-height 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, max-width 0.2s ease;
+}
+
+.fpc-overlay-property-card--expanded,
+.fpc-overlay-property-card--hovered {
+  max-width: 260px;
+  max-height: 1000px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+  pointer-events: auto;
+  z-index: 200;
+}
+
+.fpc-overlay-property-card__header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1a1a2e;
+  line-height: 1.2;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fpc-overlay-property-card__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fpc-overlay-property-card__row {
+  display: block;
+  font-size: 10px;
+  line-height: 1.3;
+  color: #374151;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+.fpc-overlay-property-card__row::before {
+  content: attr(data-name) ": ";
+  font-weight: 500;
+  color: var(--fpc-overlay-accent, #374151);
+}
+
+.fpc-overlay-property-card__footer {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #6b7280;
+  text-align: right;
+}
+
+/* V2 checkbox-driven overlay: compact badge centered above the element in idle,
+   expands upward and sideways on hover to show the full property list. */
+.fpc-overlay-v2-host {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  width: 100%;
+  height: 20px;
+  z-index: 1000;
+  pointer-events: auto;
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+/* While a diagram search has matches, every overlay card whose element is not
+   a match gets dimmed so the matching cards are the only bright ones. */
+.fpc-overlay-v2-host.fpcSearchOverlayDim {
+  opacity: 0.18;
+  filter: grayscale(0.6);
+  pointer-events: none;
+}
+
+.fpc-overlay-v2-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  cursor: pointer;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  align-items: stretch;
+  min-width: 16px;
+  min-height: 16px;
+  max-width: 100%;
+  max-height: 130px;
+  width: max-content;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  /* Neutral light surface: color signal lives on per-row left borders
+     (--fpc-property-accent), not on the card background. */
+  background-color: #f8fafc;
+  color: #1e293b;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  transition: max-height 0.2s ease, max-width 0.2s ease, padding 0.2s ease;
+}
+
+.fpc-overlay-v2-host:hover .fpc-overlay-v2-badge,
+.fpc-overlay-v2-host.fpc-overlay-v2-host--expanded .fpc-overlay-v2-badge {
+  max-height: 300px;
+  max-width: min(420px, 95vw);
+  width: max-content;
+  padding: 4px;
+  overflow: auto;
+  line-height: 1.3;
+}
+
+.fpc-overlay-v2-footer {
+  display: none;
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 9px;
+  line-height: 14px;
+  opacity: 0.9;
+  border-top: 1px solid rgba(15, 23, 42, 0.15);
+  padding-top: 2px;
+  margin-top: 2px;
+}
+
+.fpc-overlay-v2-host:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-footer[data-hidden-count]:not([data-hidden-count=""]) {
+  display: block;
+}
+
+.fpc-overlay-v2-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.fpc-overlay-v2-host:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-list li:nth-child(n+6) {
+  display: none;
+}
+
+.fpc-overlay-v2-item {
+  display: flex;
+  gap: 3px;
+  padding: 1px 3px 1px 4px;
+  border-left: 4px solid var(--fpc-property-accent, #94a3b8);
+  border-radius: 3px;
+  /* Light tinted background from overlayPropertyColorByKey(name).background —
+     the per-row color signal; the card itself stays neutral. */
+  background: var(--fpc-property-bg, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fpc-overlay-v2-host:hover .fpc-overlay-v2-item,
+.fpc-overlay-v2-host.fpc-overlay-v2-host--expanded .fpc-overlay-v2-item {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.fpc-overlay-v2-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  /* Property name tinted with the row accent — a second color channel on top
+     of the left border and tinted background, so similar hues stay tellable. */
+  color: var(--fpc-property-accent, #0f172a);
+}
+
+.fpc-overlay-v2-value {
+  flex: 1 1 auto;
+  color: #334155;
+}
+
+/* Derived display name (v0.3 P1B): in idle/compact mode the one-line name
+   replaces the raw rows list; on hover/expand the full rows return with the
+   name as the card's first (title) line. */
+.fpc-overlay-v2-title {
+  display: none;
+  padding: 1px 0 1px 4px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.15);
+  margin-bottom: 2px;
+}
+
+.fpc-overlay-v2-host--has-display-name .fpc-overlay-v2-title {
+  display: block;
+}
+
+.fpc-overlay-v2-host--has-display-name:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-list {
+  display: none;
+}
+
+.fpc-overlay-v2-host--has-display-name:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-footer[data-hidden-count] {
+  display: none;
+}
+
+.fpc-overlay-v2-host--has-display-name:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-title {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* V2 sequence-flow overlay host: positioned above the polyline midpoint,
+   but the badge itself uses the same style as shape-element overlays.
+   Width is capped so the overlay stays inside the flow bounds and does not
+   overlap neighbouring elements. */
+.fpc-overlay-v2-host--sequence {
+  pointer-events: none;
+  /* Dashed frame marks the anchor area of a flow overlay so it reads as
+     attached to the sequence flow, not as a floating shape badge. */
+  border: 1px dashed hsl(var(--diagram-badge-border) / 0.82);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.fpc-overlay-v2-host--sequence .fpc-overlay-v2-badge {
+  pointer-events: auto;
+}
+
+.fpc-overlay-v2-host--sequence:hover .fpc-overlay-v2-badge,
+.fpc-overlay-v2-host--sequence.fpc-overlay-v2-host--expanded .fpc-overlay-v2-badge {
+  max-width: min(240px, 95vw);
+}

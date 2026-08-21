@@ -1,0 +1,157 @@
+name: Deploy to Stage (Explicit Ref)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: "Git ref to deploy (branch, tag, or commit SHA)"
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy explicit ref to stage server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /opt/processmap/app
+
+            DEPLOY_REF="${{ github.event.inputs.deploy_ref }}"
+
+            if [ -z "${DEPLOY_REF}" ]; then
+              echo "[deploy-stage-ref] deploy_ref is required"
+              exit 1
+            fi
+
+            echo "[deploy-stage-ref] requested ref: ${DEPLOY_REF}"
+            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            git fetch --prune origin "${DEPLOY_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify FETCH_HEAD)"
+            echo "[deploy-stage-ref] resolved sha: ${DEPLOY_SHA}"
+
+            # Ensure frontend source files are really updated even if marked assume-unchanged/skip-worktree
+            git update-index --no-assume-unchanged -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            git update-index --no-skip-worktree -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            git checkout -f "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
+
+            echo "[deploy-stage-ref] source diagnostics:"
+            git status --short
+            git diff --stat HEAD || true
+            echo "[deploy-stage-ref] file checksums after checkout:"
+            sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            echo "[deploy-stage-ref] App.jsx sessions:"
+            grep -n "const \\[sessions" frontend/src/App.jsx || echo "NOT FOUND"
+            grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
+            echo "[deploy-stage-ref] NotesMvpPanel sessions prop:"
+            grep -n "sessions = \\[\\]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
+
+            STAGE_FRESHNESS_SOURCE_FILE="/tmp/processmap-stage-deploy-fingerprint-${DEPLOY_REF//[^A-Za-z0-9._-]/_}-${DEPLOY_SHA:0:12}.json"
+            export STAGE_FRESHNESS_SOURCE_FILE
+
+            deploy/scripts/stage_freshness_proof.sh prepare-source \
+              --requested-ref "${DEPLOY_REF}" \
+              --resolved-sha "${DEPLOY_SHA}"
+
+            # Diagnostics: show current frontend mounts/assets before recreate
+            echo "[deploy-stage-ref] current frontend mounts:"
+            docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage-ref] current frontend assets:"
+            docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+
+            # Remove the old frontend container and any attached volumes so stale statics cannot survive
+            docker compose -p processmap_stage rm -fsv frontend 2>/dev/null || true
+            # Drop any project named volume that could be masking /usr/share/nginx/html
+            docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
+
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            # Pass accurate build metadata to the API container so /version tells the truth
+            export BUILD_ID="${DEPLOY_SHA}"
+            export BUILD_BRANCH="${DEPLOY_REF}"
+            export BUILD_TIME="${BUILD_TIME}"
+            export BUILD_ENV="stage"
+
+            # Pass accurate build metadata to the frontend container so buildInfo.js is correct
+            export VITE_BUILD_ID="${DEPLOY_SHA}"
+            export VITE_BUILD_BRANCH="${DEPLOY_REF}"
+            export VITE_BUILD_TIME="${BUILD_TIME}"
+            export VITE_BUILD_ENV="stage"
+
+            DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
+            export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
+            export VITE_DEPLOY_REQUESTED_REF="${DEPLOY_REF}"
+            export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+
+            # Persist accurate build metadata in the stage env file so the API
+            # container's runtime BUILD_* variables match the deployed SHA.
+            ENV_FILE=".env.stage"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d' "${ENV_FILE}"
+            {
+              echo ""
+              echo "# Auto-injected by deploy-stage-ref.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${DEPLOY_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${DEPLOY_REF}"
+              echo "BUILD_ENV=stage"
+              echo "VITE_BUILD_ID=${DEPLOY_SHA}"
+              echo "VITE_BUILD_TIME=${BUILD_TIME}"
+              echo "VITE_BUILD_BRANCH=${DEPLOY_REF}"
+              echo "VITE_BUILD_ENV=stage"
+              echo "VITE_DEPLOY_FINGERPRINT=${DEPLOY_FINGERPRINT}"
+              echo "VITE_DEPLOY_REQUESTED_REF=${DEPLOY_REF}"
+              echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
+            } >> "${ENV_FILE}"
+
+            # Rebuild images (frontend is baked into frontend)
+            APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              build --no-cache api frontend
+
+            # Start fresh containers (renew anonymous volumes to pull files from the new image)
+            APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              up -d --no-deps --force-recreate -V api frontend
+
+            # Diagnostics after recreate
+            echo "[deploy-stage-ref] new frontend mounts:"
+            docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage-ref] new frontend assets:"
+            docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+
+            deploy/scripts/stage_freshness_proof.sh verify-chain \
+              --requested-ref "${DEPLOY_REF}" \
+              --resolved-sha "${DEPLOY_SHA}"
+
+            # Smoke test: API/XLSX/CSV + UI bundle verification
+            echo "[deploy-stage-ref] running smoke tests..."
+            SMOKE_SCRIPT_URL="https://raw.githubusercontent.com/xiaomibelov/processmap_v1/${DEPLOY_REF}/deploy/scripts/stage_smoke_analytics.sh"
+            curl -fsS "${SMOKE_SCRIPT_URL}" -o /tmp/stage_smoke_analytics.sh
+            bash /tmp/stage_smoke_analytics.sh
+
+            echo "[deploy-stage-ref] verifying UI bundle includes new columns..."
+            JS_SRC=$(curl -fsS https://stage.processmap.ru/ | grep -oE 'assets/index-[^"]+\.js' | head -1)
+            test -n "$JS_SRC"
+            JS_URL="https://stage.processmap.ru/${JS_SRC}"
+            echo "[deploy-stage-ref] checking JS bundle: ${JS_URL}"
+            curl -fsS "$JS_URL" -o /tmp/stage_bundle.js
+            grep -q 'BPMN Name' /tmp/stage_bundle.js || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
+            grep -q 'analyticsSessionBadge' /tmp/stage_bundle.js || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
+            rm -f /tmp/stage_bundle.js
+            echo '[deploy-stage-ref] UI bundle OK'
+
+            rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
+
+            echo "[deploy-stage-ref] done ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"

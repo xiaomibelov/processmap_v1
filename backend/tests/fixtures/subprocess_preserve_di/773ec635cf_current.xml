@@ -1,0 +1,61 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_subprocess" targetNamespace="http://bpmn.io/schema/bpmn"><bpmn:process id="Activity_0m5mlzm" name="Добавить ингредиент"><bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ingredient" value="Крупа гречневая" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:property id="Property_0bgvc1h" name="__targetRef_placeholder" />
+      <bpmn:dataInputAssociation id="DataInputAssociation_0zsawiy">
+        <bpmn:sourceRef>DataStoreReference_03yb2o0</bpmn:sourceRef>
+        <bpmn:targetRef>Property_0bgvc1h</bpmn:targetRef>
+      </bpmn:dataInputAssociation>
+      <bpmn:startEvent id="Event_0ehaumf">
+        <bpmn:outgoing>Flow_0sm15fy</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:task id="Activity_12yc0lk" name="Взять ингредиент">
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="ingredient" value="Крупа гречневая" />
+            <camunda:property name="container_tara" value="Гастроемкость 1/1 65 мм" />
+            <camunda:property name="ee_time" value="2" />
+            <camunda:property name="ee_operation" value="А" />
+          </camunda:properties>
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_0sm15fy</bpmn:incoming>
+        <bpmn:outgoing>Flow_0ih2nkd</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:sequenceFlow id="Flow_0sm15fy" sourceRef="Event_0ehaumf" targetRef="Activity_12yc0lk" />
+      <bpmn:task id="Activity_0fpcwm9" name="Взвесить ингредиент">
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="ingredient" value="Крупа гречневая" />
+            <camunda:property name="ingredient_value" value="из задания" />
+            <camunda:property name="ingredient_um" value="кг" />
+            <camunda:property name="equipment" value="Весы высокоточные" />
+            <camunda:property name="ee_time" value="0,33*n" />
+            <camunda:property name="ee_operation" value="А" />
+          </camunda:properties>
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_0ih2nkd</bpmn:incoming>
+        <bpmn:outgoing>Flow_17y9utt</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:sequenceFlow id="Flow_0ih2nkd" sourceRef="Activity_12yc0lk" targetRef="Activity_0fpcwm9" />
+      <bpmn:task id="Activity_1l1h3t3" name="Положить ингредиент">
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="ingredient" value="Крупа гречневая" />
+            <camunda:property name="container_tara" value="Гастроемкость 1/1 65 мм" />
+            <camunda:property name="container_tara_value" value="1 шт" />
+            <camunda:property name="ee_time" value="0,33" />
+            <camunda:property name="ee_operation" value="А" />
+          </camunda:properties>
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_17y9utt</bpmn:incoming>
+        <bpmn:outgoing>Flow_030jbxn</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:sequenceFlow id="Flow_17y9utt" sourceRef="Activity_0fpcwm9" targetRef="Activity_1l1h3t3" />
+      <bpmn:sequenceFlow id="Flow_030jbxn" sourceRef="Activity_1l1h3t3" targetRef="Event_0z8txn9" />
+      <bpmn:intermediateThrowEvent id="Event_0z8txn9">
+        <bpmn:incoming>Flow_030jbxn</bpmn:incoming>
+      </bpmn:intermediateThrowEvent>
+    </bpmn:process><bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Activity_0m5mlzm"><bpmndi:BPMNShape id="Event_0ehaumf_di" bpmnElement="Event_0ehaumf"><dc:Bounds x="50" y="50" width="36" height="36" /></bpmndi:BPMNShape><bpmndi:BPMNShape id="Activity_12yc0lk_di" bpmnElement="Activity_12yc0lk"><dc:Bounds x="170" y="50" width="100" height="80" /></bpmndi:BPMNShape><bpmndi:BPMNShape id="Activity_0fpcwm9_di" bpmnElement="Activity_0fpcwm9"><dc:Bounds x="290" y="50" width="100" height="80" /></bpmndi:BPMNShape><bpmndi:BPMNShape id="Activity_1l1h3t3_di" bpmnElement="Activity_1l1h3t3"><dc:Bounds x="50" y="130" width="100" height="80" /></bpmndi:BPMNShape><bpmndi:BPMNShape id="Event_0z8txn9_di" bpmnElement="Event_0z8txn9"><dc:Bounds x="170" y="130" width="36" height="36" /></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_0sm15fy_di" bpmnElement="Flow_0sm15fy" sourceElement="Event_0ehaumf" targetElement="Activity_12yc0lk"><di:waypoint x="68.0" y="68.0" /><di:waypoint x="220.0" y="90.0" /></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_0ih2nkd_di" bpmnElement="Flow_0ih2nkd" sourceElement="Activity_12yc0lk" targetElement="Activity_0fpcwm9"><di:waypoint x="220.0" y="90.0" /><di:waypoint x="340.0" y="90.0" /></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_17y9utt_di" bpmnElement="Flow_17y9utt" sourceElement="Activity_0fpcwm9" targetElement="Activity_1l1h3t3"><di:waypoint x="340.0" y="90.0" /><di:waypoint x="100.0" y="170.0" /></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_030jbxn_di" bpmnElement="Flow_030jbxn" sourceElement="Activity_1l1h3t3" targetElement="Event_0z8txn9"><di:waypoint x="100.0" y="170.0" /><di:waypoint x="188.0" y="148.0" /></bpmndi:BPMNEdge></bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>

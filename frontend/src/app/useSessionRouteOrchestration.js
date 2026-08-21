@@ -1,0 +1,200 @@
+import { useCallback, useRef } from "react";
+import {
+  PROCESS_MAP_ROUTE_STATE_KEY,
+  buildProcessMapUrl,
+  parseProcessMapRoute,
+  pushProcessMapHistory,
+  replaceProcessMapHistory,
+} from "./processMapRouteModel.js";
+
+export function readSelectionFromUrl(win = typeof window !== "undefined" ? window : undefined) {
+  if (!win) return { projectId: "", sessionId: "" };
+  try {
+    const route = parseProcessMapRoute(win.location || win);
+    return {
+      projectId: String(route.projectId || "").trim(),
+      sessionId: String(route.sessionId || "").trim(),
+      parentSessionId: String(route.parentSessionId || "").trim(),
+      focusElementId: String(route.focusElementId || "").trim(),
+    };
+  } catch {
+    return { projectId: "", sessionId: "" };
+  }
+}
+
+export function writeSelectionToUrl({ projectId, sessionId, parentSessionId, focusElementId }, win = typeof window !== "undefined" ? window : undefined) {
+  if (!win) return;
+  try {
+    const nextHref = buildProcessMapUrl({
+      projectId,
+      sessionId,
+      parentSessionId,
+      focusElementId,
+      source: "internal",
+    }, {
+      pathname: win.location.pathname || "/app",
+      baseSearch: win.location.search || "",
+      hash: win.location.hash || "",
+    });
+    const currentHref = `${win.location.pathname}${win.location.search}${win.location.hash}`;
+    if (nextHref !== currentHref) {
+      replaceProcessMapHistory({ projectId, sessionId, parentSessionId, focusElementId, source: "internal" }, {
+        win,
+        baseSearch: win.location.search || "",
+      });
+    }
+  } catch {
+    // ignore route write failures
+  }
+}
+
+export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionId, focusElementId, projectContext }, win = typeof window !== "undefined" ? window : undefined, options = {}) {
+  if (!win) return { ok: false, action: "none", reason: "missing_window" };
+  const pid = String(projectId || "").trim();
+  const sid = String(sessionId || "").trim();
+  if (!pid || !sid) return { ok: false, action: "none", reason: "missing_selection" };
+  try {
+    const currentRoute = parseProcessMapRoute(win.location || win);
+    if (currentRoute.projectId === pid && currentRoute.sessionId === sid) {
+      return { ok: true, action: "none", reason: "already_current_session" };
+    }
+    // Preserve the current history entry (e.g. the parent session) so that the
+    // browser back button can return to it. Only push the new session on top.
+    // `options.replace` is used by browser-back restore so that returning to the
+    // parent does not create an extra history entry on top of the popped one.
+    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, parentSessionId, focusElementId, source: "internal", projectContext }, {
+      win,
+      baseSearch: win.location.search || "",
+      replace: options?.replace === true,
+    });
+    return {
+      ok: true,
+      action: sessionResult?.action || "none",
+      parentAction: "none",
+      sessionAction: sessionResult?.action || "none",
+      parentUrl: "",
+      sessionUrl: sessionResult?.url || "",
+    };
+  } catch {
+    return { ok: false, action: "none", reason: "history_write_failed" };
+  }
+}
+
+export function seedSessionParentHistoryToUrl({ projectId, sessionId }, win = typeof window !== "undefined" ? window : undefined) {
+  if (!win) return { ok: false, action: "none", reason: "missing_window" };
+  const pid = String(projectId || "").trim();
+  const sid = String(sessionId || "").trim();
+  if (!pid || !sid) return { ok: false, action: "none", reason: "missing_selection" };
+  try {
+    const currentRoute = parseProcessMapRoute(win.location || win);
+    if (currentRoute.projectId !== pid || currentRoute.sessionId !== sid) {
+      return { ok: true, action: "none", reason: "not_current_session_route" };
+    }
+    const stateRoute = win.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
+    if (
+      stateRoute
+      && String(stateRoute.projectId || "").trim() === pid
+      && String(stateRoute.sessionId || "").trim() === sid
+      && String(stateRoute.source || "").trim() === "internal"
+    ) {
+      return { ok: true, action: "none", reason: "already_internal_session" };
+    }
+    // Preserve the current history entry (the parent session deep-link) by
+    // replacing it in-place with internal state. Do NOT insert a project-only
+    // entry, otherwise browser back from a child session lands on a URL with no
+    // session and the canvas gets unloaded.
+    const sessionResult = replaceProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal" }, {
+      win,
+      baseSearch: win.location.search || "",
+      force: true,
+    });
+    return {
+      ok: true,
+      action: "seed",
+      parentAction: "none",
+      sessionAction: sessionResult?.action || "none",
+      parentUrl: "",
+      sessionUrl: sessionResult?.url || "",
+    };
+  } catch {
+    return { ok: false, action: "none", reason: "history_seed_failed" };
+  }
+}
+
+export function shouldPreserveSelectionRouteDuringRestore({
+  projectId,
+  sessionId,
+  requestedSessionId,
+  urlProjectId,
+  urlSessionId,
+}) {
+  const pid = String(projectId || "").trim();
+  const sid = String(sessionId || "").trim();
+  const requestedSid = String(requestedSessionId || "").trim();
+  const routePid = String(urlProjectId || "").trim();
+  const routeSid = String(urlSessionId || "").trim();
+  if (sid) return false;
+  if (!requestedSid) return false;
+  return requestedSid === routeSid || (!!routePid && !pid);
+}
+
+export function shouldSkipDuplicateUrlRestore({
+  currentSessionId,
+  requestedSessionId,
+  activeSessionId,
+  confirmedSessionId,
+  urlSessionId,
+  requestedExists,
+}) {
+  const currentSid = String(currentSessionId || "").trim();
+  const requestedSid = String(requestedSessionId || "").trim();
+  const activeSid = String(activeSessionId || "").trim();
+  const confirmedSid = String(confirmedSessionId || "").trim();
+  const routeSid = String(urlSessionId || "").trim();
+  if (currentSid || !requestedExists) return false;
+  if (!requestedSid || requestedSid !== routeSid) return false;
+  return requestedSid === confirmedSid || requestedSid === activeSid;
+}
+
+export default function useSessionRouteOrchestration() {
+  const initialSelectionRef = useRef(readSelectionFromUrl());
+  const requestedSessionIdRef = useRef(String(initialSelectionRef.current?.sessionId || "").trim());
+  const activeSessionIdRef = useRef("");
+  const confirmedSessionIdRef = useRef("");
+
+  const setRequestedSessionId = useCallback((sessionIdRaw) => {
+    const sid = String(sessionIdRaw || "").trim();
+    requestedSessionIdRef.current = sid;
+    return sid;
+  }, []);
+
+  const rememberActiveSessionId = useCallback((sessionIdRaw) => {
+    const sid = String(sessionIdRaw || "").trim();
+    if (!sid) return String(activeSessionIdRef.current || "").trim();
+    activeSessionIdRef.current = sid;
+    return sid;
+  }, []);
+
+  const rememberConfirmedSessionId = useCallback((sessionIdRaw) => {
+    const sid = String(sessionIdRaw || "").trim();
+    confirmedSessionIdRef.current = sid;
+    return sid;
+  }, []);
+
+  const clearSessionRestoreMemory = useCallback(() => {
+    requestedSessionIdRef.current = "";
+    activeSessionIdRef.current = "";
+    confirmedSessionIdRef.current = "";
+  }, []);
+
+  return {
+    initialSelectionRef,
+    requestedSessionIdRef,
+    activeSessionIdRef,
+    confirmedSessionIdRef,
+    setRequestedSessionId,
+    rememberActiveSessionId,
+    rememberConfirmedSessionId,
+    clearSessionRestoreMemory,
+  };
+}

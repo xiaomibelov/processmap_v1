@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from ..models import Session
+from ..storage import get_storage
+
+
+def find_or_create_child_session(
+    parent_session: Session,
+    element_id: str,
+    child_xml: str,
+    navigation_stack: List[Dict[str, Any]],
+    title: str,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> Session:
+    st = get_storage()
+    return st.find_or_create_child_session(
+        parent_session,
+        element_id,
+        child_xml,
+        navigation_stack,
+        title,
+        user_id=user_id,
+        is_admin=is_admin,
+        org_id=org_id,
+    )
+
+
+def soft_delete_children_by_parent(
+    parent_session_id: str,
+    keep_element_ids: List[str],
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> List[str]:
+    st = get_storage()
+    return st.soft_delete_children_by_parent(
+        parent_session_id,
+        keep_element_ids,
+        user_id=user_id,
+        is_admin=is_admin,
+        org_id=org_id,
+    )
+
+
+def create(
+    title: str,
+    roles: List[str] | None = None,
+    *,
+    start_role: Optional[str] = None,
+    project_id: Optional[str] = None,
+    mode: Optional[str] = None,
+    process_layer: Optional[str] = None,
+    derived_from_session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> str:
+    st = get_storage()
+    return st.create(
+        title=title,
+        roles=roles,
+        start_role=start_role,
+        project_id=project_id,
+        mode=mode,
+        process_layer=process_layer,
+        derived_from_session_id=derived_from_session_id,
+        user_id=user_id,
+        is_admin=is_admin,
+        org_id=org_id,
+    )
+
+
+def load(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> Optional[Session]:
+    st = get_storage()
+    return st.load(session_id, user_id=user_id, is_admin=is_admin, org_id=org_id)
+
+
+def save(
+    sess: Session,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    st = get_storage()
+    st.save(sess, user_id=user_id, is_admin=is_admin, org_id=org_id)
+
+
+def delete(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> bool:
+    st = get_storage()
+    try:
+        st.delete(session_id, user_id=user_id, is_admin=is_admin, org_id=org_id)
+        return True
+    except Exception:
+        return False
+
+
+def list_sessions(
+    query: Optional[str] = None,
+    limit: int = 200,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    return st.list(query=query, limit=limit, user_id=user_id, org_id=org_id, is_admin=is_admin)
+
+
+def list_project_session_summaries(
+    project_id: str,
+    mode: Optional[str] = None,
+    limit: int = 500,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    return st.list_project_session_summaries(
+        project_id=project_id,
+        mode=mode,
+        limit=limit,
+        user_id=user_id,
+        org_id=org_id,
+        is_admin=is_admin,
+    )
+
+
+def list_project_sessions(
+    project_id: str,
+    *,
+    root_only: bool = False,
+    include_children_meta: bool = False,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    return st.list_project_sessions_for_explorer(
+        org_id=org_id or "",
+        project_id=project_id,
+        root_only=root_only,
+        include_children_meta=include_children_meta,
+    )
+
+
+def list_session_children(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    parent = st.load(
+        session_id,
+        user_id=user_id,
+        org_id=org_id,
+        is_admin=is_admin,
+    )
+    if not parent:
+        return []
+    project_id = str(getattr(parent, "project_id", "") or "").strip()
+    if not project_id:
+        return []
+    return st.list_session_children(
+        org_id=org_id or "",
+        project_id=project_id,
+        parent_session_id=session_id,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
+def list_bpmn_versions(
+    session_id: str,
+    *,
+    org_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    return st.list_bpmn_versions(session_id, org_id=org_id)
+
+
+def create_bpmn_version_snapshot(
+    session_id: str,
+    bpmn_xml: str,
+    source_action: str,
+    user_id: str,
+    *,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    st = get_storage()
+    return st.create_bpmn_version_snapshot(
+        session_id=session_id,
+        bpmn_xml=bpmn_xml,
+        source_action=source_action,
+        created_by=user_id,
+        org_id=org_id,
+    )
+
+
+def find_by_parent_element(parent_session_id: str, element_id_in_parent: str, *, org_id: Optional[str] = None) -> Optional[Session]:
+    st = get_storage()
+    return st.find_by_parent_element(parent_session_id, element_id_in_parent, org_id=org_id)

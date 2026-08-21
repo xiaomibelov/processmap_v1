@@ -1,0 +1,542 @@
+export const PROCESS_MAP_ROUTE_STATE_KEY = "processMapRoute";
+export const PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY = "processMapProjectContext";
+export const PRODUCT_ACTIONS_REGISTRY_SURFACE = "product-actions-registry";
+export const ANALYTICS_HUB_SURFACE = "analytics";
+export const PROPERTIES_REGISTRY_SURFACE = "process-properties-registry";
+
+const DEFAULT_APP_PATHNAME = "/app";
+const VALID_SOURCES = new Set(["internal", "direct", "popstate"]);
+
+function text(value) {
+  return String(value || "").trim();
+}
+
+function normalizeSource(value) {
+  const source = text(value).toLowerCase();
+  return VALID_SOURCES.has(source) ? source : "direct";
+}
+
+export function normalizeProductActionsRegistryScope(value) {
+  const scope = text(value).toLowerCase();
+  if (scope === "session" || scope === "current") return "session";
+  if (scope === "project") return "project";
+  if (scope === "workspace") return "workspace";
+  return "workspace";
+}
+
+function normalizeBreadcrumbBase(crumbsRaw) {
+  const crumbs = Array.isArray(crumbsRaw) ? crumbsRaw : [];
+  return crumbs
+    .map((crumb) => {
+      const type = text(crumb?.type).toLowerCase();
+      const id = text(crumb?.id);
+      const name = text(crumb?.name);
+      if (!id || !name) return null;
+      if (type !== "workspace" && type !== "folder") return null;
+      return { type, id, name };
+    })
+    .filter(Boolean);
+}
+
+export function normalizeProcessMapProjectContext(contextRaw = {}) {
+  const context = contextRaw && typeof contextRaw === "object" ? contextRaw : {};
+  const breadcrumbBase = normalizeBreadcrumbBase(context.breadcrumbBase ?? context.breadcrumb_base);
+  const workspaceCrumb = breadcrumbBase.find((crumb) => crumb.type === "workspace");
+  const folderCrumbs = breadcrumbBase.filter((crumb) => crumb.type === "folder");
+  const lastFolderCrumb = folderCrumbs.length ? folderCrumbs[folderCrumbs.length - 1] : null;
+  const projectId = text(context.projectId ?? context.project_id);
+  const workspaceId = text(context.workspaceId ?? context.workspace_id) || text(workspaceCrumb?.id);
+  const folderId = text(context.folderId ?? context.folder_id) || text(lastFolderCrumb?.id);
+  const projectTitle = text(context.projectTitle ?? context.project_title ?? context.title ?? context.name);
+
+  if (!projectId && !workspaceId && !folderId && !projectTitle && !breadcrumbBase.length) {
+    return null;
+  }
+
+  return {
+    projectId,
+    workspaceId,
+    folderId,
+    breadcrumbBase,
+    projectTitle,
+  };
+}
+
+function asLocationUrl(locationLike) {
+  const fallback = "https://processmap.local/app";
+  if (!locationLike) return new URL(fallback);
+  if (typeof locationLike === "string") {
+    return new URL(locationLike, fallback);
+  }
+  if (locationLike instanceof URL) return locationLike;
+  if (locationLike.location) return asLocationUrl(locationLike.location);
+
+  const href = text(locationLike.href);
+  if (href) return new URL(href, fallback);
+
+  const pathname = text(locationLike.pathname) || DEFAULT_APP_PATHNAME;
+  const search = text(locationLike.search);
+  const hash = text(locationLike.hash);
+  return new URL(`${pathname}${search}${hash}`, fallback);
+}
+
+export function normalizeProcessMapRoute(routeRaw = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const folderId = text(route.folderId ?? route.folder_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  const parentSessionId = projectId ? text(route.parentSessionId ?? route.parent_session_id ?? route.parent) : "";
+  const focusElementId = sessionId ? text(route.focusElementId ?? route.focus_element_id ?? route.focus) : "";
+  const surface = sessionId && projectId
+    ? "session"
+    : projectId
+      ? "project"
+      : "workspace";
+
+  return {
+    surface,
+    workspaceId,
+    folderId,
+    projectId,
+    sessionId,
+    parentSessionId,
+    focusElementId,
+    source: normalizeSource(route.source),
+  };
+}
+
+export function parseProcessMapRoute(locationLike = typeof window !== "undefined" ? window.location : undefined, options = {}) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    return normalizeProcessMapRoute({
+      workspaceId: params.get("workspace"),
+      folderId: params.get("folder"),
+      projectId: params.get("project"),
+      sessionId: params.get("session"),
+      parentSessionId: params.get("parent"),
+      focusElementId: params.get("focus"),
+      source: options?.source || "direct",
+    });
+  } catch {
+    return normalizeProcessMapRoute({ source: options?.source || "direct" });
+  }
+}
+
+export function readProductActionsRegistryRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const workspaceId = text(params.get("workspace"));
+    if (surface !== PRODUCT_ACTIONS_REGISTRY_SURFACE) {
+      return {
+        active: false,
+        scope: "workspace",
+        workspaceId,
+        projectId,
+        sessionId,
+      };
+    }
+    const explicitScope = text(params.get("registry_scope"));
+    const scope = explicitScope
+      ? normalizeProductActionsRegistryScope(explicitScope)
+      : sessionId
+        ? "session"
+        : projectId
+          ? "project"
+          : "workspace";
+    return {
+      active: true,
+      scope,
+      workspaceId,
+      projectId,
+      sessionId,
+    };
+  } catch {
+    return {
+      active: false,
+      scope: "workspace",
+      workspaceId: "",
+      projectId: "",
+      sessionId: "",
+    };
+  }
+}
+
+export function buildProductActionsRegistryUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const scope = normalizeProductActionsRegistryScope(route.scope ?? route.registry_scope);
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+
+  params.set("surface", PRODUCT_ACTIONS_REGISTRY_SURFACE);
+  params.set("registry_scope", scope);
+  if (workspaceId) params.set("workspace", workspaceId);
+  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
+    params.delete("workspace");
+  }
+
+  if (scope === "workspace") {
+    params.delete("project");
+    params.delete("session");
+  } else if (scope === "project") {
+    if (projectId) params.set("project", projectId);
+    else params.delete("project");
+    params.delete("session");
+  } else {
+    if (projectId) params.set("project", projectId);
+    else params.delete("project");
+    if (sessionId) params.set("session", sessionId);
+    else params.delete("session");
+  }
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildProductActionsRegistryCloseUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  params.delete("surface");
+  params.delete("registry_scope");
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  if (workspaceId) params.set("workspace", workspaceId);
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildProcessMapUrl(routeRaw = {}, options = {}) {
+  const raw = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const route = normalizeProcessMapRoute(routeRaw);
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const baseSearch = text(options?.baseSearch);
+  const params = new URLSearchParams(baseSearch);
+  const shouldApply = (camelKey, snakeKey) => !baseSearch
+    || Object.prototype.hasOwnProperty.call(raw, camelKey)
+    || Object.prototype.hasOwnProperty.call(raw, snakeKey);
+
+  if (shouldApply("workspaceId", "workspace_id")) {
+    if (route.workspaceId) params.set("workspace", route.workspaceId);
+    else params.delete("workspace");
+  }
+  if (shouldApply("folderId", "folder_id")) {
+    if (route.folderId) params.set("folder", route.folderId);
+    else params.delete("folder");
+  }
+  if (shouldApply("projectId", "project_id")) {
+    if (route.projectId) params.set("project", route.projectId);
+    else params.delete("project");
+  }
+  if (shouldApply("sessionId", "session_id")) {
+    if (route.sessionId) params.set("session", route.sessionId);
+    else params.delete("session");
+  }
+  if (shouldApply("parentSessionId", "parent_session_id")) {
+    if (route.parentSessionId) params.set("parent", route.parentSessionId);
+    else params.delete("parent");
+  }
+  if (shouldApply("focusElementId", "focus_element_id")) {
+    if (route.focusElementId) params.set("focus", route.focusElementId);
+    else params.delete("focus");
+  }
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function routesEqual(a, b) {
+  const left = normalizeProcessMapRoute(a);
+  const right = normalizeProcessMapRoute(b);
+  return left.surface === right.surface
+    && left.workspaceId === right.workspaceId
+    && left.folderId === right.folderId
+    && left.projectId === right.projectId
+    && left.sessionId === right.sessionId
+    && left.parentSessionId === right.parentSessionId
+    && left.focusElementId === right.focusElementId;
+}
+
+export function readProcessMapProjectContextFromHistory(win = typeof window !== "undefined" ? window : undefined) {
+  const state = win?.history?.state;
+  if (!state || typeof state !== "object") return null;
+  return normalizeProcessMapProjectContext(state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY]);
+}
+
+function writeProcessMapHistory(routeRaw, options = {}) {
+  const win = options?.win || (typeof window !== "undefined" ? window : undefined);
+  if (!win?.history || !win?.location) return { ok: false, action: "none", url: "" };
+
+  const routeInput = {
+    ...routeRaw,
+    source: options?.source || routeRaw?.source || "internal",
+  };
+  const route = normalizeProcessMapRoute(routeInput);
+  const url = buildProcessMapUrl(routeInput, {
+    pathname: options?.pathname || win.location.pathname || DEFAULT_APP_PATHNAME,
+    hash: Object.prototype.hasOwnProperty.call(options, "hash") ? options.hash : win.location.hash || "",
+    baseSearch: options?.baseSearch || "",
+  });
+  const prevStateRaw = win.history.state && typeof win.history.state === "object" ? win.history.state : {};
+  const {
+    [PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY]: _prevProjectContext,
+    ...prevState
+  } = prevStateRaw;
+  const projectContext = normalizeProcessMapProjectContext(routeRaw?.projectContext ?? options?.projectContext);
+  const currentUrl = `${win.location.pathname || ""}${win.location.search || ""}${win.location.hash || ""}`;
+  if (url === currentUrl && options?.force !== true && !projectContext) {
+    return { ok: true, action: "none", url, route };
+  }
+  const state = {
+    ...prevState,
+    [PROCESS_MAP_ROUTE_STATE_KEY]: route,
+  };
+  if (projectContext) {
+    state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY] = projectContext;
+  }
+  const replace = options?.replace === true;
+  if (replace) win.history.replaceState(state, "", url);
+  else win.history.pushState(state, "", url);
+  return { ok: true, action: replace ? "replace" : "push", url, route };
+}
+
+
+export function readAnalyticsHubRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const workspaceId = text(params.get("workspace"));
+    if (surface !== ANALYTICS_HUB_SURFACE) {
+      return {
+        active: false,
+        workspaceId,
+        projectId,
+        sessionId,
+      };
+    }
+    return {
+      active: true,
+      workspaceId,
+      projectId,
+      sessionId,
+    };
+  } catch {
+    return {
+      active: false,
+      workspaceId: "",
+      projectId: "",
+      sessionId: "",
+    };
+  }
+}
+
+export function buildAnalyticsHubUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+
+  params.set("surface", ANALYTICS_HUB_SURFACE);
+  if (workspaceId) params.set("workspace", workspaceId);
+  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
+    params.delete("workspace");
+  }
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildAnalyticsHubCloseUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  params.delete("surface");
+  params.delete("registry_scope");
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  if (workspaceId) params.set("workspace", workspaceId);
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+export function readPropertiesRegistryRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const workspaceId = text(params.get("workspace"));
+    if (surface !== PROPERTIES_REGISTRY_SURFACE) {
+      return {
+        active: false,
+        workspaceId,
+        projectId,
+        sessionId,
+      };
+    }
+    return {
+      active: true,
+      workspaceId,
+      projectId,
+      sessionId,
+    };
+  } catch {
+    return {
+      active: false,
+      workspaceId: "",
+      projectId: "",
+      sessionId: "",
+    };
+  }
+}
+
+export function buildPropertiesRegistryUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+
+  params.set("surface", PROPERTIES_REGISTRY_SURFACE);
+  if (workspaceId) params.set("workspace", workspaceId);
+  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
+    params.delete("workspace");
+  }
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildPropertiesRegistryCloseUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  params.delete("surface");
+  params.delete("registry_scope");
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  if (workspaceId) params.set("workspace", workspaceId);
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+
+export function pushProcessMapHistory(routeRaw, options = {}) {
+  return writeProcessMapHistory(routeRaw, {
+    ...options,
+    replace: options?.replace === true,
+  });
+}
+
+export function replaceProcessMapHistory(routeRaw, options = {}) {
+  return writeProcessMapHistory(routeRaw, {
+    ...options,
+    replace: true,
+  });
+}
+
+// ------- Backend-driven analytics path routes -------
+export const ANALYTICS_MODULE_OVERVIEW = "overview";
+export const ANALYTICS_MODULE_ACTIONS = "actions";
+export const ANALYTICS_MODULE_PROPERTIES = "properties";
+export const VALID_ANALYTICS_MODULES = new Set([
+  ANALYTICS_MODULE_OVERVIEW,
+  ANALYTICS_MODULE_ACTIONS,
+  ANALYTICS_MODULE_PROPERTIES,
+]);
+
+export function normalizeAnalyticsScope(value) {
+  const scope = text(value).toLowerCase();
+  if (scope === "workspace" || scope === "project" || scope === "session") return scope;
+  return "workspace";
+}
+
+export function normalizeAnalyticsModule(value) {
+  const moduleId = text(value).toLowerCase() || ANALYTICS_MODULE_OVERVIEW;
+  return VALID_ANALYTICS_MODULES.has(moduleId) ? moduleId : ANALYTICS_MODULE_OVERVIEW;
+}
+
+export function buildAnalyticsPath(scope, scopeId, moduleId = ANALYTICS_MODULE_OVERVIEW) {
+  const normalizedScope = normalizeAnalyticsScope(scope);
+  const normalizedModule = normalizeAnalyticsModule(moduleId);
+  const id = text(scopeId);
+  if (!id) return "/analytics";
+  if (normalizedModule === ANALYTICS_MODULE_OVERVIEW) return `/analytics/${normalizedScope}/${id}`;
+  return `/analytics/${normalizedScope}/${id}/${normalizedModule}`;
+}
+
+export function parseAnalyticsPath(pathname = "") {
+  const path = text(pathname).replace(/\/+$/g, "");
+  const match = path.match(/^\/analytics\/(workspace|project|session)\/([^/]+)(?:\/(overview|actions|properties))?$/i);
+  if (!match) return null;
+  return {
+    scope: match[1].toLowerCase(),
+    scopeId: text(match[2]),
+    module: normalizeAnalyticsModule(match[3]),
+  };
+}
+
+export function readLegacyAnalyticsRedirect(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const workspaceId = text(params.get("workspace"));
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const scope = sessionId ? "session" : projectId ? "project" : workspaceId ? "workspace" : "";
+    const scopeId = sessionId || projectId || workspaceId || "";
+    if (!scope || !scopeId) return null;
+    if (surface === ANALYTICS_HUB_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_OVERVIEW };
+    if (surface === PRODUCT_ACTIONS_REGISTRY_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_ACTIONS };
+    if (surface === PROPERTIES_REGISTRY_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_PROPERTIES };
+    if (surface === "dashboards") return { scope, scopeId, module: ANALYTICS_MODULE_OVERVIEW };
+    return null;
+  } catch {
+    return null;
+  }
+}

@@ -1,0 +1,319 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { apiGetSession, apiLeaveSessionPresence, apiTouchSessionPresence } from "../../../../lib/api.js";
+import { getActiveOrgId, setActiveOrgId } from "../../../../lib/apiCore.js";
+import {
+  isSessionNotFound,
+  isSessionNotFoundResult,
+  noteSessionApiResult,
+  subscribeSessionNotFound,
+} from "../../../session/sessionLiveness.js";
+import {
+  SESSION_PRESENCE_HEARTBEAT_MS,
+  SESSION_PRESENCE_TTL_MS,
+} from "./sessionPresenceConstants.js";
+
+export { SESSION_PRESENCE_HEARTBEAT_MS, SESSION_PRESENCE_TTL_MS };
+const SESSION_PRESENCE_CLIENT_ID_KEY = "processmap:session-presence:client-id";
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+function randomClientId() {
+  const cryptoObj = typeof window !== "undefined" ? window.crypto : null;
+  if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
+    return cryptoObj.randomUUID();
+  }
+  return `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function getSessionPresenceClientId(storage = null) {
+  const store = storage || (typeof window !== "undefined" ? window.sessionStorage : null);
+  try {
+    const existing = toText(store?.getItem?.(SESSION_PRESENCE_CLIENT_ID_KEY));
+    if (existing) return existing;
+    const next = randomClientId();
+    store?.setItem?.(SESSION_PRESENCE_CLIENT_ID_KEY, next);
+    return next;
+  } catch {
+    return randomClientId();
+  }
+}
+
+function normalizeLastSeenMs(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw < 1000000000000 ? Math.round(raw * 1000) : Math.round(raw);
+}
+
+export function normalizeSessionPresenceUsers(itemsRaw = []) {
+  const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+  return items
+    .map((itemRaw) => {
+      const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+      const userId = toText(item.user_id || item.userId);
+      const label = toText(item.display_name || item.displayName || item.full_name || item.fullName || item.email || userId);
+      if (!userId && !label) return null;
+      return {
+        userId,
+        label: label || "Пользователь",
+        email: toText(item.email),
+        fullName: toText(item.full_name || item.fullName),
+        jobTitle: toText(item.job_title || item.jobTitle),
+        lastSeenAt: normalizeLastSeenMs(item.last_seen_at || item.lastSeenAt),
+        isCurrentUser: item.is_current_user === true || item.isCurrentUser === true,
+      };
+    })
+    .filter(Boolean);
+}
+
+export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = null, options = {}) {
+  const sessionId = toText(sessionIdRaw);
+  const currentUser = currentUserRaw && typeof currentUserRaw === "object" ? currentUserRaw : {};
+  const currentUserId = toText(currentUser.id || currentUser.user_id || currentUser.email);
+  // Явный override (тесты) honour'им до 10мс; дефолт клампим снизу 5с (антиспам).
+  const heartbeatMs = options.heartbeatMs
+    ? Math.max(10, Number(options.heartbeatMs))
+    : Math.max(5000, Number(SESSION_PRESENCE_HEARTBEAT_MS));
+  const surface = toText(options.surface) || "process_stage";
+  const touchPresence = typeof options.apiTouch === "function" ? options.apiTouch : apiTouchSessionPresence;
+  const leavePresenceApi = typeof options.apiLeave === "function" ? options.apiLeave : apiLeaveSessionPresence;
+  const getSessionConfirm = typeof options.apiGetSession === "function" ? options.apiGetSession : apiGetSession;
+  const initialActiveUsers = Array.isArray(options.initialActiveUsers) ? options.initialActiveUsers : [];
+  const skipMountHeartbeat = options.skipMountHeartbeat === true && initialActiveUsers.length > 0;
+  const initialTtlSeconds = Number(options.initialTtlSeconds || 0);
+  const clientIdRef = useRef("");
+  const mountedRef = useRef(false);
+  const [activeUsers, setActiveUsers] = useState(normalizeSessionPresenceUsers(initialActiveUsers));
+  const [ttlMs, setTtlMs] = useState(
+    Number.isFinite(initialTtlSeconds) && initialTtlSeconds > 0
+      ? Math.round(initialTtlSeconds * 1000)
+      : SESSION_PRESENCE_TTL_MS
+  );
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [lastError, setLastError] = useState("");
+  // P-1: терминальный 404 — сессия удалена. Heartbeat останавливается,
+  // опрос не возобновляется (404 ≠ сетевая ошибка).
+  const [sessionDead, setSessionDead] = useState(() => isSessionNotFound(sessionId));
+  // Org-drift fix: presence-404 может означать НЕ удаление, а смену активной
+  // org (сессия живёт в другой организации). Прежде чем помечать сессию
+  // мёртвой, делаем confirm GET /api/sessions/{id}: 200 → org-drift (мягкое
+  // уведомление, dead-флаг НЕ ставим), 404 → реальное удаление.
+  const [orgDrift, setOrgDrift] = useState(false);
+  const [confirmPending, setConfirmPending] = useState(false);
+  const confirmRef = useRef(null);       // Promise | null — ровно один confirm на эпизод
+  const driftEpisodeRef = useRef(false); // эпизод org-drift подтверждён (до presence-200)
+  // Org, с которой сессия работала (инициализация + последний успешный
+  // presence). Confirm GET идёт с НЕЙ, а не с текущей (после drift) org —
+  // иначе при настоящем org-drift confirm дал бы 404 и баг повторился.
+  const orgInitRef = useRef("");
+  const lastGoodOrgRef = useRef("");
+
+  const clearPresence = useCallback(() => {
+    setActiveUsers([]);
+    setLastError("");
+  }, []);
+
+  const heartbeat = useCallback(async (reason = "interval") => {
+    if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };
+    if (isSessionNotFound(sessionId)) return { ok: false, reason: "session_deleted" };
+    // Пока идёт confirm org-drift — heartbeat приостановлен (без сети).
+    if (confirmRef.current) return { ok: false, reason: "confirm_pending" };
+    if (typeof document !== "undefined" && document.visibilityState === "hidden" && reason === "interval") {
+      return { ok: false, reason: "hidden" };
+    }
+    const clientId = clientIdRef.current || getSessionPresenceClientId();
+    clientIdRef.current = clientId;
+    try {
+      const out = await touchPresence(sessionId, { clientId, surface });
+      if (!mountedRef.current) return out;
+      if (!out?.ok) {
+        // P-1: терминальный 404 помечает сессию мёртвой — таймер снимается
+        // через sessionDead-эффект, дальнейшие heartbeat не уходят в сеть.
+        // Org-drift fix: сначала confirm GET — 404 может быть сменой org, а
+        // не удалением. Отсев саб-ресурсов (node/edge/version/…) — как раньше:
+        // isSessionNotFoundResult возвращает false → обычная ошибка.
+        if (isSessionNotFoundResult(out)) {
+          if (driftEpisodeRef.current) {
+            // эпизод org-drift уже подтверждён — без повторных confirm и без dead
+            setLastError("org_drift");
+            return out;
+          }
+          if (!confirmRef.current) {
+            setConfirmPending(true);
+            confirmRef.current = (async () => {
+              // confirm GET — с org, с которой сессия работала (последний
+              // успешный presence / инициализация). Временно переключаем
+              // apiCore на неё без persist, затем возвращаем как было.
+              const targetOrg = toText(lastGoodOrgRef.current) || toText(orgInitRef.current);
+              const prevOrg = getActiveOrgId();
+              const swapped = !!targetOrg && targetOrg !== prevOrg;
+              try {
+                if (swapped) setActiveOrgId(targetOrg, { persist: false });
+                const conf = await getSessionConfirm(sessionId);
+                if (!mountedRef.current) return;
+                if (conf?.ok === true) {
+                  // confirm 200: сессия доступна с рабочей org → это смена
+                  // контекста org (org-drift), НЕ удаление. dead-флаг не ставим.
+                  driftEpisodeRef.current = true;
+                  setOrgDrift(true);
+                  setLastError("org_drift");
+                } else {
+                  // confirm 404: реальное удаление — поведение как раньше.
+                  const deadInfo = noteSessionApiResult(sessionId, out, "presence");
+                  if (deadInfo) {
+                    setSessionDead(true);
+                    setLastError("session_not_found");
+                  }
+                }
+              } finally {
+                if (swapped) setActiveOrgId(prevOrg, { persist: false });
+                if (mountedRef.current) setConfirmPending(false);
+                confirmRef.current = null;
+              }
+            })();
+          }
+          return out;
+        }
+        setLastError(toText(out?.error || out?.reason || "presence_failed"));
+        return out;
+      }
+      // presence-200: эпизод org-drift завершён (org вернулась/перезагрузка).
+      driftEpisodeRef.current = false;
+      setOrgDrift(false);
+      // запоминаем рабочую org последнего успешного presence
+      lastGoodOrgRef.current = getActiveOrgId();
+      setActiveUsers(normalizeSessionPresenceUsers(out.active_users || out.activeUsers));
+      setNowMs(Date.now());
+      const ttlSeconds = Number(out.ttl_seconds || out.ttlSeconds || 0);
+      if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+        setTtlMs(Math.round(ttlSeconds * 1000));
+      }
+      setLastError("");
+      return out;
+    } catch (error) {
+      if (mountedRef.current) {
+        setLastError(toText(error?.message || error || "presence_failed"));
+      }
+      return { ok: false, reason: "presence_failed" };
+    }
+  }, [currentUserId, sessionId, surface, touchPresence]);
+
+  const leavePresence = useCallback(async (reason = "leave", leaveOptions = {}) => {
+    if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };
+    // P-1: мёртвая сессия — leave бессмысленен (гарантированный 404-шум).
+    if (isSessionNotFound(sessionId)) return { ok: false, reason: "session_deleted" };
+    const clientId = clientIdRef.current || getSessionPresenceClientId();
+    clientIdRef.current = clientId;
+    if (!clientId) return { ok: false, reason: "missing_client_id" };
+    try {
+      return await leavePresenceApi(sessionId, {
+        clientId,
+        surface,
+        reason,
+        keepalive: leaveOptions?.keepalive === true,
+        telemetry: leaveOptions?.telemetry !== false,
+      });
+    } catch (error) {
+      return { ok: false, reason: toText(error?.message || error || "presence_leave_failed") };
+    }
+  }, [currentUserId, leavePresenceApi, sessionId, surface]);
+
+  useEffect(() => {
+    // Смена сессии: пересчитать dead-флаг (реестр глобальный).
+    setSessionDead(isSessionNotFound(sessionId));
+    if (!sessionId) return undefined;
+    return subscribeSessionNotFound((deadSid) => {
+      if (deadSid === sessionId && mountedRef.current) {
+        setSessionDead(true);
+      }
+    });
+  }, [sessionId]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      clearPresence();
+      return () => {
+        mountedRef.current = false;
+      };
+    }
+    if (!sessionId || !currentUserId || sessionDead) {
+      clearPresence();
+      return () => {
+        mountedRef.current = false;
+      };
+    }
+
+    clientIdRef.current = getSessionPresenceClientId();
+    // org инициализации presence — база confirm при отсутствии успешных presence
+    if (!orgInitRef.current) orgInitRef.current = getActiveOrgId();
+    if (!skipMountHeartbeat) {
+      void heartbeat("mount");
+    }
+    const intervalId = window.setInterval(() => {
+      void heartbeat("interval");
+    }, heartbeatMs);
+    const handleForeground = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void heartbeat("foreground");
+    };
+    window.addEventListener("focus", handleForeground);
+    document.addEventListener("visibilitychange", handleForeground);
+    const handlePageExit = () => {
+      void leavePresence("page_exit", { keepalive: true, telemetry: false });
+    };
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
+    return () => {
+      void leavePresence("unmount", { telemetry: false });
+      mountedRef.current = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleForeground);
+      document.removeEventListener("visibilitychange", handleForeground);
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+      clearPresence();
+    };
+  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, leavePresence, sessionDead, sessionId, skipMountHeartbeat]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!sessionId || !currentUserId || !activeUsers.length) return undefined;
+    const now = Date.now();
+    const expiryTimes = activeUsers
+      .map((user) => Number(user?.lastSeenAt || 0) + Number(ttlMs || SESSION_PRESENCE_TTL_MS))
+      .filter((value) => Number.isFinite(value) && value > now);
+    if (!expiryTimes.length) return undefined;
+    const nextExpiry = Math.min(...expiryTimes);
+    const delayMs = Math.max(100, Math.min(5000, nextExpiry - now + 25));
+    const timeoutId = window.setTimeout(() => {
+      setNowMs(Date.now());
+    }, delayMs);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeUsers, currentUserId, nowMs, sessionId, ttlMs]);
+
+  // P-1: cleanup эффекта (clearPresence) стирает lastError — для мёртвой
+  // сессии возвращаем sticky-маркер, чтобы UI мог отличить терминальный 404.
+  const effectiveLastError = sessionDead && !lastError ? "session_not_found" : lastError;
+
+  return useMemo(() => ({
+    activeUsers,
+    clientId: clientIdRef.current,
+    ttlMs,
+    nowMs,
+    lastError: effectiveLastError,
+    sessionDead,
+    // Org-drift: presence-404 подтверждён как смена org-контекста (не удаление).
+    // UI показывает мягкое уведомление с «Перезагрузить сессию» вместо dead-modal.
+    orgDrift,
+    confirmPending,
+    heartbeat,
+    leavePresence,
+    setActiveUsers,
+    setTtlMs,
+  }), [activeUsers, confirmPending, effectiveLastError, heartbeat, leavePresence, nowMs, orgDrift, sessionDead, ttlMs]);
+}

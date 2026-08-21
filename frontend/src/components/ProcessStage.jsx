@@ -1,0 +1,8331 @@
+import { apiGetFeatureFlags } from "../lib/apiModules/featureFlagsApi";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
+import DocStage from "./process/DocStage";
+import DodStage from "./process/DodStage";
+import InterviewStage from "./process/InterviewStage";
+import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
+import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
+import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
+import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
+import AnalyticsPage from "../features/analytics/AnalyticsPage.jsx";
+import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
+import { ExplorerQueryProvider } from "../features/explorer/ExplorerQueryProvider.jsx";
+import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx";
+import { useAuth } from "../features/auth/AuthProvider";
+import {
+  apiGetSession,
+  apiGetSessionMeta,
+  apiGetSessionGraph,
+  apiPatchSession,
+  apiRecompute,
+  apiStartAutoPass,
+  apiGetAutoPassPrecheck,
+  apiGetAutoPassStatus,
+} from "../lib/api/sessionApi";
+import {
+  apiCreateProjectSession,
+  apiGetExportZip,
+  apiListProjectSessions,
+  apiLlmStatus,
+} from "../lib/api.js";
+import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
+import {
+  apiGetBpmnMeta,
+  apiGetBpmnVersion,
+  apiGetBpmnXml,
+  apiGetBpmnVersions,
+  apiPutBpmnXml,
+  apiRestoreBpmnVersion,
+} from "../lib/api/bpmnApi";
+import { apiAiQuestions } from "../lib/api/interviewApi";
+import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
+import {
+  shortSnapshotHash,
+} from "../features/process/bpmn/snapshots/bpmnSnapshots";
+import {
+  buildSemanticBpmnDiff,
+  summarizeSemanticDiff,
+} from "../features/process/bpmn/diff/semanticDiff.js";
+import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
+import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
+import { detectCamundaNamespaceDivergence } from "../features/process/camunda/camundaExtensions.js";
+import useBpmnSync from "../features/process/hooks/useBpmnSync";
+import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
+import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanErrorBoundary";
+import { isLlmNotConfigured } from "../features/process/processman/processmanView";
+import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
+import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
+import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
+import {
+  eventHasExternalFiles,
+  validateBpmnImportFile,
+  validateBpmnImportText,
+} from "../features/process/bpmn/import/bpmnFileDrop.js";
+import { deriveActorsFromBpmn, sameDerivedActors } from "../features/process/lib/deriveActorsFromBpmn";
+import {
+  asArray,
+  asObject,
+  interviewHasContent,
+  isLikelySeedBpmnXml,
+  mergeInterviewData,
+  enrichInterviewWithNodeBindings,
+  sanitizeGraphNodes,
+  toNodeId,
+  mergeNodesById,
+  mergeEdgesByKey,
+  readFileText,
+  parseBpmnToSessionGraph,
+  buildClarificationHints,
+} from "../features/process/lib/processStageDomain";
+import { parseCommandToOps } from "../features/process/bpmn/ops/parseOps";
+import useQualityDerivation from "../features/process/quality/useQualityDerivation";
+import useCoverageDerivation from "../features/process/coverage/useCoverageDerivation";
+import { useAttentionMarkerDerivation, useAttentionItemsDerivation } from "../features/process/attention/useAttentionDerivation";
+import { computeDodSnapshotFromDraft } from "../features/process/dod/computeDodSnapshot";
+import { buildDodReadinessV1 } from "../features/process/dod/buildDodReadinessV1";
+import {
+  buildRobotMetaStatusByElementId,
+  getRobotMetaStatus,
+  normalizeRobotMetaMap,
+} from "../features/process/robotmeta/robotMeta";
+import {
+  appendExecutionPlanVersionEntry,
+  buildExecutionPlan,
+  normalizeExecutionPlanVersionList,
+} from "../features/process/robotmeta/executionPlan";
+import { toBpmnRestoreUserFacingError } from "../features/process/lib/userFacingErrorText";
+import {
+  applyHybridModeTransition,
+  applyHybridVisibilityTransition,
+  normalizeHybridLayerMap,
+  normalizeHybridUiPrefs,
+  saveHybridUiPrefs,
+} from "../features/process/hybrid/hybridLayerUi";
+import {
+  docToComparableJson,
+  normalizeHybridV2Doc,
+} from "../features/process/hybrid/hybridLayerV2";
+import {
+  matrixToDiagram,
+  matrixToScreen,
+} from "../features/process/stage/utils/hybridCoords";
+import {
+  isDiagramVersionSessionMatch,
+  rememberMonotonicDiagramStateVersion,
+  normalizeDiagramSessionId,
+  normalizeDiagramStateVersion,
+  resolveDiagramBaseVersionForActiveSession,
+} from "../features/process/stage/utils/diagramVersionContext";
+import { enqueueSessionPatchCasWrite } from "../features/process/stage/utils/sessionPatchCasCoordinator";
+import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
+import { registerAppSafeRefreshHandler } from "../features/appUpdate/appSafeRefreshController";
+import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
+import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
+import {
+  buildSaveUploadStatusBadge,
+  normalizeBpmnSaveLifecycleEvent,
+} from "../features/process/navigation/saveUploadStatus";
+import {
+  subscribePropertySaveEvents,
+} from "../features/process/save/propertySaveEvents";
+import { resolveManualSaveOutcomeUi } from "../features/process/navigation/manualSaveOutcomeUi";
+import { deriveLeaveNavigationRisk } from "../features/process/navigation/leaveNavigationGuardModel";
+import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
+import useBpmnCanvasController from "../features/process/stage/controllers/useBpmnCanvasController";
+import useDiagramOverlayTransform from "../features/process/stage/controllers/useDiagramOverlayTransform";
+import useHybridLayerAnchorController from "../features/process/stage/hooks/useBpmnCanvasController";
+import useHybridLayerViewportController from "../features/process/stage/hooks/useHybridLayerViewportController";
+import usePlaybackController from "../features/process/stage/controllers/usePlaybackController";
+import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
+import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
+import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
+import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
+import useBpmnPropertiesOverlayController from "../features/process/bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController";
+import useBpmnSubprocessPreview from "../features/process/stage/hooks/useBpmnSubprocessPreview";
+import useProcessStageDrawio from "../features/process/stage/orchestration/useProcessStageDrawio";
+import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
+import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
+import useDiagramSearchController from "../features/process/stage/search/useDiagramSearchController";
+import useDiagramSearchHotkey from "../features/process/stage/search/diagramSearchHotkey";
+import { navigateDiagramSearchResult } from "../features/process/stage/search/diagramSearchNavigation";
+import {
+  buildTopPanelsView,
+  buildAttentionPanelsView,
+  buildDialogsView,
+  buildDiagramHeaderView,
+  buildDiagramControlsView,
+} from "../features/process/stage/orchestration/buildDiagramViewModel";
+import ProcessStageShell from "../features/process/stage/ui/ProcessStageShell";
+import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
+import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
+import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
+import ProcessSaveAckToast from "../features/process/stage/ui/ProcessSaveAckToast";
+import ProcessToastViewport from "../features/process/stage/ui/ProcessToastViewport";
+import HybridPersistToast from "../features/process/hybrid/ui/HybridPersistToast";
+import { resolveProcessToastView } from "../features/process/stage/ui/processToastMessage";
+import {
+  buildRemoteUpdateToastKey,
+  buildRemoteUpdateToastMessage,
+  deriveRemoteVersionActor,
+} from "../features/process/stage/remoteSessionUpdateToast";
+import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
+import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
+import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
+import ProcessStageDeadSessionModal from "../features/process/stage/ui/ProcessStageDeadSessionModal";
+import { buildDeadSessionView } from "../features/process/stage/ui/deadSessionModel.js";
+import {
+  getSessionNotFoundInfo,
+  isSessionNotFound,
+  noteSessionApiResult,
+  subscribeSessionNotFound,
+} from "../features/session/sessionLiveness.js";
+import BpmnMergePanel from "../features/process/stage/ui/BpmnMergePanel";
+import { buildMergePanelView } from "../features/process/stage/ui/BpmnMergePanel.model.js";
+import BpmnVersionDiffOverlay from "../features/process/stage/ui/BpmnVersionDiffOverlay";
+import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
+import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
+import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
+import { buildSessionPresenceView } from "../features/process/stage/ui/sessionPresenceModel";
+import useSessionPresence, { normalizeSessionPresenceUsers } from "../features/process/stage/presence/useSessionPresence";
+import {
+  buildRemoteSaveHighlightView,
+  deriveRemoteChangedElementIds,
+} from "../features/process/stage/ui/remoteSaveHighlightModel";
+import {
+  applyUserFacingRevisionNumbers,
+  classifyRevisionSourceAction,
+  formatRevisionAuthor,
+  formatRevisionTimestampRu,
+  localizeRevisionSourceAction,
+  normalizeRevisionTimestampMs,
+  resolveRevisionHistoryUiSnapshot,
+  splitMeaningfulAndTechnicalRevisions,
+} from "../features/process/stage/ui/revisionHistoryUiModel";
+import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
+import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
+import { saveCoordinator } from "../features/session/saveCoordinator";
+import { reportSaveConflictEvent } from "../features/session/saveDiagnosticsTrail.js";
+import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
+import {
+  isDrawioXml,
+  mergeDrawioMeta,
+  normalizeDrawioMeta,
+  serializeDrawioMeta,
+} from "../features/process/drawio/drawioMeta";
+import {
+  buildDrawioAnchorImportDiagnostics,
+  collectBpmnNodeIdsFromDraft,
+} from "../features/process/drawio/drawioAnchors";
+import {
+  buildSessionCompanionAfterSave,
+  buildSessionCompanionAfterTemplateApply,
+  buildSessionCompanionAfterTraversal,
+  normalizeSessionCompanion,
+} from "../features/process/session-companion/sessionCompanionContracts.js";
+import { createSessionWorkspaceTruthOwner } from "../features/process/workspace-truth/sessionWorkspaceTruthOwner.js";
+import {
+  buildWorkspaceTruthSnapshotFromSession,
+  classifyWorkspaceSyncSource,
+  resolveWorkspaceMutationCommand,
+} from "../features/process/workspace-truth/sessionWorkspaceTruthOwnerBoundary.js";
+import { buildSessionCompanionJazzUiBridgeSnapshot } from "../features/process/session-companion/read/index.js";
+import { createSessionCompanionJazzAdapter } from "../features/process/session-companion/sessionCompanionJazzAdapter.js";
+import { createLiveDocumentJazzAdapter } from "../features/process/session-companion/liveDocumentJazzAdapter.js";
+import { appendRevisionToLedger } from "../features/process/session-companion/revisionLedgerModule.js";
+import { buildRevisionDiffView } from "../features/process/session-companion/revisionCompareModule.js";
+import {
+  buildSessionCompanionJazzScopeId,
+  resolveSessionCompanionLocalFirstActivation,
+} from "../features/process/session-companion/sessionCompanionLocalFirstPilot.js";
+import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
+import useTemplatesStore from "../features/templates/model/useTemplatesStore";
+import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
+import {
+  normalizeAttentionMarkers,
+  createAttentionMarker,
+  isAttentionMarkerUnread,
+  markAttentionMarkersSeen,
+  countAttentionMarkers,
+  countUnreadAttentionMarkers,
+} from "../features/process/attention/attentionMarkers";
+import {
+  AI_QUESTIONS_TIMEOUT_MS,
+  COMMAND_HISTORY_LIMIT,
+  DIAGRAM_PATHS_INTENT_VERSION,
+  NOTES_BATCH_APPLY_EVENT,
+  NOTES_COVERAGE_OPEN_EVENT,
+  buildRouteStepsFromInterviewPathSpec,
+  copyText,
+  coverageMarkerClass,
+  cssEscapeAttr,
+  dedupeDiagramHints,
+  downloadJsonFile,
+  downloadTextFile,
+  emitBatchOpsResult,
+  fnv1aHex,
+  getAiGenerateGate,
+  insertBetweenErrorMessage,
+  isEditableTarget,
+  isLocalSessionId,
+  logActorsTrace,
+  logAiOpsTrace,
+  logPlaybackDebug,
+  normalizeDebugRouteSteps,
+  normalizeDiagramMode,
+  normalizeFlowTierMetaMap,
+  normalizeNodePathMetaMap,
+  normalizePathSequenceKey,
+  normalizePathTier,
+  parseSequenceFlowsFromXml,
+  qualityImpactLabel,
+  qualityIssueCopy,
+  qualityLevelLabel,
+  readCommandHistory,
+  readCommandMode,
+  readDiagramMode,
+  readInsertBetweenCandidate,
+  readQualityProfile,
+  serializeHybridLayerMap,
+  shortErr,
+  shortHash,
+  snapshotScopeKey,
+  toArray,
+  toText,
+  withInjectedAiQuestionsPayload,
+  writeAiQuestionsMode,
+  writeCommandHistory,
+  writeCommandMode,
+  writeDiagramMode,
+  writeQualityMode,
+  writeQualityProfile,
+} from "../features/process/stage/utils/processStageHelpers";
+import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
+import {
+  readOverlayPanVisibility,
+  writeOverlayPanVisibility,
+} from "../features/process/bpmn/stage/utils/overlayPanVisibilityStorage.js";
+import {
+  ANALYTICS_MODULE_ACTIONS,
+  buildAnalyticsPath,
+} from "../app/processMapRouteModel.js";
+import { useAnalyticsRouteState } from "../features/analytics/useAnalyticsRouteState";
+
+const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 5000;
+const BPMN_VERSION_HEADERS_LIMIT = 50;
+const REMOTE_SESSION_SYNC_POLL_MS = 30000;
+const SAVE_ACK_TOAST_HIDE_MS = 4000;
+const SAVE_ACK_TOAST_ERROR_HIDE_MS = 8000;
+
+function logDiscussionFocusDiag(event, payload = {}) {
+  try {
+    // eslint-disable-next-line no-console
+    console.info("[DISCUSSION_FOCUS_DIAG]", event, payload);
+  } catch {
+  }
+}
+
+function readableBpmnLabel(...values) {
+  return readableBpmnText(...values);
+}
+
+function formatSnapshotTs(ts) {
+  return formatRevisionTimestampRu(ts);
+}
+
+function defaultCheckpointLabel(ts) {
+  return `Контрольная точка ${formatSnapshotTs(ts || Date.now())}`;
+}
+
+function snapshotLabel(item) {
+  const explicit = String(item?.label || "").trim();
+  if (explicit) return explicit;
+  const comment = String(item?.comment || "").trim();
+  if (comment) return comment;
+  const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
+  if (revisionNumber > 0) return `Версия ${revisionNumber}`;
+  if (item?.pinned) return defaultCheckpointLabel(item?.ts);
+  return "Без названия";
+}
+
+function formatSemanticDiffSummary(summary = {}) {
+  const parts = [];
+  const added = summary?.added || {};
+  const removed = summary?.removed || {};
+  const changed = summary?.changed || {};
+  const addedTotal = Number(added.tasks || 0) + Number(added.flows || 0) + Number(added.lanes || 0) + Number(added.subprocess || 0) + Number(added.conditions || 0);
+  const removedTotal = Number(removed.tasks || 0) + Number(removed.flows || 0) + Number(removed.lanes || 0) + Number(removed.subprocess || 0) + Number(removed.conditions || 0);
+  const changedTotal = Number(changed.tasks || 0) + Number(changed.flows || 0) + Number(changed.lanes || 0) + Number(changed.subprocess || 0) + Number(changed.conditions || 0);
+  if (addedTotal > 0) parts.push(`+${addedTotal}`);
+  if (removedTotal > 0) parts.push(`−${removedTotal}`);
+  if (changedTotal > 0) parts.push(`Δ${changedTotal}`);
+  return parts.join(" · ") || "";
+}
+
+function normalizeBpmnVersionListItem(itemRaw) {
+  const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+  const hasXml = Object.prototype.hasOwnProperty.call(item, "bpmn_xml")
+    || Object.prototype.hasOwnProperty.call(item, "xml");
+  const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
+  const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
+  const userFacingRevisionNumber = Number(
+    item?.user_facing_revision_number
+    || item?.userFacingRevisionNumber
+    || item?.revision_display_number
+    || item?.revisionDisplayNumber
+    || 0,
+  );
+  const createdAt = normalizeRevisionTimestampMs(
+    item?.created_at_ms
+    || item?.createdAtMs
+    || item?.created_at
+    || item?.createdAt
+    || item?.ts
+    || 0,
+  );
+  const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
+  const sourceClassification = classifyRevisionSourceAction(sourceAction);
+  const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
+  const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
+  const author = formatRevisionAuthor({
+    ...(asObject(item?.author)),
+    id: item?.author_id || item?.authorId || item?.created_by || item?.createdBy,
+    name: item?.author_name || item?.authorName,
+    email: item?.author_email || item?.authorEmail,
+    display: item?.author_display || item?.authorDisplay,
+  });
+  const id = String(item?.id || "").trim();
+  return {
+    ...item,
+    id,
+    xml,
+    ts: createdAt,
+    reason: normalizedSourceAction,
+    reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
+    reasonBucket: String(sourceClassification.bucket || "meaningful"),
+    isMeaningfulRevision: sourceClassification.isMeaningful !== false,
+    isTechnicalRevision: sourceClassification.isTechnical === true,
+    comment: importNote,
+    technicalRevisionNumber: versionNumber,
+    userFacingRevisionNumber,
+    revisionDisplayNumber: userFacingRevisionNumber,
+    revisionNumber: userFacingRevisionNumber || versionNumber,
+    rev: userFacingRevisionNumber || versionNumber,
+    sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
+    sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
+    sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
+    authorId: author.authorId,
+    authorName: author.authorName,
+    authorEmail: author.authorEmail,
+    authorLabel: author.label,
+    hasXml,
+    len: Number(item?.len || (hasXml ? xml.length : 0) || 0),
+  };
+}
+
+
+
+const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
+  event: "",
+  stage: "idle",
+  state: "saved",
+  at: 0,
+  reason: "",
+  sessionId: "",
+  rev: 0,
+  status: 0,
+  xmlBytes: 0,
+  errorCode: "",
+  error: "",
+  errorDetails: null,
+  conflict: null,
+});
+
+function readServerLastWriteFromSession(sessionLikeRaw = null) {
+  const sessionLike = sessionLikeRaw && typeof sessionLikeRaw === "object" ? sessionLikeRaw : {};
+  const actorUserId = String(
+    sessionLike.diagram_last_write_actor_user_id
+    || sessionLike.diagramLastWriteActorUserId
+    || "",
+  ).trim();
+  const actorLabel = String(
+    sessionLike.diagram_last_write_actor_label
+    || sessionLike.diagramLastWriteActorLabel
+    || actorUserId
+    || "",
+  ).trim();
+  const at = Number(
+    sessionLike.diagram_last_write_at
+    ?? sessionLike.diagramLastWriteAt
+    ?? 0,
+  );
+  const changedKeysRaw = (
+    Array.isArray(sessionLike.diagram_last_write_changed_keys)
+      ? sessionLike.diagram_last_write_changed_keys
+      : (
+        Array.isArray(sessionLike.diagramLastWriteChangedKeys)
+          ? sessionLike.diagramLastWriteChangedKeys
+          : []
+      )
+  );
+  const changedKeys = changedKeysRaw
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  return {
+    actorUserId,
+    actorLabel,
+    at: Number.isFinite(at) && at > 0 ? Math.round(at) : 0,
+    changedKeys,
+  };
+}
+
+function toNonNegativeVersion(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+}
+
+/**
+ * P-1 F2: лучшая локальная копия XML мёртвой сессии (для «Восстановить черновик»).
+ * Порядок: runtime-cache (last-known-good) → черновик fpc_bpmn_xml_ → snapshots.
+ */
+function readDeadSessionLocalXml(sidRaw, projectIdRaw = "") {
+  if (typeof window === "undefined") return "";
+  const sid = String(sidRaw || "").trim();
+  if (!sid) return "";
+  const readKey = (key) => {
+    try {
+      return window.localStorage?.getItem(key) || "";
+    } catch {
+      return "";
+    }
+  };
+  try {
+    const raw = readKey(`fpc_bpmn_runtime_cache:${sid}`);
+    if (raw) {
+      const xml = String(JSON.parse(raw)?.xml || "").trim();
+      if (xml) return xml;
+    }
+  } catch {
+    // fallthrough к следующему источнику
+  }
+  const draftXml = String(readKey(`fpc_bpmn_xml_${sid}`) || "").trim();
+  if (draftXml) return draftXml;
+  const pid = String(projectIdRaw || "").trim();
+  if (pid) {
+    try {
+      const raw = readKey(`fpc_bpmn_snapshots:snapshots:${pid}:${sid}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const items = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.items) ? parsed.items : []);
+      const withXml = items
+        .filter((item) => String(item?.xml || "").trim())
+        .sort((a, b) => Number(b?.ts || b?.created_at || 0) - Number(a?.ts || a?.created_at || 0));
+      const xml = String(withXml[0]?.xml || "").trim();
+      if (xml) return xml;
+    } catch {
+      // no-op
+    }
+  }
+  return "";
+}
+
+function ProcessStage({
+  sessionId,
+  activeProjectId,
+  activeProjectWorkspaceId = "",
+  activeProjectRouteContext = null,
+  workspaceActiveOrgId = "",
+  canInviteWorkspaceUsers = false,
+  canManageSharedTemplates = false,
+  locked,
+  draft,
+  onSessionSync,
+  onOpenWorkspaceSession,
+  onClearWorkspaceProject,
+  onCreateWorkspaceProject,
+  onCreateWorkspaceSession,
+  onOpenWorkspaceOrgSettings,
+  onUiStateChange,
+  processTabIntent,
+  aiGenerateIntent,
+  stepTimeUnit = "min",
+  reloadKey,
+  selectedBpmnElement,
+  onBpmnElementSelect,
+  onBpmnModelerExtensionChange = null,
+  onOpenElementNotes,
+  onOpenNotesDiscussions,
+  onElementNotesRemap,
+  onRecalculateRtiers,
+  snapshotRestoreNotice,
+  onSnapshotRestoreNoticeConsumed,
+  selectedPropertiesOverlayPreview = null,
+  propertiesOverlayAlwaysEnabled = false,
+  propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
+  v2OverlaysEnabled = false,
+  v2OverlaysExpanded = false,
+  drawioCompanionFocusIntent = null,
+  discussionLinkedElementFocusIntent = null,
+  onDiscussionLinkedElementFocusResult = null,
+  onNavigateToSubprocess = null,
+  childSessionDiscussionAggregates,
+  sessions = [],
+  subprocessBreadcrumbs = [],
+  onBreadcrumbNavigate = null,
+  onReturnToParent = null,
+  onBpmnSaved = null,
+  bpmnStageRef = null,
+  bpmnXmlCacheRef = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
+  tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
+  modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE»
+}) {
+  const sid = String(sessionId || "");
+
+  function isDescendantSessionSid(childSid, ancestorSid, sessionsList) {
+    if (!childSid || !ancestorSid || childSid === ancestorSid) return childSid === ancestorSid;
+    const byId = new Map();
+    for (const s of Array.isArray(sessionsList) ? sessionsList : []) {
+      const id = String(s?.session_id || s?.id || "").trim();
+      if (id) byId.set(id, s);
+    }
+    let current = childSid;
+    for (let i = 0; i < 50; i += 1) {
+      const s = byId.get(current);
+      const parent = String(s?.parent_session_id || s?.parentSessionId || "").trim();
+      if (!parent) return false;
+      if (parent === ancestorSid) return true;
+      current = parent;
+    }
+    return false;
+  }
+
+  const { user, activeOrgId } = useAuth();
+  const localBpmnRef = useRef(null);
+  const bpmnRef = bpmnStageRef || localBpmnRef;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const importInputRef = useRef(null);
+  const bpmnFileDragDepthRef = useRef(0);
+  const processBodyRef = useRef(null);
+  const toolbarMenuRef = useRef(null);
+  const toolbarMenuButtonRef = useRef(null);
+  const diagramActionBarRef = useRef(null);
+  const diagramPathPopoverRef = useRef(null);
+  const diagramHybridToolsPopoverRef = useRef(null);
+  const diagramPlanPopoverRef = useRef(null);
+  const diagramPlaybackPopoverRef = useRef(null);
+  const diagramLayersPopoverRef = useRef(null);
+  const diagramRobotMetaPopoverRef = useRef(null);
+  const diagramRobotMetaListRef = useRef(null);
+  const diagramSearchPopoverRef = useRef(null);
+  const diagramQualityPopoverRef = useRef(null);
+  const diagramOverflowPopoverRef = useRef(null);
+  const bpmnStageHostRef = useRef(null);
+  const [bpmnStageHostElement, setBpmnStageHostElement] = useState(null);
+  const bpmnStageHostRefCallback = useCallback((node) => {
+    bpmnStageHostRef.current = node;
+    setBpmnStageHostElement((prev) => (prev === node ? prev : node));
+  }, []);
+  const hybridLayerOverlayRef = useRef(null);
+  const hybridV2FileInputRef = useRef(null);
+  const drawioFileInputRef = useRef(null);
+  const lastDraftXmlHashRef = useRef("");
+  const lastSuccessfulPublishRef = useRef({ sessionId: "", atMs: 0, xmlHash: "" });
+  const lastAiGenerateIntentKeyRef = useRef("");
+  const lastDrawioCompanionFocusKeyRef = useRef("");
+  const lastDiscussionLinkedElementFocusKeyRef = useRef("");
+  const diagramSearchNavigationRequestRef = useRef(0);
+  const saveUploadLifecycleClearTimerRef = useRef(0);
+  const attentionPanelWasOpenRef = useRef(false);
+  const autoPassToastJobIdRef = useRef("");
+  const autoPassDocSyncInFlightRef = useRef(false);
+  const autoPassDocSyncLastAttemptMsRef = useRef(0);
+  const localStateResetSidRef = useRef("");
+  const diagramStateVersionSidRef = useRef("");
+  const diagramStateVersionRef = useRef(0);
+  const sessionTruthProbeSeqRef = useRef(0);
+  const sessionTruthProbeLastRef = useRef({
+    scopeKey: "",
+    sourceSignature: "",
+    saveSignature: "",
+    versionSignature: "",
+    templateSignature: "",
+    revisionSignature: "",
+  });
+  const remoteSessionPollInFlightRef = useRef(false);
+  const remoteSessionPollSeenDiagramStateVersionRef = useRef(0);
+  const bpmnVersionsActiveSessionRef = useRef("");
+  const bpmnVersionsOpenRef = useRef(false);
+  const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
+  const bpmnVersionDetailRequestRef = useRef(new Map());
+  const metaVersionHeadSeededRef = useRef(false);
+  const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
+  const [bpmnFileDragActive, setBpmnFileDragActive] = useState(false);
+  const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return readOverlayPanVisibility();
+  });
+  const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
+  const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
+  const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
+  // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
+  const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
+  const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
+  const [saveConflictReportKey, setSaveConflictReportKey] = useState("");
+  const [propertySaveConflictOpen, setPropertySaveConflictOpen] = useState(false);
+  const [propertySaveConflictFallback, setPropertySaveConflictFallback] = useState("");
+  // Org-drift (fix presence-404): presence-404 подтверждён как смена org,
+  // а не удаление — мягкий баннер вместо экрана мёртвой сессии.
+  const [presenceOrgDriftDismissed, setPresenceOrgDriftDismissed] = useState(false);
+  useEffect(() => { setPresenceOrgDriftDismissed(false); }, [sid]);
+
+  const [mergePanelOpen, setMergePanelOpen] = useState(false);
+  const [mergePanelBusy, setMergePanelBusy] = useState(false);
+  const [mergePanelSource, setMergePanelSource] = useState("");
+  const [mergePanelLocalXml, setMergePanelLocalXml] = useState("");
+  const [mergePanelServerXml, setMergePanelServerXml] = useState("");
+  const [mergePanelServerVersion, setMergePanelServerVersion] = useState(0);
+  const [mergePanelActorLabel, setMergePanelActorLabel] = useState("");
+  const [mergeDiffOpen, setMergeDiffOpen] = useState(false);
+  const [historyDiffOpen, setHistoryDiffOpen] = useState(false);
+  const [historyDiffLocalXml, setHistoryDiffLocalXml] = useState("");
+  const [historyDiffVersionXml, setHistoryDiffVersionXml] = useState("");
+  const [historyDiffVersionLabel, setHistoryDiffVersionLabel] = useState("");
+  const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
+  const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
+  const [bpmnVersionTruthState, setBpmnVersionTruthState] = useState({
+    currentSessionPayloadHash: "",
+    latestUserVersionSessionPayloadHash: "",
+    hasSessionChangesSinceLatestBpmnVersion: false,
+  });
+  const [versionsUserFacingCount, setVersionsUserFacingCount] = useState(0);
+  const [versionsServerEntriesCount, setVersionsServerEntriesCount] = useState(0);
+  const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
+  const [versionsTotalCount, setVersionsTotalCount] = useState(0);
+  const [versionsHasMore, setVersionsHasMore] = useState(false);
+  const [versionsLoadingMore, setVersionsLoadingMore] = useState(false);
+  const [versionsIncludeTechnical, setVersionsIncludeTechnical] = useState(false);
+  const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
+  const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
+  const [remoteSaveHighlightBadge, setRemoteSaveHighlightBadge] = useState(null);
+  const [remoteSaveHighlightBusy, setRemoteSaveHighlightBusy] = useState(false);
+  const sessionWorkspaceTruthOwnerRef = useRef(null);
+  const sessionWorkspaceTruthOwnerSidRef = useRef("");
+  bpmnVersionsActiveSessionRef.current = normalizeDiagramSessionId(sid);
+
+  const buildOwnerSnapshot = useCallback((sessionLikeRaw, source = "session_sync") => {
+    return buildWorkspaceTruthSnapshotFromSession(sessionLikeRaw, {
+      fallbackSessionId: sid,
+      source,
+    });
+  }, [sid]);
+
+  const ensureSessionWorkspaceTruthOwner = useCallback(() => {
+    const currentSid = normalizeDiagramSessionId(sid);
+    if (!currentSid) {
+      sessionWorkspaceTruthOwnerRef.current = null;
+      sessionWorkspaceTruthOwnerSidRef.current = "";
+      return null;
+    }
+    if (
+      sessionWorkspaceTruthOwnerRef.current
+      && sessionWorkspaceTruthOwnerSidRef.current === currentSid
+    ) {
+      return sessionWorkspaceTruthOwnerRef.current;
+    }
+    const durableSnapshot = buildOwnerSnapshot({
+      id: currentSid,
+      session_id: currentSid,
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      diagram_state_version: Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+    }, "draft_seed");
+    sessionWorkspaceTruthOwnerRef.current = createSessionWorkspaceTruthOwner({
+      sessionId: currentSid,
+      durableSnapshot,
+    });
+    sessionWorkspaceTruthOwnerSidRef.current = currentSid;
+    return sessionWorkspaceTruthOwnerRef.current;
+  }, [
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    sid,
+    toText,
+  ]);
+
+  const resolveDraftDiagramStateVersion = useCallback(() => {
+    return normalizeDiagramStateVersion(draft?.diagram_state_version ?? draft?.diagramStateVersion);
+  }, [draft?.diagramStateVersion, draft?.diagram_state_version]);
+
+  useEffect(() => {
+    apiGetFeatureFlags().then((r) => {
+      if (r.ok && r.flags) {
+        setFeatureFlags(r.flags);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    writeOverlayPanVisibility(showOverlaysDuringPan);
+  }, [showOverlaysDuringPan]);
+
+  useEffect(() => {
+    const currentSid = String(sid || "");
+    const nextVersion = resolveDraftDiagramStateVersion();
+    if (!currentSid) {
+      diagramStateVersionSidRef.current = "";
+      diagramStateVersionRef.current = 0;
+      return;
+    }
+    const nextContext = rememberMonotonicDiagramStateVersion({
+      activeSessionId: currentSid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+      incomingSessionId: currentSid,
+      incomingVersion: nextVersion,
+    });
+    diagramStateVersionSidRef.current = nextContext.sessionId;
+    diagramStateVersionRef.current = nextContext.version;
+  }, [resolveDraftDiagramStateVersion, sid]);
+
+  const getBaseDiagramStateVersion = useCallback(() => {
+    const baseVersion = resolveDiagramBaseVersionForActiveSession({
+      activeSessionId: sid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+    });
+    if (baseVersion === null) return undefined;
+    return baseVersion;
+  }, [sid]);
+
+  const rememberDiagramStateVersion = useCallback((rawVersion, options = {}) => {
+    const normalized = normalizeDiagramStateVersion(rawVersion);
+    if (normalized === null) return null;
+    const optionSid = normalizeDiagramSessionId(options?.sessionId || options?.sid || "");
+    const currentSid = normalizeDiagramSessionId(sid);
+    const targetSid = optionSid || currentSid;
+    if (!isDiagramVersionSessionMatch(currentSid, targetSid)) return null;
+    const nextContext = rememberMonotonicDiagramStateVersion({
+      activeSessionId: currentSid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+      incomingSessionId: targetSid,
+      incomingVersion: normalized,
+    });
+    diagramStateVersionSidRef.current = nextContext.sessionId;
+    diagramStateVersionRef.current = nextContext.version;
+    return Math.round(Number(diagramStateVersionRef.current) || 0);
+  }, [sid]);
+
+  const syncDiagramStateVersionFromSession = useCallback((sessionLikeRaw, options = {}) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(
+      sessionLike?.session_id
+      || sessionLike?.id
+      || options?.sessionId
+      || sid
+      || "",
+    );
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return null;
+    const rawVersion = sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion;
+    return rememberDiagramStateVersion(rawVersion, { sessionId: currentSid });
+  }, [asObject, rememberDiagramStateVersion, sid]);
+
+  const onSessionSyncWithVersion = useCallback((sessionLikeRaw) => {
+    const sessionLike = asObject(sessionLikeRaw);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const sessionSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || sid || "");
+    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) return false;
+    const source = toText(sessionLike?._sync_source || sessionLike?._source || "session_sync");
+    const owner = ensureSessionWorkspaceTruthOwner();
+    let payload = sessionLike;
+    if (owner && sessionLike && typeof sessionLike === "object") {
+      const sanitizeResult = owner.sanitizeIncomingSessionSyncPayload(sessionLike, { source });
+      payload = asObject(sanitizeResult?.payload);
+      const sourceClass = classifyWorkspaceSyncSource(source);
+      const snapshot = buildOwnerSnapshot(payload, source || "session_sync");
+      const hasXml = String(snapshot?.bpmn_xml || "").trim().length > 0;
+      if (hasXml && sourceClass.isPrimaryAcceptedSource) {
+        owner.saveSessionAccepted({
+          source,
+          primaryAck: snapshot,
+          durableSnapshot: snapshot,
+        });
+      } else if (hasXml && sourceClass.isDurableReloadSource) {
+        owner.reloadSession({
+          source,
+          durableSnapshot: snapshot,
+        });
+      } else if (hasXml && sourceClass.isPrimaryTruthSource && !sourceClass.isProjectionSource) {
+        owner.reloadSession({
+          source: `${source || "session_sync"}:truth_sync`,
+          durableSnapshot: snapshot,
+        });
+      }
+    }
+    syncDiagramStateVersionFromSession(payload);
+    onSessionSync?.(payload);
+    return true;
+  }, [
+    asObject,
+    buildOwnerSnapshot,
+    ensureSessionWorkspaceTruthOwner,
+    onSessionSync,
+    sid,
+    syncDiagramStateVersionFromSession,
+    toText,
+  ]);
+
+  useEffect(() => {
+    const owner = ensureSessionWorkspaceTruthOwner();
+    if (!owner) return;
+    const currentSid = normalizeDiagramSessionId(sid);
+    if (!currentSid) return;
+    const draftSnapshot = buildOwnerSnapshot({
+      id: currentSid,
+      session_id: currentSid,
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      diagram_state_version: Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+    }, "draft_hydrate");
+    const accepted = asObject(owner.getState()?.acceptedSnapshot);
+    const acceptedXml = String(accepted?.xml || "");
+    const draftXml = String(draftSnapshot?.bpmn_xml || "");
+    const acceptedVersion = Number(accepted?.xmlVersion || 0);
+    const draftVersion = Number(draftSnapshot?.bpmn_xml_version || 0);
+    const shouldHydrateOwner = (
+      (draftXml.trim() && draftXml !== acceptedXml)
+      || (draftVersion > 0 && draftVersion > acceptedVersion)
+    );
+    if (shouldHydrateOwner) {
+      owner.reloadSession({
+        source: "draft_hydrate",
+        durableSnapshot: draftSnapshot,
+      });
+    }
+  }, [
+    asObject,
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    ensureSessionWorkspaceTruthOwner,
+    sid,
+    toText,
+  ]);
+
+  const {
+    genBusy,
+    setGenBusy,
+    genErr,
+    setGenErr,
+    infoMsg,
+    setInfoMsg,
+    aiBottleneckOn,
+    setAiBottleneckOn,
+    aiStepBusy,
+    setAiStepBusy,
+    isManualSaveBusy,
+    setIsManualSaveBusy,
+    apiClarifyHints,
+    setApiClarifyHints,
+    apiClarifyList,
+    setApiClarifyList,
+    llmClarifyList,
+    setLlmClarifyList,
+    apiClarifyMeta,
+    setApiClarifyMeta,
+    versionsOpen,
+    setVersionsOpen,
+    versionsBusy,
+    setVersionsBusy,
+    versionsList,
+    setVersionsList,
+    versionsListAll,
+    setVersionsListAll,
+    versionsLoadState,
+    setVersionsLoadState,
+    versionsLoadError,
+    setVersionsLoadError,
+    previewSnapshotId,
+    setPreviewSnapshotId,
+    showTechnicalVersions,
+    setShowTechnicalVersions,
+    diffOpen,
+    setDiffOpen,
+    diffBaseSnapshotId,
+    setDiffBaseSnapshotId,
+    diffTargetSnapshotId,
+    setDiffTargetSnapshotId,
+    commandModeEnabled,
+    setCommandModeEnabled,
+    diagramMode,
+    setDiagramMode,
+    qualityProfileId,
+    setQualityProfileId,
+    commandInput,
+    setCommandInput,
+    commandBusy,
+    setCommandBusy,
+    commandStatus,
+    setCommandStatus,
+    commandHistory,
+    setCommandHistory,
+    qualityIssueFocusKey,
+    setQualityIssueFocusKey,
+    qualityAutoFixOpen,
+    setQualityAutoFixOpen,
+    qualityAutoFixBusy,
+    setQualityAutoFixBusy,
+    aiQuestionsBusy,
+    setAiQuestionsBusy,
+    aiQuestionsStatus,
+    setAiQuestionsStatus,
+    insertBetweenOpen,
+    setInsertBetweenOpen,
+    insertBetweenBusy,
+    setInsertBetweenBusy,
+    insertBetweenName,
+    setInsertBetweenName,
+    insertBetweenDraft,
+    setInsertBetweenDraft,
+    toolbarMenuOpen,
+    setToolbarMenuOpen,
+    saveDirtyHint,
+    setSaveDirtyHint,
+    attentionOpen,
+    setAttentionOpen,
+    attentionFilters,
+    setAttentionFilters,
+    attentionMarkerMessage,
+    setAttentionMarkerMessage,
+    attentionMarkerSaving,
+    setAttentionMarkerSaving,
+    attentionSessionLastOpenedAt,
+    setAttentionSessionLastOpenedAt,
+    autoPassJobState,
+    setAutoPassJobState,
+    autoPassPrecheck,
+    setAutoPassPrecheck,
+    autoPassPrecheckReqSeqRef,
+    diagramActionPathOpen,
+    setDiagramActionPathOpen,
+    diagramActionHybridToolsOpen,
+    setDiagramActionHybridToolsOpen,
+    diagramActionPlanOpen,
+    setDiagramActionPlanOpen,
+    diagramActionPlaybackOpen,
+    setDiagramActionPlaybackOpen,
+    diagramActionLayersOpen,
+    setDiagramActionLayersOpen,
+    diagramActionRobotMetaOpen,
+    setDiagramActionRobotMetaOpen,
+    diagramActionQualityOpen,
+    setDiagramActionQualityOpen,
+    diagramActionSearchOpen,
+    setDiagramActionSearchOpen,
+    diagramActionOverflowOpen,
+    setDiagramActionOverflowOpen,
+    drawioSelectedElementId,
+    setDrawioSelectedElementId,
+    pathHighlightEnabled,
+    setPathHighlightEnabled,
+    pathHighlightTier,
+    setPathHighlightTier,
+    pathHighlightSequenceKey,
+    setPathHighlightSequenceKey,
+    robotMetaOverlayEnabled,
+    setRobotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    setRobotMetaOverlayFilters,
+    robotMetaListOpen,
+    setRobotMetaListOpen,
+    robotMetaListTab,
+    setRobotMetaListTab,
+    robotMetaListSearch,
+    setRobotMetaListSearch,
+    qualityOverlayFilters,
+    setQualityOverlayFilters,
+    qualityOverlayListKey,
+    setQualityOverlayListKey,
+    qualityOverlaySearch,
+    setQualityOverlaySearch,
+    diagramPathsIntent,
+    setDiagramPathsIntent,
+    executionPlanPreview,
+    setExecutionPlanPreview,
+    executionPlanBusy,
+    setExecutionPlanBusy,
+    executionPlanSaveBusy,
+    setExecutionPlanSaveBusy,
+    executionPlanError,
+    setExecutionPlanError,
+    resetLocalStateForSession,
+  } = useProcessStageLocalState({
+    sid,
+    readCommandHistory,
+    readCommandMode,
+    readDiagramMode,
+    readQualityProfile,
+  });
+  bpmnVersionsOpenRef.current = versionsOpen;
+  const {
+    hybridLayerDragRef,
+    hybridLayerMapRef,
+    hybridLayerPersistedMapRef,
+    hybridAutoFocusGuardRef,
+    hybridV2DocRef,
+    hybridV2PersistedDocRef,
+    drawioMetaRef,
+    drawioPersistedMetaRef,
+    hybridV2MigrationGuardRef,
+    hybridUiPrefs,
+    setHybridUiPrefs,
+    hybridPeekActive,
+    setHybridPeekActive,
+    hybridLayerByElementId,
+    setHybridLayerByElementId,
+    hybridLayerActiveElementId,
+    setHybridLayerActiveElementId,
+    hybridV2Doc,
+    setHybridV2Doc,
+    hybridV2BindPickMode,
+    setHybridV2BindPickMode,
+    drawioMeta,
+    setDrawioMeta,
+    drawioJazzAdapter,
+    drawioLocalFirstAdapterMode,
+    drawioVisibilityContract,
+    drawioEditorOpen,
+    setDrawioEditorOpen,
+    hybridLayerMapFromDraft,
+    hybridStorageKey,
+    hybridVisible,
+    drawioVisible,
+    overlayLayerVisible,
+    hybridModeEffective,
+    hybridOpacityValue,
+  } = useHybridStore({
+    sid,
+    projectId: draft?.project_id || draft?.projectId || activeProjectId,
+    draftBpmnMeta: draft?.bpmn_meta,
+    userId: user?.id,
+  });
+  const [sessionCompanionJazzMeta, setSessionCompanionJazzMeta] = useState(() => normalizeSessionCompanion({}));
+  const sessionCompanionActivation = useMemo(
+    () => resolveSessionCompanionLocalFirstActivation(),
+    [sid],
+  );
+  const sessionCompanionLocalFirstAdapterMode = useMemo(
+    () => (sessionCompanionActivation?.unsupportedState === true ? "legacy" : toText(sessionCompanionActivation?.adapterModeEffective) || "legacy"),
+    [sessionCompanionActivation?.adapterModeEffective, sessionCompanionActivation?.unsupportedState],
+  );
+  const sessionCompanionJazzPeer = useMemo(() => (
+    sessionCompanionLocalFirstAdapterMode === "jazz" ? toText(sessionCompanionActivation?.jazzPeer) : ""
+  ), [sessionCompanionActivation?.jazzPeer, sessionCompanionLocalFirstAdapterMode]);
+  const sessionCompanionJazzScopeId = useMemo(
+    () => buildSessionCompanionJazzScopeId(draft?.project_id || draft?.projectId || activeProjectId, sid),
+    [activeProjectId, draft?.projectId, draft?.project_id, sid],
+  );
+  const sessionCompanionJazzAdapter = useMemo(() => {
+    if (sessionCompanionLocalFirstAdapterMode !== "jazz" || !sessionCompanionJazzScopeId) return null;
+    return createSessionCompanionJazzAdapter({
+      peer: sessionCompanionJazzPeer,
+      scopeId: sessionCompanionJazzScopeId,
+    });
+  }, [sessionCompanionJazzPeer, sessionCompanionJazzScopeId, sessionCompanionLocalFirstAdapterMode]);
+  const liveDocumentJazzAdapter = useMemo(() => createLiveDocumentJazzAdapter({
+    adapterMode: sessionCompanionLocalFirstAdapterMode,
+    jazzAdapter: sessionCompanionJazzAdapter,
+    legacySnapshotRaw: asObject(asObject(draft?.bpmn_meta).session_companion_v1),
+  }), [
+    draft?.bpmn_meta,
+    sessionCompanionJazzAdapter,
+    sessionCompanionLocalFirstAdapterMode,
+  ]);
+  useEffect(() => {
+    if (!liveDocumentJazzAdapter.isJazzBacked) {
+      setSessionCompanionJazzMeta(normalizeSessionCompanion({}));
+      return undefined;
+    }
+    setSessionCompanionJazzMeta(normalizeSessionCompanion(liveDocumentJazzAdapter.readLiveSnapshot()));
+    const off = liveDocumentJazzAdapter.subscribeLiveSnapshot((nextSnapshot) => {
+      setSessionCompanionJazzMeta(normalizeSessionCompanion(nextSnapshot));
+    });
+    return () => {
+      off?.();
+    };
+  }, [liveDocumentJazzAdapter]);
+  const sessionCompanionLegacyMeta = useMemo(
+    () => normalizeSessionCompanion(asObject(asObject(draft?.bpmn_meta).session_companion_v1)),
+    [draft?.bpmn_meta],
+  );
+  const sessionCompanionBridgeSnapshot = useMemo(() => buildSessionCompanionJazzUiBridgeSnapshot({
+    legacyCompanionRaw: sessionCompanionLegacyMeta,
+    jazzCompanionRaw: sessionCompanionJazzMeta,
+    sessionCompanionAdapterMode: sessionCompanionLocalFirstAdapterMode,
+    activationContextRaw: sessionCompanionActivation,
+    durableSessionRaw: {
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint),
+      updated_at: toText(draft?.updated_at || draft?.updatedAt),
+    },
+    liveDraftRaw: {
+      bpmn_xml: toText(draft?.bpmn_xml || ""),
+      bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+      bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint),
+    },
+    uiSaveStateRaw: {
+      saveDirtyHint: saveDirtyHint === true,
+      isManualSaveBusy: isManualSaveBusy === true,
+    },
+  }), [
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.updatedAt,
+    draft?.updated_at,
+    draft?.version,
+    isManualSaveBusy,
+    saveDirtyHint,
+    sessionCompanionActivation,
+    sessionCompanionJazzMeta,
+    sessionCompanionLegacyMeta,
+    sessionCompanionLocalFirstAdapterMode,
+  ]);
+  const hasSession = !!sid;
+  const {
+    analyticsHubRoute,
+    productActionsRegistryRoute,
+    propertiesRegistryRoute,
+    setAnalyticsHubRoute,
+    setProductActionsRegistryRoute,
+    setPropertiesRegistryRoute,
+    openAnalyticsHub,
+    closeAnalyticsHub,
+    openProductActionsRegistry,
+    closeProductActionsRegistry,
+    openPropertiesRegistry,
+    closePropertiesRegistry,
+  } = useAnalyticsRouteState({
+    sessionId: sid,
+    projectId: activeProjectId,
+    workspaceId: activeProjectWorkspaceId,
+  });
+  const openProductActionsRegistryProject = useCallback((projectLike = {}) => {
+    const project_id = toText(projectLike?.projectId || projectLike?.project_id);
+    if (!project_id) return;
+    openProductActionsRegistry({
+      scope: "project",
+      workspaceId: projectLike?.workspaceId || projectLike?.workspace_id || productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId,
+      projectId: project_id,
+    });
+  }, [activeProjectWorkspaceId, openProductActionsRegistry, productActionsRegistryRoute.workspaceId]);
+  const openProductActionsRegistrySession = useCallback(async (sessionLike = {}, options = {}) => {
+    const session_id = toText(sessionLike?.session_id || sessionLike?.id);
+    if (!session_id || typeof onOpenWorkspaceSession !== "function") return;
+    const project_id = toText(sessionLike?.project_id || sessionLike?.projectId || activeProjectId);
+    const workspace_id = toText(sessionLike?.workspace_id || sessionLike?.workspaceId || productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId);
+    const result = await onOpenWorkspaceSession({
+      ...sessionLike,
+      id: session_id,
+      session_id,
+      project_id,
+      workspace_id,
+    }, {
+      ...options,
+      openTab: options?.openTab || "diagram",
+      source: options?.source || "product_actions_registry",
+    });
+    if (result?.ok === false || typeof window === "undefined") return;
+    const nextSessionId = toText(result?.sessionId || session_id);
+    if (!nextSessionId) return;
+    const nextUrl = buildAnalyticsPath("session", nextSessionId, ANALYTICS_MODULE_ACTIONS);
+    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession]);
+  const saveAckToastTimerRef = useRef(0);
+  const processStatusToastLastSignatureRef = useRef("");
+  const saveLifecycleToastLastSignatureRef = useRef("");
+  const remoteUpdateToastLastShownKeyRef = useRef("");
+  const remoteUpdateToastDismissedKeyRef = useRef("");
+  const [saveAckToast, setSaveAckToast] = useState({
+    visible: false,
+    tone: "success",
+    message: "",
+    description: "",
+    actionLabel: "",
+    onAction: null,
+    actionDisabled: false,
+    persistent: false,
+    onDismiss: null,
+    kind: "",
+    remoteUpdateKey: "",
+  });
+  const [manualSaveIntent, setManualSaveIntent] = useState("");
+  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success", sourceRaw = "", optionsRaw = {}) => {
+    const message = toText(messageRaw);
+    if (!message) return;
+    const options = optionsRaw && typeof optionsRaw === "object" ? optionsRaw : {};
+    const requestedKind = toText(options.kind);
+    const activeRemoteUpdateKey = remoteUpdateToastLastShownKeyRef.current;
+    if (
+      requestedKind !== "remote_update"
+      && activeRemoteUpdateKey
+      && remoteUpdateToastDismissedKeyRef.current !== activeRemoteUpdateKey
+    ) {
+      return;
+    }
+    const shouldResolveMessage = options.resolveMessage !== false;
+    const toastView = shouldResolveMessage
+      ? resolveProcessToastView({
+        message,
+        tone: toneRaw,
+        source: sourceRaw,
+      })
+      : {
+        message,
+        tone: toneRaw,
+      };
+    const tone = toText(toastView.tone) || "success";
+    const persistent = options.persistent === true;
+    if (typeof window !== "undefined" && saveAckToastTimerRef.current) {
+      window.clearTimeout(saveAckToastTimerRef.current);
+      saveAckToastTimerRef.current = 0;
+    }
+    const isErrorOrWarning = tone === "error" || tone === "warning";
+    setSaveAckToast({
+      visible: true,
+      tone,
+      message: toastView.message,
+      description: toText(options.description),
+      actionLabel: toText(options.actionLabel),
+      onAction: typeof options.onAction === "function" ? options.onAction : null,
+      actionDisabled: options.actionDisabled === true,
+      persistent,
+      onDismiss: isErrorOrWarning
+        ? () => setSaveAckToast((prev) => ({ ...prev, visible: false }))
+        : (typeof options.onDismiss === "function" ? options.onDismiss : null),
+      kind: requestedKind,
+      remoteUpdateKey: toText(options.remoteUpdateKey),
+    });
+    if (persistent || typeof window === "undefined") return;
+    const hideMs = isErrorOrWarning ? SAVE_ACK_TOAST_ERROR_HIDE_MS : SAVE_ACK_TOAST_HIDE_MS;
+    saveAckToastTimerRef.current = window.setTimeout(() => {
+      setSaveAckToast((prev) => ({
+        ...prev,
+        visible: false,
+      }));
+      saveAckToastTimerRef.current = 0;
+    }, hideMs);
+  }, [toText]);
+  useEffect(() => () => {
+    if (typeof window === "undefined") return;
+    if (!saveAckToastTimerRef.current) return;
+    window.clearTimeout(saveAckToastTimerRef.current);
+    saveAckToastTimerRef.current = 0;
+  }, []);
+  useEffect(() => {
+    const message = toText(genErr || infoMsg);
+    if (!message) {
+      processStatusToastLastSignatureRef.current = "";
+      return;
+    }
+    const tone = genErr ? "error" : "info";
+    const signature = `${tone}:${message}`;
+    if (processStatusToastLastSignatureRef.current === signature) return;
+    processStatusToastLastSignatureRef.current = signature;
+    showSaveAckToast(message, tone);
+  }, [genErr, infoMsg, showSaveAckToast, toText]);
+  const currentUserId = toText(user?.id || user?.user_id || user?.email);
+  const sessionPresence = useSessionPresence(hasSession ? sid : "", user, {
+    surface: "process_stage",
+    skipMountHeartbeat: true,
+  });
+  const [sessionMeta, setSessionMeta] = useState(null);
+
+  const sessionCompanionMetaLive = useMemo(() => {
+    return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
+  }, [sessionCompanionBridgeSnapshot.companion]);
+  const sessionSaveReadSnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.save),
+    [sessionCompanionBridgeSnapshot.save],
+  );
+  const saveUploadStatus = useMemo(
+    () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
+    [saveUploadLifecycleEvent],
+  );
+  useEffect(() => {
+    if (isManualSaveBusy === true) return;
+    const state = toText(saveUploadStatus?.state);
+    const shouldNotify = (
+      state === "conflict"
+      || state === "save_failed"
+      || saveUploadLifecycleEvent?.staleRetryApplied === true
+    );
+    if (!shouldNotify) return;
+    const message = toText(saveUploadStatus?.title || saveUploadStatus?.label || saveUploadStatus?.error);
+    if (!message) return;
+    const signature = `${state}:${Number(saveUploadLifecycleEvent?.at || 0)}:${message}`;
+    if (saveLifecycleToastLastSignatureRef.current === signature) return;
+    saveLifecycleToastLastSignatureRef.current = signature;
+    const tone = state === "conflict"
+      ? "warning"
+      : (state === "save_failed" ? "error" : "info");
+    const source = state === "conflict" ? "conflict" : "save";
+    showSaveAckToast(message, tone, source);
+  }, [
+    isManualSaveBusy,
+    saveUploadLifecycleEvent?.at,
+    saveUploadLifecycleEvent?.staleRetryApplied,
+    saveUploadStatus?.error,
+    saveUploadStatus?.label,
+    saveUploadStatus?.state,
+    saveUploadStatus?.title,
+    showSaveAckToast,
+    toText,
+  ]);
+  useEffect(() => {
+    return subscribePropertySaveEvents((event) => {
+      const type = toText(event?.type);
+      if (type === "start") {
+        showSaveAckToast("Сохранение…", "info", "save");
+        return;
+      }
+      if (type === "success") {
+        showSaveAckToast(event?.local ? "Сохранено локально" : "Сохранено", "success", "save");
+        return;
+      }
+      if (type === "conflict") {
+        showSaveAckToast("Конфликт версий", "warning", "conflict");
+        setPropertySaveConflictOpen(true);
+        setPropertySaveConflictFallback(toText(event?.error) || "Конфликт версий");
+        return;
+      }
+      if (type === "error") {
+        const errorText = toText(event?.error);
+        showSaveAckToast(errorText ? `Ошибка сохранения: ${errorText}` : "Ошибка сохранения", "error", "save");
+      }
+    });
+  }, [sid, showSaveAckToast, toText]);
+  const sessionPresenceView = useMemo(() => buildSessionPresenceView({
+    actorsRaw: sessionPresence.activeUsers,
+    currentUserIdRaw: currentUserId,
+    nowMs: sessionPresence.nowMs,
+    ttlMs: sessionPresence.ttlMs,
+  }), [currentUserId, sessionPresence.activeUsers, sessionPresence.nowMs, sessionPresence.ttlMs]);
+  const leaveNavigationRisk = useMemo(
+    () => deriveLeaveNavigationRisk({
+      hasSession,
+      saveSnapshotRaw: sessionSaveReadSnapshot,
+      saveUploadStatusRaw: saveUploadStatus,
+    }),
+    [hasSession, saveUploadStatus, sessionSaveReadSnapshot],
+  );
+  const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
+  // P-1 F2: dead-session recovery — кандидат-замена + локальный черновик.
+  const [deadSessionRecovery, setDeadSessionRecovery] = useState({ replacement: null, hasLocalDraft: false, busy: false });
+  useEffect(() => {
+    if (!deadSessionInfo || !sid) {
+      setDeadSessionRecovery({ replacement: null, hasLocalDraft: false, busy: false });
+      return undefined;
+    }
+    let cancelled = false;
+    const localXml = readDeadSessionLocalXml(sid, activeProjectId);
+    setDeadSessionRecovery((prev) => ({ ...prev, replacement: null, hasLocalDraft: !!localXml, busy: false }));
+    const pid = toText(activeProjectId);
+    if (pid) {
+      (async () => {
+        try {
+          const result = await apiListProjectSessions(pid);
+          if (cancelled || !result?.ok) return;
+          const items = Array.isArray(result.sessions) ? result.sessions : [];
+          const candidate = items
+            .filter((item) => {
+              const itemId = toText(item?.id || item?.session_id);
+              return itemId && itemId !== toText(sid);
+            })
+            .sort((a, b) => Number(b?.updated_at || b?.updatedAt || b?.created_at || 0)
+              - Number(a?.updated_at || a?.updatedAt || a?.created_at || 0))[0] || null;
+          if (!cancelled && candidate) {
+            setDeadSessionRecovery((prev) => ({ ...prev, replacement: candidate }));
+          }
+        } catch {
+          // best-effort: кнопка «Открыть актуальную» просто не появится
+        }
+      })();
+    }
+    return () => { cancelled = true; };
+  }, [deadSessionInfo, sid, activeProjectId, toText]);
+  const handleDeadSessionOpenCurrent = useCallback(() => {
+    const candidate = deadSessionRecovery.replacement;
+    const nextId = toText(candidate?.id || candidate?.session_id);
+    if (!nextId || typeof onOpenWorkspaceSession !== "function") return;
+    onOpenWorkspaceSession({
+      id: nextId,
+      session_id: nextId,
+      project_id: toText(activeProjectId),
+      workspace_id: toText(activeProjectWorkspaceId),
+    }, { openTab: "diagram", source: "dead_session_open_current", bypassLeaveGuard: true });
+  }, [deadSessionRecovery.replacement, onOpenWorkspaceSession, activeProjectId, activeProjectWorkspaceId, toText]);
+  const handleDeadSessionRestoreDraft = useCallback(async () => {
+    const pid = toText(activeProjectId);
+    const xml = readDeadSessionLocalXml(sid, pid);
+    if (!pid || !xml || deadSessionRecovery.busy) return;
+    setDeadSessionRecovery((prev) => ({ ...prev, busy: true }));
+    try {
+      const baseTitle = toText(draft?.title || draft?.name) || "process";
+      const created = await apiCreateProjectSession(pid, "", `${baseTitle} (восстановлено)`);
+      const newSid = toText(created?.session_id || created?.session?.id);
+      if (!created?.ok || !newSid) throw new Error(created?.error || "create_failed");
+      const baseVersion = Number(created?.session?.diagram_state_version ?? 0);
+      const saved = await apiPutBpmnXml(newSid, xml, {
+        baseDiagramStateVersion: Number.isFinite(baseVersion) && baseVersion >= 0 ? baseVersion : 0,
+        sourceAction: "dead_session_restore_draft",
+      });
+      if (!saved?.ok) throw new Error(saved?.error || "save_failed");
+      if (typeof onOpenWorkspaceSession === "function") {
+        onOpenWorkspaceSession({
+          id: newSid,
+          session_id: newSid,
+          project_id: pid,
+          workspace_id: toText(activeProjectWorkspaceId),
+        }, { openTab: "diagram", source: "dead_session_restore_draft", bypassLeaveGuard: true });
+      }
+    } catch (err) {
+      setGenErr?.(`Не удалось восстановить черновик: ${String(err?.message || err)}`);
+    } finally {
+      setDeadSessionRecovery((prev) => ({ ...prev, busy: false }));
+    }
+  }, [activeProjectId, activeProjectWorkspaceId, deadSessionRecovery.busy, draft?.title, draft?.name, onOpenWorkspaceSession, sid, toText]);
+  useEffect(() => {
+    // P-1 D3: пересчитать при смене сессии + подписаться на пометки из любых
+    // подсистем (presence, remote-poll, save, loader).
+    setDeadSessionInfo(getSessionNotFoundInfo(sid));
+    if (!sid) return undefined;
+    return subscribeSessionNotFound((deadSid, info) => {
+      if (deadSid === sid) setDeadSessionInfo(info || getSessionNotFoundInfo(sid));
+    });
+  }, [sid]);
+
+  const deadSessionView = useMemo(() => buildDeadSessionView({
+    info: deadSessionInfo,
+    sessionTitle: toText(draft?.title || draft?.name),
+    canCreate: typeof onCreateWorkspaceSession === "function",
+    hasReplacement: !!deadSessionRecovery.replacement,
+    hasLocalDraft: deadSessionRecovery.hasLocalDraft === true,
+  }), [deadSessionInfo, deadSessionRecovery.hasLocalDraft, deadSessionRecovery.replacement, draft?.title, draft?.name, onCreateWorkspaceSession, toText]);
+
+  const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: saveUploadStatus?.conflict,
+    currentUserRaw: user,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: saveUploadStatus?.title || saveUploadStatus?.error,
+  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user]);
+  const propertySaveConflictView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: null,
+    currentUserRaw: user,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: propertySaveConflictFallback,
+  }), [propertySaveConflictFallback, toText, user]);
+  const sessionVersionReadSnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.version),
+    [sessionCompanionBridgeSnapshot.version],
+  );
+  const sessionTemplateProvenanceSnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.templateProvenance),
+    [sessionCompanionBridgeSnapshot.templateProvenance],
+  );
+  const sessionRevisionHistorySnapshot = useMemo(
+    () => asObject(sessionCompanionBridgeSnapshot.revisionHistory),
+    [sessionCompanionBridgeSnapshot.revisionHistory],
+  );
+  const revisionLatestCandidate = useMemo(
+    () => asArray(versionsList)[0] || asObject(latestBpmnVersionHead),
+    [versionsList, latestBpmnVersionHead],
+  );
+  const revisionHistoryUiSnapshot = useMemo(
+    () => resolveRevisionHistoryUiSnapshot({
+      revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+      latestVersionItemRaw: revisionLatestCandidate,
+      latestVersionStatusRaw: latestBpmnVersionHeadStatus,
+    }),
+    [sessionRevisionHistorySnapshot, revisionLatestCandidate, latestBpmnVersionHeadStatus],
+  );
+  const publishGitMirrorSnapshot = useMemo(() => {
+    const topLevel = asObject(draft?.publish_git_mirror);
+    if (Object.keys(topLevel).length) {
+      return extractPublishGitMirrorSnapshot(topLevel);
+    }
+    const legacyState = asObject(asObject(draft?.interview).git_mirror_publish);
+    return extractPublishGitMirrorSnapshot(legacyState);
+  }, [draft?.interview, draft?.publish_git_mirror]);
+  useEffect(() => {
+    if (typeof window === "undefined" || window.__FPC_E2E__ !== true) return;
+    const projectId = toText(draft?.project_id || draft?.projectId || activeProjectId);
+    const scopeKey = `${projectId}::${sid}`;
+    const sourceMap = asObject(sessionCompanionBridgeSnapshot?.sourceMap);
+    const saveSnapshot = asObject(sessionSaveReadSnapshot);
+    const versionSnapshot = asObject(sessionVersionReadSnapshot);
+    const templateSnapshot = asObject(sessionTemplateProvenanceSnapshot);
+    const revisionSnapshot = asObject(sessionRevisionHistorySnapshot);
+    const sourceSignature = JSON.stringify({
+      bridgeMode: toText(sessionCompanionBridgeSnapshot?.bridgeMode),
+      sourceMap,
+      hasFallback: sessionCompanionBridgeSnapshot?.hasFallback === true,
+      fallbackReasons: asArray(sessionCompanionBridgeSnapshot?.fallbackReasons).map((x) => toText(x)).filter(Boolean),
+    });
+    const saveSignature = JSON.stringify({
+      status: toText(saveSnapshot.status),
+      storedRev: Number(saveSnapshot.storedRev || 0),
+      requestedBaseRev: Number(saveSnapshot.requestedBaseRev || 0),
+      effectiveSource: toText(saveSnapshot.effectiveSource),
+      isStale: saveSnapshot.isStale === true,
+      isDirty: saveSnapshot.isDirty === true,
+      isSaving: saveSnapshot.isSaving === true,
+      isFailed: saveSnapshot.isFailed === true,
+    });
+    const versionSignature = JSON.stringify({
+      xmlVersion: Number(versionSnapshot.xmlVersion || 0),
+      graphFingerprint: toText(versionSnapshot.graphFingerprint),
+      effectiveSource: toText(versionSnapshot.effectiveSource),
+      isStale: versionSnapshot.isStale === true,
+      companionXmlVersion: Number(asObject(versionSnapshot.revisionContext).companionXmlVersion || 0),
+      durableXmlVersion: Number(asObject(versionSnapshot.revisionContext).durableXmlVersion || 0),
+    });
+    const templateSignature = JSON.stringify({
+      templateId: toText(templateSnapshot.templateId),
+      templateRevision: toText(templateSnapshot.templateRevision),
+      appliedAt: toText(templateSnapshot.appliedAt),
+      effectiveSource: toText(templateSnapshot.effectiveSource),
+      isStale: templateSnapshot.isStale === true,
+      isMissing: templateSnapshot.isMissing === true,
+    });
+    const revisionSignature = JSON.stringify({
+      latestRevisionNumber: Number(revisionSnapshot.latestRevisionNumber || 0),
+      latestRevisionId: toText(revisionSnapshot.latestRevisionId),
+      totalCount: Number(revisionSnapshot.totalCount || 0),
+      effectiveSource: toText(revisionSnapshot.effectiveSource),
+      draftMatchesLatestRevision: asObject(revisionSnapshot.draftState).draftMatchesLatestRevision === true,
+    });
+    const prev = sessionTruthProbeLastRef.current || {};
+    let transitionReason = "snapshot_refresh";
+    if (toText(prev.scopeKey) !== scopeKey) {
+      transitionReason = "session_scope_changed";
+    } else if (toText(prev.sourceSignature) !== sourceSignature) {
+      transitionReason = "source_precedence_changed";
+    } else if (toText(prev.saveSignature) !== saveSignature) {
+      transitionReason = "save_snapshot_changed";
+    } else if (toText(prev.versionSignature) !== versionSignature) {
+      transitionReason = "version_snapshot_changed";
+    } else if (toText(prev.templateSignature) !== templateSignature) {
+      transitionReason = "template_snapshot_changed";
+    } else if (toText(prev.revisionSignature) !== revisionSignature) {
+      transitionReason = "revision_snapshot_changed";
+    }
+    sessionTruthProbeLastRef.current = {
+      scopeKey,
+      sourceSignature,
+      saveSignature,
+      versionSignature,
+      templateSignature,
+      revisionSignature,
+    };
+    const seq = Number(sessionTruthProbeSeqRef.current || 0) + 1;
+    sessionTruthProbeSeqRef.current = seq;
+    const snapshot = {
+      seq,
+      at: new Date().toISOString(),
+      transitionReason,
+      session: {
+        projectId,
+        sessionId: sid,
+        scopeKey,
+      },
+      bridge: {
+        mode: toText(sessionCompanionBridgeSnapshot?.bridgeMode),
+        activation: asObject(sessionCompanionBridgeSnapshot?.activation),
+        sourceMap,
+        effectiveSourceMap: asObject(sessionCompanionBridgeSnapshot?.effectiveSourceMap),
+        fallbackUsed: sessionCompanionBridgeSnapshot?.fallbackUsed === true,
+        hasFallback: sessionCompanionBridgeSnapshot?.hasFallback === true,
+        fallbackReasons: asArray(sessionCompanionBridgeSnapshot?.fallbackReasons).map((x) => toText(x)).filter(Boolean),
+        stalePayloadRejected: sessionCompanionBridgeSnapshot?.stalePayloadRejected === true,
+        latePayloadRejected: sessionCompanionBridgeSnapshot?.latePayloadRejected === true,
+        recoveryState: toText(sessionCompanionBridgeSnapshot?.recoveryState),
+        diagnosticsSeverity: toText(sessionCompanionBridgeSnapshot?.diagnosticsSeverity),
+        readinessState: toText(sessionCompanionBridgeSnapshot?.readinessState),
+        diagnostics: asObject(sessionCompanionBridgeSnapshot?.diagnostics),
+      },
+      save: saveSnapshot,
+      version: versionSnapshot,
+      templateProvenance: templateSnapshot,
+      revisionHistory: revisionSnapshot,
+    };
+    const history = Array.isArray(window.__FPC_E2E_SESSION_TRUTH_HISTORY__)
+      ? window.__FPC_E2E_SESSION_TRUTH_HISTORY__.slice(-399)
+      : [];
+    history.push(snapshot);
+    window.__FPC_E2E_SESSION_TRUTH__ = snapshot;
+    window.__FPC_E2E_SESSION_TRUTH_HISTORY__ = history;
+    window.__FPC_E2E_GET_SESSION_TRUTH__ = () => window.__FPC_E2E_SESSION_TRUTH__;
+    window.__FPC_E2E_GET_SESSION_TRUTH_HISTORY__ = () => window.__FPC_E2E_SESSION_TRUTH_HISTORY__ || [];
+  }, [
+    activeProjectId,
+    draft?.projectId,
+    draft?.project_id,
+    sessionCompanionBridgeSnapshot,
+    sessionSaveReadSnapshot,
+    sessionTemplateProvenanceSnapshot,
+    sessionRevisionHistorySnapshot,
+    sessionVersionReadSnapshot,
+    sid,
+  ]);
+
+  const isLocal = isLocalSessionId(sid);
+  const bpmnSync = useBpmnSync({
+    sessionId: sid,
+    isLocal,
+    draft,
+    bpmnRef,
+    onSessionSync: onSessionSyncWithVersion,
+    apiGetBpmnXml,
+  });
+
+  const clearRemoteSaveHighlightBadge = useCallback(() => {
+    setRemoteSaveHighlightBadge(null);
+    setRemoteSaveHighlightBusy(false);
+    remoteUpdateToastLastShownKeyRef.current = "";
+    remoteUpdateToastDismissedKeyRef.current = "";
+  }, []);
+
+  useEffect(() => {
+    clearRemoteSaveHighlightBadge();
+  }, [clearRemoteSaveHighlightBadge, sid]);
+
+  const applyPendingRemoteSaveRefresh = useCallback(async () => {
+    if (!sid || !hasSession || isLocal) return { ok: false, reason: "refresh_disabled" };
+    const pending = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
+      ? remoteSaveHighlightBadge
+      : null;
+    let serverSession = pending?.serverSession && typeof pending.serverSession === "object"
+      ? pending.serverSession
+      : null;
+    if (!serverSession && !pending) return { ok: false, reason: "no_pending_remote_snapshot" };
+    const localUnsafe = (
+      saveDirtyHint === true
+      || isManualSaveBusy === true
+      || asObject(sessionSaveReadSnapshot).isDirty === true
+      || toText(saveUploadStatus?.state) === "saving"
+      || toText(saveUploadStatus?.state) === "conflict"
+    );
+    if (localUnsafe) {
+      const message = "Нельзя обновить сессию: есть локальные несохранённые изменения.";
+      setGenErr(message);
+      return { ok: false, reason: "local_state_unsafe_for_remote_apply", error: message };
+    }
+    setRemoteSaveHighlightBusy(true);
+    setGenErr("");
+    try {
+      if (!serverSession) {
+        const fetched = await apiGetSession(sid);
+        if (!fetched?.ok) {
+          const message = shortErr(fetched?.error || "Не удалось обновить сессию.");
+          setGenErr(message);
+          return { ok: false, reason: "fetch_failed", status: Number(fetched?.status || 0), error: message };
+        }
+        serverSession = asObject(fetched?.session || fetched?.result || {});
+      }
+      const currentSid = normalizeDiagramSessionId(sid);
+      const fetchedSid = normalizeDiagramSessionId(serverSession?.session_id || serverSession?.id || "");
+      if (!isDiagramVersionSessionMatch(currentSid, fetchedSid)) {
+        const message = "Не удалось обновить сессию: сервер вернул другую сессию.";
+        setGenErr(message);
+        return { ok: false, reason: "refresh_sid_mismatch", error: message };
+      }
+      const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
+      onSessionSyncWithVersion?.({
+        ...serverSession,
+        _sync_source: "passive_remote_refresh_action",
+      });
+      if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+        rememberDiagramStateVersion(serverVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      const lastWrite = readServerLastWriteFromSession(serverSession);
+      const pendingChangedElementIds = Array.isArray(pending?.changedElementIds)
+        ? pending.changedElementIds
+        : [];
+      const changedElementIds = pendingChangedElementIds.length > 0
+        ? pendingChangedElementIds
+        : deriveRemoteChangedElementIds({
+          previousXmlRaw: draft?.bpmn_xml || "",
+          nextXmlRaw: serverSession?.bpmn_xml || "",
+          changedKeysRaw: lastWrite.changedKeys,
+          maxIds: 12,
+        });
+      changedElementIds.forEach((elementId, index) => {
+        const delayMs = index * 80;
+        window.setTimeout(() => {
+          bpmnRef.current?.flashNode?.(elementId, "sync", { label: "Remote" });
+        }, delayMs);
+      });
+      setRemoteSaveHighlightBadge(null);
+      remoteUpdateToastLastShownKeyRef.current = "";
+      setSaveAckToast((prev) => (
+        prev?.kind === "remote_update"
+          ? { ...prev, visible: false }
+          : prev
+      ));
+      setInfoMsg("Сессия обновлена до актуального состояния.");
+      return { ok: true, changedCount: changedElementIds.length };
+    } catch (error) {
+      const message = shortErr(error?.message || error || "Не удалось обновить сессию.");
+      setGenErr(message);
+      return { ok: false, reason: "refresh_failed", error: message };
+    } finally {
+      setRemoteSaveHighlightBusy(false);
+    }
+  }, [
+    asObject,
+    bpmnSync,
+    draft?.bpmn_xml,
+    hasSession,
+    isLocal,
+    isManualSaveBusy,
+    onSessionSyncWithVersion,
+    rememberDiagramStateVersion,
+    remoteSaveHighlightBadge,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    setGenErr,
+    setInfoMsg,
+    setSaveDirtyHint,
+    sessionSaveReadSnapshot,
+    shortErr,
+    sid,
+    toText,
+  ]);
+
+  const applyRemoteSaveHighlightFromVersionHead = useCallback((versionHeadItemRaw, source = "remote_poll") => {
+    const versionHeadItem = asObject(versionHeadItemRaw);
+    const versionHeadActor = deriveRemoteVersionActor(versionHeadItem, currentUserId);
+    const currentSid = normalizeDiagramSessionId(sid);
+    const headSid = normalizeDiagramSessionId(versionHeadItem?.session_id || versionHeadItem?.sessionId || sid || "");
+    if (!isDiagramVersionSessionMatch(currentSid, headSid)) {
+      return { ok: false, reason: "sid_mismatch" };
+    }
+    const serverVersion = Number(versionHeadItem?.diagram_state_version ?? versionHeadItem?.diagramStateVersion);
+    if (!Number.isFinite(serverVersion) || serverVersion < 0) {
+      return { ok: false, reason: "missing_server_version" };
+    }
+    const knownBaseVersion = Number(getBaseDiagramStateVersion());
+    const fallbackVersion = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0);
+    const localVersion = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
+      ? Math.round(knownBaseVersion)
+      : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
+    const serverVersionRounded = Math.round(serverVersion);
+    if (serverVersionRounded <= localVersion) {
+      return { ok: false, reason: "not_newer_than_local" };
+    }
+    const localUnsafe = (
+      saveDirtyHint === true
+      || isManualSaveBusy === true
+      || asObject(sessionSaveReadSnapshot).isDirty === true
+      || toText(saveUploadStatus?.state) === "saving"
+      || toText(saveUploadStatus?.state) === "conflict"
+    );
+    if (localUnsafe) {
+      return { ok: false, reason: "local_state_unsafe_for_remote_notice" };
+    }
+    const changedKeys = ["bpmn_xml"];
+    const badgeView = buildRemoteSaveHighlightView({
+      actorLabelRaw: versionHeadActor.actorLabel,
+      changedElementIdsRaw: [],
+      changedKeysRaw: changedKeys,
+      atRaw: versionHeadItem.created_at || versionHeadItem.createdAt || versionHeadItem.session_updated_at || versionHeadItem.sessionUpdatedAt,
+    });
+    const remoteToastKey = buildRemoteUpdateToastKey({
+      sessionId: currentSid,
+      diagramStateVersion: serverVersionRounded,
+      sessionPayloadHash: versionHeadItem.session_payload_hash || versionHeadItem.sessionPayloadHash,
+      versionId: versionHeadItem.id || versionHeadItem.version_id || versionHeadItem.versionId,
+      createdAt: versionHeadItem.created_at || versionHeadItem.createdAt,
+    });
+    setRemoteSaveHighlightBadge((prev) => {
+      const prevVersion = Number(prev?.serverVersion || 0);
+      if (Number.isFinite(prevVersion) && prevVersion >= serverVersionRounded) {
+        return prev;
+      }
+      return {
+        ...badgeView,
+        changedKeys,
+        serverVersion: serverVersionRounded,
+        source: toText(source),
+        serverHead: versionHeadItem,
+        remoteToastKey,
+        remoteToastActorLabel: versionHeadActor.actorLabel,
+      };
+    });
+    return { ok: true, applied: false, highlighted: true, pendingRefresh: true, changedCount: 0 };
+  }, [
+    asObject,
+    currentUserId,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    getBaseDiagramStateVersion,
+    isManualSaveBusy,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    sessionSaveReadSnapshot,
+    sid,
+    toText,
+  ]);
+
+  const pollRemoteSessionSnapshot = useCallback(async (reason = "interval") => {
+    if (!sid || !hasSession || isLocal) return { ok: false, reason: "poll_disabled" };
+    // P-1: мёртвая сессия (терминальный 404) — фоновый опрос не возобновляем.
+    if (isSessionNotFound(sid)) return { ok: false, reason: "session_deleted" };
+    if (remoteSessionPollInFlightRef.current) return { ok: false, reason: "poll_busy" };
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return { ok: false, reason: "poll_hidden" };
+    }
+    remoteSessionPollInFlightRef.current = true;
+    try {
+      const head = await apiGetBpmnVersions(sid, { limit: 1 });
+      if (!head?.ok) {
+        // P-1: 404 помечает сессию мёртвой глобально (presence/save/UX подхватят).
+        noteSessionApiResult(sid, head, "remote_poll");
+        return { ok: false, reason: "head_fetch_failed", status: Number(head?.status || 0) };
+      }
+      const headItems = Array.isArray(head?.versions)
+        ? head.versions
+        : (Array.isArray(head?.items) ? head.items : []);
+      const latestHead = asObject(headItems[0] || {});
+      const headVersion = Number(latestHead?.diagram_state_version ?? latestHead?.diagramStateVersion);
+      const headVersionRounded = Number.isFinite(headVersion) && headVersion > 0 ? Math.round(headVersion) : 0;
+      if (!headVersionRounded) {
+        return { ok: false, reason: "head_missing_version" };
+      }
+      const knownBaseVersion = Number(getBaseDiagramStateVersion());
+      const fallbackVersion = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0);
+      const localVersionRounded = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
+        ? Math.round(knownBaseVersion)
+        : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
+      const seenVersion = Number(remoteSessionPollSeenDiagramStateVersionRef.current || 0);
+      const seenVersionRounded = Number.isFinite(seenVersion) && seenVersion > 0 ? Math.round(seenVersion) : 0;
+      const seenBaselineVersion = Math.max(seenVersionRounded, localVersionRounded);
+      if (headVersionRounded <= seenBaselineVersion) {
+        return {
+          ok: false,
+          reason: "head_not_newer",
+          serverVersion: headVersionRounded,
+          seenVersion: seenBaselineVersion,
+        };
+      }
+      remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
+        seenBaselineVersion,
+        headVersionRounded,
+      );
+      return applyRemoteSaveHighlightFromVersionHead(latestHead, `remote_poll_${reason}`);
+    } finally {
+      remoteSessionPollInFlightRef.current = false;
+    }
+  }, [
+    applyRemoteSaveHighlightFromVersionHead,
+    asObject,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    getBaseDiagramStateVersion,
+    hasSession,
+    isLocal,
+    sid,
+  ]);
+
+  useEffect(() => {
+    remoteSessionPollSeenDiagramStateVersionRef.current = 0;
+  }, [hasSession, isLocal, sid]);
+
+  useEffect(() => {
+    if (!sid || !hasSession || isLocal) return undefined;
+    let disposed = false;
+    const runPoll = (reason = "interval") => {
+      if (disposed) return;
+      void pollRemoteSessionSnapshot(reason);
+    };
+    runPoll("mount");
+    const intervalId = window.setInterval(() => {
+      runPoll("interval");
+    }, REMOTE_SESSION_SYNC_POLL_MS);
+    const handleForeground = () => {
+      runPoll("foreground");
+    };
+    window.addEventListener("focus", handleForeground);
+    document.addEventListener("visibilitychange", handleForeground);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", handleForeground);
+      document.removeEventListener("visibilitychange", handleForeground);
+      window.clearInterval(intervalId);
+    };
+  }, [hasSession, isLocal, pollRemoteSessionSnapshot, sid]);
+
+  const remoteSaveHighlightView = useMemo(() => {
+    const value = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
+      ? remoteSaveHighlightBadge
+      : {};
+    const hasServerSession = value.serverSession && typeof value.serverSession === "object";
+    return {
+      visible: value.visible === true && hasServerSession,
+      label: toText(value.label),
+      title: toText(value.title),
+      actorLabel: toText(value.actorLabel),
+      changedElementIds: Array.isArray(value.changedElementIds) ? value.changedElementIds : [],
+      at: Number(value.at || 0),
+      serverVersion: Number(value.serverVersion || 0),
+      remoteToastKey: toText(value.remoteToastKey),
+      remoteToastActorLabel: toText(value.remoteToastActorLabel || value.actorLabel),
+      refreshLabel: toText(value.refreshLabel) || "Обновить сессию",
+      refreshHint: toText(value.refreshHint) || "Загрузить актуальное состояние сессии с сервера.",
+      busy: remoteSaveHighlightBusy === true,
+      onRefreshSession: hasServerSession ? applyPendingRemoteSaveRefresh : undefined,
+    };
+  }, [applyPendingRemoteSaveRefresh, remoteSaveHighlightBadge, remoteSaveHighlightBusy, toText]);
+
+  const openMergePanel = useCallback(async (source = "") => {
+    if (!sid) return;
+    setMergePanelSource(toText(source) || "unknown");
+    setMergePanelBusy(true);
+    setSaveConflictNoticeDismissed(true);
+    setGenErr("");
+
+    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    setMergePanelLocalXml(localXml);
+
+    const conflict = asObject(saveUploadStatus?.conflict);
+    const serverVersionFromConflict = toNonNegativeVersion(
+      conflict?.serverCurrentVersion ?? remoteSaveHighlightBadge?.serverVersion,
+    );
+    const actorLabel = toText(
+      conflict?.actorLabel
+      ?? remoteSaveHighlightBadge?.actorLabel
+      ?? remoteSaveHighlightBadge?.remoteToastActorLabel,
+    );
+    setMergePanelServerVersion(serverVersionFromConflict);
+    setMergePanelActorLabel(actorLabel);
+
+    try {
+      const fetched = await apiGetSession(sid);
+      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
+        setMergePanelServerXml(toText(fetched.session.bpmn_xml || fetched.session.bpmnXml || ""));
+      } else {
+        setGenErr("Не удалось загрузить серверную версию для сравнения.");
+      }
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось загрузить серверную версию для сравнения."));
+    } finally {
+      setMergePanelOpen(true);
+      setMergePanelBusy(false);
+    }
+  }, [
+    sid,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    remoteSaveHighlightBadge?.serverVersion,
+    remoteSaveHighlightBadge?.actorLabel,
+    remoteSaveHighlightBadge?.remoteToastActorLabel,
+  ]);
+
+  useEffect(() => {
+    if (remoteSaveHighlightView?.visible !== true) return;
+    const remoteToastKey = toText(remoteSaveHighlightView?.remoteToastKey)
+      || buildRemoteUpdateToastKey({
+        sessionId: sid,
+        diagramStateVersion: remoteSaveHighlightView?.serverVersion,
+      });
+    if (!remoteToastKey) return;
+    if (remoteUpdateToastDismissedKeyRef.current === remoteToastKey) return;
+    if (remoteUpdateToastLastShownKeyRef.current === remoteToastKey) return;
+    remoteUpdateToastLastShownKeyRef.current = remoteToastKey;
+    const message = buildRemoteUpdateToastMessage(remoteSaveHighlightView?.remoteToastActorLabel);
+    showSaveAckToast(message, "warning", "remote_user", {
+      resolveMessage: false,
+      description: "Откройте сравнение версий, чтобы выбрать, какую сохранить.",
+      actionLabel: "Посмотреть изменения",
+      onAction: () => {
+        void openMergePanel("remote_toast");
+      },
+      persistent: true,
+      kind: "remote_update",
+      remoteUpdateKey: remoteToastKey,
+      onDismiss: () => {
+        remoteUpdateToastDismissedKeyRef.current = remoteToastKey;
+        setSaveAckToast((prev) => (
+          prev?.remoteUpdateKey === remoteToastKey
+            ? { ...prev, visible: false }
+            : prev
+        ));
+      },
+    });
+  }, [
+    openMergePanel,
+    remoteSaveHighlightView?.remoteToastActorLabel,
+    remoteSaveHighlightView?.remoteToastKey,
+    remoteSaveHighlightView?.serverVersion,
+    remoteSaveHighlightView?.visible,
+    showSaveAckToast,
+    sid,
+    toText,
+  ]);
+
+  // Track the last project that had an active session so the explorer can
+  // navigate back to it when the session is closed.
+  const lastSessionProjectIdRef = useRef("");
+  useEffect(() => {
+    const pid = String(draft?.project_id || draft?.projectId || "").trim();
+    if (hasSession && pid) {
+      lastSessionProjectIdRef.current = pid;
+    }
+  }, [hasSession, draft?.project_id, draft?.projectId]);
+  const isInterviewMode = diagramMode === "interview";
+  const isQualityMode = diagramMode === "quality";
+  const isCoverageMode = diagramMode === "coverage";
+
+  const projectionHelpers = useMemo(
+    () => ({
+      asArray,
+      asObject,
+      interviewHasContent,
+      mergeInterviewData,
+      sanitizeGraphNodes,
+      mergeNodesById,
+      mergeEdgesByKey,
+      enrichInterviewWithNodeBindings,
+      parseBpmnToSessionGraph,
+    }),
+    [],
+  );
+
+  const {
+    tab,
+    setTab,
+    switchTab,
+    isSwitchingTab,
+    isFlushingTab,
+    requestDiagramFocus,
+    isInterview,
+    isBpmnTab,
+    markInterviewAsSaved,
+    handleInterviewChange,
+    queueDiagramMutation: queueDiagramMutationRaw,
+    flushPendingDiagramAutosave,
+    cancelPendingDiagramAutosave,
+  } = useProcessOrchestrator({
+    sid,
+    isLocal,
+    draft,
+    processTabIntent,
+    bpmnRef,
+    coordinator: bpmnRef?.current,
+    processBodyRef,
+    bpmnSync,
+    projectionHelpers,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
+    onSessionSync: onSessionSyncWithVersion,
+    onError: setGenErr,
+  });
+
+  const {
+    diagramFocusMode,
+    setDiagramFocusMode,
+    diagramFullscreenActive,
+    setDiagramFullscreenActive,
+    toggleDiagramFullscreen,
+    shellClassName,
+    bodyClassName,
+  } = useDiagramShellState({
+    tab,
+    processBodyRef,
+    setGenErr,
+    shortErr,
+  });
+
+  useEffect(() => {
+    const scopeKey = `${String(activeProjectId || "")}::${sid}`;
+    if (localStateResetSidRef.current === scopeKey) return;
+    localStateResetSidRef.current = scopeKey;
+    resetLocalStateForSession({
+      autoPassToastJobIdRef,
+      setDiagramFocusMode,
+      setDiagramFullscreenActive,
+    });
+    setDrawioAnchorImportDiagnostics(null);
+  }, [activeProjectId, resetLocalStateForSession, setDiagramFocusMode, setDiagramFullscreenActive, sid]);
+
+  const refreshDiagramUndoRedoState = useCallback(() => {
+    const next = asObject(bpmnRef.current?.getUndoRedoState?.({ mode: "editor" }));
+    const normalized = {
+      canUndo: next.canUndo === true,
+      canRedo: next.canRedo === true,
+      ready: next.ready === true,
+    };
+    setDiagramUndoRedoState((prev) => (
+      prev.canUndo === normalized.canUndo
+      && prev.canRedo === normalized.canRedo
+      && prev.ready === normalized.ready
+        ? prev
+        : normalized
+    ));
+  }, []);
+
+  const queueDiagramMutation = useCallback((mutation) => {
+    const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
+    if (
+      kind === "diagram.context_menu_action"
+      && String(mutation?.actionId || "").trim() === "properties_overlay_update_extension_property"
+    ) {
+      // Canvas properties popover wrote a camunda property value into the
+      // live modeler: ask the sidebar owner to re-hydrate its editable
+      // draft (epoch bump + external-edit token).
+      const changedElementId = String(mutation?.elementId || "").trim();
+      if (changedElementId && typeof onBpmnModelerExtensionChange === "function") {
+        onBpmnModelerExtensionChange({
+          elementId: changedElementId,
+          propertyName: String(mutation?.propertyName || "").trim(),
+        });
+      }
+    }
+    if (kind.startsWith("diagram.") || kind.startsWith("xml.")) {
+      setSaveDirtyHint(true);
+      setDiagramSearchMutationVersion((prev) => prev + 1);
+      refreshDiagramUndoRedoState();
+      const owner = ensureSessionWorkspaceTruthOwner();
+      if (owner) {
+        const command = resolveWorkspaceMutationCommand(kind);
+        const mutationSnapshot = buildOwnerSnapshot({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: toText(draft?.bpmn_xml || ""),
+          bpmn_xml_version: Number(draft?.bpmn_xml_version || draft?.version || 0),
+          diagram_state_version: Number(getBaseDiagramStateVersion() ?? draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+          bpmn_graph_fingerprint: toText(draft?.bpmn_graph_fingerprint || ""),
+        }, `mutation:${kind || "diagram.change"}`);
+        if (command === "applyPropertyChange") {
+          owner.applyPropertyChange({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.property.change",
+          });
+        } else if (command === "applyTemplate") {
+          owner.applyTemplate({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.template.apply",
+          });
+        } else if (command === "applyCopyPaste") {
+          owner.applyCopyPaste({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.copy_paste",
+          });
+        } else {
+          owner.applyDiagramEdit({
+            patch: mutationSnapshot,
+            reason: kind || "diagram.change",
+          });
+        }
+      }
+    }
+    if (kind !== "diagram.template_insert") {
+      queueDiagramMutationRaw(mutation);
+    }
+  }, [
+    buildOwnerSnapshot,
+    draft?.bpmn_graph_fingerprint,
+    draft?.bpmn_xml,
+    draft?.bpmn_xml_version,
+    draft?.diagramStateVersion,
+    draft?.diagram_state_version,
+    draft?.version,
+    ensureSessionWorkspaceTruthOwner,
+    getBaseDiagramStateVersion,
+    onBpmnModelerExtensionChange,
+    queueDiagramMutationRaw,
+    refreshDiagramUndoRedoState,
+    sid,
+    toText,
+  ]);
+
+  useEffect(() => {
+    if (!hasSession || tab !== "diagram") {
+      setDiagramUndoRedoState({ canUndo: false, canRedo: false, ready: false });
+      return undefined;
+    }
+
+    let timer = 0;
+
+    const clearRefreshTimer = () => {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = 0;
+      }
+    };
+
+    const scheduleRefresh = () => {
+      clearRefreshTimer();
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      timer = window.setTimeout(() => {
+        refreshDiagramUndoRedoState();
+        scheduleRefresh();
+      }, DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS);
+    };
+
+    const handleForegroundRefresh = () => {
+      refreshDiagramUndoRedoState();
+      scheduleRefresh();
+    };
+
+    handleForegroundRefresh();
+    window.addEventListener("focus", handleForegroundRefresh);
+    document.addEventListener("visibilitychange", handleForegroundRefresh);
+
+    return () => {
+      window.removeEventListener("focus", handleForegroundRefresh);
+      document.removeEventListener("visibilitychange", handleForegroundRefresh);
+      clearRefreshTimer();
+    };
+  }, [hasSession, refreshDiagramUndoRedoState, sid, tab]);
+
+  useEffect(() => {
+    return () => {
+      if (saveUploadLifecycleClearTimerRef.current) {
+        globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
+        saveUploadLifecycleClearTimerRef.current = 0;
+      }
+    };
+  }, []);
+
+  const onBpmnSaveLifecycleEvent = useCallback((eventRaw = null) => {
+    const next = normalizeBpmnSaveLifecycleEvent(eventRaw);
+    if (!next.stage || next.stage === "idle") return;
+    if (next.stage === "conflict") {
+      setSaveConflictNoticeDismissed(false);
+    }
+    setSaveUploadLifecycleEvent(next);
+    if (saveUploadLifecycleClearTimerRef.current) {
+      globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
+      saveUploadLifecycleClearTimerRef.current = 0;
+    }
+    if (next.stage === "persisted" || next.stage === "skipped_unchanged") {
+      const stableAt = Number(next.at || Date.now());
+      saveUploadLifecycleClearTimerRef.current = globalThis.setTimeout(() => {
+        setSaveUploadLifecycleEvent((prev) => (
+          Number(prev?.at || 0) === stableAt ? IDLE_SAVE_UPLOAD_EVENT : prev
+        ));
+        saveUploadLifecycleClearTimerRef.current = 0;
+      }, 4200);
+    }
+  }, []);
+
+  const dismissSaveConflictNotice = useCallback(() => {
+    setSaveConflictNoticeDismissed(true);
+  }, []);
+
+  const reloadSessionAfterSaveConflict = useCallback(async ({ discardLocal = false } = {}) => {
+    if (!sid || saveConflictActionBusy) return { ok: false, error: "busy_or_missing_session" };
+    setSaveConflictActionBusy(true);
+    setGenErr("");
+    try {
+      const fetched = await apiGetSession(sid);
+      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
+        onSessionSyncWithVersion?.({
+          ...fetched.session,
+          _sync_source: "save_conflict_refresh",
+        });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setSaveConflictNoticeDismissed(true);
+      setInfoMsg(
+        discardLocal
+          ? "Локальные изменения отброшены. Загружена серверная версия сессии."
+          : "Сессия обновлена с сервера. Проверьте изменения и повторите сохранение при необходимости.",
+      );
+      if (!fetched?.ok) {
+        const warning = shortErr(fetched?.error || "Не удалось полностью обновить сессию.");
+        setGenErr(warning);
+        return { ok: false, error: warning };
+      }
+      // P1: конфликт разрешён пользователем («Загрузить версию с сервера») — снимаем gate.
+      saveCoordinator.resolveConflict(sid, "refresh");
+      return { ok: true };
+    } catch (error) {
+      const message = shortErr(error?.message || error || "Не удалось обновить сессию после конфликта.");
+      setGenErr(message);
+      return { ok: false, error: message };
+    } finally {
+      setSaveConflictActionBusy(false);
+    }
+  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid]);
+
+  const handleSaveConflictRefresh = useCallback(() => {
+    void reloadSessionAfterSaveConflict({ discardLocal: false });
+  }, [reloadSessionAfterSaveConflict]);
+
+  // P1: осознанный force — «Оставить мою версию». Единственный путь,
+  // где база принудительно выставляется в серверную версию: вызывается ТОЛЬКО
+  // из обработчика кнопки конфликт-модала, никогда автоматически. Действие
+  // фиксируется на бэке через source_action=manual_save_overwrite_conflict
+  // (видно в bpmn_versions/логах: кто перезаписал и поверх какой ревизии).
+  const handleSaveConflictOverwrite = useCallback(async () => {
+    if (!sid || saveConflictActionBusy) return;
+    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    if (!localXml) {
+      setGenErr("Не удалось определить локальный XML для сохранения.");
+      return;
+    }
+    const serverVersion = toNonNegativeVersion(
+      saveUploadStatus?.conflict?.serverCurrentVersion
+        ?? saveCoordinator.getConflict(sid)?.serverVersion,
+    );
+    if (serverVersion <= 0) {
+      setGenErr("Не удалось определить серверную версию для перезаписи.");
+      return;
+    }
+    setSaveConflictActionBusy(true);
+    setGenErr("");
+    try {
+      // Снимаем conflict gate с явным принятием серверной базы (overwrite).
+      saveCoordinator.resolveConflict(sid, "overwrite");
+      const saved = await apiPutBpmnXml(sid, localXml, {
+        baseDiagramStateVersion: serverVersion,
+        sourceAction: "manual_save_overwrite_conflict",
+      });
+      if (!saved?.ok) {
+        const status = Number(saved?.status || 0);
+        if (status === 409) {
+          setSaveUploadLifecycleEvent((prev) => ({
+            ...prev,
+            payload: {
+              ...(prev?.payload || {}),
+              status: 409,
+              error_code: "DIAGRAM_STATE_CONFLICT",
+              error_details: saved?.data || saved,
+            },
+          }));
+          setSaveConflictNoticeDismissed(false);
+          setGenErr("Конфликт обновился. Повторите выбор.");
+        } else {
+          setGenErr(shortErr(saved?.error || "Не удалось сохранить версию поверх серверной."));
+        }
+        return;
+      }
+      if (saved?.diagramStateVersion) {
+        rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setInfoMsg("Ваша версия сохранена поверх серверной. Действие зафиксировано в истории (overwrite).");
+      onBpmnSaved?.(sid, activeProjectId);
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось сохранить версию поверх серверной."));
+    } finally {
+      setSaveConflictActionBusy(false);
+    }
+  }, [
+    sid,
+    saveConflictActionBusy,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    apiPutBpmnXml,
+    rememberDiagramStateVersion,
+    bpmnSync,
+    setGenErr,
+    setInfoMsg,
+    toText,
+    onBpmnSaved,
+    activeProjectId,
+  ]);
+
+  const closeMergePanel = useCallback(() => {
+    setMergePanelOpen(false);
+    setMergePanelBusy(false);
+    setMergePanelSource("");
+    setMergePanelLocalXml("");
+    setMergePanelServerXml("");
+    setMergePanelServerVersion(0);
+    setMergePanelActorLabel("");
+  }, []);
+
+  const handleMergeAcceptLatest = useCallback(async () => {
+    setMergePanelBusy(true);
+    const result = await reloadSessionAfterSaveConflict({ discardLocal: false });
+    if (result?.ok !== false) {
+      closeMergePanel();
+    }
+    setMergePanelBusy(false);
+  }, [closeMergePanel, reloadSessionAfterSaveConflict]);
+
+  const handleMergeKeepMine = useCallback(async () => {
+    if (!sid) return;
+    const localXml = mergePanelLocalXml || toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    if (!localXml) {
+      setGenErr("Не удалось определить локальный XML для сохранения.");
+      return;
+    }
+    const serverVersion = mergePanelServerVersion || toNonNegativeVersion(
+      saveUploadStatus?.conflict?.serverCurrentVersion
+      ?? remoteSaveHighlightBadge?.serverVersion,
+    );
+    if (serverVersion <= 0) {
+      setGenErr("Не удалось определить серверную версию для force-save.");
+      return;
+    }
+    setMergePanelBusy(true);
+    try {
+      // Merge-panel «keep mine» — тоже осознанный force: снимаем conflict gate
+      // с явным принятием серверной базы.
+      saveCoordinator.resolveConflict(sid, "overwrite");
+      const saved = await apiPutBpmnXml(sid, localXml, {
+        baseDiagramStateVersion: serverVersion,
+        reason: "manual_save",
+      });
+      if (!saved?.ok) {
+        const status = Number(saved?.status || 0);
+        if (status === 409) {
+          setSaveUploadLifecycleEvent((prev) => ({
+            ...prev,
+            payload: {
+              ...(prev?.payload || {}),
+              status: 409,
+              error_code: "DIAGRAM_STATE_CONFLICT",
+              error_details: saved?.data || saved,
+            },
+          }));
+          setSaveConflictNoticeDismissed(false);
+          setGenErr("Конфликт обновился. Повторите выбор.");
+          closeMergePanel();
+        } else {
+          setGenErr(shortErr(saved?.error || "Не удалось сохранить версию поверх серверной."));
+        }
+        return;
+      }
+      if (saved?.diagramStateVersion) {
+        rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setInfoMsg("Ваша версия сохранена поверх серверной. Создана новая версия в истории.");
+      closeMergePanel();
+      onBpmnSaved?.(sid, activeProjectId);
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось сохранить версию поверх серверной."));
+    } finally {
+      setMergePanelBusy(false);
+    }
+  }, [
+    sid,
+    mergePanelLocalXml,
+    mergePanelServerVersion,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    remoteSaveHighlightBadge?.serverVersion,
+    apiPutBpmnXml,
+    rememberDiagramStateVersion,
+    bpmnSync,
+    closeMergePanel,
+    setGenErr,
+    setInfoMsg,
+    onBpmnSaved,
+    activeProjectId,
+  ]);
+
+  const handleMergeCompare = useCallback(() => {
+    if (mergePanelLocalXml && mergePanelServerXml) {
+      setMergeDiffOpen(true);
+    }
+  }, [mergePanelLocalXml, mergePanelServerXml]);
+
+  const handleMergeCancel = useCallback(() => {
+    closeMergePanel();
+  }, [closeMergePanel]);
+
+  const applyDiagramMode = useCallback((nextModeRaw) => {
+    const nextMode = normalizeDiagramMode(nextModeRaw);
+    setDiagramMode(nextMode);
+  }, []);
+
+  async function runManualSaveAction({ createRevision = false } = {}) {
+    if (!hasSession || isSwitchingTab || isFlushingTab || isManualSaveBusy) return;
+    if (createRevision) {
+      // Cancel queued autosave to avoid race against explicit version creation.
+      cancelPendingDiagramAutosave?.();
+    }
+    const truthOwner = ensureSessionWorkspaceTruthOwner();
+    truthOwner?.saveSessionStart({ source: "manual_save" });
+    setGenErr("");
+    setInfoMsg("");
+    setManualSaveIntent(createRevision ? "create_revision" : "save_session");
+    setIsManualSaveBusy(true);
+    showSaveAckToast("Сохранение...", "info", createRevision ? "bpmn_version" : "save");
+    try {
+      const persistReason = createRevision ? "publish_manual_save" : "manual_save";
+      const saved = await bpmnSync.flushFromActiveTab(tab, {
+        force: tab === "diagram",
+        source: "manual_save",
+        reason: "manual_save",
+        persistReason,
+      });
+      if (!saved?.ok) {
+        truthOwner?.saveSessionFailed({
+          source: "manual_save_failed",
+          error: shortErr(saved?.error || "Не удалось сохранить BPMN."),
+        });
+        const failedOutcomeUi = resolveManualSaveOutcomeUi({
+          primarySaveOk: false,
+          primarySaveError: shortErr(saved?.error || "Не удалось сохранить."),
+        });
+        showSaveAckToast(failedOutcomeUi.genErr, "error", createRevision ? "bpmn_version" : "save_error");
+        return;
+      }
+      let companionError = "";
+      let saveInfo = "";
+      if (!saved?.pending) {
+        const savedXml = toText(saved?.xml || draft?.bpmn_xml || "");
+        const backendVersionSnapshot = asObject(saved?.bpmnVersionSnapshot);
+        const normalizedBackendVersionSnapshot = normalizeBpmnVersionListItem(backendVersionSnapshot);
+        const savedDiagramStateVersion = Number(saved?.diagramStateVersion);
+        const snapshotDiagramStateVersion = Number(
+          normalizedBackendVersionSnapshot.diagramStateVersion
+          ?? normalizedBackendVersionSnapshot.diagram_state_version,
+        );
+        const baseCandidates = [
+          savedDiagramStateVersion,
+          snapshotDiagramStateVersion,
+          Number(getBaseDiagramStateVersion()),
+        ]
+          .filter((value) => Number.isFinite(value) && value >= 0)
+          .map((value) => Math.round(value));
+        const companionBaseDiagramStateVersion = baseCandidates.length
+          ? Math.max(...baseCandidates)
+          : null;
+        if (Number.isFinite(companionBaseDiagramStateVersion) && companionBaseDiagramStateVersion >= 0) {
+          rememberDiagramStateVersion(companionBaseDiagramStateVersion, { sessionId: sid });
+        }
+        const acceptedSnapshot = buildOwnerSnapshot({
+          id: sid,
+          session_id: sid,
+          bpmn_xml: savedXml,
+          bpmn_xml_version: Number(
+            normalizedBackendVersionSnapshot.revisionNumber
+            || saved?.storedRev
+            || draft?.bpmn_xml_version
+            || draft?.version
+            || 0
+          ),
+          diagram_state_version: Number(
+            companionBaseDiagramStateVersion
+            ?? saved?.diagramStateVersion
+            ?? getBaseDiagramStateVersion()
+            ?? draft?.diagram_state_version
+            ?? draft?.diagramStateVersion
+            ?? 0
+          ),
+          bpmn_graph_fingerprint: toText(saved?.graphFingerprint || draft?.bpmn_graph_fingerprint || ""),
+        }, "manual_save");
+        truthOwner?.saveSessionAccepted({
+          source: "manual_save",
+          primaryAck: {
+            ...acceptedSnapshot,
+            bpmnVersionSnapshot: {
+              id: String(normalizedBackendVersionSnapshot.id || ""),
+              revisionNumber: Number(
+                normalizedBackendVersionSnapshot.revisionNumber
+                || acceptedSnapshot?.bpmn_xml_version
+                || 0
+              ),
+            },
+          },
+          durableSnapshot: acceptedSnapshot,
+        });
+        const backendRevisionNumber = Number(normalizedBackendVersionSnapshot.revisionNumber || 0);
+        const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;
+        if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
+          const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
+          const backendSessionPayloadHash = String(normalizedBackendVersionSnapshot.sessionPayloadHash || "").trim();
+          setBpmnVersionTruthState((prev) => ({
+            ...prev,
+            currentSessionPayloadHash: backendSessionPayloadHash || prev.currentSessionPayloadHash || "",
+            latestUserVersionSessionPayloadHash: backendSessionPayloadHash || prev.latestUserVersionSessionPayloadHash || "",
+            hasSessionChangesSinceLatestBpmnVersion: false,
+          }));
+          const nextMeaningfulHead = applyUserFacingRevisionNumbers({
+            meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot],
+            revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+          })[0] || normalizedBackendVersionSnapshot;
+          setLatestBpmnVersionHead(nextMeaningfulHead);
+          setLatestBpmnVersionHeadStatus("ready");
+          setVersionsList((prev) => {
+            const current = asArray(prev);
+            const deduped = backendVersionId
+              ? current.filter((item) => String(item?.id || "").trim() !== backendVersionId)
+              : current.filter((item) => Number(item?.revisionNumber || item?.rev || item?.version_number || 0) !== backendRevisionNumber);
+            return applyUserFacingRevisionNumbers({
+              meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot, ...deduped],
+              revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+            });
+          });
+          setVersionsLoadState("ready");
+          setVersionsLoadError("");
+          setPreviewSnapshotId((prev) => prev || backendVersionId);
+        }
+        lastSuccessfulPublishRef.current = {
+          sessionId: sid,
+          atMs: Date.now(),
+          xmlHash: fnv1aHex(savedXml),
+        };
+        const shouldSyncCompanion = backendRevisionNumber > 0;
+        if (shouldSyncCompanion) {
+          const hasCompanionBaseDiagramStateVersion = (
+            Number.isFinite(companionBaseDiagramStateVersion)
+            && companionBaseDiagramStateVersion > 0
+          );
+          if (hasCompanionBaseDiagramStateVersion) {
+            let nextCompanionBaseDiagramStateVersion = companionBaseDiagramStateVersion;
+            const manualProjectionPlan = buildManualSaveProjectionSyncPlan({
+              xmlText: savedXml,
+              draft,
+              projectionHelpers,
+            });
+            if (!manualProjectionPlan?.ok) {
+              companionError = shortErr(
+                manualProjectionPlan?.error
+                || "Не удалось подготовить projection sync после сохранения диаграммы.",
+              );
+            } else {
+              const projectionPatch = asObject(manualProjectionPlan.patch);
+              if (Object.keys(projectionPatch).length > 0) {
+                markInterviewAsSaved(
+                  manualProjectionPlan.nextInterview,
+                  manualProjectionPlan.nextNodes,
+                  draft?.nodes,
+                  manualProjectionPlan.nextEdges,
+                  draft?.edges,
+                );
+                onSessionSyncWithVersion?.({
+                  id: sid,
+                  session_id: sid,
+                  actors_derived: asArray(manualProjectionPlan.derivedActors),
+                  ...(projectionPatch.interview ? { interview: manualProjectionPlan.nextInterview } : {}),
+                  ...(manualProjectionPlan.nodesChanged ? { nodes: manualProjectionPlan.nextNodes } : {}),
+                  ...(manualProjectionPlan.edgesChanged ? { edges: manualProjectionPlan.nextEdges } : {}),
+                  _sync_source: "manual_save_projection_sync",
+                });
+                if (!isLocal) {
+                  const syncPatchPayload = {
+                    ...projectionPatch,
+                    base_diagram_state_version: Math.round(companionBaseDiagramStateVersion),
+                  };
+                  const syncRes = await enqueueSessionPatchCasWrite({
+                    sessionId: sid,
+                    patch: syncPatchPayload,
+                    apiPatchSession,
+                    getBaseDiagramStateVersion,
+                    rememberDiagramStateVersion,
+                  });
+                  if (!syncRes?.ok) {
+                    companionError = shortErr(
+                      syncRes?.error
+                      || "Не удалось синхронизировать graph projection после сохранения BPMN.",
+                    );
+                  } else {
+                    const syncAckVersion = Number(
+                      syncRes?.session?.diagram_state_version
+                      ?? syncRes?.session?.diagramStateVersion,
+                    );
+                    if (Number.isFinite(syncAckVersion) && syncAckVersion > 0) {
+                      nextCompanionBaseDiagramStateVersion = Math.round(syncAckVersion);
+                      rememberDiagramStateVersion(nextCompanionBaseDiagramStateVersion, { sessionId: sid });
+                    }
+                    onSessionSyncWithVersion?.({
+                      ...(syncRes?.session && typeof syncRes.session === "object" ? syncRes.session : {}),
+                      id: sid,
+                      session_id: sid,
+                      actors_derived: asArray(manualProjectionPlan.derivedActors),
+                      _sync_source: "manual_save_projection_patch_ack",
+                    });
+                  }
+                }
+              }
+            }
+            if (!companionError) {
+              const companionResult = await persistSavedSessionCompanion({
+                source: "manual_save",
+                xml: savedXml,
+                savedAt: new Date().toISOString(),
+                storedRev: Number(
+                  acceptedSnapshot?.bpmn_xml_version
+                  || normalizedBackendVersionSnapshot.revisionNumber
+                  || saved?.storedRev
+                  || 0,
+                ),
+                requestedBaseRev: Number(
+                  acceptedSnapshot?.bpmn_xml_version
+                  || normalizedBackendVersionSnapshot.revisionNumber
+                  || saved?.storedRev
+                  || 0,
+                ),
+                baseDiagramStateVersion: (
+                  Number.isFinite(nextCompanionBaseDiagramStateVersion)
+                  && nextCompanionBaseDiagramStateVersion > 0
+                )
+                  ? Math.round(nextCompanionBaseDiagramStateVersion)
+                  : getBaseDiagramStateVersion(),
+                publishRevision: createRevision,
+                revisionComment: createRevision ? "Версия создана вручную" : "",
+                revisionSource: createRevision ? "publish_manual_save" : "manual_save",
+                authoritativeRevision: backendVersionSnapshot,
+              });
+              if (!companionResult?.ok) {
+                companionError = shortErr(companionResult?.error || "Не удалось синхронизировать companion metadata.");
+                saveInfo = createRevision
+                  ? "Создана новая версия BPMN. Метаданные синхронизировать не удалось."
+                  : "Сохранено внутри версии.";
+              } else if (createRevision) {
+                const revisionInfo = asObject(companionResult?.revision);
+                if (revisionInfo.skipped === true) {
+                  companionError = companionError || "Версия BPMN не создана: нет изменений сессии.";
+                  saveInfo = "Версия BPMN не создана: нет изменений сессии.";
+                } else {
+                  saveInfo = "Создана новая версия BPMN.";
+                }
+              } else {
+                saveInfo = saved?.skipped === true
+                  ? "Сохранено внутри версии."
+                  : "Сохранено внутри версии.";
+              }
+            }
+          }
+        } else {
+          saveInfo = createRevision
+            ? "Версия BPMN не создана: нет изменений сессии."
+            : "Сохранено внутри версии.";
+        }
+        if (!saveInfo && !companionError) {
+          saveInfo = createRevision ? "Создана новая версия BPMN." : "Сохранено внутри версии.";
+        }
+        cancelPendingDiagramAutosave?.();
+      }
+      setSaveDirtyHint(false);
+      if (selectedElementId) {
+        bpmnRef.current?.flashNode?.(selectedElementId, "sync", { label: "Synced" });
+      }
+      onBpmnSaved?.(sid, activeProjectId);
+      const successOutcomeUi = resolveManualSaveOutcomeUi({
+        primarySaveOk: true,
+        primarySavePending: saved?.pending === true,
+        companionError,
+        saveInfo,
+        staleRetryApplied: saved?.staleRetryApplied === true,
+        staleRetryChangedKeys: saved?.staleRetryChangedKeys,
+      });
+      const outcomeMessage = toText(successOutcomeUi.genErr) || toText(successOutcomeUi.infoMsg);
+      const outcomeTone = successOutcomeUi.genErr
+        ? "error"
+        : (successOutcomeUi.companionSeverity === "warning" ? "warning" : "success");
+      showSaveAckToast(outcomeMessage, outcomeTone, createRevision ? "bpmn_version" : "save");
+    } catch (e) {
+      truthOwner?.saveSessionFailed({
+        source: "manual_save_failed",
+        error: shortErr(e?.message || e || "Не удалось сохранить."),
+      });
+      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить."), "error", createRevision ? "bpmn_version" : "save_error");
+    } finally {
+      setIsManualSaveBusy(false);
+      setManualSaveIntent("");
+    }
+  }
+
+  async function handleSaveCurrentTab() {
+    await runManualSaveAction({ createRevision: false });
+  }
+
+  async function handleCreateRevisionAction() {
+    await runManualSaveAction({ createRevision: true });
+  }
+
+  // TODO(tech-debt): Review/LLM tabs are temporarily hidden from UI.
+  // Clarification data pipeline is kept for later re-introduction.
+  const {
+    bottlenecks,
+    lintResult,
+    qualityHintsRaw,
+    qualitySummary,
+    qualityProfile,
+    qualityAutoFixPreview,
+    activeHints,
+    qualityHints,
+  } = useQualityDerivation({ draft, qualityProfileId, apiClarifyHints, isQualityMode });
+  const workbench = useProcessWorkbenchController({
+    sessionId: sid,
+    isLocal,
+    locked,
+    tab,
+    isInterview,
+    isBpmnTab,
+    genBusy,
+    aiStepBusy,
+  });
+  const selectedElementId = String(selectedBpmnElement?.id || "").trim();
+  const selectedElementName = readableBpmnLabel(selectedBpmnElement?.name);
+  const selectedElementType = String(selectedBpmnElement?.type || "").trim();
+  const selectedElementLaneName = String(selectedBpmnElement?.laneName || "").trim();
+  const selectedElementContext = useMemo(() => {
+    if (!selectedElementId) return null;
+    return {
+      id: selectedElementId,
+      name: selectedElementName || selectedElementId,
+      type: selectedElementType,
+      laneName: selectedElementLaneName,
+    };
+  }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
+
+  // LLM4 — панель PROCESSMAN. Token economy: открытие/смена контекста/выбор =
+  // 0 LLM-вызовов; 1× GET /api/llm/status на сессию (не LLM-gateway, 0 токенов)
+  // — для disabled кнопки (S1) и квоты (S7). Кэш ответов v1 = in-memory (ref).
+  const [processmanOpen, setProcessmanOpen] = useState(false);
+  const [processmanClosing, setProcessmanClosing] = useState(false);
+  const [processmanEntering, setProcessmanEntering] = useState(false);
+  const [processmanLlmStatus, setProcessmanLlmStatus] = useState(null);
+  const processmanStatusLoadedRef = useRef(false);
+  const processmanCacheRef = useRef(new Map());
+  const processmanCloseTimerRef = useRef(null);
+  useEffect(() => {
+    if (!sid || processmanStatusLoadedRef.current) return;
+    processmanStatusLoadedRef.current = true;
+    let cancelled = false;
+    void apiLlmStatus()
+      .then((r) => { if (!cancelled) setProcessmanLlmStatus(r); })
+      .catch(() => { if (!cancelled) setProcessmanLlmStatus({ ok: false, status: 0, error: "fetch_failed" }); });
+    return () => { cancelled = true; };
+  }, [sid]);
+  // анимация выхода 150ms (только transform), вход 200ms — классы в processman.css
+  const closeProcessman = useCallback(() => {
+    setProcessmanClosing(true);
+    if (processmanCloseTimerRef.current) clearTimeout(processmanCloseTimerRef.current);
+    processmanCloseTimerRef.current = setTimeout(() => {
+      processmanCloseTimerRef.current = null;
+      setProcessmanOpen(false);
+      setProcessmanClosing(false);
+    }, 150);
+  }, []);
+  const toggleProcessman = useCallback(() => {
+    if (processmanOpen && !processmanClosing) {
+      closeProcessman();
+      return;
+    }
+    if (processmanCloseTimerRef.current) {
+      clearTimeout(processmanCloseTimerRef.current);
+      processmanCloseTimerRef.current = null;
+    }
+    setProcessmanClosing(false);
+    setProcessmanEntering(true);
+    setProcessmanOpen(true);
+  }, [processmanOpen, processmanClosing, closeProcessman]);
+  useEffect(() => {
+    if (!processmanOpen || !processmanEntering) return undefined;
+    const raf = requestAnimationFrame(() => setProcessmanEntering(false));
+    return () => cancelAnimationFrame(raf);
+  }, [processmanOpen, processmanEntering]);
+  useEffect(() => () => {
+    if (processmanCloseTimerRef.current) clearTimeout(processmanCloseTimerRef.current);
+  }, []);
+
+  const sessionMetaPersist = useSessionMetaPersist({
+    sid,
+    isLocal,
+    draftBpmnMeta: draft?.bpmn_meta,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
+    onSessionSync: onSessionSyncWithVersion,
+    setGenErr,
+    shortErr,
+    hybridLayerPersistedMapRef,
+    hybridV2PersistedDocRef,
+    drawioPersistedMetaRef,
+    normalizeHybridLayerMap,
+    serializeHybridLayerMap,
+    normalizeHybridV2Doc,
+    docToComparableJson,
+    normalizeDrawioMeta,
+    serializeDrawioMeta,
+    drawioJazzAdapter,
+    drawioLocalFirstAdapterMode,
+    sessionCompanionJazzAdapter,
+    sessionCompanionLocalFirstAdapterMode,
+  });
+  const persistBpmnMeta = sessionMetaPersist.persistBpmnMeta;
+  const persistSessionCompanion = sessionMetaPersist.persistSessionCompanion;
+  const persistSavedSessionCompanion = useCallback(async ({
+    source = "manual_save",
+    xml = "",
+    savedAt = "",
+    storedRev = 0,
+    requestedBaseRev = 0,
+    baseDiagramStateVersion = null,
+    publishRevision = false,
+    revisionComment = "",
+    revisionSource = "publish_revision",
+    authoritativeRevision = null,
+  } = {}) => {
+    if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
+    let nextCompanion = buildSessionCompanionAfterSave(sessionCompanionMetaLive, {
+      draft,
+      xml,
+      source,
+      savedAt,
+      storedRev,
+      requestedBaseRev,
+    });
+    let revisionTransition = { ok: true, skipped: true, revisionNumber: 0, skipReason: "" };
+    if (publishRevision) {
+      const normalizedAuthoritativeRevision = asObject(authoritativeRevision);
+      revisionTransition = appendRevisionToLedger(nextCompanion, {
+        xml: toText(xml || draft?.bpmn_xml || ""),
+        draft,
+        liveVersionRaw: sessionVersionReadSnapshot,
+        author: {
+          id: user?.id,
+          name: user?.name || user?.username || user?.email || "",
+          email: user?.email || "",
+        },
+        comment: toText(revisionComment) || "Опубликовано через сохранение",
+        source: toText(normalizedAuthoritativeRevision.source_action || revisionSource) || "publish_revision",
+        createdAt: toText(normalizedAuthoritativeRevision.created_at_iso || normalizedAuthoritativeRevision.created_at || savedAt),
+        authoritativeRevisionNumber: Number(normalizedAuthoritativeRevision.version_number || 0),
+        authoritativeRevisionId: toText(normalizedAuthoritativeRevision.id),
+        skipIfContentUnchanged: false,
+      });
+      if (!revisionTransition?.ok) {
+        return { ok: false, error: String(revisionTransition?.error || "revision_publish_failed") };
+      }
+      nextCompanion = revisionTransition.nextCompanion;
+    }
+    const persisted = await persistSessionCompanion(nextCompanion, {
+      source: `${source}_session_companion`,
+      baseDiagramStateVersion,
+      savedXml: toText(xml || draft?.bpmn_xml || ""),
+    });
+    return {
+      ...persisted,
+      revision: {
+        skipped: revisionTransition?.skipped === true,
+        skipReason: toText(revisionTransition?.skipReason),
+        revisionNumber: Number(revisionTransition?.revisionNumber || 0),
+      },
+    };
+  }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sessionVersionReadSnapshot, sid, toText, user?.email, user?.id, user?.name, user?.username]);
+  const persistTemplateAppliedSessionCompanion = useCallback(async ({
+    template = null,
+    source = "template_apply",
+    xml = "",
+    savedAt = "",
+    storedRev = 0,
+    requestedBaseRev = 0,
+    diagramStateVersion = null,
+  } = {}) => {
+    if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
+    const nextCompanion = buildSessionCompanionAfterTemplateApply(sessionCompanionMetaLive, {
+      draft,
+      xml,
+      source,
+      savedAt,
+      storedRev,
+      requestedBaseRev,
+      template,
+    });
+    return persistSessionCompanion(nextCompanion, {
+      source: `${source}_session_companion`,
+      savedXml: xml,
+      baseDiagramStateVersion: diagramStateVersion,
+    });
+  }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sid]);
+  const persistTraversalSessionCompanion = useCallback(async (autoPassResultRaw, source = "auto_pass_result_sync") => {
+    if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
+    const nextCompanion = buildSessionCompanionAfterTraversal(sessionCompanionMetaLive, {
+      draft,
+      xml: toText(draft?.bpmn_xml || ""),
+      source,
+      autoPassResult: autoPassResultRaw,
+    });
+    return persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+  }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sid, toText]);
+  const applyAutoPassResultToDraft = useCallback((resultRaw, source = "auto_pass_result_sync") => {
+    const result = asObject(resultRaw);
+    if (!Object.keys(result).length || !sid) return false;
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const nextMeta = {
+      ...currentMeta,
+      auto_pass_v1: result,
+    };
+      onSessionSyncWithVersion?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: source,
+      });
+    return true;
+  }, [draft?.bpmn_meta, onSessionSyncWithVersion, sid]);
+  const syncAutoPassResultFromServer = useCallback(async (source = "auto_pass_result_server_sync") => {
+    if (!sid) return false;
+    const metaResult = await apiGetBpmnMeta(sid);
+    if (!metaResult?.ok) return false;
+    const serverMeta = asObject(metaResult?.meta);
+    const result = asObject(serverMeta?.auto_pass_v1);
+    const applied = applyAutoPassResultToDraft(result, source);
+    if (applied) {
+      const persistResult = await persistTraversalSessionCompanion(result, source);
+      if (!persistResult?.ok) {
+        setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
+      }
+    }
+    return applied;
+  }, [applyAutoPassResultToDraft, persistTraversalSessionCompanion, setGenErr, shortErr, sid]);
+  const hydrateAutoPassResult = useCallback(async (jobIdRaw, source = "auto_pass_hydrate") => {
+    const jobId = toText(jobIdRaw);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (jobId) {
+        const statusResult = await apiGetAutoPassStatus(sid, jobId);
+        if (statusResult?.ok) {
+          const result = asObject(statusResult?.result);
+          const statusApplied = applyAutoPassResultToDraft(
+            result,
+            `${source}_status_attempt_${attempt + 1}`,
+          );
+          if (statusApplied) {
+            const persistResult = await persistTraversalSessionCompanion(result, `${source}_status_attempt_${attempt + 1}`);
+            if (!persistResult?.ok) {
+              setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
+            }
+            return true;
+          }
+        }
+      }
+      const metaApplied = await syncAutoPassResultFromServer(`${source}_meta_attempt_${attempt + 1}`);
+      if (metaApplied) return true;
+      if (attempt < 2) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+    return false;
+  }, [applyAutoPassResultToDraft, persistTraversalSessionCompanion, setGenErr, shortErr, sid, syncAutoPassResultFromServer]);
+  useEffect(() => {
+    const currentSid = toText(sid);
+    if (!currentSid) {
+      setAutoPassPrecheck({ loading: false, canRun: false, reason: "Session is not selected.", code: "NO_SESSION" });
+      return;
+    }
+    const reqSeq = Number(autoPassPrecheckReqSeqRef.current || 0) + 1;
+    autoPassPrecheckReqSeqRef.current = reqSeq;
+    setAutoPassPrecheck((prev) => ({ ...prev, loading: true }));
+    let pollTimer = null;
+    const finish = () => {
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    const applyResult = (result) => {
+      if (autoPassPrecheckReqSeqRef.current !== reqSeq) return;
+      if (result?.ok) {
+        const canRun = result.can_run === true;
+        setAutoPassPrecheck({
+          loading: false,
+          canRun,
+          reason: canRun ? "" : (toText(result.message) || "No complete path to EndEvent in main process."),
+          code: toText(result.code),
+        });
+        finish();
+        return;
+      }
+      const status = Number(result?.status || 0);
+      if (status === 404) {
+        // Backward compatibility: if precheck endpoint is not present, do not block Auto.
+        setAutoPassPrecheck({ loading: false, canRun: true, reason: "", code: "" });
+        finish();
+        return;
+      }
+      if (status === 202) {
+        // Background precheck is running; keep loading and poll every 2s.
+        setAutoPassPrecheck((prev) => ({ ...prev, loading: true, canRun: false, reason: "", code: "PENDING" }));
+        if (!pollTimer) {
+          pollTimer = window.setInterval(() => {
+            void apiGetAutoPassPrecheck(currentSid).then(applyResult);
+          }, 2000);
+        }
+        return;
+      }
+      setAutoPassPrecheck({
+        loading: false,
+        canRun: false,
+        reason: shortErr(result?.error || "No complete path to EndEvent in main process."),
+        code: "",
+      });
+      finish();
+    };
+    void apiGetAutoPassPrecheck(currentSid).then(applyResult);
+    return () => finish();
+  }, [sid, shortErr]);
+  const applySessionMeta = useCallback((meta) => {
+    if (!meta?.ok || !sid) return;
+    const versionItems = Array.isArray(meta.versions) ? meta.versions : [];
+    const currentHash = String(meta.current_session_payload_hash || "");
+    const latestHash = String(meta.latest_user_version_session_payload_hash || "");
+    setBpmnVersionTruthState({
+      currentSessionPayloadHash: currentHash,
+      latestUserVersionSessionPayloadHash: latestHash,
+      hasSessionChangesSinceLatestBpmnVersion: meta.has_session_changes_since_latest_bpmn_version === true,
+    });
+    const normalizedList = versionItems.map(normalizeBpmnVersionListItem);
+    const nextMeaningfulHead = normalizedList[0] || null;
+    setLatestBpmnVersionHead(nextMeaningfulHead);
+    setLatestBpmnVersionHeadStatus(nextMeaningfulHead ? "ready" : "idle");
+    metaVersionHeadSeededRef.current = true;
+
+    // Seed discussion badge cache from meta count.
+    const notesCount = Number.isFinite(meta.notes_count) ? Math.max(0, Math.round(meta.notes_count)) : 0;
+    seedSessionNoteAggregate(sid, {
+      open_notes_count: notesCount,
+      total_notes_count: notesCount,
+      unread_mentions_count: 0,
+    });
+
+    // Seed presence list from meta so we don't need a separate mount heartbeat.
+    if (Array.isArray(meta.active_users) && meta.active_users.length > 0) {
+      sessionPresence.setActiveUsers(normalizeSessionPresenceUsers(meta.active_users));
+      const ttlSeconds = Number(meta.presence_ttl_seconds || 0);
+      if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+        sessionPresence.setTtlMs(Math.round(ttlSeconds * 1000));
+      }
+    }
+  }, [sid, normalizeBpmnVersionListItem, sessionPresence.setActiveUsers, sessionPresence.setTtlMs]);
+
+  useEffect(() => {
+    const currentSid = toText(sid);
+    if (!currentSid) {
+      setSessionMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const meta = await apiGetSessionMeta(currentSid);
+      if (cancelled) return;
+      if (meta?.ok) {
+        setSessionMeta(meta);
+        applySessionMeta(meta);
+      } else {
+        // Fallback: meta unavailable — fetch presence via the original mount heartbeat.
+        if (sessionPresence.heartbeat) {
+          void sessionPresence.heartbeat("mount");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sid, applySessionMeta, sessionPresence.heartbeat]);
+  useEffect(() => {
+    if (tab !== "doc" || !sid) return;
+    const current = asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1);
+    if (Object.keys(current).length > 0) return;
+    if (autoPassDocSyncInFlightRef.current) return;
+    const now = Date.now();
+    if (now - Number(autoPassDocSyncLastAttemptMsRef.current || 0) < 3000) return;
+    autoPassDocSyncInFlightRef.current = true;
+    autoPassDocSyncLastAttemptMsRef.current = now;
+    (async () => {
+      try {
+        await syncAutoPassResultFromServer("doc_tab_autopass_sync");
+      } finally {
+        autoPassDocSyncInFlightRef.current = false;
+      }
+    })();
+  }, [draft?.bpmn_meta, sid, syncAutoPassResultFromServer, tab]);
+  const startAutoPass = useCallback(async () => {
+    if (!sid) return;
+    if (!autoPassPrecheck.canRun) {
+      const reason = toText(autoPassPrecheck.reason) || "No complete path to EndEvent in main process.";
+      setAutoPassJobState((prev) => ({
+        ...prev,
+        status: "failed",
+        progress: 100,
+        error: reason,
+      }));
+      setGenErr(reason);
+      return;
+    }
+    const currentStatus = toText(autoPassJobState?.status).toLowerCase();
+    if (currentStatus === "queued" || currentStatus === "running") return;
+    setAutoPassJobState((prev) => ({
+      ...prev,
+      status: "starting",
+      error: "",
+      progress: 0,
+      startedAtMs: Date.now(),
+    }));
+    const started = await apiStartAutoPass(sid, {
+      mode: "all",
+      max_variants: 500,
+      max_visits_per_node: 2,
+      max_steps: 2000,
+    });
+    if (!started?.ok) {
+      setAutoPassJobState({
+        jobId: "",
+        status: "failed",
+        progress: 100,
+        startedAtMs: Date.now(),
+        error: shortErr(started?.error || "Не удалось запустить автопроход."),
+      });
+      setGenErr(shortErr(started?.error || "Не удалось запустить автопроход."));
+      return;
+    }
+    const jobId = toText(started?.job_id);
+    const nextStatus = toText(started?.job_status || started?.status || "queued").toLowerCase() || "queued";
+    setGenErr("");
+    setAutoPassJobState({
+      jobId,
+      status: nextStatus,
+      progress: Number(started?.progress || (nextStatus === "completed" ? 100 : 0)),
+      startedAtMs: Date.now(),
+      error: "",
+    });
+    if (nextStatus === "completed") {
+      const completedResult = asObject(started?.result);
+      const applied = applyAutoPassResultToDraft(completedResult, "auto_pass_completed_sync");
+      if (!applied) {
+        const hydrated = await hydrateAutoPassResult(jobId, "auto_pass_completed_sync_hydrate");
+        if (!hydrated) {
+          setGenErr("Автопроход завершён, но результат пока не синхронизирован. Повторите через несколько секунд.");
+        }
+      } else {
+        const persistResult = await persistTraversalSessionCompanion(completedResult, "auto_pass_completed_sync");
+        if (!persistResult?.ok) {
+          setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
+        }
+      }
+      if (autoPassToastJobIdRef.current !== jobId) {
+        autoPassToastJobIdRef.current = jobId;
+        setInfoMsg("Автопроход готов.");
+      }
+    }
+  }, [
+    applyAutoPassResultToDraft,
+    autoPassJobState?.status,
+    autoPassPrecheck.canRun,
+    autoPassPrecheck.reason,
+    hydrateAutoPassResult,
+    persistTraversalSessionCompanion,
+    setInfoMsg,
+    setGenErr,
+    sid,
+  ]);
+  useEffect(() => {
+    const jobId = toText(autoPassJobState?.jobId);
+    const status = toText(autoPassJobState?.status).toLowerCase();
+    if (!sid || !jobId) return undefined;
+    if (status !== "queued" && status !== "running" && status !== "starting") return undefined;
+    const elapsedMs = Math.max(0, Date.now() - Number(autoPassJobState?.startedAtMs || Date.now()));
+    const delayMs = elapsedMs >= 30000 ? 4500 : 1500;
+    const timer = window.setTimeout(async () => {
+      const polled = await apiGetAutoPassStatus(sid, jobId);
+      if (!polled?.ok) {
+        const errMsg = shortErr(polled?.error || "Не удалось получить статус автопрохода.");
+        setAutoPassJobState((prev) => ({
+          ...prev,
+          status: "failed",
+          progress: Math.max(Number(prev?.progress || 0), 0),
+          error: errMsg,
+        }));
+        setGenErr(errMsg);
+        return;
+      }
+      const nextStatus = toText(polled?.job_status || polled?.status || "").toLowerCase();
+      const nextProgress = Number(polled?.progress || 0);
+      if (nextStatus === "completed" || nextStatus === "done") {
+        const completedResult = asObject(polled?.result);
+        const applied = applyAutoPassResultToDraft(completedResult, "auto_pass_completed_poll");
+        if (!applied) {
+          const hydrated = await hydrateAutoPassResult(jobId, "auto_pass_completed_poll_hydrate");
+          if (!hydrated) {
+            setGenErr("Автопроход завершён, но результат пока не синхронизирован. Повторите через несколько секунд.");
+          }
+        } else {
+          const persistResult = await persistTraversalSessionCompanion(completedResult, "auto_pass_completed_poll");
+          if (!persistResult?.ok) {
+            setGenErr(shortErr(persistResult?.error || "Не удалось синхронизировать traversal result contract."));
+          }
+        }
+        setAutoPassJobState((prev) => ({
+          ...prev,
+          status: "completed",
+          progress: Number.isFinite(nextProgress) ? Math.max(0, Math.min(100, nextProgress || 100)) : 100,
+          error: "",
+        }));
+        if (autoPassToastJobIdRef.current !== jobId) {
+          autoPassToastJobIdRef.current = jobId;
+          setInfoMsg("Автопроход готов.");
+        }
+        setGenErr("");
+        return;
+      }
+      if (nextStatus === "failed" || nextStatus === "error") {
+        const errMsg = shortErr(polled?.error || "Автопроход завершился с ошибкой.");
+        setAutoPassJobState((prev) => ({
+          ...prev,
+          status: "failed",
+          progress: 100,
+          error: errMsg,
+        }));
+        setGenErr(errMsg);
+        return;
+      }
+      setAutoPassJobState((prev) => ({
+        ...prev,
+        status: nextStatus || prev.status || "running",
+        progress: Number.isFinite(nextProgress) ? Math.max(0, Math.min(99, nextProgress)) : prev.progress,
+        error: "",
+      }));
+    }, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [
+    applyAutoPassResultToDraft,
+    autoPassJobState?.jobId,
+    autoPassJobState?.startedAtMs,
+    autoPassJobState?.status,
+    hydrateAutoPassResult,
+    persistTraversalSessionCompanion,
+    setGenErr,
+    setInfoMsg,
+    sid,
+  ]);
+  const autoPassUi = useMemo(() => {
+    const status = toText(autoPassJobState?.status).toLowerCase();
+    if (!status || status === "idle") return { status: "idle", label: "Auto: idle", progress: 0 };
+    if (status === "starting") return { status, label: "Auto: queued", progress: 0 };
+    if (status === "queued") return { status, label: "Auto: queued", progress: Number(autoPassJobState?.progress || 0) };
+    if (status === "running") return { status, label: "Auto: running", progress: Number(autoPassJobState?.progress || 0) };
+    if (status === "completed" || status === "done") return { status: "done", label: "Auto: done", progress: 100 };
+    if (status === "failed" || status === "error") return { status: "fail", label: "Auto: fail", progress: 100 };
+    return { status, label: `Auto: ${status}`, progress: Number(autoPassJobState?.progress || 0) };
+  }, [autoPassJobState?.progress, autoPassJobState?.status]);
+  const {
+    attentionViewerId,
+    attentionStorageKey,
+    attentionMarkers,
+    attentionShowOnWorkspace,
+    attentionMarkersWithState,
+    attentionMarkerUnreadCount,
+    attentionMarkerHomeCount,
+    customAttentionHints,
+  } = useAttentionMarkerDerivation({
+    user,
+    bpmnMeta: draft?.bpmn_meta,
+    attentionSessionLastOpenedAt,
+    sid,
+  });
+  useEffect(() => {
+    if (!sid) return;
+    if (typeof window === "undefined") return;
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      const raw = Number(window.localStorage?.getItem(attentionStorageKey) || 0);
+      const prev = Number.isFinite(raw) ? Math.round(raw) : 0;
+      if (prev > 0) {
+        setAttentionSessionLastOpenedAt(prev);
+      } else {
+        setAttentionSessionLastOpenedAt(now);
+      }
+      window.localStorage?.setItem(attentionStorageKey, String(now));
+    } catch {
+      setAttentionSessionLastOpenedAt(now);
+    }
+  }, [attentionStorageKey, sid]);
+  const persistAttentionMeta = useCallback(async ({
+    markersRaw,
+    showOnWorkspaceRaw,
+    source = "attention_marker_update",
+  }) => {
+    const markersNext = normalizeAttentionMarkers(markersRaw);
+    const showOnWorkspace = showOnWorkspaceRaw !== false;
+    const currentMeta = asObject(draft?.bpmn_meta);
+    const nextMeta = {
+      ...currentMeta,
+      attention_markers: markersNext,
+      attention_show_on_workspace: showOnWorkspace,
+    };
+    setAttentionMarkerSaving(true);
+    try {
+      const saved = await persistBpmnMeta(nextMeta, {
+        source,
+        maxAttempts: 3,
+        retryBackoffMs: [280, 720],
+      });
+      if (!saved?.ok) {
+        const status = Number(saved?.status || 0);
+        if (status === 409 || status === 423) {
+          setInfoMsg("Session is being updated. Retry in a moment.");
+        }
+      }
+      return saved;
+    } finally {
+      setAttentionMarkerSaving(false);
+    }
+  }, [draft?.bpmn_meta, persistBpmnMeta]);
+  const addAttentionMarker = useCallback(async () => {
+    const message = toText(attentionMarkerMessage);
+    if (!message) return;
+    const marker = createAttentionMarker({
+      message,
+      nodeId: selectedElementId,
+      createdBy: attentionViewerId,
+      createdAt: Math.floor(Date.now() / 1000),
+    });
+    const next = [marker, ...attentionMarkers];
+    setAttentionMarkerMessage("");
+    const saved = await persistAttentionMeta({
+      markersRaw: next,
+      showOnWorkspaceRaw: attentionShowOnWorkspace,
+      source: "attention_marker_add",
+    });
+    if (saved?.ok) {
+      setInfoMsg("Маркер внимания добавлен.");
+      setGenErr("");
+    }
+  }, [
+    attentionMarkerMessage,
+    selectedElementId,
+    attentionViewerId,
+    attentionMarkers,
+    persistAttentionMeta,
+    attentionShowOnWorkspace,
+  ]);
+  const toggleAttentionMarkerChecked = useCallback(async (markerIdRaw, checkedRaw) => {
+    const markerId = toText(markerIdRaw);
+    if (!markerId) return;
+    const checked = !!checkedRaw;
+    const nextMarkers = attentionMarkers.map((marker) => (
+      marker.id === markerId ? { ...marker, is_checked: checked } : marker
+    ));
+    const saved = await persistAttentionMeta({
+      markersRaw: nextMarkers,
+      showOnWorkspaceRaw: attentionShowOnWorkspace,
+      source: "attention_marker_check_toggle",
+    });
+    if (saved?.ok) {
+      setInfoMsg(checked ? "Маркер отмечен как проверенный." : "Маркер снова требует внимания.");
+      setGenErr("");
+    }
+  }, [attentionMarkers, attentionShowOnWorkspace, persistAttentionMeta]);
+  const markAttentionMarkersSeenByIds = useCallback(async (markerIdsRaw = null, source = "attention_marker_seen") => {
+    const markerIds = markerIdsRaw ? asArray(markerIdsRaw).map((id) => toText(id)).filter(Boolean) : null;
+    const nextMarkers = markAttentionMarkersSeen(
+      attentionMarkers,
+      attentionViewerId,
+      markerIds,
+      Math.floor(Date.now() / 1000),
+    );
+    const hasChanges = JSON.stringify(nextMarkers) !== JSON.stringify(attentionMarkers);
+    if (!hasChanges) return { ok: true, skipped: true };
+    return persistAttentionMeta({
+      markersRaw: nextMarkers,
+      showOnWorkspaceRaw: attentionShowOnWorkspace,
+      source,
+    });
+  }, [attentionMarkers, attentionShowOnWorkspace, attentionViewerId, persistAttentionMeta]);
+  const toggleAttentionShowOnWorkspace = useCallback(async (enabledRaw) => {
+    const enabled = !!enabledRaw;
+    const saved = await persistAttentionMeta({
+      markersRaw: attentionMarkers,
+      showOnWorkspaceRaw: enabled,
+      source: "attention_show_on_workspace_toggle",
+    });
+    if (saved?.ok) {
+      setInfoMsg(enabled ? "Маркеры внимания теперь отображаются на главной." : "Маркеры внимания скрыты на главной.");
+      setGenErr("");
+    }
+  }, [attentionMarkers, persistAttentionMeta]);
+  const focusAttentionMarker = useCallback(async (markerRaw) => {
+    const marker = asObject(markerRaw);
+    const markerId = toText(marker.id);
+    if (!markerId) return;
+    await markAttentionMarkersSeenByIds([markerId], "attention_marker_focus");
+    const nodeId = toNodeId(marker.node_id);
+    if (!nodeId) return;
+    if (tab !== "diagram") setTab("diagram");
+    requestDiagramFocus(nodeId, {
+      markerClass: "fpcAttentionJumpFocus",
+      durationMs: 6200,
+      targetZoom: 0.92,
+      clearExistingSelection: true,
+    });
+    window.setTimeout(() => {
+      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Показано" });
+    }, 120);
+    onOpenElementNotes?.({
+      id: nodeId,
+      name: toText(marker.message || nodeId) || nodeId,
+      type: "",
+      laneName: "",
+    }, "header_open_notes");
+  }, [markAttentionMarkersSeenByIds, onOpenElementNotes, requestDiagramFocus, setTab, tab, toNodeId, toText]);
+  useEffect(() => {
+    if (!attentionOpen) {
+      attentionPanelWasOpenRef.current = false;
+      return;
+    }
+    const justOpened = !attentionPanelWasOpenRef.current;
+    attentionPanelWasOpenRef.current = true;
+    if (!justOpened) return;
+    const unreadIds = attentionMarkersWithState
+      .filter((marker) => marker.unread)
+      .map((marker) => marker.id);
+    if (!unreadIds.length) return;
+    void markAttentionMarkersSeenByIds(unreadIds, "attention_marker_panel_open");
+  }, [attentionOpen, attentionMarkersWithState, markAttentionMarkersSeenByIds]);
+  const nodePathMetaMap = useMemo(
+    () => normalizeNodePathMetaMap(asObject(asObject(draft?.bpmn_meta).node_path_meta)),
+    [draft?.bpmn_meta],
+  );
+  const flowTierMetaMap = useMemo(
+    () => normalizeFlowTierMetaMap(asObject(asObject(draft?.bpmn_meta).flow_meta)),
+    [draft?.bpmn_meta],
+  );
+  const robotMetaByElementId = useMemo(
+    () => normalizeRobotMetaMap(asObject(asObject(draft?.bpmn_meta).robot_meta_by_element_id)),
+    [draft?.bpmn_meta],
+  );
+  const robotMetaStatusByElementId = useMemo(
+    () => buildRobotMetaStatusByElementId(robotMetaByElementId),
+    [robotMetaByElementId],
+  );
+  const robotMetaCounts = useMemo(() => {
+    const summary = { ready: 0, incomplete: 0 };
+    Object.values(robotMetaStatusByElementId).forEach((statusRaw) => {
+      const status = toText(statusRaw).toLowerCase();
+      if (status === "ready") summary.ready += 1;
+      if (status === "incomplete") summary.incomplete += 1;
+    });
+    return summary;
+  }, [robotMetaStatusByElementId]);
+  const robotMetaNodeCatalogById = useMemo(() => {
+    const out = {};
+    asArray(draft?.nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(node?.id);
+      if (!nodeId) return;
+      out[nodeId] = {
+        id: nodeId,
+        title: toText(node?.name || node?.title || nodeId) || nodeId,
+        type: toText(node?.type),
+      };
+    });
+    return out;
+  }, [draft?.nodes]);
+  const hybridLayerMapLive = useMemo(
+    () => normalizeHybridLayerMap(hybridLayerByElementId),
+    [hybridLayerByElementId],
+  );
+  const hybridLayerItems = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    Object.keys(robotMetaByElementId).forEach((elementIdRaw) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId || seen.has(elementId)) return;
+      const meta = asObject(robotMetaByElementId[elementId]);
+      const mode = toText(meta?.exec?.mode).toLowerCase();
+      if (mode !== "hybrid") return;
+      seen.add(elementId);
+      const node = asObject(robotMetaNodeCatalogById[elementId]);
+      out.push({
+        elementId,
+        title: toText(node?.title || elementId) || elementId,
+        status: toText(robotMetaStatusByElementId[elementId]).toLowerCase() || "none",
+        executor: toText(meta?.exec?.executor),
+        actionKey: toText(meta?.exec?.action_key),
+      });
+    });
+    Object.keys(hybridLayerMapLive).forEach((elementIdRaw) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId || seen.has(elementId)) return;
+      seen.add(elementId);
+      const node = asObject(robotMetaNodeCatalogById[elementId]);
+      out.push({
+        elementId,
+        title: toText(node?.title || elementId) || elementId,
+        status: toText(robotMetaStatusByElementId[elementId]).toLowerCase() || "none",
+        executor: "",
+        actionKey: "",
+      });
+    });
+    return out.sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru") || String(a.elementId || "").localeCompare(String(b.elementId || ""), "ru"));
+  }, [
+    robotMetaByElementId,
+    robotMetaNodeCatalogById,
+    robotMetaStatusByElementId,
+    hybridLayerMapLive,
+  ]);
+  const hybridDebugEnabled = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return new URLSearchParams(String(window.location.search || "")).get("debugHybrid") === "1";
+    } catch {
+      return false;
+    }
+  }, [sid, tab]);
+  const bpmnCanvasApi = useBpmnCanvasController({
+    bpmnRef,
+    bpmnStageHostRef,
+  });
+  const {
+    hybridViewportSize,
+    hybridViewportMatrix,
+    hybridViewportMatrixRef,
+    subscribeOverlayViewportMatrix,
+    getOverlayViewportMatrix,
+    overlayViewbox,
+    overlayContainerRect,
+    localToDiagram,
+    clientToDiagram,
+    getElementBBox,
+    diagramToScreen,
+    screenToDiagram,
+    subscribeViewboxChanging,
+  } = useDiagramOverlayTransform({
+    enabled: tab === "diagram" && overlayLayerVisible,
+    canvasApi: bpmnCanvasApi,
+  });
+
+  // Mechanic 2: imperatively hide/show the hybrid overlay container during pan/zoom.
+  // Using DOM toggle (no React setState) to avoid re-renders during panning.
+  useEffect(() => {
+    if (typeof subscribeViewboxChanging !== "function") return undefined;
+    return subscribeViewboxChanging((changing) => {
+      const el = hybridLayerOverlayRef.current;
+      if (!(el instanceof Element)) return;
+      el.style.opacity = changing ? "0" : "";
+    });
+  }, [subscribeViewboxChanging]);
+  // Cached host rect updated by ResizeObserver / resize listener.
+  // NEVER read getBoundingClientRect during render — only in the observer callback.
+  const [hostContainerRect, setHostContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const hostRectRef = useRef(hostContainerRect);
+  const setHostContainerRectIfChanged = useCallback((next) => {
+    const current = hostRectRef.current;
+    if (
+      current
+      && Number(current.left || 0) === Number(next?.left || 0)
+      && Number(current.top || 0) === Number(next?.top || 0)
+      && Number(current.width || 0) === Number(next?.width || 0)
+      && Number(current.height || 0) === Number(next?.height || 0)
+    ) {
+      return;
+    }
+    hostRectRef.current = {
+      left: Number(next?.left || 0),
+      top: Number(next?.top || 0),
+      width: Number(next?.width || 0),
+      height: Number(next?.height || 0),
+    };
+    setHostContainerRect(hostRectRef.current);
+  }, []);
+  const hostRefForTemplates = useMemo(() => ({ current: bpmnStageHostElement }), [bpmnStageHostElement]);
+  useViewportResizeController({
+    hostRef: hostRefForTemplates,
+    onHostRect: setHostContainerRectIfChanged,
+  });
+
+  const templatesDiagramContainerRect = useMemo(() => {
+    const rect = asObject(overlayContainerRect);
+    if (rect.width > 0 && rect.height > 0) return rect;
+    return hostContainerRect;
+  }, [overlayContainerRect, hostContainerRect]);
+  const {
+    hybridLayerPositions,
+    hybridLayerPositionsRef,
+    readHybridElementAnchor,
+    resolveHybridTargetElementIdFromPoint,
+    resolveFirstHybridSeedElementId,
+  } = useHybridLayerAnchorController({
+    canvasApi: bpmnCanvasApi,
+    tab,
+    hybridVisible,
+    hybridLayerItems,
+    bpmnStageHostRef,
+    toText,
+    toNodeId,
+    cssEscapeAttr,
+    localToDiagram,
+    getElementBBox,
+  });
+  const {
+    getHybridLayerCardRefCallback,
+    hybridLayerRenderRows,
+    hybridLayerMissingBindingIds,
+    hybridLayerVisibilityStats,
+    hybridLayerCounts,
+  } = useHybridLayerViewportController({
+    resetKey: sid,
+    tab,
+    hybridVisible,
+    hybridModeEffective,
+    hybridLayerItems,
+    hybridLayerPositions,
+    hybridLayerByElementId,
+    hybridViewportSize,
+    hybridViewportMatrix,
+    hybridLayerActiveElementId,
+    matrixToDiagram,
+    matrixToScreen,
+    toText,
+  });
+  const hybridPersist = useHybridPersistController({
+    persistHybridLayerMap: sessionMetaPersist.persistHybridLayerMap,
+    persistHybridV2Doc: sessionMetaPersist.persistHybridV2Doc,
+    persistDrawioMeta: sessionMetaPersist.persistDrawioMeta,
+    sessionId: sid,
+    setInfoMsg,
+  });
+  const persistHybridLayerMap = hybridPersist.persistHybridLayerMap;
+  const persistHybridV2Doc = hybridPersist.saveHybrid;
+  const persistDrawioMeta = hybridPersist.persistDrawioMeta;
+  // P1: hybrid-пайплайн использует тот же конфликт-UX (единая модель) —
+  // 409 показывается в общем конфликт-модале, без молчаливых ретраев.
+  const hybridSaveConflictOpen = !!hybridPersist.conflictNotice?.open;
+  const hybridSaveConflictModalView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: {
+      serverCurrentVersion: hybridPersist.conflictNotice?.serverVersion,
+    },
+    currentUserRaw: user,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: hybridPersist.conflictNotice?.message,
+  }), [
+    hybridPersist.conflictNotice?.message,
+    hybridPersist.conflictNotice?.serverVersion,
+    toText,
+    user,
+  ]);
+  const handleHybridConflictOverwrite = useCallback(() => {
+    setSaveConflictActionBusy(true);
+    void hybridPersist.resolveConflictOverwrite()
+      .then((result) => {
+        if (result?.ok) {
+          setInfoMsg("Ваша hybrid-версия сохранена поверх серверной (overwrite).");
+          return;
+        }
+        if (Number(result?.status || 0) === 409 || String(result?.code || result?.errorCode || "") === "CONFLICT") {
+          setGenErr("Конфликт обновился. Повторите выбор.");
+          return;
+        }
+        if (result?.skipped) return;
+        setGenErr(shortErr(result?.error || "Не удалось сохранить hybrid-версию поверх серверной."));
+      })
+      .finally(() => {
+        setSaveConflictActionBusy(false);
+      });
+  }, [hybridPersist, setGenErr, setInfoMsg]);
+  // «Сообщить об ошибке»: шлёт конфликт + диагностический трейл последних
+  // действий в телеметрию (user_reported=true), чтобы разобрать корень
+  // ложных single-tab конфликтов по данным со stage.
+  const saveConflictReportContextKey = [
+    toText(sid),
+    showSaveConflictModal ? "bpmn" : (hybridSaveConflictOpen ? "hybrid" : "property"),
+    toNonNegativeVersion(
+      saveUploadStatus?.conflict?.serverCurrentVersion
+        ?? hybridPersist.conflictNotice?.serverVersion
+        ?? 0,
+    ),
+  ].join(":");
+  const saveConflictReportSent = saveConflictReportKey !== ""
+    && saveConflictReportKey === saveConflictReportContextKey;
+  const handleSaveConflictReport = useCallback(() => {
+    if (!sid || saveConflictActionBusy) return;
+    const isHybridConflict = hybridSaveConflictOpen && !showSaveConflictModal;
+    const coordinatorConflict = saveCoordinator.getConflict(sid);
+    const conflictSnapshot = {
+      sessionId: sid,
+      clientBaseVersion: isHybridConflict
+        ? null
+        : (saveUploadStatus?.conflict?.clientBaseVersion ?? coordinatorConflict?.clientBaseVersion ?? null),
+      serverCurrentVersion: isHybridConflict
+        ? (hybridPersist.conflictNotice?.serverVersion ?? coordinatorConflict?.serverVersion ?? null)
+        : (saveUploadStatus?.conflict?.serverCurrentVersion ?? coordinatorConflict?.serverVersion ?? null),
+      serverLastWrite: saveUploadStatus?.conflict?.serverLastWrite || null,
+    };
+    setSaveConflictActionBusy(true);
+    void reportSaveConflictEvent({
+      sessionId: sid,
+      pipeline: isHybridConflict ? "hybrid" : (coordinatorConflict?.pipeline || "xml"),
+      conflict: conflictSnapshot,
+      userReported: true,
+    })
+      .then((result) => {
+        if (result?.ok || result?.skipped) {
+          setSaveConflictReportKey(saveConflictReportContextKey);
+          setInfoMsg("Спасибо! Отчёт об ошибке отправлен.");
+          return;
+        }
+        setGenErr("Не удалось отправить отчёт об ошибке. Попробуйте позже.");
+      })
+      .finally(() => {
+        setSaveConflictActionBusy(false);
+      });
+  }, [
+    hybridPersist.conflictNotice?.serverVersion,
+    hybridSaveConflictOpen,
+    saveConflictActionBusy,
+    saveConflictReportContextKey,
+    saveUploadStatus?.conflict,
+    setGenErr,
+    setInfoMsg,
+    showSaveConflictModal,
+    sid,
+  ]);
+  const robotMetaListItems = useMemo(() => {
+    const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
+    const query = toText(robotMetaListSearch).toLowerCase();
+    return Object.keys(robotMetaStatusByElementId)
+      .map((elementId) => {
+        const status = toText(robotMetaStatusByElementId[elementId]).toLowerCase();
+        if (status !== tab) return null;
+        const meta = asObject(robotMetaByElementId[elementId]);
+        const node = asObject(robotMetaNodeCatalogById[elementId]);
+        const mode = toText(meta?.exec?.mode).toLowerCase();
+        const executor = toText(meta?.exec?.executor);
+        const actionKey = toText(meta?.exec?.action_key);
+        const title = toText(node?.title || elementId) || elementId;
+        const searchText = [title, elementId, mode, executor, actionKey].join(" ").toLowerCase();
+        if (query && !searchText.includes(query)) return null;
+        return {
+          nodeId: elementId,
+          title,
+          type: toText(node?.type),
+          mode: mode || "human",
+          executor,
+          actionKey,
+          status: getRobotMetaStatus(meta),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ru") || String(a.nodeId || "").localeCompare(String(b.nodeId || ""), "ru"));
+  }, [
+    robotMetaStatusByElementId,
+    robotMetaByElementId,
+    robotMetaNodeCatalogById,
+    robotMetaListTab,
+    robotMetaListSearch,
+  ]);
+  const executionPlanVersions = useMemo(
+    () => normalizeExecutionPlanVersionList(asObject(asObject(draft?.bpmn_meta).execution_plans)),
+    [draft?.bpmn_meta],
+  );
+  const executionPlanNodeTypeById = useMemo(() => {
+    const out = {};
+    asArray(draft?.nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(node?.id);
+      if (!nodeId) return;
+      out[nodeId] = toText(node?.type) || null;
+    });
+    return out;
+  }, [draft?.nodes]);
+  const executionPlanSource = useMemo(() => {
+    const interview = asObject(draft?.interview);
+    const debug = asObject(interview?.report_build_debug);
+    const highlightedTier = normalizePathTier(pathHighlightTier);
+    const highlightedSeq = normalizePathSequenceKey(pathHighlightSequenceKey);
+    const useHighlightScope = !!pathHighlightEnabled && !!(highlightedTier || highlightedSeq);
+    const debugRouteSteps = normalizeDebugRouteSteps(debug?.route_steps || debug?.routeSteps);
+    const routeSteps = debugRouteSteps.length
+      ? debugRouteSteps
+      : asArray(buildRouteStepsFromInterviewPathSpec(interview));
+    const sourceSteps = routeSteps.length
+      ? routeSteps
+      : asArray(draft?.nodes).map((nodeRaw, idx) => {
+        const node = asObject(nodeRaw);
+        const workSec = Number(
+          node?.step_time_sec
+          ?? node?.stepTimeSec
+          ?? node?.duration_sec
+          ?? node?.durationSec
+          ?? 0,
+        );
+        return {
+          order_index: idx + 1,
+          step_id: toText(node?.id) || `node_step_${idx + 1}`,
+          title: toText(node?.name || node?.title || node?.id) || `Step ${idx + 1}`,
+          bpmn_ref: toText(node?.id),
+          lane_name: toText(node?.laneName || node?.role || node?.area),
+          work_duration_sec: Number.isFinite(workSec) && workSec >= 0 ? Math.round(workSec) : 0,
+          wait_duration_sec: 0,
+        };
+      });
+    const readStepBpmnId = (stepRaw) => toText(
+      asObject(stepRaw)?.bpmn_ref
+      || asObject(stepRaw)?.bpmnRef
+      || asObject(stepRaw)?.node_bind_id
+      || asObject(stepRaw)?.nodeBindId
+      || asObject(stepRaw)?.node_id
+      || asObject(stepRaw)?.nodeId,
+    );
+    let filteredSteps = sourceSteps;
+    if (useHighlightScope && highlightedTier) {
+      const scoped = sourceSteps.filter((stepRaw) => {
+        const bpmnId = readStepBpmnId(stepRaw);
+        if (!bpmnId) return false;
+        const nodeMeta = asObject(nodePathMetaMap[bpmnId]);
+        const paths = asArray(nodeMeta?.paths)
+          .map((item) => normalizePathTier(item))
+          .filter(Boolean);
+        if (!paths.includes(highlightedTier)) return false;
+        if (!highlightedSeq) return true;
+        const seq = normalizePathSequenceKey(nodeMeta?.sequence_key || nodeMeta?.sequenceKey);
+        return seq === highlightedSeq;
+      });
+      if (scoped.length > 0) filteredSteps = scoped;
+    }
+    const debugPathId = toText(debug?.path_id_used);
+    const pathId = toText(
+      useHighlightScope
+        ? (highlightedSeq || highlightedTier || debugPathId || "primary")
+        : (debugPathId || highlightedSeq || highlightedTier || "primary"),
+    );
+    let scenarioLabel = toText(debug?.selectedScenarioLabel);
+    if (!scenarioLabel && useHighlightScope && highlightedTier) {
+      scenarioLabel = highlightedSeq ? `${highlightedTier} (${highlightedSeq})` : `${highlightedTier} Ideal`;
+    }
+    if (!scenarioLabel) scenarioLabel = highlightedTier ? `${highlightedTier} Ideal` : "P0 Ideal";
+    return {
+      pathId,
+      scenarioLabel,
+      steps: filteredSteps,
+      source: useHighlightScope
+        ? "diagram_path_highlight"
+        : (debugRouteSteps.length ? "report_build_debug_route" : "interview_path_spec"),
+    };
+  }, [
+    draft?.interview,
+    draft?.nodes,
+    nodePathMetaMap,
+    pathHighlightEnabled,
+    pathHighlightTier,
+    pathHighlightSequenceKey,
+  ]);
+  const canExportExecutionPlan = asArray(executionPlanSource?.steps).length > 0;
+  const pathHighlightCatalog = useMemo(() => {
+    const tiers = {
+      P0: { id: "P0", nodes: 0, flows: 0, sequenceKeys: [] },
+      P1: { id: "P1", nodes: 0, flows: 0, sequenceKeys: [] },
+      P2: { id: "P2", nodes: 0, flows: 0, sequenceKeys: [] },
+    };
+    const seqByTier = {
+      P0: new Set(),
+      P1: new Set(),
+      P2: new Set(),
+    };
+    Object.values(nodePathMetaMap).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const sequenceKey = normalizePathSequenceKey(entry?.sequenceKey || entry?.sequence_key);
+      asArray(entry?.paths).forEach((tierRaw) => {
+        const tier = normalizePathTier(tierRaw);
+        if (!tier || !tiers[tier]) return;
+        tiers[tier].nodes += 1;
+        if (sequenceKey) seqByTier[tier].add(sequenceKey);
+      });
+    });
+    Object.values(flowTierMetaMap).forEach((entryRaw) => {
+      const tier = normalizePathTier(asObject(entryRaw)?.tier);
+      if (!tier || !tiers[tier]) return;
+      tiers[tier].flows += 1;
+    });
+    ["P0", "P1", "P2"].forEach((tier) => {
+      tiers[tier].sequenceKeys = Array.from(seqByTier[tier]).sort((a, b) => a.localeCompare(b, "ru"));
+    });
+    return tiers;
+  }, [nodePathMetaMap, flowTierMetaMap]);
+  const availablePathTiers = useMemo(
+    () => ["P0", "P1", "P2"].filter((tier) => {
+      const row = asObject(pathHighlightCatalog[tier]);
+      return Number(row?.nodes || 0) > 0 || Number(row?.flows || 0) > 0;
+    }),
+    [pathHighlightCatalog],
+  );
+  const availableSequenceKeysForTier = useMemo(
+    () => asArray(asObject(pathHighlightCatalog[pathHighlightTier]).sequenceKeys),
+    [pathHighlightCatalog, pathHighlightTier],
+  );
+  const [playbackDecisionMode, setPlaybackDecisionMode] = useState("auto_pass");
+  const {
+    playbackOverlayClickGuardRef,
+    playbackIsPlaying,
+    playbackRuntimeSnapshot,
+    playbackGateways,
+    playbackGatewayChoices,
+    playbackGatewayChoiceSource,
+    playbackGatewayReadOnly,
+    playbackDecisionMode: playbackDecisionModeResolved,
+    playbackGatewayPending,
+    playbackAwaitingGatewayId,
+    playbackGraphError,
+    playbackTotal,
+    playbackCanRun,
+    playbackIndexClamped,
+    playbackCurrentEvent,
+    playbackHighlightedBpmnIds,
+    markPlaybackOverlayInteraction,
+    setPlaybackGatewayChoice,
+    handlePlaybackPrev,
+    handlePlaybackNext,
+    handlePlaybackReset,
+    handlePlaybackTogglePlay,
+    playbackAutoCamera,
+    setPlaybackAutoCamera,
+    playbackSpeed,
+    setPlaybackSpeed,
+    playbackManualAtGateway,
+    setPlaybackManualAtGateway,
+    playbackScenarioKey,
+    setPlaybackScenarioKey,
+    playbackScenarioOptions,
+    playbackScenarioLabel,
+    playbackEventTitle,
+    formatPlaybackGatewayTitle,
+    playbackGatewayOptionLabel,
+  } = usePlaybackController({
+    sid,
+    tab,
+    draftBpmnXml: draft?.bpmn_xml,
+    diagramActionPlaybackOpen,
+    bpmnRef,
+    draftInterview: draft?.interview,
+    executionPlanSteps: asArray(executionPlanSource?.steps),
+    executionPlanPathId: executionPlanSource?.pathId,
+    executionPlanScenarioLabel: executionPlanSource?.scenarioLabel,
+    pathHighlightCatalog,
+    pathHighlightTier,
+    pathHighlightSequenceKey,
+    flowTierMetaMap,
+    nodePathMetaMap,
+    playbackDecisionMode,
+    autoPassUiStatus: toText(autoPassUi?.status || autoPassJobState?.status || ""),
+    materializedTraversalResult: asObject(sessionCompanionMetaLive?.traversal_result_v1),
+    materializedAutoPassResult: asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1),
+    initialPlaybackAutoCamera: true,
+    initialPlaybackSpeed: "1",
+    initialPlaybackManualAtGateway: false,
+    initialPlaybackScenarioKey: "active",
+  });
+  const {
+    hybridTools,
+    hybridSelection,
+    hybridV2DocLive,
+    hybridV2BindingByHybridId,
+    hybridV2Renderable,
+    hybridV2HiddenCount,
+    hybridV2ToolState,
+    hybridV2ActiveId,
+    hybridV2SelectedIds,
+    hybridV2SelectedIdSet,
+    hybridV2ImportNotice,
+    setHybridV2ActiveId,
+    deleteSelectedHybridIds,
+    hybridTotalCount,
+    showHybridLayer,
+    hideHybridLayer,
+    setHybridLayerMode,
+    toggleHybridToolsVisible,
+    setHybridLayerOpacity,
+    toggleHybridLayerLock,
+    toggleHybridLayerFocus,
+    toggleHybridV2LayerVisibility,
+    toggleHybridV2LayerLock,
+    setHybridV2LayerOpacity,
+    revealAllHybridV2,
+    focusHybridLayer,
+    goToHybridLayerItem,
+    cleanupMissingHybridBindings,
+    withHybridOverlayGuard,
+    handleHybridLayerItemPointerDown,
+    hybridToolsUiState,
+    drawioUiState,
+    setHybridToolsMode,
+    selectHybridPaletteTool,
+    startHybridStencilPlacement,
+    hybridPlacementHitLayerActive,
+    goToActiveHybridBinding,
+    exportHybridV2Drawio,
+    handleHybridV2ImportFile,
+    handleHybridV2ElementPointerDown,
+    handleHybridV2ResizeHandlePointerDown,
+    handleHybridV2OverlayPointerDown,
+    handleHybridV2OverlayContextMenu,
+    handleHybridV2ElementContextMenu,
+    handleHybridV2ElementDoubleClick,
+    deleteLegacyHybridMarkers,
+    hybridV2PlaybackHighlightedIds,
+  } = useProcessStageHybrid({
+    sid,
+    tab,
+    draft,
+    user,
+    isLocal,
+    selectedElementId,
+    selectedElementType,
+    diagramActionHybridToolsOpen,
+    setDiagramActionHybridToolsOpen,
+    hybridUiPrefs,
+    setHybridUiPrefs,
+    hybridPeekActive,
+    setHybridPeekActive,
+    hybridVisible,
+    hybridModeEffective,
+    hybridLayerByElementId,
+    setHybridLayerByElementId,
+    hybridLayerActiveElementId,
+    setHybridLayerActiveElementId,
+    hybridLayerMapRef,
+    hybridLayerPersistedMapRef,
+    hybridLayerDragRef,
+    hybridAutoFocusGuardRef,
+    hybridV2Doc,
+    setHybridV2Doc,
+    hybridV2DocRef,
+    hybridV2PersistedDocRef,
+    hybridV2BindPickMode,
+    setHybridV2BindPickMode,
+    hybridV2MigrationGuardRef,
+    drawioMeta,
+    hybridStorageKey,
+    hybridLayerMapFromDraft,
+    hybridLayerMapLive,
+    hybridLayerRenderRows,
+    hybridLayerMissingBindingIds,
+    hybridLayerVisibilityStats,
+    hybridLayerCounts,
+    hybridViewportSize,
+    hybridViewportMatrix,
+    overlayViewbox,
+    overlayContainerRect,
+    clientToDiagram,
+    resolveHybridTargetElementIdFromPoint,
+    resolveFirstHybridSeedElementId,
+    readHybridElementAnchor,
+    getHybridLayerCardRefCallback,
+    bpmnRef,
+    bpmnStageHostRef,
+    persistHybridLayerMap,
+    persistHybridV2Doc,
+    markPlaybackOverlayInteraction,
+    playbackHighlightedBpmnIds,
+    hybridDebugEnabled,
+    normalizeHybridLayerMap,
+    normalizeHybridUiPrefs,
+    saveHybridUiPrefs,
+    applyHybridVisibilityTransition,
+    applyHybridModeTransition,
+    normalizeHybridV2Doc,
+    docToComparableJson,
+    parseSequenceFlowsFromXml,
+    toText,
+    toNodeId,
+    asArray,
+    asObject,
+    isEditableTarget,
+    downloadTextFile,
+    setGenErr,
+    setInfoMsg,
+  });
+  const templatesBridge = useTemplatesStageBridge({
+    selectedBpmnElement,
+    draftNodes: draft?.nodes,
+    sessionId: sid,
+    bpmnApiRef: bpmnRef,
+    bpmnStageHostRef,
+    clientToDiagram,
+    flushPendingDiagramAutosave,
+    cancelPendingDiagramAutosave,
+    onPersistedTemplateApply: async ({ template, saved }) => {
+      const owner = ensureSessionWorkspaceTruthOwner();
+      const snapshot = buildOwnerSnapshot({
+        id: sid,
+        session_id: sid,
+        bpmn_xml: toText(saved?.xml || bpmnRef.current?.getXmlDraft?.() || draft?.bpmn_xml || ""),
+        bpmn_xml_version: Number(saved?.storedRev || draft?.bpmn_xml_version || draft?.version || 0),
+        diagram_state_version: Number(saved?.diagramStateVersion || getBaseDiagramStateVersion() || 0),
+        bpmn_graph_fingerprint: toText(saved?.graphFingerprint || draft?.bpmn_graph_fingerprint || ""),
+      }, "template_apply");
+      owner?.applyTemplate({
+        patch: snapshot,
+        reason: "template_apply",
+      });
+      owner?.saveSessionAccepted({
+        source: "template_apply",
+        primaryAck: snapshot,
+        durableSnapshot: snapshot,
+      });
+      const result = await persistTemplateAppliedSessionCompanion({
+        template,
+        source: "template_apply",
+        xml: toText(saved?.xml || bpmnRef.current?.getXmlDraft?.() || draft?.bpmn_xml || ""),
+        savedAt: new Date().toISOString(),
+        storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+        requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+        diagramStateVersion: Number(saved?.diagramStateVersion || getBaseDiagramStateVersion() || 0),
+      });
+      if (!result?.ok) {
+        setGenErr(shortErr(result?.error || "Не удалось синхронизировать template provenance."));
+      }
+    },
+  });
+  const selectedBpmnElementIds = templatesBridge.selectedBpmnIds;
+  const getSelectedHybridStencilTemplate = useCallback(() => {
+    const selectedIds = Array.from(new Set(asArray(hybridV2SelectedIds).map((row) => toText(row)).filter(Boolean)));
+    return {
+      selected_ids: selectedIds,
+      hybrid_doc: hybridV2DocLive,
+      selection_count: selectedIds.length,
+    };
+  }, [asArray, hybridV2DocLive, hybridV2SelectedIds, toText]);
+  const applyHybridStencilTemplate = useCallback((template) => {
+    return startHybridStencilPlacement(template);
+  }, [startHybridStencilPlacement]);
+  const templatesStore = useTemplatesStore({
+    userId: toText(user?.id),
+    orgId: workspaceActiveOrgId,
+    canCreateOrgTemplate: !!workspaceActiveOrgId && !!canManageSharedTemplates,
+    hasSession,
+    tab,
+    getSelectedBpmnElementIds: templatesBridge.getSelectedBpmnIds,
+    getSelectedHybridStencilTemplate,
+    applySelectionIds: templatesBridge.applyBpmnSelection,
+    applyHybridStencilTemplate,
+    captureBpmnFragmentTemplatePack: templatesBridge.captureBpmnFragmentTemplatePack,
+    insertBpmnFragmentTemplateAtPoint: templatesBridge.insertBpmnFragmentTemplateAtPoint,
+    insertBpmnFragmentTemplateImmediately: templatesBridge.insertBpmnFragmentTemplateImmediately,
+    isDiagramClientPoint: templatesBridge.isDiagramClientPoint,
+    diagramContainerRect: templatesDiagramContainerRect,
+    selectionContext: templatesBridge.selectionContext,
+    setError: setGenErr,
+    setInfo: setInfoMsg,
+  });
+  const {
+    templatesEnabled,
+    setTemplatesEnabled,
+    pickerOpen: templatesPickerOpen,
+    setPickerOpen: setTemplatesPickerOpen,
+    createOpen: createTemplateOpen,
+    setCreateOpen: setCreateTemplateOpen,
+    busy: templatesBusy,
+    search: templatesSearch,
+    setSearch: setTemplatesSearch,
+    activeScope: templatesScope,
+    setActiveScope: setTemplatesScope,
+    activeFolderId: templatesActiveFolderId,
+    setActiveFolderForScope: setTemplatesActiveFolder,
+    foldersByScope: templatesFoldersByScope,
+    createScope: createTemplateScope,
+    setCreateScope: setCreateTemplateScope,
+    createType: createTemplateType,
+    setCreateType: setCreateTemplateType,
+    createTitle: createTemplateTitle,
+    setCreateTitle: setCreateTemplateTitle,
+    createFolderId: createTemplateFolderId,
+    setCreateFolderId: setCreateTemplateFolderId,
+    selectedHybridCount: selectedHybridTemplateCount,
+    scopedTemplates,
+    suggestedTemplates,
+    counts: templateCounts,
+    openTemplatesPicker,
+    openCreateTemplateModal,
+    createFolderFromUi: createTemplateFolderFromUi,
+    saveCurrentSelectionAsTemplate,
+    reloadTemplates,
+    reloadTemplatesAndFolders,
+    applyTemplate,
+    removeTemplate,
+    bpmnFragmentPlacementGhost,
+    bpmnFragmentPlacementActive,
+  } = templatesStore;
+  const { closeAllDiagramActions, stageActions } = useDiagramActionsController({
+    popovers: {
+      toolbarMenuOpen,
+      setToolbarMenuOpen,
+      diagramActionPathOpen,
+      setDiagramActionPathOpen,
+      diagramActionHybridToolsOpen,
+      setDiagramActionHybridToolsOpen,
+      diagramActionPlanOpen,
+      setDiagramActionPlanOpen,
+      diagramActionPlaybackOpen,
+      setDiagramActionPlaybackOpen,
+      diagramActionLayersOpen,
+      setDiagramActionLayersOpen,
+      diagramActionRobotMetaOpen,
+      setDiagramActionRobotMetaOpen,
+      diagramActionSearchOpen,
+      setDiagramActionSearchOpen,
+      robotMetaListOpen,
+      setRobotMetaListOpen,
+      setRobotMetaListSearch,
+      diagramActionQualityOpen,
+      setDiagramActionQualityOpen,
+      diagramActionOverflowOpen,
+      setDiagramActionOverflowOpen,
+      toolbarMenuRef,
+      toolbarMenuButtonRef,
+      diagramActionBarRef,
+      diagramPathPopoverRef,
+      diagramHybridToolsPopoverRef,
+      diagramPlanPopoverRef,
+      diagramPlaybackPopoverRef,
+      diagramLayersPopoverRef,
+      diagramRobotMetaPopoverRef,
+      diagramRobotMetaListRef,
+      diagramSearchPopoverRef,
+      diagramQualityPopoverRef,
+      diagramOverflowPopoverRef,
+      hybridLayerOverlayRef,
+      playbackOverlayClickGuardRef,
+      logPlaybackDebug,
+      toText,
+    },
+    actions: {
+      setToolbarMenuOpen,
+      setAttentionOpen,
+      setQualityAutoFixOpen,
+      setInsertBetweenOpen,
+      setVersionsOpen,
+      setDiffOpen,
+      setCreateTemplateOpen,
+      setTemplatesPickerOpen,
+    },
+  });
+  const bpmnPropertiesOverlayController = useBpmnPropertiesOverlayController({
+    bpmnRef,
+    setGenErr,
+    setInfoMsg,
+  });
+  const {
+    bpmnContextMenu,
+    onBpmnContextMenuRequest,
+    onBpmnContextMenuDismiss,
+    closeBpmnContextMenu,
+    runBpmnContextMenuAction,
+  } = useBpmnDiagramContextMenu({
+    bpmnRef,
+    undoRedoState: diagramUndoRedoState,
+    tab,
+    hasSession,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    modalOpenSignal: (
+      qualityAutoFixOpen
+      || insertBetweenOpen
+      || versionsOpen
+      || diffOpen
+      || createTemplateOpen
+      || templatesPickerOpen
+    ),
+    closeAllDiagramActions,
+    setInfoMsg,
+    setGenErr,
+    onActionResult: bpmnPropertiesOverlayController.handleContextMenuActionResult,
+  });
+  const {
+    bpmnSubprocessPreview,
+    closeBpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+    handleBpmnContextActionResult,
+  } = useBpmnSubprocessPreview({
+    bpmnRef,
+    hasSession,
+    tab,
+    drawioEditorOpen,
+    hybridPlacementHitLayerActive,
+    hybridModeEffective,
+    setInfoMsg,
+    setGenErr,
+  });
+  const handleBpmnContextMenuAction = useCallback(async (actionRequest) => {
+    const result = await Promise.resolve(runBpmnContextMenuAction?.(actionRequest));
+    handleBpmnContextActionResult(result, {
+      menuTarget: bpmnContextMenu?.target,
+      closeContextMenu: closeBpmnContextMenu,
+    });
+    return result;
+  }, [
+    bpmnContextMenu,
+    closeBpmnContextMenu,
+    handleBpmnContextActionResult,
+    runBpmnContextMenuAction,
+  ]);
+  const handleBpmnSubprocessPreviewOpenProperties = useCallback(async () => {
+    const result = await Promise.resolve(openBpmnSubprocessPreviewProperties?.());
+    bpmnPropertiesOverlayController.handleContextMenuActionResult({
+      actionId: "open_properties",
+      menu: {
+        target: {
+          id: toText(bpmnSubprocessPreview?.targetId),
+          kind: "element",
+        },
+      },
+      result,
+    });
+    return result;
+  }, [
+    bpmnPropertiesOverlayController,
+    bpmnSubprocessPreview,
+    openBpmnSubprocessPreviewProperties,
+  ]);
+
+  // Click on a V2 properties overlay card: open the properties popover for
+  // that element through the same pipeline the context-menu action uses.
+  const handleV2OverlayPropertiesRequest = useCallback(async (elementIdRaw) => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const result = await Promise.resolve(
+      bpmnRef?.current?.runDiagramContextAction?.({
+        actionId: "open_properties",
+        target: { id: elementId, kind: "element" },
+      }),
+    );
+    bpmnPropertiesOverlayController.handleContextMenuActionResult({
+      actionId: "open_properties",
+      menu: {
+        target: {
+          id: elementId,
+          kind: "element",
+        },
+      },
+      result: asObject(result),
+    });
+    return result;
+  }, [
+    bpmnPropertiesOverlayController,
+    bpmnRef,
+  ]);
+
+  const handleDiagramSearchResultNavigation = useCallback((result, { source = "diagram_search" } = {}) => {
+    const requestId = diagramSearchNavigationRequestRef.current + 1;
+    diagramSearchNavigationRequestRef.current = requestId;
+    void navigateDiagramSearchResult(result, {
+      bpmnRef,
+      requestDiagramFocus,
+      onSubprocessPreviewResult: (actionResult, options = {}) => {
+        handleBpmnContextActionResult(actionResult, {
+          menuTarget: options.menuTarget,
+          closeContextMenu: closeBpmnContextMenu,
+        });
+      },
+      setInfoMsg,
+      setGenErr,
+      source,
+      expectedSid: sid,
+      isStale: () => diagramSearchNavigationRequestRef.current !== requestId,
+    });
+    return true;
+  }, [
+    bpmnRef,
+    closeBpmnContextMenu,
+    handleBpmnContextActionResult,
+    requestDiagramFocus,
+    setGenErr,
+    setInfoMsg,
+    sid,
+  ]);
+
+  const diagramSearch = useDiagramSearchController({
+    bpmnRef,
+    requestDiagramFocus,
+    onNavigateSearchResult: handleDiagramSearchResultNavigation,
+    sessionId: sid,
+    reloadKey,
+    diagramXml: draft?.bpmn_xml,
+    mutationVersion: diagramSearchMutationVersion,
+    isOpen: diagramActionSearchOpen,
+    setOpen: setDiagramActionSearchOpen,
+    isEnabled: hasSession && tab === "diagram" && !isInterview,
+  });
+
+  // Superpower Search (S2): Ctrl+K / Cmd+K opens the diagram search popover
+  // from anywhere on the diagram tab (ignored while typing in form fields).
+  useDiagramSearchHotkey({
+    enabled: hasSession && tab === "diagram" && !isInterview,
+    isOpen: diagramActionSearchOpen,
+    onOpen: () => {
+      closeAllDiagramActions();
+      setDiagramActionSearchOpen(true);
+    },
+    onFocus: () => {
+      const input = diagramSearchPopoverRef.current?.querySelector?.("#diagram-search-query");
+      input?.focus?.();
+    },
+  });
+
+  const handleUndoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.undo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Undo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
+
+  const handleRedoAction = useCallback(async () => {
+    const result = await Promise.resolve(bpmnRef.current?.redo?.());
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || "Redo недоступен."));
+    }
+    refreshDiagramUndoRedoState();
+  }, [refreshDiagramUndoRedoState, setGenErr]);
+  const aiGenerateGate = useMemo(
+    () => getAiGenerateGate({
+      hasSession,
+      tab,
+      selectedElementId,
+      isLocal,
+      aiQuestionsBusy,
+    }),
+    [hasSession, tab, selectedElementId, isLocal, aiQuestionsBusy],
+  );
+  const canGenerateAiQuestions = aiGenerateGate.canGenerate;
+  const selectedInsertBetween = readInsertBetweenCandidate(selectedBpmnElement?.insertBetween);
+  const canInsertBetween =
+    !!hasSession
+    && tab === "diagram"
+    && !!selectedInsertBetween
+    && selectedInsertBetween.available !== false
+    && !!selectedInsertBetween.fromId
+    && !!selectedInsertBetween.toId;
+  const {
+    coverageNodes,
+    coverageMatrix,
+    coverageRowsAll,
+    coverageRows,
+    coverageById,
+    coverageMinimapRows,
+    coverageHints,
+  } = useCoverageDerivation({ draft, qualityHintsRaw, isCoverageMode });
+  const reportPathStopHints = useMemo(() => {
+    const debug = asObject(draft?.interview?.report_build_debug);
+    const stopReason = String(debug?.stop_reason || "").trim().toUpperCase();
+    const stopNodeId = toNodeId(debug?.stop_at_bpmn_id);
+    if (!stopNodeId || !stopReason || stopReason === "OK_COMPLETE") return [];
+    return [{
+      nodeId: stopNodeId,
+      title: `Report path stopped here: ${stopReason}`,
+      severity: "high",
+      markerClass: "fpcReportStopMarker",
+      aiHint: "!",
+      reasons: [
+        `path=${String(debug?.path_id_used || "—").trim() || "—"}`,
+        `steps=${Number(debug?.steps_count || 0)}`,
+      ],
+    }];
+  }, [draft?.interview?.report_build_debug]);
+  const reportPathFlowConflictHints = useMemo(() => {
+    const debug = asObject(draft?.interview?.report_build_debug);
+    const stopReason = String(debug?.stop_reason || "").trim().toUpperCase();
+    const stopNodeId = toNodeId(debug?.stop_at_bpmn_id);
+    const activeSeq = String(debug?.path_id_used || "").trim();
+    if (stopReason !== "FILTERED_OUT" || !stopNodeId || !activeSeq) return [];
+    const nodePathMeta = asObject(asObject(draft?.bpmn_meta).node_path_meta);
+    const outgoing = parseSequenceFlowsFromXml(draft?.bpmn_xml).filter((flow) => toNodeId(flow?.sourceId) === stopNodeId);
+    if (!outgoing.length) return [];
+    return outgoing.map((flow) => {
+      const targetNodeId = toNodeId(flow?.targetId);
+      const targetMeta = asObject(nodePathMeta[targetNodeId]);
+      const targetSeq = String(targetMeta?.sequence_key || "").trim();
+      const paths = asArray(targetMeta?.paths).map((item) => String(item || "").trim().toUpperCase());
+      const hasMeta = !!targetNodeId && !!Object.keys(targetMeta).length;
+      let kind = "MISS";
+      if (hasMeta) kind = targetSeq === activeSeq ? "OK" : "OUT";
+      const actionHint = kind === "OK"
+        ? "action=ok"
+        : (kind === "OUT"
+          ? `action=move_target_sequence_to_${activeSeq}`
+          : "action=assign_node_path_meta");
+      return {
+        elementIds: [String(flow?.id || "").trim()].filter(Boolean),
+        title: `Path flow ${kind}: ${String(flow?.id || "").trim()}`,
+        severity: kind === "OK" ? "low" : (kind === "OUT" ? "medium" : "high"),
+        markerClass: kind === "OK"
+          ? "fpcReportPathFlowOk"
+          : (kind === "OUT" ? "fpcReportPathFlowOut" : "fpcReportPathFlowMiss"),
+        aiHint: kind,
+        reasons: [
+          `active_seq=${activeSeq}`,
+          `target=${targetNodeId || "—"}`,
+          `target_seq=${targetSeq || "none"}`,
+          `target_paths=${paths.join(",") || "none"}`,
+          actionHint,
+        ],
+      };
+    });
+  }, [draft?.interview?.report_build_debug, draft?.bpmn_xml, draft?.bpmn_meta]);
+  const diagramDodSnapshot = useMemo(() => {
+    if (!hasSession) return null;
+    try {
+      return computeDodSnapshotFromDraft({
+        draft,
+        bpmnXml: draft?.bpmn_xml,
+        qualityReport: lintResult,
+      });
+    } catch {
+      return null;
+    }
+  }, [hasSession, draft, lintResult]);
+  const dodReadinessV1 = useMemo(() => {
+    if (!hasSession) return null;
+    try {
+      return buildDodReadinessV1({
+        draft,
+        dodSnapshot: diagramDodSnapshot,
+        autoPassPrecheck,
+        autoPassJobState,
+        coverageMatrix,
+        context: {
+          orgId: workspaceActiveOrgId,
+          workspaceId: activeProjectWorkspaceId,
+          projectId: activeProjectId,
+          sessionId: sid,
+          folderId: draft?.folder_id || draft?.folderId || "",
+        },
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    hasSession,
+    draft,
+    diagramDodSnapshot,
+    autoPassPrecheck,
+    autoPassJobState,
+    coverageMatrix,
+    workspaceActiveOrgId,
+    activeProjectWorkspaceId,
+    activeProjectId,
+    sid,
+  ]);
+  const qualityOverlayCatalog = useMemo(() => {
+    const quality = asObject(diagramDodSnapshot?.quality);
+    const bpmnNodesById = {};
+    asArray(diagramDodSnapshot?.bpmn_nodes).forEach((nodeRaw) => {
+      const node = asObject(nodeRaw);
+      const nodeId = toNodeId(node?.id);
+      if (!nodeId) return;
+      bpmnNodesById[nodeId] = {
+        id: nodeId,
+        title: toText(node?.name || node?.title) || nodeId,
+        type: toText(node?.type),
+      };
+    });
+    const resolveItem = (nodeIdRaw, extra = {}) => {
+      const nodeId = toNodeId(nodeIdRaw);
+      if (!nodeId) return null;
+      const fromBpmn = asObject(bpmnNodesById[nodeId]);
+      const fromCoverage = asObject(coverageById[nodeId]);
+      return {
+        nodeId,
+        title: toText(extra?.title || fromCoverage?.title || fromBpmn?.title || nodeId) || nodeId,
+        type: toText(extra?.type || fromCoverage?.type || fromBpmn?.type),
+        detail: toText(extra?.detail),
+      };
+    };
+    const orphanItems = toArray(quality?.orphan_bpmn_nodes)
+      .map((nodeId) => resolveItem(nodeId, { detail: "Недостижим от startEvent." }))
+      .filter(Boolean);
+    const deadEndItems = toArray(quality?.dead_end_bpmn_nodes)
+      .map((nodeId) => resolveItem(nodeId, { detail: "Обрывает процесс (нет исходящего flow)." }))
+      .filter(Boolean);
+    const gatewayItems = toArray(quality?.gateway_unjoined)
+      .map((nodeId) => resolveItem(nodeId, { detail: "Gateway split без join." }))
+      .filter(Boolean);
+
+    const linkItemsMap = {};
+    toArray(quality?.link_integrity).forEach((rowRaw) => {
+      const row = asObject(rowRaw);
+      const integrity = toText(row?.integrity).toLowerCase();
+      if (!(integrity === "error" || integrity === "warn")) return;
+      const detail = toText(row?.details) || `Link integrity: ${integrity}`;
+      const allIds = [...toArray(row?.throw_ids), ...toArray(row?.catch_ids)];
+      allIds.forEach((nodeIdRaw) => {
+        const item = resolveItem(nodeIdRaw, { detail });
+        if (!item) return;
+        if (linkItemsMap[item.nodeId]) return;
+        linkItemsMap[item.nodeId] = item;
+      });
+    });
+    const linkItems = Object.values(linkItemsMap);
+
+    const missingDurationItems = coverageRowsAll
+      .filter((row) => !!row?.missingDurationQuality)
+      .map((row) => resolveItem(row?.id, {
+        title: toText(row?.title || row?.id),
+        type: toText(row?.type),
+        detail: "Нет work/wait или duration/quality.",
+      }))
+      .filter(Boolean);
+
+    const missingNotesItems = coverageRowsAll
+      .filter((row) => !!row?.missingNotes)
+      .map((row) => resolveItem(row?.id, {
+        title: toText(row?.title || row?.id),
+        type: toText(row?.type),
+        detail: "Нет заметок по узлу.",
+      }))
+      .filter(Boolean);
+
+    const debug = asObject(draft?.interview?.report_build_debug);
+    const stopReason = toText(debug?.stop_reason).toUpperCase();
+    const stopNodeId = toNodeId(debug?.stop_at_bpmn_id);
+    const routeTruncatedItems = (!stopNodeId || !stopReason || stopReason === "OK_COMPLETE")
+      ? []
+      : toArray([
+        resolveItem(stopNodeId, {
+          detail: `${stopReason} · path=${toText(debug?.path_id_used) || "—"} · steps=${Number(debug?.steps_count || 0)}`,
+        }),
+      ]).filter(Boolean);
+
+    return {
+      orphan: { key: "orphan", label: "Orphan / Unreachable", items: orphanItems },
+      dead_end: { key: "dead_end", label: "Dead-end", items: deadEndItems },
+      gateway: { key: "gateway", label: "Gateway split without join", items: gatewayItems },
+      link_errors: { key: "link_errors", label: "Link event errors", items: linkItems },
+      missing_duration: { key: "missing_duration", label: "Missing durations", items: missingDurationItems },
+      missing_notes: { key: "missing_notes", label: "Missing notes", items: missingNotesItems },
+      route_truncated: { key: "route_truncated", label: "Route truncated", items: routeTruncatedItems },
+    };
+  }, [diagramDodSnapshot, coverageById, coverageRowsAll, draft?.interview?.report_build_debug]);
+  const pathHighlightHints = useMemo(() => {
+    if (!pathHighlightEnabled) return [];
+    const tier = normalizePathTier(pathHighlightTier);
+    if (!tier) return [];
+    const sequenceKey = normalizePathSequenceKey(pathHighlightSequenceKey);
+    const hints = [];
+    Object.values(nodePathMetaMap).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const nodeId = toNodeId(entry?.nodeId || entryRaw?.nodeId);
+      if (!nodeId) return;
+      const paths = asArray(entry?.paths).map((item) => normalizePathTier(item));
+      if (!paths.includes(tier)) return;
+      const nodeSeq = normalizePathSequenceKey(entry?.sequenceKey || entry?.sequence_key);
+      if (sequenceKey && nodeSeq && nodeSeq !== sequenceKey) return;
+      hints.push({
+        nodeId,
+        title: `Path ${tier}${sequenceKey ? ` · ${sequenceKey}` : ""}`,
+        markerClass: "fpcPathHighlightNode",
+        severity: "low",
+        hideTag: true,
+      });
+    });
+    Object.values(flowTierMetaMap).forEach((entryRaw) => {
+      const entry = asObject(entryRaw);
+      const flowId = toText(entry?.flowId || entryRaw?.flowId);
+      if (!flowId) return;
+      if (normalizePathTier(entry?.tier) !== tier) return;
+      const flowSeq = normalizePathSequenceKey(entry?.sequenceKey || entry?.sequence_key);
+      if (sequenceKey && flowSeq && flowSeq !== sequenceKey) return;
+      hints.push({
+        elementIds: [flowId],
+        title: `Path flow ${tier}`,
+        markerClass: "fpcPathHighlightFlow",
+        severity: "low",
+        hideTag: true,
+      });
+    });
+    return dedupeDiagramHints(hints);
+  }, [pathHighlightEnabled, pathHighlightTier, pathHighlightSequenceKey, nodePathMetaMap, flowTierMetaMap]);
+  const qualityOverlayHints = useMemo(() => {
+    const markerByKey = {
+      orphan: "fpcQualityProblem",
+      dead_end: "fpcQualityProblem",
+      gateway: "fpcQualityProblem",
+      link_errors: "fpcQualityProblem",
+      missing_duration: "fpcCoverageRisk",
+      missing_notes: "fpcCoverageWarn",
+      route_truncated: "fpcReportStopMarker",
+    };
+    const hints = [];
+    Object.entries(asObject(qualityOverlayFilters)).forEach(([key, enabled]) => {
+      if (!enabled) return;
+      const category = asObject(qualityOverlayCatalog[key]);
+      const markerClass = toText(markerByKey[key] || "fpcQualityProblem");
+      toArray(category?.items).forEach((itemRaw) => {
+        const item = asObject(itemRaw);
+        const nodeId = toNodeId(item?.nodeId);
+        if (!nodeId) return;
+        hints.push({
+          nodeId,
+          title: toText(item?.title || nodeId),
+          reasons: toArray([toText(item?.detail)]).filter(Boolean),
+          markerClass,
+          severity: key === "route_truncated" ? "high" : "medium",
+          hideTag: key !== "route_truncated",
+          aiHint: key === "route_truncated" ? "!" : "",
+        });
+      });
+    });
+    return dedupeDiagramHints(hints);
+  }, [qualityOverlayFilters, qualityOverlayCatalog]);
+  const diagramHints = useMemo(() => {
+    const base = isQualityMode ? qualityHints : (isCoverageMode ? coverageHints : []);
+    return dedupeDiagramHints([
+      ...asArray(base),
+      ...asArray(customAttentionHints),
+      ...asArray(pathHighlightHints),
+      ...asArray(qualityOverlayHints),
+      ...asArray(reportPathStopHints),
+      ...asArray(reportPathFlowConflictHints),
+    ]);
+  }, [
+    isQualityMode,
+    isCoverageMode,
+    qualityHints,
+    coverageHints,
+    customAttentionHints,
+    pathHighlightHints,
+    qualityOverlayHints,
+    reportPathStopHints,
+    reportPathFlowConflictHints,
+  ]);
+  const qualityNodeTitleById = useMemo(() => {
+    const map = {};
+    asArray(coverageNodes).forEach((node) => {
+      const id = toNodeId(node?.id);
+      if (!id || map[id]) return;
+      const title = String(node?.title || node?.name || "").trim();
+      if (title) map[id] = title;
+    });
+    asArray(draft?.interview?.steps).forEach((step) => {
+      const id = toNodeId(step?.node_id || step?.nodeId);
+      if (!id || map[id]) return;
+      const title = String(step?.action || step?.title || step?.name || "").trim();
+      if (title) map[id] = title;
+    });
+    asArray(qualityHintsRaw).forEach((issue) => {
+      const id = toNodeId(issue?.nodeId);
+      if (!id || map[id]) return;
+      const title = String(issue?.title || "").trim();
+      if (title && title !== id) map[id] = title;
+    });
+    return map;
+  }, [coverageNodes, draft?.interview?.steps, qualityHintsRaw]);
+  const coverageNodeMetaById = useMemo(() => {
+    const map = {};
+    asArray(coverageNodes).forEach((node) => {
+      const id = toNodeId(node?.id);
+      if (!id) return;
+      map[id] = {
+        id,
+        title: String(node?.title || node?.name || id).trim() || id,
+        lane: String(node?.actor_role || node?.laneName || node?.lane || "").trim(),
+        type: String(node?.type || "").trim(),
+      };
+    });
+    return map;
+  }, [coverageNodes]);
+  const qualityReasonsByNode = useMemo(() => {
+    const map = {};
+    asArray(qualityHintsRaw).forEach((issue) => {
+      const nodeId = toNodeId(issue?.nodeId);
+      if (!nodeId) return;
+      const nodeTitle = String(
+        qualityNodeTitleById[nodeId]
+        || coverageById[nodeId]?.title
+        || issue?.title
+        || nodeId,
+      ).trim();
+      const ui = qualityIssueCopy(issue, nodeTitle);
+      const reason = {
+        id: `quality:${ui.ruleId}`,
+        kind: "quality",
+        text: `Ошибка качества: ${ui.short}`,
+        detail: ui.fix,
+      };
+      if (!Array.isArray(map[nodeId])) map[nodeId] = [];
+      if (!map[nodeId].some((it) => String(it?.id || "") === reason.id)) {
+        map[nodeId].push(reason);
+      }
+    });
+    return map;
+  }, [qualityHintsRaw, qualityNodeTitleById, coverageById]);
+  const attentionItemsRaw = useMemo(() => {
+    const byNode = {};
+    const ensureItem = (nodeId) => {
+      const id = toNodeId(nodeId);
+      if (!id) return null;
+      if (!byNode[id]) {
+        const row = coverageById[id];
+        const meta = coverageNodeMetaById[id] || {};
+        byNode[id] = {
+          id,
+          title: String(row?.title || meta?.title || qualityNodeTitleById[id] || id).trim() || id,
+          lane: String(row?.lane || meta?.lane || "").trim(),
+          type: String(row?.type || meta?.type || "").trim(),
+          reasons: [],
+          hasQuality: false,
+          hasAiMissing: false,
+          hasNotesMissing: false,
+          hasDodMissing: false,
+          priority: Number(row?.score || 0),
+        };
+      }
+      return byNode[id];
+    };
+
+    coverageRowsAll.forEach((row) => {
+      const item = ensureItem(row?.id);
+      if (!item) return;
+      const dodMissingCount = Number(!!row?.missingNotes) + Number(!!row?.missingAiQuestions) + Number(!!row?.missingDurationQuality);
+      if (row?.missingAiQuestions) {
+        item.hasAiMissing = true;
+        item.reasons.push({ id: "ai_missing", kind: "ai", text: "Нет AI-вопросов" });
+      }
+      if (row?.missingNotes) {
+        item.hasNotesMissing = true;
+        item.reasons.push({ id: "notes_missing", kind: "notes", text: "Нет заметок" });
+      }
+      if (dodMissingCount > 0) {
+        item.hasDodMissing = true;
+        item.reasons.push({ id: "dod_missing", kind: "dod", text: `DoD: missing ${dodMissingCount}` });
+      }
+    });
+
+    Object.entries(qualityReasonsByNode).forEach(([nodeId, reasons]) => {
+      const item = ensureItem(nodeId);
+      if (!item) return;
+      item.hasQuality = true;
+      item.priority = Math.max(item.priority, 10);
+      asArray(reasons).forEach((reason) => {
+        if (!item.reasons.some((it) => String(it?.id || "") === String(reason?.id || ""))) {
+          item.reasons.push(reason);
+        }
+      });
+    });
+
+    return Object.values(byNode)
+      .map((item) => ({
+        ...item,
+        reasons: asArray(item?.reasons).slice(0, 3),
+      }))
+      .filter((item) => item.reasons.length > 0)
+      .sort((a, b) => {
+        const qualityDelta = Number(!!b.hasQuality) - Number(!!a.hasQuality);
+        if (qualityDelta !== 0) return qualityDelta;
+        const priorityDelta = Number(b.priority || 0) - Number(a.priority || 0);
+        if (priorityDelta !== 0) return priorityDelta;
+        return String(a.title || "").localeCompare(String(b.title || ""), "ru");
+      });
+  }, [coverageRowsAll, coverageById, coverageNodeMetaById, qualityNodeTitleById, qualityReasonsByNode]);
+  const attentionFilterKinds = useMemo(
+    () => Object.entries(attentionFilters || {})
+      .filter(([, enabled]) => !!enabled)
+      .map(([kind]) => String(kind || "").trim()),
+    [attentionFilters],
+  );
+  const attentionItems = useMemo(() => {
+    if (!attentionFilterKinds.length) return attentionItemsRaw;
+    return attentionItemsRaw.filter((item) => attentionFilterKinds.some((kind) => {
+      if (kind === "quality") return !!item?.hasQuality;
+      if (kind === "ai") return !!item?.hasAiMissing;
+      if (kind === "notes") return !!item?.hasNotesMissing;
+      return false;
+    }));
+  }, [attentionItemsRaw, attentionFilterKinds]);
+  const qualityOverlayRows = useMemo(
+    () => ([
+      "orphan",
+      "dead_end",
+      "gateway",
+      "link_errors",
+      "missing_duration",
+      "missing_notes",
+      "route_truncated",
+    ]).map((key) => {
+      const category = asObject(qualityOverlayCatalog[key]);
+      return {
+        key,
+        label: toText(category?.label || key) || key,
+        count: Number(toArray(category?.items).length || 0),
+        items: toArray(category?.items),
+      };
+    }),
+    [qualityOverlayCatalog],
+  );
+  const activeQualityOverlayCount = useMemo(
+    () => Object.values(asObject(qualityOverlayFilters)).filter(Boolean).length,
+    [qualityOverlayFilters],
+  );
+  const qualityOverlayListItems = useMemo(() => {
+    const listKey = toText(qualityOverlayListKey);
+    if (!listKey) return [];
+    const row = qualityOverlayRows.find((item) => item.key === listKey);
+    const all = toArray(row?.items);
+    if (!all.length) return [];
+    const query = toText(qualityOverlaySearch).toLowerCase();
+    const filtered = query
+      ? all.filter((itemRaw) => {
+        const item = asObject(itemRaw);
+        return [
+          toText(item?.title),
+          toText(item?.nodeId),
+          toText(item?.type),
+          toText(item?.detail),
+        ].some((part) => part.toLowerCase().includes(query));
+      })
+      : all;
+    return filtered.slice(0, 200);
+  }, [qualityOverlayRows, qualityOverlayListKey, qualityOverlaySearch]);
+  const pathHighlightBadge = useMemo(() => {
+    const tier = normalizePathTier(pathHighlightTier);
+    if (!tier) return "Путь: —";
+    const seq = normalizePathSequenceKey(pathHighlightSequenceKey);
+    return seq ? `${tier} · ${seq}` : tier;
+  }, [pathHighlightTier, pathHighlightSequenceKey]);
+  const snapshotProjectId = String(draft?.project_id || draft?.projectId || activeProjectId || "").trim();
+
+  const displayVersionsList = useMemo(
+    () => (showTechnicalVersions ? asArray(versionsListAll) : asArray(versionsList)),
+    [showTechnicalVersions, versionsListAll, versionsList],
+  );
+
+  const semanticDiffView = useMemo(() => {
+    return buildRevisionDiffView({
+      revisions: asArray(displayVersionsList),
+      baseRevisionId: diffBaseSnapshotId,
+      targetRevisionId: diffTargetSnapshotId,
+    });
+  }, [diffBaseSnapshotId, diffTargetSnapshotId, displayVersionsList]);
+
+  const currentBpmnVersionId = useMemo(() => {
+    const currentHash = String(bpmnVersionTruthState?.currentSessionPayloadHash || "").trim();
+    const matching = currentHash
+      ? asArray(versionsList).find((item) => String(item?.sessionPayloadHash || "") === currentHash)
+      : null;
+    if (matching?.id) return matching.id;
+    return latestBpmnVersionHead?.id || "";
+  }, [bpmnVersionTruthState, versionsList, latestBpmnVersionHead]);
+
+  const previewSnapshot = useMemo(
+    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
+    [displayVersionsList, previewSnapshotId],
+  );
+
+  const diffBaseSnapshot = useMemo(
+    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(diffBaseSnapshotId || "")) || null,
+    [displayVersionsList, diffBaseSnapshotId],
+  );
+  const diffTargetSnapshot = useMemo(
+    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(diffTargetSnapshotId || "")) || null,
+    [displayVersionsList, diffTargetSnapshotId],
+  );
+
+  const versionsListWithDiffSummaries = useMemo(() => {
+    return asArray(displayVersionsList).map((item, idx) => {
+      const xml = String(item?.xml || "").trim();
+      if (!xml) return item;
+      const older = asArray(displayVersionsList).slice(idx + 1).find((candidate) => String(candidate?.xml || "").trim());
+      if (!older) return item;
+      const diff = buildSemanticBpmnDiff(String(older.xml || ""), xml);
+      if (!diff?.ok) return item;
+      const summaryText = formatSemanticDiffSummary(diff.summary);
+      return summaryText ? { ...item, diffSummary: summaryText } : item;
+    });
+  }, [displayVersionsList]);
+
+  const refreshSnapshotVersions = useCallback(async (options = {}) => {
+    if (!sid) {
+      setVersionsList([]);
+      setVersionsListAll([]);
+      setPreviewSnapshotId("");
+      setVersionsLoadState("idle");
+      setVersionsLoadError("");
+      setVersionsUserFacingCount(0);
+      setVersionsServerEntriesCount(0);
+      setVersionsTechnicalEntriesCount(0);
+      setVersionsTotalCount(0);
+      setVersionsHasMore(false);
+      setVersionsLoadingMore(false);
+      setLatestBpmnVersionHead(null);
+      setBpmnVersionTruthState({
+        currentSessionPayloadHash: "",
+        latestUserVersionSessionPayloadHash: "",
+        hasSessionChangesSinceLatestBpmnVersion: false,
+      });
+      if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
+      return;
+    }
+    const requestSid = normalizeDiagramSessionId(sid);
+    const includeXml = options?.includeXml === true;
+    const updateList = options?.updateList !== false;
+    const trackHeadStatus = options?.trackHeadStatus === true;
+    const loadMore = options?.loadMore === true;
+    const includeTechnical = options?.includeTechnical ?? versionsIncludeTechnical ?? false;
+    const defaultLimit = trackHeadStatus ? 1 : 10;
+    const requestedLimit = Number(options?.limit || defaultLimit);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.round(requestedLimit), BPMN_VERSION_HEADERS_LIMIT)
+      : defaultLimit;
+    const requestedOffset = loadMore
+      ? Number(options?.offset || 0)
+      : Number(options?.offset || 0);
+    const offset = Number.isFinite(requestedOffset) && requestedOffset >= 0 ? Math.round(requestedOffset) : 0;
+    const requestKey = `${requestSid}|offset=${offset}|limit=${limit}|includeTechnical=${includeTechnical ? "1" : "0"}|includeXml=${includeXml ? "1" : "0"}|updateList=${updateList ? "1" : "0"}|trackHead=${trackHeadStatus ? "1" : "0"}`;
+    if (updateList && bpmnVersionsListRequestRef.current?.key === requestKey && bpmnVersionsListRequestRef.current?.promise) {
+      return bpmnVersionsListRequestRef.current.promise;
+    }
+    const runRequest = async () => {
+      if (trackHeadStatus) setLatestBpmnVersionHeadStatus("loading");
+      if (updateList) {
+        if (loadMore) {
+          setVersionsLoadingMore(true);
+        } else {
+          setVersionsLoadState("loading");
+        }
+        setVersionsLoadError("");
+      }
+      let loaded = null;
+      try {
+        loaded = await apiGetBpmnVersions(sid, {
+          limit,
+          offset,
+          includeXml,
+          includeTechnical,
+        });
+      } catch (error) {
+        loaded = { ok: false, error: error?.message || error || "Не удалось загрузить BPMN версии." };
+      }
+      if (bpmnVersionsActiveSessionRef.current !== requestSid) return;
+      if (updateList && !bpmnVersionsOpenRef.current) return;
+      if (!loaded?.ok) {
+        if (updateList) {
+          if (loadMore) {
+            setVersionsLoadError(shortErr(loaded?.error || "Не удалось подгрузить BPMN версии."));
+          } else {
+            setVersionsList([]);
+            setPreviewSnapshotId("");
+            setVersionsLoadState("failed");
+            setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+            setVersionsUserFacingCount(0);
+            setVersionsServerEntriesCount(0);
+            setVersionsTechnicalEntriesCount(0);
+            setVersionsTotalCount(0);
+            setVersionsHasMore(false);
+          }
+          setBpmnVersionTruthState({
+            currentSessionPayloadHash: "",
+            latestUserVersionSessionPayloadHash: "",
+            hasSessionChangesSinceLatestBpmnVersion: false,
+          });
+        }
+        if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
+        return;
+      }
+      const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+      const currentSessionPayloadHash = String(
+        loaded?.currentSessionPayloadHash
+        || loaded?.current_session_payload_hash
+        || "",
+      ).trim();
+      const latestUserVersionSessionPayloadHash = String(
+        loaded?.latestUserVersionSessionPayloadHash
+        || loaded?.latest_user_version_session_payload_hash
+        || "",
+      ).trim();
+      const hasSessionChangesSinceLatestBpmnVersion = loaded?.hasSessionChangesSinceLatestBpmnVersion === true
+        || loaded?.has_session_changes_since_latest_bpmn_version === true;
+      setBpmnVersionTruthState({
+        currentSessionPayloadHash,
+        latestUserVersionSessionPayloadHash,
+        hasSessionChangesSinceLatestBpmnVersion,
+      });
+      const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
+      const list = asArray(revisionSplit.meaningful);
+      const technicalList = asArray(revisionSplit.technical);
+      const unknownList = asArray(revisionSplit.unknown);
+      const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
+      const serverEntriesCount = asArray(normalizedList).length;
+      const userFacingCount = Number(
+        loaded?.userFacingCount
+        || loaded?.user_facing_count
+        || loaded?.latestUserFacingRevisionNumber
+        || loaded?.latest_user_facing_revision_number
+        || 0,
+      );
+      const totalCount = Number(
+        loaded?.totalCount
+        || loaded?.total_count
+        || userFacingCount
+        || serverEntriesCount
+        || 0,
+      );
+      const hasMore = loaded?.hasMore === true || loaded?.has_more === true;
+      const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
+        meaningfulRevisionsRaw: list,
+        revisionHistorySnapshotRaw: {
+          ...asObject(sessionRevisionHistorySnapshot),
+          latestRevisionDisplayNumber: Number(
+            loaded?.latestUserFacingRevisionNumber
+            || loaded?.latest_user_facing_revision_number
+            || userFacingCount
+            || 0,
+          ),
+          totalCount: userFacingCount,
+        },
+        totalCount: userFacingCount,
+      });
+      const meaningfulById = new Map(
+        asArray(listWithUserFacingNumbers).map((item) => [String(item?.id || ""), item]),
+      );
+      const displayedList = includeTechnical
+        ? asArray(normalizedList).map((item) => meaningfulById.get(String(item?.id || "")) || item)
+        : asArray(listWithUserFacingNumbers);
+      setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
+      if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
+      if (!updateList) return;
+      // eslint-disable-next-line no-console
+      console.debug(
+        `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
+        + `offset=${offset} limit=${limit} includeTechnical=${includeTechnical} `
+        + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length} total=${totalCount} hasMore=${hasMore}`,
+      );
+      setVersionsUserFacingCount(Math.max(0, Math.round(Number(userFacingCount || 0))));
+      setVersionsServerEntriesCount(serverEntriesCount);
+      setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
+      setVersionsTotalCount(Math.max(0, Math.round(Number(totalCount || 0))));
+      setVersionsHasMore(hasMore);
+      if (loadMore) {
+        setVersionsList((prev) => {
+          const current = asArray(prev);
+          const newItems = asArray(displayedList).filter(
+            (item) => !current.some((existing) => String(existing?.id || "") === String(item?.id || "")),
+          );
+          return [...current, ...newItems];
+        });
+        setPreviewSnapshotId((prev) => (prev || asArray(displayedList)[0]?.id || ""));
+      } else {
+        setVersionsList(asArray(displayedList));
+        setVersionsListAll(asArray(displayedList));
+        setVersionsLoadState(asArray(displayedList).length > 0 ? "ready" : "empty");
+        setPreviewSnapshotId((prev) => {
+          const exists = asArray(displayedList).some((item) => String(item?.id || "") === String(prev || ""));
+          if (exists) return prev;
+          return asArray(displayedList)[0]?.id || "";
+        });
+      }
+      setVersionsLoadError("");
+    };
+    const promise = runRequest().finally(() => {
+      setVersionsLoadingMore(false);
+      if (bpmnVersionsListRequestRef.current?.key === requestKey) {
+        bpmnVersionsListRequestRef.current = { key: "", promise: null };
+      }
+    });
+    if (updateList) {
+      bpmnVersionsListRequestRef.current = { key: requestKey, promise };
+    }
+    return promise;
+  }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId, versionsIncludeTechnical]);
+
+  const loadMoreSnapshotVersions = useCallback(async () => {
+    if (!sid || !versionsHasMore || versionsLoadingMore) return;
+    const nextOffset = asArray(versionsList).length;
+    await refreshSnapshotVersions({
+      loadMore: true,
+      offset: nextOffset,
+      limit: 10,
+      includeTechnical: versionsIncludeTechnical,
+    });
+  }, [sid, versionsHasMore, versionsLoadingMore, versionsList.length, versionsIncludeTechnical, refreshSnapshotVersions]);
+
+  const toggleVersionsIncludeTechnical = useCallback(async () => {
+    const next = !versionsIncludeTechnical;
+    setVersionsIncludeTechnical(next);
+    setVersionsList([]);
+    setVersionsTotalCount(0);
+    setVersionsHasMore(false);
+    setVersionsLoadState("loading");
+    setVersionsLoadError("");
+    await refreshSnapshotVersions({
+      offset: 0,
+      limit: 10,
+      includeTechnical: next,
+    });
+  }, [versionsIncludeTechnical, refreshSnapshotVersions]);
+
+  const saveSessionFromVersionsModal = useCallback(async () => {
+    await runManualSaveAction({ createRevision: true });
+    await refreshSnapshotVersions();
+  }, [refreshSnapshotVersions]);
+
+  const ensureBpmnVersionXml = useCallback(async (versionOrId) => {
+    const versionId = String(
+      typeof versionOrId === "object" ? versionOrId?.id : versionOrId,
+    ).trim();
+    if (!sid || !versionId) return null;
+    const requestSid = normalizeDiagramSessionId(sid);
+    const existing = asArray(versionsList).find((item) => String(item?.id || "") === versionId);
+    if (existing?.hasXml === true || String(existing?.xml || "").trim()) return existing;
+    const existingRequest = bpmnVersionDetailRequestRef.current.get(`${requestSid}:${versionId}`);
+    if (existingRequest) return existingRequest;
+    const runRequest = async () => {
+      setVersionsBusy(true);
+      setVersionsLoadError("");
+      try {
+        let loaded = null;
+        try {
+          loaded = await apiGetBpmnVersion(sid, versionId);
+        } catch (error) {
+          loaded = { ok: false, error: error?.message || error || "Не удалось загрузить XML версии." };
+        }
+        if (bpmnVersionsActiveSessionRef.current !== requestSid || !bpmnVersionsOpenRef.current) return null;
+        if (!loaded?.ok) {
+          const reason = shortErr(loaded?.error || "Не удалось загрузить XML версии.");
+          setVersionsLoadError(reason);
+          setGenErr(reason);
+          return null;
+        }
+        const normalized = normalizeBpmnVersionListItem(loaded?.item || loaded?.version || {});
+        const updater = (prev) => asArray(prev).map((item) => (
+          String(item?.id || "") === versionId ? { ...item, ...normalized, hasXml: true } : item
+        ));
+        setVersionsList(updater);
+        setVersionsListAll(updater);
+        return normalized;
+      } finally {
+        setVersionsBusy(false);
+        bpmnVersionDetailRequestRef.current.delete(`${requestSid}:${versionId}`);
+      }
+    };
+    const promise = runRequest();
+    bpmnVersionDetailRequestRef.current.set(`${requestSid}:${versionId}`, promise);
+    return promise;
+  }, [normalizeBpmnVersionListItem, sid, versionsList, versionsOpen]);
+
+  const refreshLatestBpmnRevisionHead = useCallback(async () => {
+    await refreshSnapshotVersions({
+      includeXml: false,
+      limit: 1,
+      updateList: false,
+      trackHeadStatus: true,
+    });
+  }, [refreshSnapshotVersions]);
+
+  async function openVersionsModal() {
+    setVersionsOpen(true);
+  }
+
+  async function restoreSnapshot(item) {
+    const versionId = String(item?.id || "").trim();
+    if (!versionId) {
+      setGenErr("Не удалось определить версию для восстановления.");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Восстановить выбранную BPMN версию? Текущая BPMN диаграмма будет заменена.");
+      if (!confirmed) return;
+    }
+    setVersionsBusy(true);
+    setGenErr("");
+    setInfoMsg("");
+    setDrawioAnchorImportDiagnostics(null);
+    try {
+      let restoreBaseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+      if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
+        const fetched = await apiGetSession(sid);
+        if (fetched?.ok) {
+          onSessionSyncWithVersion?.(fetched.session);
+          const refreshedVersion = syncDiagramStateVersionFromSession(fetched.session, { sessionId: sid });
+          restoreBaseDiagramStateVersion = Number(
+            refreshedVersion
+            ?? getBaseDiagramStateVersion()
+            ?? fetched?.session?.diagram_state_version
+            ?? fetched?.session?.diagramStateVersion,
+          );
+        }
+      }
+      if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
+        setGenErr("Не удалось восстановить версию: требуется обновить состояние схемы.");
+        return;
+      }
+      restoreBaseDiagramStateVersion = Math.round(restoreBaseDiagramStateVersion);
+      const restored = await apiRestoreBpmnVersion(sid, versionId, {
+        baseDiagramStateVersion: restoreBaseDiagramStateVersion,
+      });
+      if (!restored?.ok) {
+        setGenErr(toBpmnRestoreUserFacingError(restored, "Не удалось восстановить BPMN версию."));
+        return;
+      }
+      const restoredDiagramStateVersion = Number(restored?.diagramStateVersion ?? restored?.result?.diagram_state_version);
+      if (Number.isFinite(restoredDiagramStateVersion) && restoredDiagramStateVersion >= 0) {
+        rememberDiagramStateVersion(restoredDiagramStateVersion, { sessionId: sid });
+        if (draftRef.current) {
+          draftRef.current.diagram_state_version = restoredDiagramStateVersion;
+          draftRef.current.diagramStateVersion = restoredDiagramStateVersion;
+        }
+        onSessionSyncWithVersion?.({
+          id: sid,
+          session_id: sid,
+          diagram_state_version: restoredDiagramStateVersion,
+          diagramStateVersion: restoredDiagramStateVersion,
+          _sync_source: "bpmn_restore",
+        });
+      }
+      const xml = String(restored?.bpmn_xml || item?.xml || "");
+      if (!xml.trim()) {
+        setGenErr("В выбранной версии нет XML.");
+        return;
+      }
+      const replaceSeedInterview = isLikelySeedBpmnXml(draft?.bpmn_xml);
+      const projected = parseAndProjectBpmnToInterview({
+        xmlText: xml,
+        draft,
+        helpers: projectionHelpers,
+        preferBpmn: true,
+        canAutofillInterview: replaceSeedInterview || !interviewHasContent(draft?.interview),
+        replaceGraph: true,
+      });
+      const derivedActors = deriveActorsFromBpmn(xml);
+      const currentDrawioMeta = normalizeDrawioMeta(drawioMetaRef.current);
+      const beforeBpmnNodeIds = collectBpmnNodeIdsFromDraft(draft);
+      const afterBpmnNodeIds = projected.ok
+        ? collectBpmnNodeIdsFromDraft({ nodes: projected.nextNodes })
+        : beforeBpmnNodeIds;
+      const restoreDiagnostics = buildDrawioAnchorImportDiagnostics({
+        beforeMeta: currentDrawioMeta,
+        beforeBpmnNodeIds,
+        afterBpmnNodeIds,
+        validationReady: projected.ok,
+      });
+      setDrawioAnchorImportDiagnostics(restoreDiagnostics);
+      await bpmnSync.resetBackend();
+      if (projected.ok) {
+        const hasProjectedInterview = interviewHasContent(projected.nextInterview);
+        if (hasProjectedInterview) {
+          const savePlan = markInterviewAsSaved(
+            projected.nextInterview,
+            projected.nextNodes,
+            draft?.nodes,
+            projected.nextEdges,
+            draft?.edges,
+          );
+          const optimisticSession = {
+            ...(draft || {}),
+            id: sid,
+            session_id: sid,
+            interview: projected.nextInterview,
+            bpmn_xml: xml,
+            diagram_state_version: Number.isFinite(restoredDiagramStateVersion) && restoredDiagramStateVersion >= 0
+              ? Math.round(restoredDiagramStateVersion)
+              : Number(getBaseDiagramStateVersion() ?? draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
+            actors_derived: derivedActors,
+            ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
+            ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
+          };
+          onSessionSyncWithVersion?.(optimisticSession);
+          if (!isLocal) {
+            const syncPatchPayload = { ...savePlan.patch };
+            const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+            if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+              syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+            }
+            const syncRes = await enqueueSessionPatchCasWrite({
+              sessionId: sid,
+              patch: syncPatchPayload,
+              apiPatchSession,
+              getBaseDiagramStateVersion,
+              rememberDiagramStateVersion,
+              // FIX-BPMN-IMPORT-SAVE: восстановленная версия содержит XML →
+              // сессия XML-truth; nodes/edges из проекции в PATCH не идут.
+              isXmlTruthSession: String(xml || "").trim() !== "",
+            });
+            if (syncRes.ok) {
+              const serverSession =
+                syncRes.session && typeof syncRes.session === "object"
+                  ? {
+                      ...syncRes.session,
+                      actors_derived: derivedActors,
+                    }
+                  : optimisticSession;
+              onSessionSyncWithVersion?.(serverSession);
+            } else {
+              setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN версии."));
+            }
+          }
+        }
+        setInfoMsg(
+          `Версия ${Number(item?.revisionNumber || item?.rev || 0)} восстановлена: `
+          + `${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
+          + `${restoreDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${restoreDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`,
+        );
+      } else {
+        setDrawioAnchorImportDiagnostics(null);
+        setInfoMsg(projected.error || "BPMN версия восстановлена, но semantic parsing не выполнен.");
+      }
+      setTab("diagram");
+      await Promise.resolve(bpmnRef.current?.fit?.());
+      await refreshSnapshotVersions();
+    } catch (error) {
+      setGenErr(toBpmnRestoreUserFacingError(error, shortErr(error?.message || error || "Не удалось восстановить версию.")));
+    } finally {
+      setVersionsBusy(false);
+    }
+  }
+
+  async function clearSnapshotHistory() {
+    setGenErr("");
+    setInfoMsg("История версий неизменяема и не может быть очищена.");
+  }
+
+  async function updateSnapshotMeta(item, patch = {}) {
+    void item;
+    void patch;
+    setGenErr("");
+    setInfoMsg("Редактирование версии отключено: журнал неизменяем.");
+  }
+
+  async function togglePinSnapshot(item) {
+    void item;
+    setInfoMsg("Закрепление версии отключено: журнал неизменяем.");
+  }
+
+  async function editSnapshotLabel(item) {
+    void item;
+    setInfoMsg("Переименование версии отключено: журнал неизменяем.");
+  }
+
+  async function previewSnapshotVersion(itemOrId) {
+    const versionId = String(typeof itemOrId === "object" ? itemOrId?.id : itemOrId).trim();
+    if (!versionId) return;
+    setPreviewSnapshotId(versionId);
+    await ensureBpmnVersionXml(versionId);
+  }
+
+  async function openDiffForSnapshot(item) {
+    const targetId = String(item?.id || "").trim();
+    if (!targetId) return;
+    const list = asArray(versionsList);
+    const idx = list.findIndex((candidate) => String(candidate?.id || "") === targetId);
+    const latestId = String(list[0]?.id || "");
+    const previousId = idx >= 0 ? String(list[idx + 1]?.id || "") : "";
+    let baseId = previousId || (latestId !== targetId ? latestId : String(list[1]?.id || ""));
+    if (!baseId || baseId === targetId) {
+      setGenErr("Для diff нужно минимум две разные версии.");
+      return;
+    }
+    setDiffBaseSnapshotId(baseId);
+    setDiffTargetSnapshotId(targetId);
+    setDiffOpen(true);
+    await Promise.all([
+      ensureBpmnVersionXml(baseId),
+      ensureBpmnVersionXml(targetId),
+    ]);
+  }
+
+  const closeHistoryDiff = useCallback(() => {
+    setHistoryDiffOpen(false);
+    setHistoryDiffLocalXml("");
+    setHistoryDiffVersionXml("");
+    setHistoryDiffVersionLabel("");
+  }, []);
+
+  async function handleCompareVersionWithCurrent(item) {
+    const versionId = String(item?.id || "").trim();
+    if (!versionId) return;
+    const localXml = toText(draft?.bpmn_xml || bpmnRef.current?.getXmlDraft?.() || "");
+    if (!localXml) {
+      setGenErr("Текущая диаграмма недоступна для сравнения.");
+      return;
+    }
+    setHistoryDiffLocalXml(localXml);
+    setHistoryDiffVersionLabel(toText(item?.label || item?.displayLabel || `Версия ${item?.versionNumber || item?.id}`));
+    setHistoryDiffOpen(true);
+    try {
+      const loaded = await apiGetBpmnVersion(sid, versionId);
+      if (!loaded?.ok) {
+        setGenErr(toText(loaded?.error) || "Не удалось загрузить выбранную версию для сравнения.");
+        return;
+      }
+      const versionXml = toText(loaded?.item?.bpmn_xml || loaded?.item?.xml || loaded?.bpmn_xml || loaded?.xml || "");
+      if (!versionXml) {
+        setGenErr("Выбранная версия не содержит XML.");
+        return;
+      }
+      setHistoryDiffVersionXml(versionXml);
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось загрузить выбранную версию для сравнения."));
+    }
+  }
+
+  function pushCommandHistory(commandText) {
+    const text = String(commandText || "").trim();
+    if (!text || !sid) return;
+    const next = [
+      { text, ts: Date.now() },
+      ...commandHistory.filter((item) => String(item?.text || "").trim() && String(item?.text || "").trim() !== text),
+    ].slice(0, COMMAND_HISTORY_LIMIT);
+    setCommandHistory(next);
+    writeCommandHistory(sid, next);
+  }
+
+  async function runAiCommand(commandText) {
+    const text = String(commandText || "").trim();
+    if (!text || !sid) return;
+    if (tab !== "diagram") {
+      setCommandStatus({ kind: "error", text: "Командный режим доступен только во вкладке Diagram." });
+      return;
+    }
+
+    setCommandBusy(true);
+    setCommandStatus({ kind: "loading", text: "AI работает…" });
+    setGenErr("");
+
+    try {
+      const parsed = await parseCommandToOps({
+        command: text,
+        context: {
+          selectedElementId,
+          selectedElementName,
+          selectedElementType,
+          selectedElementLaneName,
+        },
+      });
+
+      if (!parsed?.ok || !asArray(parsed?.ops).length) {
+        const reason = shortErr(parsed?.error || "Не удалось распознать команду.");
+        setCommandStatus({ kind: "error", text: reason || "Не удалось распознать команду." });
+        logAiOpsTrace("parse_fail", {
+          sid,
+          command: text,
+          reason: parsed?.error || "parse_failed",
+        });
+        return;
+      }
+
+      const applyResult = await Promise.resolve(
+        bpmnRef.current?.applyCommandOps?.({
+          ops: parsed.ops,
+          command: text,
+          selectedElementId,
+        }),
+      );
+
+      const applied = Number(applyResult?.applied || 0);
+      const failed = Number(applyResult?.failed || 0);
+      const changedIds = asArray(applyResult?.changedIds).filter(Boolean);
+
+      logAiOpsTrace("apply", {
+        sid,
+        source: parsed?.source || "rule",
+        command: text,
+        ops: JSON.stringify(parsed?.ops || []),
+        applied,
+        failed,
+        changedIds: `[${changedIds.join(",")}]`,
+      });
+
+      if (!applyResult?.ok && applied <= 0) {
+        setCommandStatus({
+          kind: "error",
+          text: shortErr(applyResult?.error || "Команда не применена."),
+        });
+        return;
+      }
+
+      pushCommandHistory(text);
+      setCommandInput("");
+      setCommandStatus({
+        kind: failed > 0 ? "warn" : "ok",
+        text: `Сделано: ${applied} опер. Изменено элементов: ${changedIds.length}.${failed > 0 ? ` Ошибок: ${failed}.` : ""}`,
+      });
+    } catch (error) {
+      setCommandStatus({
+        kind: "error",
+        text: shortErr(error?.message || error || "Не удалось выполнить команду."),
+      });
+      logAiOpsTrace("exception", {
+        sid,
+        command: text,
+        error: shortErr(error?.message || error || "unknown"),
+      });
+    } finally {
+      setCommandBusy(false);
+    }
+  }
+
+  async function downloadSnapshot(item) {
+    const loaded = String(item?.xml || "").trim() ? item : await ensureBpmnVersionXml(item);
+    const xml = String(loaded?.xml || "");
+    if (!xml.trim()) return;
+    const base = String(draft?.title || sid || "process")
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, "_")
+      .slice(0, 80) || "process";
+    const stamp = new Date(Number(item?.ts || Date.now()) || Date.now()).toISOString().replace(/[:.]/g, "-");
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = `${base}_snapshot_${stamp}.bpmn`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+  }
+
+  function focusQualityIssue(issue) {
+    const nodeId = toNodeId(issue?.nodeId || issue?.id || issue?.elementId);
+    if (!nodeId) return;
+    const key = `${nodeId}::${String(asArray(issue?.reasons).join("|"))}`;
+    const nodeTitle = String(
+      qualityNodeTitleById[nodeId]
+      || coverageById[nodeId]?.title
+      || issue?.title
+      || "",
+    ).trim();
+    const copy = qualityIssueCopy(issue, nodeTitle);
+    setQualityIssueFocusKey(key);
+    requestDiagramFocus(nodeId, {
+      markerClass: "fpcAttentionJumpFocus",
+      durationMs: 6200,
+      targetZoom: 0.92,
+      clearExistingSelection: true,
+    });
+    window.setTimeout(() => {
+      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Показано" });
+    }, 160);
+    setInfoMsg(`Качество: ${copy.short}`);
+    setGenErr("");
+  }
+
+  function confirmExportWithQualityGate(target = "bpmn") {
+    const errorCount = Number(qualitySummary?.errors || 0);
+    if (errorCount <= 0) return true;
+    const message = [
+      `Обнаружены критичные проблемы качества: ${errorCount}.`,
+      "Рекомендуется сначала исправить их в режиме «Качество».",
+      `Продолжить экспорт ${target.toUpperCase()}?`,
+    ].join("\n");
+    // eslint-disable-next-line no-console
+    console.debug(`[LINT] export_gate target=${target} errors=${errorCount} warns=${Number(qualitySummary?.warns || 0)}`);
+    return window.confirm(message);
+  }
+
+  async function applyQualityAutoFix() {
+    const ops = asArray(qualityAutoFixPreview?.ops);
+    if (!ops.length) {
+      setInfoMsg("Safe auto-fix недоступен для текущих проблем.");
+      setQualityAutoFixOpen(false);
+      return;
+    }
+    setQualityAutoFixBusy(true);
+    setGenErr("");
+    setInfoMsg("");
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[AUTOFIX] preview sid=${sid || "-"} profile=${qualityProfile?.id || qualityProfileId} `
+      + `safe=${Number(qualityAutoFixPreview?.safeFixes || 0)} ops=${ops.length}`,
+    );
+    try {
+      const result = await Promise.resolve(
+        bpmnRef.current?.applyCommandOps?.({
+          ops,
+          command: "lint_autofix",
+          selectedElementId: "",
+        }),
+      );
+      const applied = Number(result?.applied || 0);
+      const failed = Number(result?.failed || 0);
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[AUTOFIX] applied sid=${sid || "-"} applied=${applied} failed=${failed} changedIds=${asArray(result?.changedIds).length}`,
+      );
+      if (!result?.ok && applied <= 0) {
+        setGenErr(shortErr(result?.error || "Автоисправление не выполнено."));
+        return;
+      }
+      const flush = await bpmnSync.flushFromActiveTab("diagram", {
+        force: true,
+        source: "lint_autofix",
+        reason: "lint_autofix",
+      });
+      if (!flush?.ok) {
+        setGenErr(shortErr(flush?.error || "Не удалось сохранить BPMN после автоисправления."));
+        return;
+      }
+      setInfoMsg(
+        `Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""} `
+        + "Черновик обновлён; для новой версии используйте «Создать версию BPMN».",
+      );
+      setQualityAutoFixOpen(false);
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Автоисправление не выполнено."));
+    } finally {
+      setQualityAutoFixBusy(false);
+    }
+  }
+
+  function toggleRobotMetaOverlayFilter(keyRaw) {
+    const key = toText(keyRaw).toLowerCase();
+    if (key !== "ready" && key !== "incomplete") return;
+    setRobotMetaOverlayFilters((prev) => ({
+      ...prev,
+      [key]: !prev?.[key],
+    }));
+    setRobotMetaOverlayEnabled(true);
+  }
+
+  function showRobotMetaOverlay() {
+    setRobotMetaOverlayEnabled(true);
+    setRobotMetaOverlayFilters((prev) => {
+      const next = {
+        ready: !!prev?.ready,
+        incomplete: !!prev?.incomplete,
+      };
+      if (!next.ready && !next.incomplete) {
+        return { ready: true, incomplete: true };
+      }
+      return next;
+    });
+  }
+
+  function resetRobotMetaOverlay() {
+    setRobotMetaOverlayEnabled(false);
+    setRobotMetaOverlayFilters({ ready: true, incomplete: true });
+    setRobotMetaListOpen(false);
+    setRobotMetaListSearch("");
+    setRobotMetaListTab("ready");
+  }
+
+  function focusRobotMetaItem(itemRaw, source = "robot_meta_list") {
+    const item = asObject(itemRaw);
+    const nodeId = toNodeId(item?.nodeId || item?.id);
+    if (!nodeId) return;
+    requestDiagramFocus(nodeId, {
+      markerClass: "fpcAttentionJumpFocus",
+      durationMs: 3000,
+      targetZoom: 0.92,
+      clearExistingSelection: true,
+    });
+    window.setTimeout(() => {
+      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Robot Meta" });
+    }, 120);
+    const title = toText(item?.title || robotMetaNodeCatalogById?.[nodeId]?.title || nodeId) || nodeId;
+    onOpenElementNotes?.({
+      id: nodeId,
+      name: title,
+      type: toText(item?.type || robotMetaNodeCatalogById?.[nodeId]?.type),
+    }, "header_open_notes");
+    setInfoMsg(`Robot Meta: ${title}`);
+    setGenErr("");
+    if (source === "robot_meta_list" && tab !== "diagram") {
+      setTab("diagram");
+    }
+  }
+
+  function focusCoverageIssue(item, source = "coverage_panel") {
+    const nodeId = toNodeId(item?.id || item?.nodeId);
+    if (!nodeId) return;
+    requestDiagramFocus(nodeId, {
+      markerClass: "fpcAttentionJumpFocus",
+      durationMs: 6200,
+      targetZoom: 0.92,
+      clearExistingSelection: true,
+    });
+    window.setTimeout(() => {
+      bpmnRef.current?.flashNode?.(nodeId, "accent", { label: "Показано" });
+    }, 160);
+    const title = String(item?.title || nodeId).trim();
+    onOpenElementNotes?.({
+      id: nodeId,
+      name: title,
+      type: String(item?.type || "").trim(),
+    }, "header_open_notes");
+    setInfoMsg(`Покрытие: ${title}`);
+    setGenErr("");
+    if (source === "notes_panel_event") {
+      setTab("diagram");
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onOpenCoverage = (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+      applyDiagramMode("coverage");
+      if (tab !== "diagram") setTab("diagram");
+      const focusId = toNodeId(detail?.focusElementId);
+      if (!focusId) return;
+      const row = coverageById[focusId] || { id: focusId, title: focusId, type: "" };
+      focusCoverageIssue(row, "notes_panel_event");
+    };
+    window.addEventListener(NOTES_COVERAGE_OPEN_EVENT, onOpenCoverage);
+    return () => {
+      window.removeEventListener(NOTES_COVERAGE_OPEN_EVENT, onOpenCoverage);
+    };
+  }, [tab, setTab, coverageById, applyDiagramMode]);
+
+  const generateAiQuestionsForSelectedElement = useCallback(async () => {
+    if (!canGenerateAiQuestions) {
+      const reason = shortErr(aiGenerateGate.reasonText || "Генерация сейчас недоступна.");
+      if (reason) setGenErr(reason);
+      return;
+    }
+
+    setAiQuestionsBusy(true);
+    setAiQuestionsStatus({ kind: "pending", text: "AI работает..." });
+    setGenErr("");
+    setInfoMsg("");
+    try {
+      let timeoutHandle = null;
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      if (controller) {
+        timeoutHandle = setTimeout(() => {
+          try {
+            controller.abort();
+          } catch {
+            // noop
+          }
+        }, AI_QUESTIONS_TIMEOUT_MS);
+      }
+      const aiRes = await apiAiQuestions(
+        sid,
+        {
+          mode: "node_step",
+          node_id: selectedElementId,
+          limit: 5,
+        },
+        { signal: controller?.signal },
+      );
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (!aiRes || typeof aiRes !== "object") {
+        const errText = "Не удалось получить ответ генератора.";
+        setAiQuestionsStatus({ kind: "error", text: errText });
+        setGenErr(errText);
+        return;
+      }
+      if (!aiRes?.ok) {
+        const aborted = !!aiRes?.aborted || String(aiRes?.error_name || "").toLowerCase() === "aborterror";
+        const errText = aborted
+          ? `Таймаут генерации (${Math.round(AI_QUESTIONS_TIMEOUT_MS / 1000)}с). Попробуйте ещё раз.`
+          : shortErr(aiRes?.error || "Не удалось сгенерировать AI-вопросы.");
+        setAiQuestionsStatus({ kind: "error", text: errText });
+        setGenErr(errText);
+        return;
+      }
+      const payloadRaw = aiRes.result && typeof aiRes.result === "object" ? aiRes.result : {};
+      const payload = withInjectedAiQuestionsPayload(payloadRaw, {
+        selectedElementId,
+        draftInterview: draft?.interview,
+      });
+      const payloadInterview = asObject(payload?.interview);
+      const payloadAiMap = asObject(payloadInterview?.ai_questions_by_element || payloadInterview?.aiQuestionsByElementId);
+      if (String(payload?.error || "").trim()) {
+        const errText = shortErr(payload.error);
+        setAiQuestionsStatus({ kind: "error", text: errText });
+        setGenErr(errText);
+        return;
+      }
+      onSessionSyncWithVersion?.({
+        ...payload,
+        _sync_source: "diagram_ai_questions_generate",
+      });
+      if (Object.keys(payloadAiMap).length) {
+        handleAiQuestionsByElementChange(payloadAiMap, {
+          source: "diagram_ai_questions_generate",
+          elementId: selectedElementId,
+        });
+      }
+      applyClarifyFromSession(payload, draft?.nodes);
+      const step = payload?.llm_step && typeof payload.llm_step === "object" ? payload.llm_step : {};
+      const generated = Number(step?.generated || 0);
+      const reused = !!step?.reused || generated <= 0;
+      const msg = reused
+        ? "AI-вопросы актуальны: новые не требуются."
+        : `AI-вопросы обновлены: +${generated}.`;
+      bpmnRef.current?.flashNode?.(selectedElementId, "ai", { label: "AI added" });
+      bpmnRef.current?.flashBadge?.(selectedElementId, "ai");
+      setAiQuestionsStatus({ kind: reused ? "warn" : "ok", text: msg });
+      setInfoMsg(msg);
+      onOpenElementNotes?.({
+        id: selectedElementId,
+        name: selectedElementName || selectedElementId,
+        type: selectedElementType,
+      }, "header_open_notes");
+    } catch (error) {
+      const errText = shortErr(error?.message || error || "Не удалось сгенерировать AI-вопросы.");
+      setAiQuestionsStatus({ kind: "error", text: errText });
+      setGenErr(errText);
+    } finally {
+      setAiQuestionsBusy(false);
+    }
+  }, [
+    canGenerateAiQuestions,
+    aiGenerateGate.reasonText,
+    sid,
+    selectedElementId,
+    onSessionSyncWithVersion,
+    handleAiQuestionsByElementChange,
+    applyClarifyFromSession,
+    draft?.interview,
+    draft?.nodes,
+    selectedElementName,
+    selectedElementType,
+    onOpenElementNotes,
+  ]);
+
+  function handleBpmnSelectionChange(payload) {
+    const selected = payload && typeof payload === "object" ? payload : null;
+    onBpmnElementSelect?.(selected);
+    const source = String(selected?.source || "").toLowerCase();
+    if (!selected?.id) return;
+    if (source.includes("ai_badge_click") || source.includes("ai_indicator_click")) {
+      onOpenElementNotes?.(selected, "header_open_ai");
+      return;
+    }
+    if (source.includes("notes_badge_click")) {
+      onOpenElementNotes?.(selected, "notes_marker_open");
+    }
+  }
+
+  function openInsertBetweenModal() {
+    if (!hasSession || tab !== "diagram") {
+      setGenErr("Операция доступна только во вкладке Diagram.");
+      return;
+    }
+    const candidate = readInsertBetweenCandidate(selectedBpmnElement?.insertBetween);
+    if (!candidate) {
+      setGenErr("Выберите стрелку BPMN или пару связанных шагов A→B.");
+      return;
+    }
+    if (candidate.available === false) {
+      setGenErr(insertBetweenErrorMessage(candidate.error));
+      return;
+    }
+    setGenErr("");
+    setInfoMsg("");
+    setInsertBetweenDraft(candidate);
+    setInsertBetweenName("");
+    setInsertBetweenOpen(true);
+  }
+
+  async function applyInsertBetweenFromDiagram() {
+    const candidate = readInsertBetweenCandidate(insertBetweenDraft);
+    if (!candidate || !candidate.fromId || !candidate.toId) {
+      setGenErr("Не удалось определить связь для вставки.");
+      return;
+    }
+    const newTaskName = String(insertBetweenName || "").trim();
+    if (!newTaskName) {
+      setGenErr("Введите название нового шага.");
+      return;
+    }
+
+    setInsertBetweenBusy(true);
+    setGenErr("");
+    setInfoMsg("");
+    try {
+      const result = await Promise.resolve(
+        bpmnRef.current?.applyCommandOps?.({
+          command: `insert_between:${candidate.fromId}->${candidate.toId}`,
+          selectedElementId: candidate.flowId || candidate.fromId,
+          ops: [
+            {
+              type: "insertBetween",
+              fromId: candidate.fromId,
+              toId: candidate.toId,
+              flowId: candidate.flowId,
+              newTaskName,
+              laneId: candidate.laneId,
+              when: candidate.when,
+              whenPolicy: "to_first",
+            },
+          ],
+        }),
+      );
+      if (!result?.ok && Number(result?.applied || 0) <= 0) {
+        const opError = String(result?.results?.[0]?.error || result?.error || "").trim();
+        setGenErr(insertBetweenErrorMessage(opError));
+        return;
+      }
+      setInsertBetweenOpen(false);
+      setInsertBetweenName("");
+      setInsertBetweenDraft(null);
+      const changedIds = asArray(result?.changedIds).map((x) => String(x || "").trim()).filter(Boolean);
+      if (changedIds.length) {
+        changedIds.slice(0, 3).forEach((id, idx) => {
+          bpmnRef.current?.flashNode?.(id, "flow", {
+            label: idx === 0 ? "Branch added" : "",
+          });
+        });
+      } else {
+        bpmnRef.current?.flashNode?.(candidate.fromId, "flow", { label: "Branch added" });
+      }
+      setInfoMsg(`Шаг "${newTaskName}" вставлен между ${candidate.fromId} и ${candidate.toId}.`);
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось вставить шаг между."));
+    } finally {
+      setInsertBetweenBusy(false);
+    }
+  }
+
+  const runNotesBatchOps = useCallback(async (detail = {}) => {
+    const requestSid = String(detail?.sid || "").trim();
+    if (!requestSid || requestSid !== String(sid || "")) {
+      return { ok: false, error: "wrong_session" };
+    }
+    const ops = asArray(detail?.ops);
+    if (!ops.length) {
+      return { ok: false, error: "empty_ops" };
+    }
+
+    if (tab !== "diagram") {
+      await switchTab("diagram");
+    }
+
+    try {
+      await Promise.resolve(bpmnRef.current?.whenReady?.({
+        timeoutMs: 4000,
+        expectedSid: requestSid,
+      }));
+    } catch {
+    }
+
+    const result = await Promise.resolve(
+      bpmnRef.current?.applyCommandOps?.({
+        ops,
+        command: String(detail?.commandText || "batch_notes"),
+        selectedElementId: "",
+      }),
+    );
+    const applied = Number(result?.applied || 0);
+    const failed = Number(result?.failed || 0);
+    if (!result?.ok && applied <= 0) {
+      return {
+        ok: false,
+        applied,
+        failed,
+        error: String(result?.error || result?.results?.[0]?.error || "apply_failed"),
+      };
+    }
+    setInfoMsg(`Batch: применено ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""}`);
+    logAiOpsTrace("batch_apply", {
+      sid: requestSid,
+      applied,
+      failed,
+      source: String(detail?.source || "notes_batch"),
+      ops: ops.length,
+    });
+    return {
+      ok: true,
+      applied,
+      failed,
+      changedIds: asArray(result?.changedIds),
+    };
+  }, [sid, tab, switchTab]);
+
+  useEffect(() => {
+    const notice = snapshotRestoreNotice && typeof snapshotRestoreNotice === "object" ? snapshotRestoreNotice : null;
+    if (!notice) return;
+    if (String(notice.sid || "") !== String(sid || "")) return;
+    setInfoMsg(`Восстановлено из локальной истории (${formatSnapshotTs(notice.ts)}).`);
+    onSnapshotRestoreNoticeConsumed?.(sid, Number(notice?.nonce || 0));
+  }, [sid, snapshotRestoreNotice, onSnapshotRestoreNoticeConsumed]);
+
+  useEffect(() => {
+    if (!versionsOpen || !sid) return;
+    void refreshSnapshotVersions();
+  }, [versionsOpen, sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshSnapshotVersions]);
+
+  useEffect(() => {
+    setVersionsIncludeTechnical(false);
+  }, [sid]);
+
+  useEffect(() => {
+    if (!sid) {
+      setLatestBpmnVersionHead(null);
+      setLatestBpmnVersionHeadStatus("idle");
+      metaVersionHeadSeededRef.current = false;
+      return;
+    }
+    // If /meta already seeded the head on initial load, skip the first versions call.
+    if (metaVersionHeadSeededRef.current) {
+      metaVersionHeadSeededRef.current = false;
+      return;
+    }
+    setLatestBpmnVersionHead(null);
+    setLatestBpmnVersionHeadStatus("loading");
+    void refreshLatestBpmnRevisionHead();
+  }, [sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshLatestBpmnRevisionHead]);
+
+  useEffect(() => {
+    if (!diffOpen) return;
+    const ids = new Set(asArray(versionsList).map((item) => String(item?.id || "")));
+    if (!ids.has(String(diffTargetSnapshotId || ""))) {
+      setDiffTargetSnapshotId(String(asArray(versionsList)[0]?.id || ""));
+    }
+    if (!ids.has(String(diffBaseSnapshotId || ""))) {
+      setDiffBaseSnapshotId(String(asArray(versionsList)[1]?.id || asArray(versionsList)[0]?.id || ""));
+    }
+  }, [diffOpen, versionsList, diffBaseSnapshotId, diffTargetSnapshotId]);
+
+  useEffect(() => {
+    if (!diffOpen) return;
+    const ids = [diffBaseSnapshotId, diffTargetSnapshotId].map((id) => String(id || "").trim()).filter(Boolean);
+    ids.forEach((id) => {
+      void ensureBpmnVersionXml(id);
+    });
+  }, [diffOpen, diffBaseSnapshotId, diffTargetSnapshotId, ensureBpmnVersionXml]);
+
+  useEffect(() => {
+    writeCommandMode(commandModeEnabled);
+  }, [commandModeEnabled]);
+
+  useEffect(() => {
+    writeDiagramMode(diagramMode);
+    writeQualityMode(diagramMode === "quality");
+    writeAiQuestionsMode(diagramMode === "interview");
+  }, [diagramMode]);
+
+  useEffect(() => {
+    writeQualityProfile(qualityProfileId);
+  }, [qualityProfileId]);
+
+  useEffect(() => {
+    if (!isQualityMode) setQualityIssueFocusKey("");
+  }, [isQualityMode]);
+
+  useEffect(() => {
+    const sidValue = String(sid || "").trim();
+    return attachProcessStageFlushBeforeLeaveListener(async ({ sessionId }) => {
+      return flushProcessStageBeforeLeave({
+        requestedSessionId: sessionId,
+        activeSessionId: sidValue,
+        activeTab: tab,
+        bpmnSync,
+        saveDirtyHint,
+        hasXmlDraftChanges: !!bpmnRef.current?.hasXmlDraftChanges?.(),
+        lastSuccessfulPublish: lastSuccessfulPublishRef.current,
+      });
+    });
+  }, [sid, tab, bpmnSync, saveDirtyHint]);
+
+  useEffect(() => {
+    const sidValue = String(sid || "").trim();
+    return registerAppSafeRefreshHandler({
+      getRisk: () => {
+        if (!sidValue || !hasSession) return { status: "clean", message: "" };
+        const uploadState = toText(saveUploadStatus?.state).toLowerCase();
+        if (isManualSaveBusy === true || uploadState === "saving") {
+          return {
+            status: "saving",
+            message: "Дождитесь завершения сохранения перед обновлением.",
+          };
+        }
+        if (uploadState === "conflict") {
+          return {
+            status: "conflict",
+            message: "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
+          };
+        }
+        if (uploadState === "save_failed") {
+          return {
+            status: "failed",
+            message: "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
+          };
+        }
+        if (leaveNavigationRisk?.unsafe === true) {
+          const reason = toText(leaveNavigationRisk?.reason);
+          if (reason === "save_conflict") return { status: "conflict", message: leaveNavigationRisk.message };
+          if (reason === "save_failed") return { status: "failed", message: leaveNavigationRisk.message };
+          if (reason === "save_stale") return { status: "stale", message: leaveNavigationRisk.message };
+          if (reason === "saving_in_progress") return { status: "saving", message: leaveNavigationRisk.message };
+          return { status: "dirty", message: leaveNavigationRisk.message };
+        }
+        if (saveDirtyHint === true || bpmnRef.current?.hasXmlDraftChanges?.() === true) {
+          return {
+            status: "dirty",
+            message: "Доступна новая версия ProcessMap. Сохраните изменения перед обновлением.",
+          };
+        }
+        return { status: "clean", message: "" };
+      },
+      flush: async ({ reason = "app_update_refresh" } = {}) => {
+        const flush = await flushProcessStageBeforeLeave({
+          requestedSessionId: sidValue,
+          activeSessionId: sidValue,
+          activeTab: tab,
+          bpmnSync,
+          saveDirtyHint,
+          hasXmlDraftChanges: !!bpmnRef.current?.hasXmlDraftChanges?.(),
+          lastSuccessfulPublish: lastSuccessfulPublishRef.current,
+          source: "app_update_refresh",
+          reason,
+        });
+        if (flush?.ok === true) {
+          return {
+            ok: true,
+            status: flush?.skipped === true ? "clean" : "saved",
+          };
+        }
+        const flushError = toText(flush?.error);
+        const flushErrorLower = flushError.toLowerCase();
+        return {
+          ok: false,
+          status: flush?.timeout === true || flushError === "flush_before_leave_pending_timeout"
+            ? "timeout"
+            : (flushErrorLower.includes("conflict") || flushErrorLower.includes("409") ? "conflict" : "failed"),
+          message: "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
+        };
+      },
+    });
+  }, [
+    bpmnSync,
+    hasSession,
+    isManualSaveBusy,
+    leaveNavigationRisk,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    sid,
+    tab,
+    toText,
+  ]);
+
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.debug(
+      `[LINT] run sid=${sid || "-"} profile=${qualityProfile?.id || qualityProfileId} `
+      + `issues=${Number(qualitySummary?.total || 0)} errors=${Number(qualitySummary?.errors || 0)} warns=${Number(qualitySummary?.warns || 0)}`,
+    );
+  }, [sid, qualityProfile?.id, qualityProfileId, qualitySummary?.total, qualitySummary?.errors, qualitySummary?.warns]);
+
+  useEffect(() => {
+    if (tab !== "diagram") setAiQuestionsStatus({ kind: "", text: "" });
+  }, [tab]);
+
+  useEffect(() => {
+    if (typeof onUiStateChange !== "function") return;
+    onUiStateChange({
+      sid,
+      tab,
+      diagramMode,
+      selectedElementId,
+      hasSession,
+      isLocal,
+      aiQuestionsBusy,
+      canGenerateAiQuestions,
+      aiGenerateBlockReason: canGenerateAiQuestions ? "" : aiGenerateGate.reasonText,
+      aiGenerateBlockReasonCode: canGenerateAiQuestions ? "" : aiGenerateGate.reasonCode,
+      leaveNavigationRisk,
+    });
+  }, [
+    onUiStateChange,
+    sid,
+    tab,
+    diagramMode,
+    selectedElementId,
+    hasSession,
+    isLocal,
+    aiQuestionsBusy,
+    canGenerateAiQuestions,
+    aiGenerateGate.reasonText,
+    aiGenerateGate.reasonCode,
+    leaveNavigationRisk,
+  ]);
+
+  useEffect(() => {
+    const intent = aiGenerateIntent && typeof aiGenerateIntent === "object" ? aiGenerateIntent : null;
+    if (!intent) return;
+    const intentSid = String(intent.sid || "").trim();
+    if (!intentSid || intentSid !== sid) return;
+    const intentNonce = String(intent.nonce || "").trim();
+    const intentKey = `${intentSid}:${intentNonce || "none"}`;
+    if (lastAiGenerateIntentKeyRef.current === intentKey) return;
+    lastAiGenerateIntentKeyRef.current = intentKey;
+    void generateAiQuestionsForSelectedElement();
+  }, [aiGenerateIntent, sid, generateAiQuestionsForSelectedElement]);
+
+  useEffect(() => {
+    const intent = drawioCompanionFocusIntent && typeof drawioCompanionFocusIntent === "object"
+      ? drawioCompanionFocusIntent
+      : null;
+    if (!intent) return;
+    const intentSid = String(intent.sid || "").trim();
+    const objectId = String(intent.objectId || "").trim();
+    if (!intentSid || intentSid !== sid || !objectId) return;
+    const intentNonce = String(intent.nonce || "").trim();
+    const intentKey = `${intentSid}:${objectId}:${intentNonce || "none"}`;
+    if (lastDrawioCompanionFocusKeyRef.current === intentKey) return;
+    lastDrawioCompanionFocusKeyRef.current = intentKey;
+    setDrawioSelectedElementId(objectId);
+    setDiagramActionLayersOpen(true);
+  }, [drawioCompanionFocusIntent, sid, setDrawioSelectedElementId, setDiagramActionLayersOpen]);
+
+  useEffect(() => {
+    const intent = discussionLinkedElementFocusIntent && typeof discussionLinkedElementFocusIntent === "object"
+      ? discussionLinkedElementFocusIntent
+      : null;
+    if (!intent) return;
+    const intentSid = String(intent.sid || "").trim();
+    const elementId = toNodeId(intent.elementId || intent.element_id);
+    const isTargetSession =
+      intentSid === sid || isDescendantSessionSid(sid, intentSid, sessions);
+    if (!intentSid || !isTargetSession || !elementId) return;
+    logDiscussionFocusDiag("stage-intent", {
+      sid,
+      intentSid,
+      elementId,
+      tab,
+      hasBpmnRef: !!bpmnRef.current,
+    });
+    if (tab !== "diagram") {
+      logDiscussionFocusDiag("stage-switch-to-diagram", { sid, elementId, tab });
+      setTab("diagram");
+      return;
+    }
+    const requestId = String(intent.requestId || intent.request_id || "").trim();
+    const intentNonce = String(intent.nonce || "").trim();
+    const intentKey = `${intentSid}:${elementId}:${intentNonce || "none"}`;
+    if (lastDiscussionLinkedElementFocusKeyRef.current === intentKey) return;
+    lastDiscussionLinkedElementFocusKeyRef.current = intentKey;
+    const complete = (ok, error = "") => {
+      logDiscussionFocusDiag("stage-complete", {
+        requestId,
+        ok,
+        error,
+        elementId,
+      });
+      onDiscussionLinkedElementFocusResult?.({
+        requestId,
+        ok,
+        error,
+        elementId,
+      });
+    };
+
+    const run = async () => {
+      let ready = false;
+      try {
+        ready = await Promise.resolve(
+          bpmnRef.current?.whenReady?.({
+            timeoutMs: 5000,
+            expectedSid: sid,
+          }),
+        );
+      } catch {
+        ready = false;
+      }
+      logDiscussionFocusDiag("stage-runtime-ready", {
+        requestId,
+        elementId,
+        ready,
+        hasBpmnRef: !!bpmnRef.current,
+      });
+      if (ready === false) {
+        setGenErr("Элемент больше не найден на схеме.");
+        complete(false, "not_ready");
+        return;
+      }
+
+      // Try to select the element on the current (parent) canvas first.
+      let selected = bpmnRef.current?.selectElements?.([elementId], {
+        focusFirst: false,
+        source: "discussion_linked_element",
+      });
+      logDiscussionFocusDiag("stage-select-first", {
+        requestId,
+        elementId,
+        selected,
+      });
+
+      // If the element is hidden inside a collapsed SubProcess, expand the
+      // ancestors and try again — without leaving the parent diagram.
+      if (!selected?.ok) {
+        const expandResult = bpmnRef.current?.expandSubprocessAncestors?.(elementId);
+        logDiscussionFocusDiag("stage-expand-ancestors", {
+          requestId,
+          elementId,
+          expandResult,
+        });
+        if (expandResult?.ok && expandResult.expanded && expandResult.expandedIds?.length) {
+          setInfoMsg("SubProcess развёрнут");
+          window.setTimeout(() => setInfoMsg(""), 2000);
+          // Wait for bpmn-js to re-render the expanded children.
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+          selected = bpmnRef.current?.selectElements?.([elementId], {
+            focusFirst: false,
+            source: "discussion_linked_element",
+          });
+          logDiscussionFocusDiag("stage-select-after-expand", {
+            requestId,
+            elementId,
+            selected,
+          });
+        }
+      }
+
+      // Fallback to drilldown only when the element is truly not on the parent
+      // canvas (e.g. it belongs to an external CallActivity process).
+      if (!selected?.ok) {
+        const subprocessAncestorId = bpmnRef.current?.findSubprocessAncestor?.(elementId);
+        logDiscussionFocusDiag("stage-select-fallback", {
+          requestId,
+          elementId,
+          subprocessAncestorId,
+        });
+        if (subprocessAncestorId) {
+          logDiscussionFocusDiag("stage-drilldown", {
+            requestId,
+            elementId,
+            subprocessAncestorId,
+            sid,
+          });
+          onNavigateToSubprocess?.(subprocessAncestorId, elementId);
+          return;
+        }
+        setGenErr("Элемент больше не найден на схеме.");
+        complete(false, "missing_element");
+        return;
+      }
+      const focused = bpmnRef.current?.focusNode?.(elementId, {
+        markerClass: "fpcAttentionJumpFocus",
+        durationMs: 6200,
+        targetZoom: 0.92,
+        centerInViewport: true,
+        clearExistingSelection: true,
+        source: "discussion_linked_element",
+      });
+      logDiscussionFocusDiag("stage-focus", {
+        requestId,
+        elementId,
+        focused,
+      });
+      if (focused === false) {
+        setGenErr("Элемент больше не найден на схеме.");
+        complete(false, "focus_failed");
+        return;
+      }
+      window.setTimeout(() => {
+        const flashed = bpmnRef.current?.flashNode?.(elementId, "accent", { label: "Показано" });
+        logDiscussionFocusDiag("stage-flash", {
+          requestId,
+          elementId,
+          flashed,
+        });
+      }, 120);
+      setInfoMsg(`Показан элемент схемы: ${readableBpmnLabel(intent.elementName, intent.element_name) || "Элемент BPMN"}`);
+      setGenErr("");
+      complete(true);
+    };
+    void run();
+  }, [discussionLinkedElementFocusIntent, onDiscussionLinkedElementFocusResult, onNavigateToSubprocess, sessions, setTab, sid, tab, toNodeId, toText]);
+
+  useEffect(() => {
+    setToolbarMenuOpen(false);
+    setDiagramActionPathOpen(false);
+    setDiagramActionHybridToolsOpen(false);
+    setDiagramActionLayersOpen(false);
+    setDiagramActionRobotMetaOpen(false);
+    setRobotMetaListOpen(false);
+    setDiagramActionQualityOpen(false);
+    setDiagramActionOverflowOpen(false);
+  }, [tab, sid]);
+
+
+  useEffect(() => {
+    if (!availablePathTiers.length) {
+      if (pathHighlightEnabled) setPathHighlightEnabled(false);
+      if (pathHighlightTier) setPathHighlightTier("");
+      if (pathHighlightSequenceKey) setPathHighlightSequenceKey("");
+      return;
+    }
+    if (!availablePathTiers.includes(pathHighlightTier)) {
+      setPathHighlightTier(availablePathTiers[0]);
+      setPathHighlightSequenceKey("");
+      return;
+    }
+    if (pathHighlightSequenceKey && !availableSequenceKeysForTier.includes(pathHighlightSequenceKey)) {
+      setPathHighlightSequenceKey("");
+    }
+  }, [
+    availablePathTiers,
+    availableSequenceKeysForTier,
+    pathHighlightEnabled,
+    pathHighlightTier,
+    pathHighlightSequenceKey,
+  ]);
+
+  useEffect(() => {
+    const xml = String(draft?.bpmn_xml || "");
+    const hash = fnv1aHex(xml);
+    const prevHash = String(lastDraftXmlHashRef.current || "");
+    lastDraftXmlHashRef.current = hash;
+    if (!saveDirtyHint) return;
+    if (!xml.trim()) return;
+    if (prevHash && prevHash !== hash) {
+      setSaveDirtyHint(false);
+    }
+  }, [draft?.bpmn_xml, saveDirtyHint]);
+
+  useEffect(() => {
+    if (!diagramActionPlanOpen) return;
+    void buildExecutionPlanNow({ suppressError: true });
+  }, [
+    diagramActionPlanOpen,
+    sid,
+    draft?.project_id,
+    draft?.projectId,
+    executionPlanSource,
+    robotMetaByElementId,
+    executionPlanNodeTypeById,
+  ]);
+
+  useEffect(() => {
+    if (diagramActionPlanOpen) return;
+    setExecutionPlanError("");
+  }, [diagramActionPlanOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onBatchApply = (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+      const requestId = String(detail?.requestId || "").trim();
+      if (!requestId) return;
+      void (async () => {
+        try {
+          const result = await runNotesBatchOps(detail);
+          emitBatchOpsResult(requestId, result);
+        } catch (error) {
+          emitBatchOpsResult(requestId, {
+            ok: false,
+            error: String(error?.message || error || "batch_apply_failed"),
+          });
+        }
+      })();
+    };
+    window.addEventListener(NOTES_BATCH_APPLY_EVENT, onBatchApply);
+    return () => {
+      window.removeEventListener(NOTES_BATCH_APPLY_EVENT, onBatchApply);
+    };
+  }, [runNotesBatchOps]);
+
+  useEffect(() => {
+    if (!sid) {
+      setCommandHistory([]);
+      return;
+    }
+    setCommandHistory(readCommandHistory(sid));
+  }, [sid]);
+
+  function handleAiQuestionsByElementChange(nextMap, meta = {}) {
+    const interviewNow = asObject(draft?.interview);
+    handleInterviewChange(
+      {
+        ...interviewNow,
+        ai_questions_by_element: asObject(nextMap),
+      },
+      {
+        type: "diagram.ai_questions_by_element.update",
+        source: String(meta?.source || "bpmn_overlay"),
+        element_id: String(meta?.elementId || ""),
+        question_id: String(meta?.qid || ""),
+      },
+    );
+  }
+
+  useEffect(() => {
+    if (!sid) return;
+    const rawXml = String(draft?.bpmn_xml || "");
+    logActorsTrace("derive start", {
+      sid,
+      source: "process_stage_effect",
+      xmlLen: rawXml.length,
+      xmlHash: fnv1aHex(rawXml),
+    });
+    const derivedActors = deriveActorsFromBpmn(rawXml);
+    logActorsTrace("derive done", {
+      sid,
+      source: "process_stage_effect",
+      count: derivedActors.length,
+    });
+    if (sameDerivedActors(draft?.actors_derived, derivedActors)) return;
+    onSessionSyncWithVersion?.({
+      id: sid,
+      session_id: sid,
+      actors_derived: derivedActors,
+      _sync_source: "actors_derive_effect",
+    });
+  }, [sid, draft?.bpmn_xml, draft?.actors_derived, onSessionSyncWithVersion]);
+
+  function applyClarifyFromSession(updated, fallbackNodes) {
+    const review = buildClarificationHints(updated?.questions, updated?.nodes || fallbackNodes || []);
+    setApiClarifyHints(review.hints);
+    setApiClarifyList(review.list);
+    setLlmClarifyList(review.llmList || []);
+    const sourceLabel = review.hasLlm
+      ? "API-валидаторы + DeepSeek вопросы (llm)"
+      : "API-валидаторы (coverage/resources/disposition/loss)";
+    setApiClarifyMeta({
+      openTotal: review.openTotal,
+      validatorOpenTotal: review.validatorOpenTotal,
+      criticalTotal: review.criticalTotal,
+      hasLlm: review.hasLlm,
+      llmOpenTotal: review.llmOpenTotal,
+      issueStats: review.issueStats,
+      sourceLabel,
+    });
+    return review;
+  }
+
+  async function doGenerate() {
+    if (!workbench.canGenerate) return;
+
+    setGenErr("");
+    setGenBusy(true);
+
+    try {
+      setTab("diagram");
+      const runInputHash = createAiInputHash({
+        tool: "generate_process",
+        sid,
+        bpmn_len: String(draft?.bpmn_xml || "").length,
+        nodes_len: asArray(draft?.nodes).length,
+        edges_len: asArray(draft?.edges).length,
+        interview: asObject(draft?.interview),
+      });
+      const exec = await executeAi({
+        toolId: "generate_process",
+        sessionId: sid,
+        projectId: String(draft?.project_id || draft?.projectId || ""),
+        inputHash: runInputHash,
+        payload: {
+          source: "process_header_generate",
+        },
+        mode: "live",
+        run: () => apiRecompute(sid),
+      });
+      if (!exec.ok) {
+        const msg = shortErr(exec?.error?.message || exec?.error?.code || "Не удалось сгенерировать процесс.");
+        if (exec?.error?.shouldNotify !== false) setGenErr(msg);
+        return;
+      }
+      const r = exec.result;
+      if (!r?.ok) {
+        setGenErr(shortErr(r?.error || `recompute failed (${r?.status || 0})`));
+        return;
+      }
+
+      if (exec.cached) {
+        setInfoMsg("AI недоступен: показан последний успешный результат генерации (cached).");
+      }
+      await bpmnSync.resetBackend();
+      await Promise.resolve(bpmnRef.current?.fit?.());
+    } catch (e) {
+      setGenErr(shortErr(e?.message || e));
+    } finally {
+      setGenBusy(false);
+    }
+  }
+
+  async function importBpmnFile(file) {
+    if (!file) return;
+    if (!hasSession) {
+      setGenErr("Сначала выберите сессию.");
+      return;
+    }
+    if (isInterview) {
+      setGenErr("Переключитесь на Diagram/XML для импорта BPMN.");
+      return;
+    }
+    const fileTypeError = validateBpmnImportFile(file);
+    if (fileTypeError) {
+      setGenErr(fileTypeError);
+      return;
+    }
+
+    setGenErr("");
+    setInfoMsg("");
+    try {
+      const text = (await readFileText(file)).trim();
+      const textError = validateBpmnImportText(text);
+      if (textError) {
+        setGenErr(textError);
+        return;
+      }
+
+      const imported = await bpmnSync.importXml(text);
+      if (!imported.ok) {
+        setGenErr(shortErr(imported.error || "Импорт не выполнен."));
+        return;
+      }
+      const camundaNsDivergenceCount = detectCamundaNamespaceDivergence(text).length;
+      const camundaNsDivergenceWarning = camundaNsDivergenceCount > 0
+        ? ` Файл содержит устаревшие свойства в формате Camunda 7 (camunda:), которые расходятся с актуальными (zeebe:). Использованы актуальные значения. Элементов с расхождениями: ${camundaNsDivergenceCount}.`
+        : "";
+      const replaceSeedInterview = isLikelySeedBpmnXml(draft?.bpmn_xml);
+      const projected = parseAndProjectBpmnToInterview({
+        xmlText: text,
+        draft,
+        helpers: projectionHelpers,
+        preferBpmn: true,
+        canAutofillInterview: replaceSeedInterview || !interviewHasContent(draft?.interview),
+        replaceGraph: true,
+      });
+      const derivedActors = deriveActorsFromBpmn(text);
+      const currentDrawioMeta = normalizeDrawioMeta(drawioMetaRef.current);
+      const beforeBpmnNodeIds = collectBpmnNodeIdsFromDraft(draft);
+      const afterBpmnNodeIds = projected.ok
+        ? collectBpmnNodeIdsFromDraft({ nodes: projected.nextNodes })
+        : beforeBpmnNodeIds;
+      const importDiagnostics = buildDrawioAnchorImportDiagnostics({
+        beforeMeta: currentDrawioMeta,
+        beforeBpmnNodeIds,
+        afterBpmnNodeIds,
+        validationReady: projected.ok,
+      });
+      setDrawioAnchorImportDiagnostics(importDiagnostics);
+      if (projected.ok) {
+        const hasProjectedInterview = interviewHasContent(projected.nextInterview);
+        if (hasProjectedInterview) {
+          const savePlan = markInterviewAsSaved(
+            projected.nextInterview,
+            projected.nextNodes,
+            draft?.nodes,
+            projected.nextEdges,
+            draft?.edges,
+          );
+          const optimisticSession = {
+            ...(draft || {}),
+            id: sid,
+            session_id: sid,
+            interview: projected.nextInterview,
+            bpmn_xml: text,
+            actors_derived: derivedActors,
+            ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
+            ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
+          };
+          onSessionSyncWithVersion?.(optimisticSession);
+          if (!isLocal) {
+            const syncPatchPayload = { ...savePlan.patch };
+            const baseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+            if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+              syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+            }
+            const syncRes = await enqueueSessionPatchCasWrite({
+              sessionId: sid,
+              patch: syncPatchPayload,
+              apiPatchSession,
+              getBaseDiagramStateVersion,
+              rememberDiagramStateVersion,
+              // FIX-BPMN-IMPORT-SAVE: XML только что персистнут через PUT /bpmn
+              // (import_bpmn) → сессия XML-truth; nodes/edges из проекции в PATCH
+              // не отправляем (409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH).
+              isXmlTruthSession: true,
+            });
+            if (syncRes.ok) {
+              const serverSession =
+                syncRes.session && typeof syncRes.session === "object"
+                  ? {
+                      ...syncRes.session,
+                      actors_derived: derivedActors,
+                    }
+                  : optimisticSession;
+              onSessionSyncWithVersion?.(serverSession);
+            } else {
+              setGenErr(shortErr(syncRes.error || "Не удалось сохранить Interview из BPMN."));
+            }
+          }
+        }
+        setInfoMsg(
+          replaceSeedInterview
+            ? `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
+              + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`
+              + " Стартовый seed BPMN заменён импортом."
+              + camundaNsDivergenceWarning
+            : `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
+              + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`
+              + camundaNsDivergenceWarning,
+        );
+      } else {
+        setDrawioAnchorImportDiagnostics(null);
+        setInfoMsg((projected.error || "BPMN загружен, но парсинг не выполнен.") + camundaNsDivergenceWarning);
+      }
+      setApiClarifyHints([]);
+      setApiClarifyList([]);
+      setLlmClarifyList([]);
+      setApiClarifyMeta(null);
+      setTab("diagram");
+      await Promise.resolve(bpmnRef.current?.fit?.());
+      await refreshLatestBpmnRevisionHead();
+    } catch (e2) {
+      setGenErr(shortErr(e2?.message || e2));
+    }
+  }
+
+  async function onImportPicked(e) {
+    const file = e?.target?.files?.[0];
+    if (e?.target) e.target.value = "";
+    await importBpmnFile(file);
+  }
+
+  function handleBpmnFileDragEnter(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    bpmnFileDragDepthRef.current += 1;
+    setBpmnFileDragActive(true);
+  }
+
+  function handleBpmnFileDragOver(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setBpmnFileDragActive(true);
+  }
+
+  function handleBpmnFileDragLeave(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    bpmnFileDragDepthRef.current = Math.max(0, bpmnFileDragDepthRef.current - 1);
+    if (bpmnFileDragDepthRef.current === 0) setBpmnFileDragActive(false);
+  }
+
+  function handleBpmnFileDrop(event) {
+    if (!eventHasExternalFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    bpmnFileDragDepthRef.current = 0;
+    setBpmnFileDragActive(false);
+    const file = event.dataTransfer?.files?.[0];
+    void importBpmnFile(file);
+  }
+
+  useEffect(() => {
+    function preventExternalFileOpen(event) {
+      if (!eventHasExternalFiles(event)) return;
+      event.preventDefault();
+    }
+    window.addEventListener("dragover", preventExternalFileOpen);
+    window.addEventListener("drop", preventExternalFileOpen);
+    return () => {
+      window.removeEventListener("dragover", preventExternalFileOpen);
+      window.removeEventListener("drop", preventExternalFileOpen);
+    };
+  }, []);
+
+  const {
+    drawioEditorBridge,
+    overlayPanelModel,
+    runtimeActions,
+    commitDrawioOverlayMove,
+    deleteDrawioOverlayElement,
+    deleteOverlayEntity,
+    toggleDrawioEnabled,
+    setDrawioOpacity,
+    drawioModeEffective,
+    drawioRuntimeToolState,
+    setDrawioMode,
+    createDrawioRuntimeElement,
+    toggleDrawioLock,
+    setDrawioElementVisible,
+    setDrawioElementLocked,
+    setDrawioElementText,
+    setDrawioElementTextWidth,
+    setDrawioElementStylePreset,
+    setDrawioElementSize,
+    setDrawioElementAnchor,
+    reorderDrawioElements,
+    renameDrawioElement,
+    undeleteDrawioElement,
+    openEmbeddedDrawioEditor,
+    closeEmbeddedDrawioEditor,
+    handleDrawioEditorSave,
+    exportEmbeddedDrawio,
+    handleDrawioImportFile,
+  } = useProcessStageDrawio({
+    draft,
+    overlay: {
+      sid,
+      drawioMetaRef,
+      setDrawioMeta,
+      normalizeDrawioMeta,
+      serializeDrawioMeta,
+      persistDrawioMeta,
+      markPlaybackOverlayInteraction,
+      deleteSelectedHybridIds,
+      deleteLegacyHybridMarkers,
+      drawioEditorOpen,
+      isDrawioXml,
+      readFileText,
+      setDrawioEditorOpen,
+      setInfoMsg,
+      setGenErr,
+      downloadTextFile,
+      drawioUiState,
+      drawioVisibilityContract,
+      drawioVisible,
+      setDrawioSelectedElementId,
+      overlayPanelOpen: !!diagramActionLayersOpen || !!diagramActionHybridToolsOpen,
+      hybridVisible,
+      hybridTotalCount,
+      hybridModeEffective,
+      hybridUiPrefs,
+      hybridV2HiddenCount,
+      hybridLayerRenderRows,
+      hybridV2Renderable,
+      hybridV2BindingByHybridId,
+      drawioSelectedElementId,
+      hybridV2ActiveId,
+      hybridV2SelectedIds,
+      hybridLayerActiveElementId,
+    },
+    runtimeGlueConfig: {
+      importInputRef,
+      bpmnRef,
+      bpmnSync,
+      hasSession,
+      isInterview,
+      aiStepBusy,
+      isLocal,
+      aiBottleneckOn,
+      activeHints,
+      sid,
+      tab,
+      diagramHints,
+      isBpmnTab,
+      selectedElementContext,
+      pathHighlightTier,
+      pathHighlightSequenceKey,
+      executionPlanSource,
+      robotMetaByElementId,
+      executionPlanNodeTypeById,
+      executionPlanPreview,
+      executionPlanVersions,
+      flowTierMetaMap,
+      nodePathMetaMap,
+      hybridVisible,
+      hybridLayerDragRef,
+      hybridLayerByElementId,
+      hybridLayerPersistedMapRef,
+      hybridV2Doc,
+      hybridV2PersistedDocRef,
+      setSaveDirtyHint,
+      setToolbarMenuOpen,
+      setAiBottleneckOn,
+      setAiStepBusy,
+      setGenErr,
+      setInfoMsg,
+      setTab,
+      setAttentionFilters,
+      setAttentionOpen,
+      setDiagramPathsIntent,
+      setDiagramActionPathOpen,
+      setDiagramActionHybridToolsOpen,
+      setDiagramActionPlanOpen,
+      setDiagramActionPlaybackOpen,
+      setDiagramActionRobotMetaOpen,
+      setRobotMetaListOpen,
+      setDiagramActionQualityOpen,
+      setDiagramActionOverflowOpen,
+      setExecutionPlanError,
+      setExecutionPlanBusy,
+      setExecutionPlanPreview,
+      setExecutionPlanSaveBusy,
+      setQualityOverlayFilters,
+      onSessionSync: onSessionSyncWithVersion,
+      onOpenElementNotes,
+      requestDiagramFocus,
+      applyClarifyFromSession,
+      confirmExportWithQualityGate,
+      markPlaybackOverlayInteraction,
+      persistHybridLayerMap,
+      persistHybridV2Doc,
+      toText,
+      toNodeId,
+      asArray,
+      asObject,
+      shortErr,
+      normalizePathTier,
+      normalizePathSequenceKey,
+      DIAGRAM_PATHS_INTENT_VERSION,
+      createAiInputHash,
+      executeAi,
+      apiAiQuestions,
+      apiGetBpmnXml,
+      apiGetExportZip,
+      apiPatchSession,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+      buildExecutionPlan,
+      appendExecutionPlanVersionEntry,
+      copyText,
+      downloadJsonFile,
+      serializeHybridLayerMap,
+      docToComparableJson,
+    },
+    setDrawioSelectedElementId,
+  });
+
+  const {
+    openImportDialog,
+    runToolbarReset,
+    runToolbarClear,
+    toggleAiBottlenecks,
+    exportBpmn,
+    exportSessionZip,
+    openClarifyNode,
+    toggleAttentionFilter,
+    focusAttentionItem,
+    openSelectedElementNotes,
+    openSelectedElementAi,
+    openReportsFromDiagram,
+    openDocFromDiagram,
+    buildExecutionPlanNow,
+    copyExecutionPlanFromDiagram,
+    downloadExecutionPlanFromDiagram,
+    saveExecutionPlanVersionFromDiagram,
+    openPathsFromDiagram,
+    toggleQualityOverlayFilter,
+    setQualityOverlayAll,
+    focusQualityOverlayItem,
+  } = runtimeActions;
+
+  const diagramOverlayLayersProps = useStableProcessDiagramOverlayLayersProps({
+    activeProjectId,
+    asObject,
+    bpmnFragmentPlacementActive,
+    focusElementId,
+    onFocusElementApplied,
+    restoreViewportSnapshot,
+    onRestoreViewportSnapshotApplied,
+    bpmnFragmentPlacementGhost,
+    bpmnContextMenu,
+    bpmnSubprocessPreview,
+    bpmnRef,
+    closeBpmnContextMenu,
+    closeBpmnSubprocessPreview,
+    cleanupMissingHybridBindings,
+    clientToDiagram,
+    closeEmbeddedDrawioEditor,
+    commitDrawioOverlayMove,
+    createDrawioRuntimeElement,
+    deleteDrawioOverlayElement,
+    deleteSelectedHybridIds,
+    diagramMode,
+    draft,
+    drawioEditorOpen,
+    drawioModeEffective,
+    drawioRuntimeToolState,
+    drawioUiState,
+    drawioVisible,
+    getHybridLayerCardRefCallback,
+    getOverlayViewportMatrix,
+    handleAiQuestionsByElementChange,
+    handleBpmnSelectionChange,
+    handleDrawioEditorSave,
+    handleHybridLayerItemPointerDown,
+    handleHybridV2ElementContextMenu,
+    handleHybridV2ElementDoubleClick,
+    handleHybridV2ElementPointerDown,
+    handleHybridV2OverlayContextMenu,
+    handleHybridV2OverlayPointerDown,
+    handleHybridV2ResizeHandlePointerDown,
+    hybridDebugEnabled,
+    hybridLayerActiveElementId,
+    hybridLayerOverlayRef,
+    hybridLayerRenderRows,
+    hybridModeEffective,
+    hybridOpacityValue,
+    hybridPersistLockBusyNoticeOpen: !!hybridPersist.lockBusyNotice?.open,
+    hybridPersistLockBusyNoticeMessage: hybridPersist.lockBusyNotice?.message,
+    hybridPersistPendingDraft: hybridPersist.pendingDraft,
+    hybridPlacementHitLayerActive,
+    hybridSelectionCount: Number(hybridSelection.selectionCount || 0),
+    hybridContextMenu: hybridTools.contextMenu,
+    closeHybridContextMenu: hybridTools.closeContextMenu,
+    renameHybridItem: hybridTools.renameHybridItem,
+    hideHybridIds: hybridTools.hideHybridIds,
+    lockLayersForHybridIds: hybridTools.lockLayersForHybridIds,
+    retryHybridPersist: hybridPersist.retryLast,
+    dismissHybridLockBusyNotice: hybridPersist.dismissLockBusyNotice,
+    hybridGhostPreview: hybridTools.ghostPreview,
+    hybridArrowPreview: hybridTools.arrowPreview,
+    hybridTextEditor: hybridTools.textEditor,
+    updateHybridTextEditorValue: hybridTools.updateTextEditorValue,
+    commitHybridTextEditor: hybridTools.commitTextEditor,
+    cancelHybridTextEditor: hybridTools.closeTextEditor,
+    onHybridOverlayPointerMove: hybridTools.onOverlayPointerMove,
+    onHybridOverlayPointerLeave: hybridTools.onOverlayPointerLeave,
+    hybridUiPrefs,
+    hybridV2ActiveId,
+    hybridV2BindingByHybridId,
+    hybridV2DocLive,
+    hybridV2PlaybackHighlightedIds,
+    hybridV2Renderable,
+    hybridV2SelectedIds,
+    hybridV2SelectedIdSet,
+    hybridVisible,
+    hybridViewportMatrix,
+    hybridViewportMatrixRef,
+    isInterviewMode,
+    onBpmnSaveLifecycleEvent,
+    onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
+    onDiagramContextMenuRequest: onBpmnContextMenuRequest,
+    onElementNotesRemap,
+    onSessionSync: onSessionSyncWithVersion,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
+    propertiesOverlayAlwaysEnabled,
+    propertiesOverlayAlwaysPreviewByElementId,
+    overlayHiddenFields,
+    queueDiagramMutation,
+    v2OverlaysEnabled,
+    v2OverlaysExpanded,
+    reloadKey,
+    bpmnXmlCacheRef,
+    robotMetaOverlayEnabled,
+    robotMetaOverlayFilters,
+    robotMetaStatusByElementId,
+    selectedPropertiesOverlayPreview,
+    setDrawioElementSize,
+    setDrawioElementText,
+    setDrawioElementTextWidth,
+    setDrawioSelectedElementId,
+    setHybridLayerActiveElementId,
+    sid,
+    stepTimeUnit,
+    subscribeOverlayViewportMatrix,
+    tab,
+    toText,
+    runBpmnContextMenuAction: handleBpmnContextMenuAction,
+    onV2OverlayPropertiesRequest: handleV2OverlayPropertiesRequest,
+    openBpmnSubprocessPreviewProperties: handleBpmnSubprocessPreviewOpenProperties,
+    onNavigateToSubprocess: (elementId) => {
+      if (sid && typeof onNavigateToSubprocess === "function") {
+        onNavigateToSubprocess(elementId);
+      }
+    },
+    childSessionDiscussionAggregates,
+    withHybridOverlayGuard,
+    showOverlaysDuringPan,
+  });
+
+  const templateSelectionCount = Math.max(
+    Number(selectedBpmnElementIds?.length || 0),
+    Number(selectedHybridTemplateCount || 0),
+  );
+  const canCreateTemplateFromSelection = hasSession
+    && tab === "diagram"
+    && (selectedBpmnElementIds?.length > 0 || Number(selectedHybridTemplateCount || 0) > 0);
+
+  const topPanelsView = buildTopPanelsView({
+    toolbarMenuOpen,
+    toolbarMenuRef,
+    applyDiagramMode,
+    commandModeEnabled,
+    setCommandModeEnabled,
+    openImportDialog,
+    closeToolbarMenu: stageActions.closeToolbarMenu,
+    hasSession,
+    isBpmnTab,
+    workbench,
+    exportBpmn,
+    exportSessionZip,
+    openVersionsModal,
+    selectedElementId,
+    openInsertBetweenModal,
+    insertBetweenBusy,
+    selectedInsertBetween,
+    canInsertBetween,
+    insertBetweenErrorMessage,
+    onOpenElementNotes,
+    selectedBpmnElement,
+    generateAiQuestionsForSelectedElement,
+    canGenerateAiQuestions,
+    aiGenerateGate,
+    aiQuestionsBusy,
+    aiQuestionsStatus,
+    templatesEnabled,
+    setTemplatesEnabled,
+    selectedBpmnElementIds,
+    suggestedTemplates,
+    applyTemplate,
+    commandInput,
+    setCommandInput,
+    commandBusy,
+    runAiCommand,
+    commandStatus,
+    commandHistory,
+    runToolbarReset,
+    runToolbarClear,
+    openTemplatesPicker,
+    openCreateTemplateModal,
+    canCreateTemplateFromSelection,
+    templateSelectionCount,
+    isQualityMode,
+    qualitySummary,
+    qualityProfile,
+    qualityProfileId,
+    openQualityAutoFix: stageActions.openQualityAutoFix,
+    qualityAutoFixBusy,
+    qualityAutoFixPreview,
+    qualityHints,
+    toNodeId,
+    qualityIssueFocusKey,
+    qualityNodeTitleById,
+    coverageById,
+    qualityIssueCopy,
+    focusQualityIssue,
+    qualityLevelLabel,
+    qualityImpactLabel,
+    isCoverageMode,
+    coverageMatrix,
+    coverageRows,
+    focusCoverageIssue,
+    aiBottleneckOn,
+    apiClarifyHints,
+    activeHints,
+    asArray,
+  });
+
+  const attentionPanelsView = buildAttentionPanelsView({
+    tab,
+    hasSession,
+    attentionOpen,
+    attentionItemsRaw,
+    attentionMarkerHomeCount,
+    closeAttentionPanel: stageActions.closeAttentionPanel,
+    attentionFilters,
+    toggleAttentionFilter,
+    attentionItems,
+    focusAttentionItem,
+    attentionMarkers: attentionMarkersWithState,
+    attentionMarkerMessage,
+    setAttentionMarkerMessage,
+    attentionMarkerSaving,
+    addAttentionMarker,
+    toggleAttentionMarkerChecked,
+    focusAttentionMarker,
+    attentionShowOnWorkspace,
+    toggleAttentionShowOnWorkspace,
+    attentionMarkerUnreadCount,
+    asArray,
+  });
+
+  const dialogsView = buildDialogsView({
+    qualityAutoFixOpen,
+    qualityAutoFixBusy,
+    closeQualityAutoFix: stageActions.closeQualityAutoFix,
+    applyQualityAutoFix,
+    qualityAutoFixPreview,
+    qualityProfile,
+    qualityProfileId,
+    asArray,
+    insertBetweenOpen,
+    insertBetweenBusy,
+    closeInsertBetweenDialog: stageActions.closeInsertBetweenDialog,
+    applyInsertBetweenFromDiagram,
+    insertBetweenName,
+    setInsertBetweenName,
+    insertBetweenDraft,
+    createTemplateOpen,
+    templatesBusy,
+    closeCreateTemplateDialog: stageActions.closeCreateTemplateDialog,
+    createTemplateTitle,
+    setCreateTemplateTitle,
+    createTemplateScope,
+    setCreateTemplateScope,
+    createTemplateType,
+    setCreateTemplateType,
+    workspaceActiveOrgId,
+    canCreateOrgTemplates: !!workspaceActiveOrgId && !!canManageSharedTemplates,
+    canCreateOrgFolders: !!workspaceActiveOrgId && !!canInviteWorkspaceUsers,
+    selectedBpmnElementIds,
+    selectedHybridTemplateCount,
+    createTemplateFolders: templatesFoldersByScope?.[createTemplateScope] || [],
+    createTemplateFolderId,
+    setCreateTemplateFolderId,
+    createTemplateFolderFromModal: (name = "") => createTemplateFolderFromUi({
+      scope: createTemplateScope,
+      name,
+      parentId: createTemplateFolderId,
+    }),
+    saveCurrentSelectionAsTemplate,
+    versionsOpen,
+    closeVersionsDialog: stageActions.closeVersionsDialog,
+    refreshSnapshotVersions,
+    versionsBusy,
+    hasSession,
+    versionsList: versionsListWithDiffSummaries,
+    versionsLoadState,
+    versionsLoadError,
+    showTechnicalVersions,
+    setShowTechnicalVersions,
+    saveSessionFromVersionsModal,
+    versionsUserFacingCount,
+    versionsServerEntriesCount,
+    versionsTechnicalEntriesCount,
+    versionsTotalCount,
+    versionsHasMore,
+    versionsLoadingMore,
+    versionsIncludeTechnical,
+    loadMoreSnapshotVersions,
+    toggleVersionsIncludeTechnical,
+    isAdmin: !!user?.is_admin,
+    revisionHistorySnapshot: revisionHistoryUiSnapshot,
+    setGenErr,
+    setDiffTargetSnapshotId,
+    setDiffBaseSnapshotId,
+    openDiffDialog: stageActions.openDiffDialog,
+    clearSnapshotHistory,
+    previewSnapshotId,
+    setPreviewSnapshotId,
+    previewSnapshotVersion,
+    formatSnapshotTs,
+    snapshotLabel,
+    shortSnapshotHash,
+    downloadSnapshot,
+    editSnapshotLabel,
+    togglePinSnapshot,
+    openDiffForSnapshot,
+    compareVersionWithCurrent: handleCompareVersionWithCurrent,
+    restoreSnapshot,
+    canRestoreVersion: true,
+    previewSnapshot,
+    diffOpen,
+    closeDiffDialog: stageActions.closeDiffDialog,
+    diffBaseSnapshotId,
+    diffTargetSnapshotId,
+    semanticDiffView,
+    currentBpmnVersionId,
+    diffBaseSnapshot,
+    diffTargetSnapshot,
+    historyDiffOpen,
+    historyDiffLocalXml,
+    historyDiffVersionXml,
+    historyDiffVersionLabel,
+    closeHistoryDiff,
+  });
+  const finalBodyClassName = useMemo(
+    () => `${bodyClassName}${tab === "xml" ? " processBody--xml" : ""}`,
+    [bodyClassName, tab],
+  );
+
+  const shellVm = useProcessStageShellController({
+    hasSession,
+    isBpmnTab,
+    isSwitchingTab,
+    isFlushingTab,
+    isManualSaveBusy,
+    manualSaveIntent,
+    saveDirtyHint,
+    workbench,
+    selectedElementContext,
+    selectedBpmnElementIds,
+    selectedHybridTemplateCount,
+    templatesBusy,
+    tab,
+    availablePathTiers,
+    sessionSaveReadSnapshot,
+    saveUploadStatus,
+    sessionVersionReadSnapshot,
+    bpmnVersionTruthState,
+    sessionTemplateProvenanceSnapshot,
+    sessionCompanionBridgeSnapshot,
+    topPanelsView,
+    attentionPanelsView,
+    dialogsView,
+  });
+  const {
+    canUseElementContextActions,
+    canOpenTemplatesList,
+    hasPathHighlightData,
+  } = shellVm.shellProps;
+  const headerView = buildDiagramHeaderView({
+    featureFlags,
+    shellProps: {
+      ...shellVm.shellProps,
+      sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,
+      saveConflictActions: {
+        visible: showSaveConflictModal,
+        busy: saveConflictActionBusy === true,
+      },
+    },
+    sid,
+    saveDirtyHint: shellVm.shellProps.saveDirtyHint === true,
+    handleSaveCurrentTab,
+    handleCreateRevisionAction,
+    handleUndoAction,
+    handleRedoAction,
+    canUndo: diagramUndoRedoState.canUndo === true,
+    canRedo: diagramUndoRedoState.canRedo === true,
+    workbench,
+    tab,
+    isSwitchingTab,
+    isFlushingTab,
+    switchTab,
+    hasSession,
+    attentionOpen,
+    toggleAttentionPanel: stageActions.toggleAttentionPanel,
+    attentionItemsRaw,
+    attentionItemsCount: shellVm.panelsProps.attention?.attentionItemsCount,
+    doGenerate,
+    toolbarMenuButtonRef,
+    toggleToolbarMenu: stageActions.toggleToolbarMenu,
+    toolbarMenuOpen,
+    importInputRef,
+    onImportPicked,
+    hybridV2FileInputRef,
+    handleHybridV2ImportFile,
+    drawioFileInputRef,
+    handleDrawioImportFile,
+    topPanelsView: shellVm.panelsProps.top,
+    publishGitMirrorSnapshot,
+    sessionPresenceView,
+    remoteSaveHighlightView,
+    saveUploadStatus,
+    diagramStateVersion: Number(getBaseDiagramStateVersion()
+      ?? draft?.diagram_state_version
+      ?? draft?.diagramStateVersion
+      ?? 0),
+    tobeEntry,
+    modeSwitch,
+    asArray,
+  });
+
+  return (
+    <ProcessStageShell className={shellClassName}>
+      {/* Часть А: в explorer-режиме (без сессии) тулбар-хедер с табами сессии
+          скрыт — навигационная зона живёт в общем слоте workspaceMain. */}
+      {hasSession ? <ProcessStageHeader view={headerView} /> : null}
+      {/* FIX-V (блок 2, U1/U2): единый toast-viewport — стек под тулбаром,
+          не перекрывает контролы, pointer-events только у карточек. */}
+      <ProcessToastViewport
+        visible={saveAckToast.visible === true
+          || (tab === "diagram" && !!hybridPersist.lockBusyNotice?.open)}
+      >
+        <ProcessSaveAckToast
+          layout="stack"
+          visible={saveAckToast.visible === true}
+          message={saveAckToast.message}
+          tone={saveAckToast.tone}
+          description={saveAckToast.description}
+          actionLabel={saveAckToast.kind === "remote_update" && remoteSaveHighlightBusy === true
+            ? "Обновляем..."
+            : saveAckToast.actionLabel}
+          onAction={saveAckToast.onAction}
+          actionDisabled={saveAckToast.kind === "remote_update"
+            ? remoteSaveHighlightBusy === true
+            : saveAckToast.actionDisabled === true}
+          persistent={saveAckToast.persistent === true}
+          onDismiss={saveAckToast.onDismiss}
+        />
+        <HybridPersistToast
+          layout="stack"
+          visible={tab === "diagram" && !!hybridPersist.lockBusyNotice?.open}
+          message={hybridPersist.lockBusyNotice?.message}
+          pendingDraft={!!hybridPersist.pendingDraft}
+          onRetry={() => {
+            void hybridPersist.retryLast?.();
+          }}
+          onDismiss={hybridPersist.dismissLockBusyNotice}
+        />
+      </ProcessToastViewport>
+
+      <div
+        className={finalBodyClassName}
+        ref={processBodyRef}
+      >
+        {!hasSession ? (
+          analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
+            <div className="analyticsSurfaceLayout">
+              <AnalyticsSectionTabs
+                activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
+                onChange={(key) => {
+                  if (key === "overview") openAnalyticsHub();
+                  else if (key === "actions") openProductActionsRegistry();
+                  else if (key === "properties") openPropertiesRegistry();
+                }}
+              />
+              {analyticsHubRoute.active ? (
+                <AnalyticsHub
+                  workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={analyticsHubRoute.projectId || activeProjectId}
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionId=""
+                  sessionTitle=""
+                  onOpenProductActionsRegistry={openProductActionsRegistry}
+                  onOpenPropertiesRegistry={openPropertiesRegistry}
+                  onClose={closeAnalyticsHub}
+                />
+              ) : productActionsRegistryRoute.active ? (
+                <ProductActionsRegistry
+                  scope={productActionsRegistryRoute.scope}
+                  workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={productActionsRegistryRoute.projectId || activeProjectId}
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionId=""
+                  sessionTitle=""
+                  onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+                  onOpenProject={openProductActionsRegistryProject}
+                  onOpenSession={openProductActionsRegistrySession}
+                  onClose={closeProductActionsRegistry}
+                />
+              ) : (
+                <ProcessPropertiesRegistryPage
+                  scope="project"
+                  workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={propertiesRegistryRoute.projectId || activeProjectId}
+                  sessionId=""
+                  onClose={closePropertiesRegistry}
+                />
+              )}
+            </div>
+          ) : (
+            <WorkspaceExplorer
+              activeOrgId={workspaceActiveOrgId}
+              requestProjectId={activeProjectId}
+              requestProjectWorkspaceId={activeProjectWorkspaceId}
+              requestProjectContext={activeProjectRouteContext}
+              onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
+              onClearRequestedProject={onClearWorkspaceProject}
+            />
+          )
+        ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
+          <div className="analyticsSurfaceLayout">
+            <AnalyticsSectionTabs
+              activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
+              onChange={(key) => {
+                if (key === "overview") openAnalyticsHub();
+                else if (key === "actions") openProductActionsRegistry();
+                else if (key === "properties") openPropertiesRegistry();
+              }}
+            />
+            {analyticsHubRoute.active ? (
+              <AnalyticsHub
+                workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={analyticsHubRoute.projectId || activeProjectId}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionId={sid}
+                sessionTitle={toText(draft?.title)}
+                onOpenProductActionsRegistry={openProductActionsRegistry}
+                onOpenPropertiesRegistry={openPropertiesRegistry}
+                onClose={closeAnalyticsHub}
+              />
+            ) : productActionsRegistryRoute.active ? (
+              <ProductActionsRegistry
+                scope={productActionsRegistryRoute.scope}
+                workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={productActionsRegistryRoute.projectId || activeProjectId}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionId={sid}
+                sessionTitle={toText(draft?.title)}
+                onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+                onOpenProject={openProductActionsRegistryProject}
+                onOpenSession={openProductActionsRegistrySession}
+                onClose={closeProductActionsRegistry}
+              />
+            ) : (
+              <ProcessPropertiesRegistryPage
+                scope="session"
+                workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={propertiesRegistryRoute.projectId || activeProjectId}
+                sessionId={sid}
+                onClose={closePropertiesRegistry}
+              />
+            )}
+          </div>
+        ) : tab === "doc" ? (
+          <DocStage
+            sessionId={sid}
+            draft={draft}
+            qualityErrorCount={Number(qualitySummary?.errors || 0)}
+            onRecalculateRtiers={onRecalculateRtiers}
+            onClose={() => setTab("diagram")}
+          />
+        ) : tab === "dod" ? (
+          <DodStage readiness={dodReadinessV1} />
+        ) : tab === "analytics" ? (
+          <div className="h-full min-h-0 overflow-hidden">
+            <AnalyticsPage scope="session" scopeId={sid} module="overview" orgId={activeOrgId} embedded />
+          </div>
+        ) : (
+          <div className="pm-processman-layout">
+          <div className="pm-processman-layout__canvas">
+          <div className="relative h-full min-h-0">
+            {!isInterview && (
+            <div className="absolute inset-0">
+              <div
+                className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""} ${bpmnFileDragActive ? "ring-2 ring-accent ring-inset" : ""}`}
+                ref={bpmnStageHostRefCallback}
+                onDragEnter={handleBpmnFileDragEnter}
+                onDragOver={handleBpmnFileDragOver}
+                onDragLeave={handleBpmnFileDragLeave}
+                onDrop={handleBpmnFileDrop}
+              >
+                {bpmnFileDragActive ? (
+                  <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-accentSoft/70 backdrop-blur-[1px]" data-testid="bpmn-file-drop-overlay">
+                    <div className="rounded-xl border border-accent bg-panel px-4 py-3 text-sm font-semibold text-fg shadow-panel">
+                      Отпустите файл для импорта
+                    </div>
+                  </div>
+                ) : null}
+                {subprocessBreadcrumbs?.length > 1 && tab !== "xml" ? (
+                  <div className="subprocessBreadcrumbsBar">
+                    {subprocessBreadcrumbs.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => onReturnToParent?.(sid)}
+                        className="subprocessBackButton"
+                        title="Назад"
+                        data-testid="subprocess-back-button"
+                      >
+                        ←
+                      </button>
+                    ) : null}
+                    <SubprocessBreadcrumbs
+                      breadcrumbs={subprocessBreadcrumbs}
+                      onNavigate={onBreadcrumbNavigate}
+                    />
+                  </div>
+                ) : null}
+                {tab !== "xml" ? (
+                  <ProcessStageDiagramControls
+                    view={buildDiagramControlsView({
+                    tab,
+                    diagramActionBarRef,
+                    showOverlaysDuringPan,
+                    setShowOverlaysDuringPan,
+                    pathHighlightEnabled,
+                    setDiagramActionPathOpen,
+                    setDiagramActionHybridToolsOpen,
+                    setDiagramActionPlanOpen,
+                    setDiagramActionPlaybackOpen,
+                    setDiagramActionLayersOpen,
+                    setDiagramActionRobotMetaOpen,
+                    setRobotMetaListOpen,
+                    setDiagramActionQualityOpen,
+                    diagramActionSearchOpen,
+                    setDiagramActionSearchOpen,
+                    setDiagramActionOverflowOpen,
+                    diagramFocusMode,
+                    setDiagramFocusMode,
+                    diagramFullscreenActive,
+                    toggleDiagramFullscreen,
+                    pathHighlightBadge,
+                    hybridVisible,
+                    drawioUiState,
+                    toText,
+                    hybridV2ToolState,
+                    hybridModeEffective,
+                    openCreateTemplateModal,
+                    canCreateTemplateFromSelection,
+                    templateSelectionCount,
+                    openTemplatesPicker,
+                    canOpenTemplatesList,
+                    sessionId: sid,
+                    openNotesDiscussions: () => onOpenNotesDiscussions?.({
+                      scopeFilter: "all",
+                      source: "diagram_action_bar",
+                    }),
+                    sessionSaveReadSnapshot,
+                    sessionVersionReadSnapshot,
+                    sessionTemplateProvenanceSnapshot,
+                    sessionCompanionBridgeSnapshot,
+                    templatesMenuOpen: templatesPickerOpen,
+                    setTemplatesMenuOpen: setTemplatesPickerOpen,
+                    templatesScope,
+                    setTemplatesScope,
+                    templatesActiveFolderId,
+                    setTemplatesActiveFolder,
+                    templatesFoldersByScope,
+                    scopedTemplates,
+                    reloadTemplatesAndFolders,
+                    templatesBusy,
+                    applyTemplate,
+                    removeTemplate,
+                    createTemplateFolderFromUi,
+                    canCreateOrgFolders: !!workspaceActiveOrgId && !!canInviteWorkspaceUsers,
+                    workspaceActiveOrgId,
+                    openSelectedElementNotes,
+                    canUseElementContextActions,
+                    openSelectedElementAi,
+                    openReportsFromDiagram,
+                    openDocFromDiagram,
+                    hasSession,
+                    diagramActionPlanOpen,
+                    executionPlanSource,
+                    diagramActionPlaybackOpen,
+                    playbackIsPlaying,
+                    playbackScenarioLabel,
+                    diagramActionLayersOpen,
+                    robotMetaOverlayEnabled,
+                    setRobotMetaOverlayEnabled,
+                    setRobotMetaOverlayFilters,
+                    robotMetaCounts,
+                    activeQualityOverlayCount,
+                    bpmnRef,
+                    isBpmnTab,
+                    diagramActionPathOpen,
+                    diagramPathPopoverRef,
+                    diagramSearchPopoverRef,
+                    diagramSearchMode: diagramSearch.mode,
+                    setDiagramSearchMode: diagramSearch.setMode,
+                    diagramSearchQuery: diagramSearch.query,
+                    setDiagramSearchQuery: diagramSearch.setQuery,
+                    diagramSearchResults: diagramSearch.results,
+                    diagramSearchActiveIndex: diagramSearch.activeIndex,
+                    selectDiagramSearchResult: diagramSearch.selectIndex,
+                    moveDiagramSearchActive: diagramSearch.moveActive,
+                    moveDiagramSearchActiveBoundary: diagramSearch.moveActiveBoundary,
+                    activateDiagramSearchResult: diagramSearch.activateActive,
+                    hasPathHighlightData,
+                    setPathHighlightEnabled,
+                    availablePathTiers,
+                    pathHighlightCatalog,
+                    pathHighlightTier,
+                    setPathHighlightTier,
+                    setPathHighlightSequenceKey,
+                    availableSequenceKeysForTier,
+                    pathHighlightSequenceKey,
+                    openPathsFromDiagram,
+                    diagramActionHybridToolsOpen,
+                    diagramHybridToolsPopoverRef,
+                    hybridToolsUiState,
+                    toggleHybridToolsVisible,
+                    selectHybridPaletteTool,
+                    setHybridToolsMode,
+                    openEmbeddedDrawioEditor,
+                    toggleDrawioEnabled,
+                    drawioModeEffective,
+                    setDrawioMode,
+                    setDrawioOpacity,
+                    toggleDrawioLock,
+                    setDrawioElementVisible,
+                    setDrawioElementLocked,
+                    setDrawioElementText,
+                    setDrawioElementTextWidth,
+                    setDrawioElementStylePreset,
+                    setDrawioElementSize,
+                    setDrawioElementAnchor,
+                    drawioFileInputRef,
+                    exportEmbeddedDrawio,
+                    diagramPlanPopoverRef,
+                    canExportExecutionPlan,
+                    executionPlanBusy,
+                    executionPlanPreview,
+                    asObject,
+                    asArray,
+                    executionPlanError,
+                    copyExecutionPlanFromDiagram,
+                    downloadExecutionPlanFromDiagram,
+                    saveExecutionPlanVersionFromDiagram,
+                    executionPlanSaveBusy,
+                    executionPlanVersions,
+                    shortHash,
+                    diagramPlaybackPopoverRef,
+                    playbackRuntimeSnapshot,
+                    playbackGraphError,
+                    playbackCanRun,
+                    playbackScenarioKey,
+                    setPlaybackScenarioKey,
+                    playbackScenarioOptions,
+                    playbackIndexClamped,
+                    playbackTotal,
+                    playbackCurrentEvent,
+                    playbackEventTitle,
+                    autoPassUi,
+                    autoPassError: toText(autoPassJobState?.error),
+                    autoPassBlockedReason: autoPassPrecheck.loading
+                      ? "Checking complete path to EndEvent..."
+                      : (autoPassPrecheck.canRun ? "" : (toText(autoPassPrecheck.reason) || "No complete path to EndEvent in main process.")),
+                    startAutoPass,
+                    handlePlaybackPrev,
+                    handlePlaybackTogglePlay,
+                    handlePlaybackNext,
+                    handlePlaybackReset,
+                    playbackSpeed,
+                    setPlaybackSpeed,
+                    playbackManualAtGateway,
+                    setPlaybackManualAtGateway,
+                    playbackAutoCamera,
+                    setPlaybackAutoCamera,
+                    playbackGateways,
+                    playbackGatewayChoices,
+                    playbackGatewayChoiceSource,
+                    playbackGatewayReadOnly,
+                    playbackDecisionMode: playbackDecisionModeResolved,
+                    setPlaybackDecisionMode,
+                    playbackGatewayPending,
+                    playbackAwaitingGatewayId,
+                    formatPlaybackGatewayTitle,
+                    playbackGatewayOptionLabel,
+                    markPlaybackOverlayInteraction,
+                    setPlaybackGatewayChoice,
+                    diagramLayersPopoverRef,
+                    showHybridLayer,
+                    hideHybridLayer,
+                    focusHybridLayer,
+                    setHybridLayerMode,
+                    hybridUiPrefs,
+                    setHybridLayerOpacity,
+                    toggleHybridLayerLock,
+                    toggleHybridLayerFocus,
+                    hybridTotalCount,
+                    hybridV2DocLive,
+                    hybridV2HiddenCount,
+                    revealAllHybridV2,
+                    toggleHybridV2LayerVisibility,
+                    toggleHybridV2LayerLock,
+                    setHybridV2LayerOpacity,
+                    hybridV2ActiveId,
+                    hybridV2SelectedIds,
+                    hybridLayerActiveElementId,
+                    hybridV2BindPickMode,
+                    setHybridV2BindPickMode,
+                    goToActiveHybridBinding,
+                    hybridV2BindingByHybridId,
+                    exportHybridV2Drawio,
+                    hybridV2FileInputRef,
+                    hybridV2ImportNotice,
+                    hybridLayerCounts,
+                    hybridLayerVisibilityStats,
+                    cleanupMissingHybridBindings,
+                    hybridLayerRenderRows,
+                    hybridV2Renderable,
+                    setHybridV2ActiveId,
+                    deleteSelectedHybridIds,
+                    deleteLegacyHybridMarkers,
+                    drawioSelectedElementId,
+                    setDrawioSelectedElementId,
+                    drawioAnchorImportDiagnostics,
+                    overlayPanelModel,
+                    deleteOverlayEntity,
+                    deleteDrawioElement: deleteDrawioOverlayElement,
+                    goToHybridLayerItem,
+                    hideSelectedHybridItems: () => hybridTools?.hideHybridIds?.(hybridV2SelectedIds),
+                    lockSelectedHybridItems: () => hybridTools?.lockLayersForHybridIds?.(hybridV2SelectedIds),
+                    diagramActionRobotMetaOpen,
+                    diagramRobotMetaPopoverRef,
+                    robotMetaOverlayFilters,
+                    toggleRobotMetaOverlayFilter,
+                    showRobotMetaOverlay,
+                    resetRobotMetaOverlay,
+                    robotMetaListOpen,
+                    diagramRobotMetaListRef,
+                    robotMetaListSearch,
+                    setRobotMetaListSearch,
+                    robotMetaListTab,
+                    setRobotMetaListTab,
+                    robotMetaListItems,
+                    focusRobotMetaItem,
+                    diagramActionQualityOpen,
+                    diagramQualityPopoverRef,
+                    setQualityOverlayAll,
+                    qualityOverlayRows,
+                    qualityOverlayFilters,
+                    toggleQualityOverlayFilter,
+                    setQualityOverlayListKey,
+                    setQualityOverlaySearch,
+                    qualityOverlayListKey,
+                    qualityOverlaySearch,
+                    qualityOverlayListItems,
+                    focusQualityOverlayItem,
+                    diagramActionOverflowOpen,
+                    diagramOverflowPopoverRef,
+                    selectedInsertBetween,
+                    selectedElementContext,
+                    openInsertBetweenModal,
+                    insertBetweenBusy,
+                    canInsertBetween,
+                    insertBetweenErrorMessage,
+                    processmanOpen,
+                    onToggleProcessman: toggleProcessman,
+                    processmanNoKey: isLlmNotConfigured(processmanLlmStatus),
+                  })}
+                  />
+                ) : null}
+                <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
+                <BottomViewportScrubber
+                  active={tab === "diagram" && !isInterview}
+                  canvasApi={bpmnCanvasApi}
+                  avoidCoverageMinimap={tab === "diagram" && isCoverageMode}
+                />
+                {tab === "diagram" && isCoverageMode ? (
+                  <div className="coverageMiniMap" data-testid="coverage-minimap">
+                    <div className="coverageMiniMapHead">
+                      <span className="coverageMiniMapTitle">Coverage map</span>
+                      <span className="coverageMiniMapCount">{coverageMinimapRows.length}</span>
+                    </div>
+                    <div className="coverageMiniMapLegend">
+                      <span className="coverageMiniMapLegendItem">
+                        <i className="coverageMiniMapLegendSwatch fpcCoverageReady" />
+                        <span>OK</span>
+                      </span>
+                      <span className="coverageMiniMapLegendItem">
+                        <i className="coverageMiniMapLegendSwatch fpcCoverageWarn" />
+                        <span>Partial</span>
+                      </span>
+                      <span className="coverageMiniMapLegendItem">
+                        <i className="coverageMiniMapLegendSwatch fpcCoverageRisk" />
+                        <span>Gap</span>
+                      </span>
+                    </div>
+                    {coverageMinimapRows.length === 0 ? (
+                      <div className="coverageMiniMapEmpty">Нет маркеров покрытия.</div>
+                    ) : (
+                      <div className="coverageMiniMapGrid">
+                        {coverageMinimapRows.slice(0, 80).map((item) => {
+                          const readiness = Number(item?.readiness || 0);
+                          const markerClass = coverageMarkerClass(item);
+                          const title = String(item?.title || item?.id || "").trim() || "Узел";
+                          const detail = [
+                            `Готовность: ${readiness}%`,
+                            item?.hasQualityIssue ? "ошибка качества" : "",
+                            item?.missingAiQuestions ? "нет AI" : "",
+                            item?.missingNotes ? "нет заметок" : "",
+                            item?.missingDurationQuality ? "нет duration/quality" : "",
+                          ].filter(Boolean).join(" · ");
+                          return (
+                            <button
+                              key={`coverage_minimap_${item.id}`}
+                              type="button"
+                              className={`coverageMiniMapMarker ${markerClass}`}
+                              onClick={() => focusCoverageIssue(item, "coverage_minimap")}
+                              title={`${title}${detail ? ` · ${detail}` : ""}`}
+                              data-testid="coverage-minimap-marker"
+                              data-element-id={item.id}
+                            >
+                              <span className="coverageMiniMapMarkerTitle">{title}</span>
+                              <span className="coverageMiniMapMarkerMeta">{readiness}%</span>
+                              <span className="coverageMiniMapMarkerFlags">
+                                {item?.hasQualityIssue ? <span className="coverageMiniMapFlag is-error">E</span> : null}
+                                {item?.missingAiQuestions ? <span className="coverageMiniMapFlag is-ai">AI</span> : null}
+                                {item?.missingNotes ? <span className="coverageMiniMapFlag is-notes">N</span> : null}
+                                {item?.missingDurationQuality ? <span className="coverageMiniMapFlag is-missing">D</span> : null}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            )}
+            <ProcessPanels
+              section="attention"
+              view={shellVm.panelsProps.attention}
+            />
+            {isInterview ? (
+              <div className="absolute inset-0 h-full min-h-0 overflow-auto">
+                <InterviewStage
+                  sessionId={sid}
+                  sessionTitle={draft?.title}
+                  sessionDraft={draft}
+                  interview={draft?.interview}
+                  nodes={draft?.nodes}
+                  edges={draft?.edges}
+                  roles={draft?.roles}
+                  actorsDerived={draft?.actors_derived}
+                  bpmnXml={draft?.bpmn_xml}
+                  selectedDiagramElement={selectedBpmnElement}
+                  onChange={handleInterviewChange}
+                  onSessionSync={onSessionSync}
+                  getBaseDiagramStateVersion={getBaseDiagramStateVersion}
+                  rememberDiagramStateVersion={rememberDiagramStateVersion}
+                  stepTimeUnit={stepTimeUnit}
+                  pathsUiIntent={diagramPathsIntent}
+                  onOpenProductActionsRegistry={openProductActionsRegistry}
+                />
+              </div>
+            ) : null}
+          </div>
+          </div>
+          {(processmanOpen || processmanClosing) ? (
+            <ProcessmanErrorBoundary>
+            <ProcessmanPanel
+              sessionId={sid}
+              tab={tab}
+              selectedBpmnElement={selectedBpmnElement}
+              llmStatus={processmanLlmStatus}
+              cacheRef={processmanCacheRef}
+              closing={processmanClosing || processmanEntering}
+              onOpenFullAnalysis={() => switchTab("interview")}
+              onClose={closeProcessman}
+              diagramNodes={draft?.nodes}
+              onFocusElement={(elementId) => {
+                bpmnRef.current?.focusNode?.(elementId, {
+                  markerClass: "fpcAttentionJumpFocus",
+                  durationMs: 2200,
+                  targetZoom: 0.92,
+                  centerInViewport: true,
+                  clearExistingSelection: true,
+                  source: "processman_panel",
+                });
+              }}
+              onClearSelection={() => {
+                bpmnRef.current?.selectElements?.([], { source: "processman_panel" });
+              }}
+            />
+            </ProcessmanErrorBoundary>
+          ) : null}
+          </div>
+        )}
+      </div>
+
+      <BpmnPropertiesOverlayModal
+        open={bpmnPropertiesOverlayController.isOpen}
+        schema={bpmnPropertiesOverlayController.schema}
+        draftByRowId={bpmnPropertiesOverlayController.draftByRowId}
+        savingRowId={bpmnPropertiesOverlayController.savingRowId}
+        error={bpmnPropertiesOverlayController.error}
+        onClose={bpmnPropertiesOverlayController.closeOverlay}
+        onDraftChange={bpmnPropertiesOverlayController.setDraftValue}
+        onSubmit={bpmnPropertiesOverlayController.submitRowValue}
+        onCancel={bpmnPropertiesOverlayController.cancelRowEdit}
+      />
+
+      <ProcessDialogs
+        view={shellVm.dialogsProps}
+      />
+      {hasSession && sessionPresence.orgDrift && !presenceOrgDriftDismissed ? (
+        <div
+          data-testid="presence-org-drift-notice"
+          className="absolute left-1/2 top-2 z-[70] flex w-[min(720px,calc(100%-32px))] -translate-x-1/2 items-center gap-3 rounded-lg border border-warn/50 bg-warn/15 px-4 py-2.5 text-sm text-fg shadow-lg"
+          role="status"
+        >
+          <span className="min-w-0 flex-1">
+            <b>Контекст организации изменился.</b>{" "}
+            Сессия может быть недоступна в текущей организации — данные на экране загружены ранее.
+            {/* TODO(follow-up): предложить переключение org прямо из уведомления, когда org-switch будет доступен на этом экране */}
+          </span>
+          <button
+            type="button"
+            className="primaryBtn smallBtn shrink-0"
+            data-testid="presence-org-drift-reload"
+            onClick={() => { if (typeof window !== "undefined") window.location.reload(); }}
+          >
+            Перезагрузить сессию
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn smallBtn shrink-0"
+            data-testid="presence-org-drift-dismiss"
+            onClick={() => setPresenceOrgDriftDismissed(true)}
+          >
+            Скрыть
+          </button>
+        </div>
+      ) : null}
+      <ProcessStageDeadSessionModal
+        open={hasSession && !!deadSessionInfo}
+        view={deadSessionView}
+        busy={deadSessionRecovery.busy === true}
+        onBackToList={() => onClearWorkspaceProject?.()}
+        onCreateNew={typeof onCreateWorkspaceSession === "function"
+          ? () => {
+            onClearWorkspaceProject?.();
+            onCreateWorkspaceSession();
+          }
+          : null}
+        onOpenCurrent={deadSessionRecovery.replacement ? handleDeadSessionOpenCurrent : null}
+        onRestoreDraft={deadSessionRecovery.hasLocalDraft ? handleDeadSessionRestoreDraft : null}
+      />
+      <ProcessStageSaveConflictModal
+        open={showSaveConflictModal || propertySaveConflictOpen || hybridSaveConflictOpen}
+        busy={saveConflictActionBusy === true}
+        view={showSaveConflictModal
+          ? saveConflictModalView
+          : (hybridSaveConflictOpen ? hybridSaveConflictModalView : propertySaveConflictView)}
+        onRefreshSession={() => {
+          setPropertySaveConflictOpen(false);
+          if (hybridSaveConflictOpen && !showSaveConflictModal) {
+            hybridPersist.dismissConflictNotice();
+            hybridPersist.discardDraft();
+          }
+          handleSaveConflictRefresh();
+        }}
+        onOverwrite={showSaveConflictModal
+          ? handleSaveConflictOverwrite
+          : (hybridSaveConflictOpen ? handleHybridConflictOverwrite : null)}
+        onStay={() => {
+          setPropertySaveConflictOpen(false);
+          if (hybridSaveConflictOpen && !showSaveConflictModal) {
+            hybridPersist.dismissConflictNotice();
+            return;
+          }
+          dismissSaveConflictNotice();
+        }}
+        onReport={handleSaveConflictReport}
+        reportSent={saveConflictReportSent}
+      />
+      <BpmnMergePanel
+        open={mergePanelOpen}
+        busy={mergePanelBusy}
+        localXml={mergePanelLocalXml}
+        serverXml={mergePanelServerXml}
+        localVersion={Number(getBaseDiagramStateVersion()
+          ?? draft?.diagram_state_version
+          ?? draft?.diagramStateVersion
+          ?? 0)}
+        serverVersion={mergePanelServerVersion}
+        serverActorLabel={mergePanelActorLabel}
+        currentUserId={toText(user?.id || user?.user_id || user?.email)}
+        canEdit
+        source={mergePanelSource}
+        onAcceptLatest={handleMergeAcceptLatest}
+        onKeepMine={handleMergeKeepMine}
+        onCompare={handleMergeCompare}
+        onCancel={handleMergeCancel}
+      />
+      {mergeDiffOpen ? (
+        <BpmnVersionDiffOverlay
+          previousXml={mergePanelLocalXml}
+          nextXml={mergePanelServerXml}
+          previousLabel="Ваша версия"
+          nextLabel="Последняя версия сервера"
+          onClose={() => setMergeDiffOpen(false)}
+        />
+      ) : null}
+    </ProcessStageShell>
+  );
+}
+export default memo(ProcessStage);
