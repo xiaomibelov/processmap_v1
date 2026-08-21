@@ -2286,6 +2286,31 @@ export async function apiExportAnalyticsActionsXlsx(scope, scopeId) {
   return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.xlsx` };
 }
 
+export async function apiRefreshAnalytics(scope, scopeId, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.refresh(scope, scopeId), {
+    method: "POST",
+    signal: opts.signal,
+  }));
+  if (!r.ok) return r;
+  const data = unwrapAnalyticsData(r);
+  return { ok: true, status: r.status, data, meta: r.meta };
+}
+
+export async function apiGetAnalyticsQuality(scope, scopeId, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.quality(scope, scopeId), { signal: opts.signal }));
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
+  return {
+    ok: true,
+    status: r.status,
+    ee_time_filled_pct: Number(data.ee_time_filled_pct ?? 100),
+    ingredient_numeric_pct: Number(data.ingredient_numeric_pct ?? 0),
+    no_data_count: Number(data.no_data_count ?? 0),
+    total_elements_with_ee_time: Number(data.total_elements_with_ee_time ?? 0),
+    meta: r.meta,
+  };
+}
+
 // ------- Process Templates (Technologist) -------
 // POST /api/process-templates/import-bpmn (multipart file field `file`).
 // Returns { ui_model, report, draft_entities }.

@@ -979,3 +979,119 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
             f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
         )
         self.assertEqual(r.status_code, 401)
+
+    def test_refresh_session_requires_auth(self):
+        r = self.client.post(f"/api/analytics/refresh?scope=session&scope_id={self.session_id}")
+        self.assertEqual(r.status_code, 401)
+
+    def test_refresh_session_returns_envelope(self):
+        r = self.client.post(
+            f"/api/analytics/refresh?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["scope_type"], "session")
+        self.assertEqual(body["data"]["scope_id"], self.session_id)
+
+    def test_refresh_project_returns_envelope(self):
+        r = self.client.post(
+            f"/api/analytics/refresh?scope=project&scope_id={self.project_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["scope_type"], "project")
+        self.assertEqual(body["meta"]["refreshed_sessions"], 1)
+
+    def test_refresh_workspace_returns_envelope(self):
+        r = self.client.post(
+            f"/api/analytics/refresh?scope=workspace&scope_id={self.workspace_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["scope_type"], "workspace")
+
+    def test_refresh_forbidden_for_non_member(self):
+        r = self.client.post(
+            f"/api/analytics/refresh?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.other_token),
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_quality_requires_auth(self):
+        r = self.client.get(f"/api/analytics/quality?scope=session&scope_id={self.session_id}")
+        self.assertEqual(r.status_code, 401)
+
+    def test_quality_forbidden_for_non_member(self):
+        r = self.client.get(
+            f"/api/analytics/quality?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.other_token),
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_quality_empty_scope_returns_zeroes(self):
+        r = self.client.get(
+            f"/api/analytics/quality?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["ee_time_filled_pct"], 0)
+        self.assertEqual(body["data"]["no_data_count"], 0)
+
+    def test_quality_case_a_and_c(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "2.0"},
+                            {"name": "ingredient_value", "value": "3"},
+                        ]
+                    }
+                },
+                "op2": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "5.0"},
+                        ]
+                    }
+                },
+                "op3": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "1.0"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                },
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/quality?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["total_elements_with_ee_time"], 3)
+        self.assertEqual(body["data"]["no_data_count"], 1)
+        self.assertEqual(body["data"]["ingredient_numeric_pct"], 50.0)
+        self.assertEqual(body["data"]["ee_time_filled_pct"], 100)
+
+    def test_celery_beat_schedule_has_nightly_refresh(self):
+        from app.celery_app import app
+
+        schedule = app.conf.beat_schedule.get("analytics-nightly-refresh")
+        self.assertIsNotNone(schedule)
+        self.assertEqual(schedule["task"], "app.save_services.analytics_aggregator.tasks.refresh_all_workspaces_analytics_task")
+        self.assertEqual(app.conf.timezone, "Europe/Moscow")
+        cron = schedule["schedule"]
+        self.assertIn(4, cron.hour)
+        self.assertIn(30, cron.minute)

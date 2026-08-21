@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ANALYTICS_MODULE_ACTIONS,
-  ANALYTICS_MODULE_DASHBOARDS,
   ANALYTICS_MODULE_OVERVIEW,
   ANALYTICS_MODULE_PROPERTIES,
   buildAnalyticsPath,
   buildProcessMapUrl,
   readAnalyticsHubRoute,
-  readDashboardsRoute,
   readProductActionsRegistryRoute,
   readPropertiesRegistryRoute,
 } from "../../app/processMapRouteModel.js";
@@ -59,7 +57,6 @@ export function useAnalyticsRouteState({
   const [propertiesRegistryRoute, setPropertiesRegistryRoute] = useState(
     () => readPropertiesRegistryRoute(),
   );
-  const [dashboardsRoute, setDashboardsRoute] = useState(() => readDashboardsRoute());
 
   const scopeKeyRef = useRef("");
 
@@ -73,10 +70,6 @@ export function useAnalyticsRouteState({
 
   const syncPropertiesRegistryRoute = useCallback(() => {
     setPropertiesRegistryRoute(readPropertiesRegistryRoute());
-  }, []);
-
-  const syncDashboardsRoute = useCallback(() => {
-    setDashboardsRoute(readDashboardsRoute());
   }, []);
 
   useEffect(() => {
@@ -95,18 +88,12 @@ export function useAnalyticsRouteState({
   }, [syncPropertiesRegistryRoute]);
 
   useEffect(() => {
-    window.addEventListener("popstate", syncDashboardsRoute);
-    return () => window.removeEventListener("popstate", syncDashboardsRoute);
-  }, [syncDashboardsRoute]);
-
-  useEffect(() => {
     const scopeKey = `${text(workspaceId)}::${text(projectId)}::${text(sessionId)}`;
     if (scopeKeyRef.current === scopeKey) return;
     scopeKeyRef.current = scopeKey;
     setAnalyticsHubRoute(readAnalyticsHubRoute());
     setProductActionsRegistryRoute(readProductActionsRegistryRoute());
     setPropertiesRegistryRoute(readPropertiesRegistryRoute());
-    setDashboardsRoute(readDashboardsRoute());
   }, [sessionId, projectId, workspaceId]);
 
   const openAnalyticsHub = useCallback((options = {}) => {
@@ -116,7 +103,6 @@ export function useAnalyticsRouteState({
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-    setDashboardsRoute(readDashboardsRoute(window.location));
   }, [workspaceId, projectId, sessionId]);
 
   const closeAnalyticsHub = useCallback(() => {
@@ -129,7 +115,6 @@ export function useAnalyticsRouteState({
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-    setDashboardsRoute(readDashboardsRoute(window.location));
   }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId, analyticsHubRoute.projectId, analyticsHubRoute.sessionId]);
 
   const openPropertiesRegistry = useCallback((options = {}) => {
@@ -139,7 +124,6 @@ export function useAnalyticsRouteState({
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-    setDashboardsRoute(readDashboardsRoute(window.location));
   }, [workspaceId, projectId, sessionId]);
 
   const closePropertiesRegistry = useCallback(() => {
@@ -152,31 +136,7 @@ export function useAnalyticsRouteState({
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-    setDashboardsRoute(readDashboardsRoute(window.location));
   }, [workspaceId, projectId, sessionId, propertiesRegistryRoute.workspaceId, propertiesRegistryRoute.projectId, propertiesRegistryRoute.sessionId]);
-
-  const openDashboards = useCallback((options = {}) => {
-    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
-    if (!scopeId) return;
-    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_DASHBOARDS));
-    setDashboardsRoute(readDashboardsRoute(window.location));
-    setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-    setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-  }, [workspaceId, projectId, sessionId]);
-
-  const closeDashboards = useCallback(() => {
-    const nextUrl = buildProcessMapUrl({
-      workspaceId: dashboardsRoute.workspaceId || workspaceId,
-      projectId: dashboardsRoute.projectId || projectId,
-      sessionId: dashboardsRoute.sessionId || sessionId,
-    });
-    navigateToPath(nextUrl);
-    setDashboardsRoute(readDashboardsRoute(window.location));
-    setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-    setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-  }, [workspaceId, projectId, sessionId, dashboardsRoute.workspaceId, dashboardsRoute.projectId, dashboardsRoute.sessionId]);
 
   const openProductActionsRegistry = useCallback((options = {}) => {
     const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
@@ -185,7 +145,6 @@ export function useAnalyticsRouteState({
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-    setDashboardsRoute(readDashboardsRoute(window.location));
   }, [workspaceId, projectId, sessionId]);
 
   const closeProductActionsRegistry = useCallback(() => {
@@ -213,25 +172,20 @@ export function useAnalyticsRouteState({
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-    setDashboardsRoute(readDashboardsRoute(window.location));
   }, [workspaceId, projectId, sessionId, productActionsRegistryRoute.scope, productActionsRegistryRoute.workspaceId, productActionsRegistryRoute.projectId, productActionsRegistryRoute.sessionId]);
 
   return {
     analyticsHubRoute,
     productActionsRegistryRoute,
     propertiesRegistryRoute,
-    dashboardsRoute,
     setAnalyticsHubRoute,
     setProductActionsRegistryRoute,
     setPropertiesRegistryRoute,
-    setDashboardsRoute,
     openAnalyticsHub,
     closeAnalyticsHub,
     openProductActionsRegistry,
     closeProductActionsRegistry,
     openPropertiesRegistry,
     closePropertiesRegistry,
-    openDashboards,
-    closeDashboards,
   };
 }

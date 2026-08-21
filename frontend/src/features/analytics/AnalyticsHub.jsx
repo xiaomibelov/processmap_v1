@@ -15,13 +15,6 @@ const MODULES = [
     actionTestId: "analytics-hub-open-properties",
     action: "Открыть",
   },
-  {
-    id: "dashboards",
-    title: "Дашборды",
-    description: "Сводные аналитические панели будут подключены отдельным контуром.",
-    testId: "analytics-hub-module-dashboards",
-    action: "Будет позже",
-  },
 ];
 
 export default function AnalyticsHub({
