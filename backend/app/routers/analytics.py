@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 from typing import Any, Dict, List, Literal, Set
 
@@ -855,6 +856,23 @@ _SOURCE_DEFAULT = "расчёт по умолчанию"
 _SOURCE_NO_DATA = "нет данных"
 
 
+_COMMA_DECIMAL_RE = re.compile(r"^\d+,\d+$")
+
+
+def _normalize_decimal_comma(value: Any) -> str:
+    """Normalize a single comma used as decimal separator.
+
+    Only strings matching ``^\\d+,\\d+$`` (digits, one comma, digits) are
+    converted to dot-decimal form. Everything else is returned as-is so that
+    multi-comma values like ``"1,2,3"`` or prefixes like ``"> 10"`` remain
+    text and fall through to the non-numeric branch.
+    """
+    raw = _text(value).strip()
+    if _COMMA_DECIMAL_RE.match(raw):
+        return raw.replace(",", ".")
+    return raw
+
+
 def classify_recalc_value(
     ee_time: float, ingredient_value: Any, ingredient_value_present: bool
 ) -> Dict[str, Any]:
@@ -873,8 +891,8 @@ def classify_recalc_value(
     C. Property exists and value is a number (including 0) -> result = ee_time * value,
        source = property.
 
-    Note: comma decimal separator (e.g. "0,5") is intentionally NOT normalized;
-    it falls into case B and should be reported as an open question.
+    Decimal comma (e.g. "0,5") is normalized to dot-decimal per product-owner
+    decision 21/08/26, but only for the strict ``digits,digits`` pattern.
     """
     if not ingredient_value_present:
         return {
@@ -883,7 +901,7 @@ def classify_recalc_value(
             "is_invalid": False,
         }
 
-    raw = _text(ingredient_value).strip()
+    raw = _normalize_decimal_comma(ingredient_value)
     if raw == "" or raw == "—":
         return {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True}
 
