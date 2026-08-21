@@ -16,6 +16,9 @@ import { AnalyticsError, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import { inferPropertyValueType, inferPropertyFamily } from "./propertyValueUtils.js";
 import Modal from "../../shared/ui/Modal.jsx";
+import { ru } from "../../shared/i18n/ru.js";
+
+const t = ru.analytics;
 
 function text(value) {
   return String(value || "").trim();
@@ -105,7 +108,7 @@ function MultiSelect({ label, options = [], selected = [], onChange }) {
     <div className="analyticsFilterField">
       <label className="analyticsFilterFieldLabel">{label}</label>
       <div className="analyticsFilterFieldOptions analyticsFilterFieldOptions--compact">
-        {values.length === 0 ? <span className="analyticsFilterEmptyOptions">Нет значений</span> : null}
+        {values.length === 0 ? <span className="analyticsFilterEmptyOptions">{t.filterEmptyOptions}</span> : null}
         {values.map((opt) => {
           const v = String(opt);
           const checked = selected.includes(v);
@@ -134,7 +137,7 @@ function CompareDrawer({ rows, onClose }) {
     <div className="analyticsDrawerOverlay" onClick={onClose}>
       <div className="analyticsDrawer analyticsDrawer--compare" onClick={(e) => e.stopPropagation()}>
         <div className="analyticsDrawerHeader">
-          <h3>Сравнение свойств ({rows.length})</h3>
+          <h3>{t.compareTitle.replace("{{count}}", rows.length)}</h3>
           <button type="button" className="analyticsDrawerClose" onClick={onClose}>×</button>
         </div>
         <div className="analyticsDrawerBody">
@@ -142,27 +145,27 @@ function CompareDrawer({ rows, onClose }) {
             {rows.map((r, idx) => (
               <div key={idx} className="analyticsCompareColumn">
                 <div className="analyticsCompareCell">
-                  <span className="analyticsCompareLabel">Название</span>
+                  <span className="analyticsCompareLabel">{t.compareName}</span>
                   <span className="analyticsCompareValue">{text(r.name) || "—"}</span>
                 </div>
                 <div className="analyticsCompareCell">
-                  <span className="analyticsCompareLabel">Тип</span>
+                  <span className="analyticsCompareLabel">{t.compareType}</span>
                   <span className="analyticsCompareValue">{text(r.type) || inferPropertyValueType(r.name, r.value)}</span>
                 </div>
                 <div className="analyticsCompareCell">
-                  <span className="analyticsCompareLabel">Категория</span>
+                  <span className="analyticsCompareLabel">{t.compareCategory}</span>
                   <span className="analyticsCompareValue">{text(r.category) || "—"}</span>
                 </div>
                 <div className="analyticsCompareCell">
-                  <span className="analyticsCompareLabel">Источник</span>
+                  <span className="analyticsCompareLabel">{t.compareSource}</span>
                   <span className="analyticsCompareValue">{text(r.source) || "—"}</span>
                 </div>
                 <div className="analyticsCompareCell">
-                  <span className="analyticsCompareLabel">Использований</span>
+                  <span className="analyticsCompareLabel">{t.compareUsage}</span>
                   <span className="analyticsCompareValue">{Number(r.usage_count) || 0}</span>
                 </div>
                 <div className="analyticsCompareCell">
-                  <span className="analyticsCompareLabel">Значение</span>
+                  <span className="analyticsCompareLabel">{t.compareValue}</span>
                   <span className="analyticsCompareValue analyticsCompareValue--break">{text(r.value) || "—"}</span>
                 </div>
               </div>
@@ -201,7 +204,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [valueTypeFilter, setValueTypeFilter] = useState([]);
   const [familyFilter, setFamilyFilter] = useState([]);
   const [usageRange, setUsageRange] = useState([0, Infinity]);
-  const [sort, setSort] = useState({ key: "usage_count", dir: "desc" });
+  const [sort, setSort] = useState({ key: "bpmn_name", dir: "asc" });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const PAGE_SIZES = [20, 50, 100];
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
@@ -213,7 +216,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   useEffect(() => {
     setSelectedRows(new Set());
     setPage(1);
-  }, [scope, scopeId, backendFilters, debouncedSearch, valueTypeFilter, familyFilter, usageRange, pageSize]);
+  }, [scope, scopeId, backendFilters, debouncedSearch, valueTypeFilter, familyFilter, nameFilter, usageRange, pageSize]);
 
   const loadData = useCallback(async ({ signal } = {}) => {
     setLoading(true);
@@ -227,7 +230,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
-        setError(text(result?.error) || "Не удалось загрузить реестр свойств.");
+        setError(text(result?.error) || t.errorLoadingProperties);
         return;
       }
       setRawRows(result.rows);
@@ -236,7 +239,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     } catch (e) {
       if (signal?.aborted || e?.name === "AbortError") return;
       setLoading(false);
-      setError(String(e?.message || e || "Ошибка загрузки"));
+      setError(String(e?.message || e || t.errorGeneric));
     }
   }, [scope, scopeId, backendFilters]);
 
@@ -264,12 +267,34 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     }
   }, [scope, scopeId]);
 
+  const [nameFilter, setNameFilter] = useState([]);
+
+  // Drill-down from AnalyticsOverviewPanel: ?source=...&property=...
+  const [drillDownApplied, setDrillDownApplied] = useState(false);
+  useEffect(() => {
+    if (drillDownApplied) return;
+    const params = new URLSearchParams(window.location.search);
+    const sourceParam = params.get("source");
+    const propertyParam = params.get("property");
+    if (!sourceParam && !propertyParam) {
+      setDrillDownApplied(true);
+      return;
+    }
+    setBackendFilters((prev) => ({
+      ...prev,
+      ...(sourceParam ? { source: [sourceParam] } : {}),
+    }));
+    if (propertyParam) setNameFilter([propertyParam]);
+    setDrillDownApplied(true);
+  }, [drillDownApplied]);
+
   const filteredRows = usePropertyRowsProcessor(rawRows, {
     search: debouncedSearch,
     sort,
     valueTypeFilter,
     usageRange,
     familyFilter,
+    nameFilter,
   });
 
   const pagedRows = useMemo(() => {
@@ -295,6 +320,24 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   }, [rawRows]);
 
   const maxUsage = useMemo(() => Math.max(...rawRows.map((r) => Number(r.usage_count) || 0), 1), [rawRows]);
+
+  const propertyNameOptions = useMemo(() => {
+    const counts = new Map();
+    for (const r of rawRows) {
+      const name = text(r.name);
+      if (!name) continue;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    const calcNames = ["ee_time", "ingredient_value", "ingredient_um", "ee_operation"];
+    const entries = Array.from(counts.entries());
+    entries.sort((a, b) => {
+      const aCalc = calcNames.includes(a[0].toLowerCase()) ? 0 : 1;
+      const bCalc = calcNames.includes(b[0].toLowerCase()) ? 0 : 1;
+      if (aCalc !== bCalc) return aCalc - bCalc;
+      return b[1] - a[1];
+    });
+    return entries.map(([name, count]) => ({ name, count }));
+  }, [rawRows]);
 
   const toggleRow = useCallback((key, row) => {
     setSelectedRows((prev) => {
@@ -366,16 +409,16 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   async function handleServerExportAdvancedCalculationXlsx() {
     if (exporting) return;
     if (scope !== "session") {
-      setError("Расширенный расчёт доступен только для сессии. Переключитесь на сессию через переключатель scope.");
+      setError(t.errorAdvancedCalcSessionOnly);
       return;
     }
     setExporting(true);
     setError("");
     const result = await apiExportAdvancedCalculationXlsx(scope, scopeId);
     if (!result?.ok) {
-      let message = text(result?.error) || "Не удалось выполнить расширенный расчёт.";
-      if (result?.status === 404) message = "Сессия не найдена.";
-      else if (result?.status === 422) message = "Ошибка разбора BPMN XML: " + message;
+      let message = text(result?.error) || t.errorAdvancedCalc;
+      if (result?.status === 404) message = t.sessionNotFound;
+      else if (result?.status === 422) message = t.bpmnParseError + message;
       setError(message);
       setExporting(false);
       return;
@@ -398,14 +441,14 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       if (signal?.aborted) return;
       setRecalcLoading(false);
       if (!result?.ok) {
-        setRecalcError(text(result?.error) || "Не удалось загрузить расчёт.");
+        setRecalcError(text(result?.error) || t.errorLoadingRecalcShort);
         return;
       }
       setRecalcRows(result.rows || []);
     } catch (e) {
       if (signal?.aborted || e?.name === "AbortError") return;
       setRecalcLoading(false);
-      setRecalcError(String(e?.message || e || "Ошибка загрузки расчёта"));
+      setRecalcError(String(e?.message || e || t.errorLoadingRecalcShort));
     }
   }, [scope, scopeId]);
 
@@ -443,12 +486,12 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по названию, значению, категории..."
+              placeholder={t.searchPropertiesPlaceholder}
               className="analyticsSearchInput"
             />
           </div>
           <div className="analyticsPageSize">
-            <label>Показать</label>
+            <label>{t.pageSizeLabel}</label>
             <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>{size}</option>
@@ -459,47 +502,47 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
             type="button"
             className={`analyticsFilterToggle ${drawerOpen ? "analyticsFilterToggle--active" : ""}`}
             onClick={() => setDrawerOpen((v) => !v)}
-            title="Расширенные фильтры"
+            title={t.advancedFiltersTitle}
           >
             <FilterIcon className="w-4 h-4" />
-            Фильтры
+            {t.filtersToggle}
           </button>
         </div>
         {drawerOpen ? (
           <div className="analyticsAdvancedFilters analyticsAdvancedFilters--compact">
             <div className="analyticsAdvancedFiltersGrid">
               <MultiSelect
-                label="Тип"
+                label={t.filterType}
                 options={options.type}
                 selected={backendFilters.type || []}
                 onChange={(v) => setBackendFilters((prev) => ({ ...prev, type: v }))}
               />
               <MultiSelect
-                label="Категория"
+                label={t.filterCategory}
                 options={options.category}
                 selected={backendFilters.category || []}
                 onChange={(v) => setBackendFilters((prev) => ({ ...prev, category: v }))}
               />
               <MultiSelect
-                label="Источник"
+                label={t.filterSource}
                 options={options.source}
                 selected={backendFilters.source || []}
                 onChange={(v) => setBackendFilters((prev) => ({ ...prev, source: v }))}
               />
               <MultiSelect
-                label="Тип значения"
+                label={t.filterValueType}
                 options={valueTypeOptions}
                 selected={valueTypeFilter}
                 onChange={setValueTypeFilter}
               />
               <MultiSelect
-                label="Семейство"
+                label={t.filterFamily}
                 options={familyOptions}
                 selected={familyFilter}
                 onChange={setFamilyFilter}
               />
               <div className="analyticsFilterField">
-                <label className="analyticsFilterFieldLabel">Использований (макс {maxUsage})</label>
+                <label className="analyticsFilterFieldLabel">{t.usageRangeLabel.replace("{{max}}", maxUsage)}</label>
                 <div className="analyticsUsageRange">
                   <input
                     type="number"
@@ -533,7 +576,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
                   setSearch("");
                 }}
               >
-                Сбросить все
+                {t.clearAllFilters}
               </button>
             </div>
           </div>
@@ -547,10 +590,10 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
               type="button"
               className={`analyticsRecalcToggle ${recalcOpen ? "analyticsRecalcToggle--active" : ""}`}
               onClick={handleToggleRecalc}
-              title="Расчёт производительности"
+              title={t.recalcTitle}
             >
               <CalculatorIcon className="w-4 h-4" />
-              Расчёт{recalcRows.length ? ` (${recalcRows.length})` : ""}
+              {t.recalcToggle}{recalcRows.length ? ` (${recalcRows.length})` : ""}
             </button>
             <button type="button" className="analyticsExportBtn" disabled={selectedRows.size === 0} onClick={handleSelectedExport}>
               <DownloadIcon className="w-4 h-4" />
@@ -562,22 +605,48 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
               disabled={selectedRows.size < 2 || selectedRows.size > 3}
               onClick={handleCompare}
             >
-              Сравнить
+              {t.compare}
             </button>
             <button type="button" className="analyticsExportBtn" onClick={handleServerExportCsv} disabled={exporting}>
-              {exporting ? "Экспорт…" : "CSV всех"}
+              {exporting ? t.exportLoading : t.exportCsvAll}
             </button>
             <button type="button" className="analyticsExportBtn" onClick={handleServerExportXlsx} disabled={exporting}>
-              {exporting ? "Экспорт…" : "Excel всех"}
+              {exporting ? t.exportLoading : t.exportExcelAll}
             </button>
           </div>
         </div>
+        {propertyNameOptions.length > 0 ? (
+          <div className="analyticsPropertyChips">
+            <span className="analyticsPropertyChipsLabel">{t.propertiesChipsLabel}</span>
+            {propertyNameOptions.map(({ name, count }) => {
+              const active = nameFilter.includes(name);
+              const isCalc = ["ee_time", "ingredient_value", "ingredient_um", "ee_operation"].includes(name.toLowerCase());
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  className={`analyticsPropertyChip ${active ? "analyticsPropertyChip--active" : ""} ${isCalc ? "analyticsPropertyChip--calc" : ""}`}
+                  onClick={() => {
+                    setNameFilter((prev) => {
+                      if (prev.includes(name)) return prev.filter((n) => n !== name);
+                      return [...prev, name];
+                    });
+                  }}
+                  title={`${name} (${count})`}
+                >
+                  {name}
+                  <span className="analyticsPropertyChipCount">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       {recalcOpen ? (
         <section className="analyticsRecalculationSection">
           <div className="analyticsRecalculationHeader">
-            <h3 className="analyticsRecalculationTitle">Расчёт производительности</h3>
+            <h3 className="analyticsRecalculationTitle">{t.recalcTitle}</h3>
             <div className="analyticsRecalculationActions">
               <button
                 type="button"
@@ -586,24 +655,24 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
                 disabled={exporting}
               >
                 <DownloadIcon className="w-4 h-4" />
-                {exporting ? "Экспорт…" : "Excel с пересчётом"}
+                {exporting ? t.exportLoading : t.exportExcelRecalc}
               </button>
               <button
                 type="button"
                 className="analyticsExportBtn analyticsExportBtn--secondary"
                 onClick={handleServerExportAdvancedCalculationXlsx}
                 disabled={exporting || scope !== "session"}
-                title={scope === "session" ? "Расширенный расчёт: пути, критический путь, бутылочные горлышки, ингредиенты, ресурсы" : "Доступно только для сессии — переключите scope на сессию"}
+                title={scope === "session" ? t.advancedCalcTooltipSession : t.advancedCalcTooltipDisabled}
               >
                 <DownloadIcon className="w-4 h-4" />
-                {exporting ? "Экспорт…" : "Excel расширенный"}
+                {exporting ? t.exportLoading : t.exportExcelAdvanced}
               </button>
             </div>
           </div>
-          {recalcLoading ? <AnalyticsLoading text="Загрузка расчёта…" /> : null}
+          {recalcLoading ? <AnalyticsLoading text={t.loadingRecalc} /> : null}
           {recalcError ? <AnalyticsError message={recalcError} onRetry={() => loadRecalculation()} /> : null}
           {!recalcLoading && !recalcError && !recalcRows.length ? (
-            <EmptyState title="Нет данных для расчёта" description="Нет элементов с ee_time в выбранном scope." />
+            <EmptyState title={t.recalcEmptyTitle} description={t.recalcEmptyDescription} />
           ) : null}
           {!recalcLoading && !recalcError && recalcRows.length ? (
             <div className="analyticsRecalcTableWrap">
@@ -655,13 +724,19 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
         </section>
       ) : null}
 
-      {loading && !rawRows.length ? <AnalyticsLoading text="Загрузка реестра свойств…" /> : null}
+      {loading && !rawRows.length ? <AnalyticsLoading text={t.loadingProperties} /> : null}
       {error ? <AnalyticsError message={error} onRetry={() => loadData()} /> : null}
       {!loading && !error && !rawRows.length ? (
-        <EmptyState title="Нет свойств" description="Для выбранного scope не найдено свойств." />
+        <EmptyState title={t.propertiesEmptyTitle} description={t.propertiesEmptyDescription} />
       ) : null}
       {rawRows.length > 0 ? (
         <>
+          <div className="analyticsTableMeta">
+            <span className="analyticsTableMetaInfo">
+              {t.shownRecordsLabel.replace("{{shown}}", filteredRows.length).replace("{{total}}", total)}
+              {total > 500 ? " · первые 500 загружены с сервера" : ""}
+            </span>
+          </div>
           <AnalyticsPropertiesTable
             rows={pagedRows}
             selectedRows={selectedRows}
@@ -677,7 +752,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       {sourceValidationModal.open ? (
         <Modal
           open
-          title="Ошибка заполнения"
+          title={t.sourceValidationTitle}
           onClose={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
           footer={
             <button

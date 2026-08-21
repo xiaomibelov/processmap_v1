@@ -3,7 +3,6 @@ export const PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY = "processMapProjectContext";
 export const PRODUCT_ACTIONS_REGISTRY_SURFACE = "product-actions-registry";
 export const ANALYTICS_HUB_SURFACE = "analytics";
 export const PROPERTIES_REGISTRY_SURFACE = "process-properties-registry";
-export const DASHBOARDS_SURFACE = "dashboards";
 
 const DEFAULT_APP_PATHNAME = "/app";
 const VALID_SOURCES = new Set(["internal", "direct", "popstate"]);
@@ -465,79 +464,6 @@ export function buildPropertiesRegistryCloseUrl(routeRaw = {}, options = {}) {
   return `${pathname}${search ? `?${search}` : ""}${hash}`;
 }
 
-export function readDashboardsRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
-  try {
-    const url = asLocationUrl(locationLike);
-    const params = new URLSearchParams(url.search || "");
-    const surface = text(params.get("surface")).toLowerCase();
-    const projectId = text(params.get("project"));
-    const sessionId = projectId ? text(params.get("session")) : "";
-    const workspaceId = text(params.get("workspace"));
-    if (surface !== DASHBOARDS_SURFACE) {
-      return {
-        active: false,
-        workspaceId,
-        projectId,
-        sessionId,
-      };
-    }
-    return {
-      active: true,
-      workspaceId,
-      projectId,
-      sessionId,
-    };
-  } catch {
-    return {
-      active: false,
-      workspaceId: "",
-      projectId: "",
-      sessionId: "",
-    };
-  }
-}
-
-export function buildDashboardsUrl(routeRaw = {}, options = {}) {
-  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
-  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
-  const hash = text(options?.hash);
-  const params = new URLSearchParams(text(options?.baseSearch));
-  const workspaceId = text(route.workspaceId ?? route.workspace_id);
-  const projectId = text(route.projectId ?? route.project_id);
-  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
-
-  params.set("surface", DASHBOARDS_SURFACE);
-  if (workspaceId) params.set("workspace", workspaceId);
-  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
-    params.delete("workspace");
-  }
-  if (projectId) params.set("project", projectId);
-  else params.delete("project");
-  if (sessionId) params.set("session", sessionId);
-  else params.delete("session");
-
-  const search = params.toString();
-  return `${pathname}${search ? `?${search}` : ""}${hash}`;
-}
-
-export function buildDashboardsCloseUrl(routeRaw = {}, options = {}) {
-  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
-  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
-  const hash = text(options?.hash);
-  const params = new URLSearchParams(text(options?.baseSearch));
-  params.delete("surface");
-  params.delete("registry_scope");
-  const workspaceId = text(route.workspaceId ?? route.workspace_id);
-  const projectId = text(route.projectId ?? route.project_id);
-  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
-  if (workspaceId) params.set("workspace", workspaceId);
-  if (projectId) params.set("project", projectId);
-  else params.delete("project");
-  if (sessionId) params.set("session", sessionId);
-  else params.delete("session");
-  const search = params.toString();
-  return `${pathname}${search ? `?${search}` : ""}${hash}`;
-}
 
 export function pushProcessMapHistory(routeRaw, options = {}) {
   return writeProcessMapHistory(routeRaw, {
@@ -557,12 +483,10 @@ export function replaceProcessMapHistory(routeRaw, options = {}) {
 export const ANALYTICS_MODULE_OVERVIEW = "overview";
 export const ANALYTICS_MODULE_ACTIONS = "actions";
 export const ANALYTICS_MODULE_PROPERTIES = "properties";
-export const ANALYTICS_MODULE_DASHBOARDS = "dashboards";
 export const VALID_ANALYTICS_MODULES = new Set([
   ANALYTICS_MODULE_OVERVIEW,
   ANALYTICS_MODULE_ACTIONS,
   ANALYTICS_MODULE_PROPERTIES,
-  ANALYTICS_MODULE_DASHBOARDS,
 ]);
 
 export function normalizeAnalyticsScope(value) {
@@ -587,7 +511,7 @@ export function buildAnalyticsPath(scope, scopeId, moduleId = ANALYTICS_MODULE_O
 
 export function parseAnalyticsPath(pathname = "") {
   const path = text(pathname).replace(/\/+$/g, "");
-  const match = path.match(/^\/analytics\/(workspace|project|session)\/([^/]+)(?:\/(overview|actions|properties|dashboards))?$/i);
+  const match = path.match(/^\/analytics\/(workspace|project|session)\/([^/]+)(?:\/(overview|actions|properties))?$/i);
   if (!match) return null;
   return {
     scope: match[1].toLowerCase(),
@@ -610,7 +534,7 @@ export function readLegacyAnalyticsRedirect(locationLike = typeof window !== "un
     if (surface === ANALYTICS_HUB_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_OVERVIEW };
     if (surface === PRODUCT_ACTIONS_REGISTRY_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_ACTIONS };
     if (surface === PROPERTIES_REGISTRY_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_PROPERTIES };
-    if (surface === DASHBOARDS_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_DASHBOARDS };
+    if (surface === "dashboards") return { scope, scopeId, module: ANALYTICS_MODULE_OVERVIEW };
     return null;
   } catch {
     return null;

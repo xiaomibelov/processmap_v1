@@ -4,35 +4,32 @@ import {
   apiExportAnalyticsActionsXlsx,
   apiGetAnalyticsActions,
   apiGetAnalyticsDashboard,
+  apiGetAnalyticsPropertiesRecalculation,
+  apiGetAnalyticsQuality,
+  apiRefreshAnalytics,
 } from "../../lib/api.js";
 import AnalyticsPropertiesPanel from "./AnalyticsPropertiesPanel.jsx";
-import DashboardMetricCard from "./DashboardMetricCard.jsx";
 import AnalyticsDataTable, { Badge, Pill } from "./AnalyticsDataTable.jsx";
-import AnalyticsDashboardsPanel from "./AnalyticsDashboardsPanel.jsx";
 import { AnalyticsError, AnalyticsErrorBoundary, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import {
-  ActivityIcon,
   ChartBarIcon,
-  ChartPieIcon,
-  ClockIcon,
-  CriticalIcon,
   DownloadIcon,
   FilterIcon,
-  HandoffIcon,
-  ProjectIcon,
-  QuestionIcon,
-  SessionIcon,
   TableIcon,
 } from "./AnalyticsIcons.jsx";
 import {
   ANALYTICS_MODULE_ACTIONS,
-  ANALYTICS_MODULE_DASHBOARDS,
   ANALYTICS_MODULE_OVERVIEW,
   ANALYTICS_MODULE_PROPERTIES,
   buildAnalyticsPath,
 } from "../../app/processMapRouteModel.js";
 import AnalyticsScopeSwitcher from "./AnalyticsScopeSwitcher.jsx";
+import AnalyticsOverviewPanel from "./AnalyticsOverviewPanel.jsx";
+import "./AnalyticsOverviewPanel.css";
+import { ru } from "../../shared/i18n/ru.js";
+
+const t = ru.analytics;
 
 function text(value) {
   return String(value || "").trim();
@@ -48,28 +45,11 @@ function formatNumber(value) {
   return n.toLocaleString("ru-RU");
 }
 
-function formatDate(ts) {
-  const n = Number(ts);
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  try {
-    return new Date(n * 1000).toLocaleString("ru-RU");
-  } catch {
-    return String(ts);
-  }
-}
-
 const MODULE_TABS = [
-  { id: ANALYTICS_MODULE_OVERVIEW, label: "Обзор", icon: ChartBarIcon },
-  { id: ANALYTICS_MODULE_ACTIONS, label: "Действия", icon: TableIcon },
-  { id: ANALYTICS_MODULE_PROPERTIES, label: "Свойства", icon: TableIcon },
-  { id: ANALYTICS_MODULE_DASHBOARDS, label: "Дашборды", icon: ChartPieIcon },
+  { id: ANALYTICS_MODULE_OVERVIEW, label: t.overview, icon: ChartBarIcon },
+  { id: ANALYTICS_MODULE_ACTIONS, label: t.actions, icon: TableIcon },
+  { id: ANALYTICS_MODULE_PROPERTIES, label: t.properties, icon: TableIcon },
 ];
-
-function chartItems(map = {}) {
-  return Object.entries(map || {})
-    .map(([label, value]) => ({ label, value: Number(value) || 0 }))
-    .sort((a, b) => b.value - a.value);
-}
 
 function useAnalyticsDashboard(scope, scopeId) {
   const [data, setData] = useState(null);
@@ -85,14 +65,14 @@ function useAnalyticsDashboard(scope, scopeId) {
       if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
-        setError(text(result?.error) || "Не удалось загрузить аналитику.");
+        setError(text(result?.error) || t.errorOverview);
         return;
       }
       setData(result.data);
     } catch (e) {
       if (signal?.aborted || e?.name === "AbortError") return;
       setLoading(false);
-      setError(String(e?.message || e || "Ошибка загрузки"));
+      setError(String(e?.message || e || t.errorGeneric));
     }
   }, [scope, scopeId]);
 
@@ -109,6 +89,113 @@ function useAnalyticsDashboard(scope, scopeId) {
   }, [loadData]);
 
   return { data, loading, error, retry: () => loadData() };
+}
+
+function useAnalyticsRecalculation(scope, scopeId) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const abortRef = useRef(null);
+
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiGetAnalyticsPropertiesRecalculation(scope, scopeId, { signal });
+      if (signal?.aborted) return;
+      setLoading(false);
+      if (!result?.ok) {
+        setError(text(result?.error) || t.errorLoadingRecalc);
+        return;
+      }
+      setRows(result.rows || []);
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || t.errorGeneric));
+    }
+  }, [scope, scopeId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
+
+  return { rows, loading, error, retry: () => loadData() };
+}
+
+function useAnalyticsQuality(scope, scopeId, recalcRows) {
+  const [apiQuality, setApiQuality] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const abortRef = useRef(null);
+
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiGetAnalyticsQuality(scope, scopeId, { signal });
+      if (signal?.aborted) return;
+      setLoading(false);
+      if (!result?.ok) {
+        setError(text(result?.error) || t.errorLoadingQuality);
+        return;
+      }
+      setApiQuality({
+        ee_time_filled_pct: result.ee_time_filled_pct,
+        ingredient_numeric_pct: result.ingredient_numeric_pct,
+        no_data_count: result.no_data_count,
+        total_elements_with_ee_time: result.total_elements_with_ee_time,
+      });
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || t.errorGeneric));
+    }
+  }, [scope, scopeId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
+
+  const computedQuality = useMemo(() => {
+    if (apiQuality) return apiQuality;
+    const total = recalcRows.length;
+    if (!total) {
+      return {
+        ee_time_filled_pct: 0,
+        ingredient_numeric_pct: 0,
+        no_data_count: 0,
+        total_elements_with_ee_time: 0,
+      };
+    }
+    const noData = recalcRows.filter((r) => r.source === "нет данных").length;
+    const property = recalcRows.filter((r) => r.source === "property").length;
+    const present = recalcRows.filter((r) => r.source !== "расчёт по умолчанию").length;
+    return {
+      ee_time_filled_pct: 100,
+      ingredient_numeric_pct: present ? Math.round((property / present) * 100) : 0,
+      no_data_count: noData,
+      total_elements_with_ee_time: total,
+    };
+  }, [apiQuality, recalcRows]);
+
+  return { quality: computedQuality, loading, error };
 }
 
 function FilterBar({ options = {}, filters = {}, onChange }) {
@@ -138,7 +225,7 @@ function FilterBar({ options = {}, filters = {}, onChange }) {
           onClick={() => onChange({})}
           className="analyticsFilterClear"
         >
-          Сбросить
+          {t.resetFilters}
         </button>
       ) : null}
     </div>
@@ -230,7 +317,7 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
       if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
-        setError(text(result?.error) || "Не удалось загрузить реестр действий.");
+        setError(text(result?.error) || t.errorLoadingActions);
         return;
       }
       setRows(result.rows);
@@ -239,7 +326,7 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
     } catch (e) {
       if (signal?.aborted || e?.name === "AbortError") return;
       setLoading(false);
-      setError(String(e?.message || e || "Ошибка загрузки"));
+      setError(String(e?.message || e || t.errorGeneric));
     }
   }, [scope, scopeId, page, limit, filters]);
 
@@ -276,11 +363,11 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
   }
 
   const columns = [
-    { key: "name", label: "Действие", width: "35%", minWidth: "200px" },
-    { key: "role", label: "Роль", width: "20%", minWidth: "120px", render: (v) => <Badge tone={roleTone(v)}>{v || "—"}</Badge> },
-    { key: "section", label: "Секция", width: "15%", minWidth: "100px", render: (v) => <Badge tone={sectionTone(v)}>{v || "—"}</Badge> },
-    { key: "action_type", label: "Тип", width: "15%", minWidth: "100px", render: (v) => <Badge tone="default">{v || "—"}</Badge> },
-    { key: "duration_min", label: "Длительность", width: "15%", minWidth: "110px", align: "right", render: (v) => (v == null ? "—" : <Pill>{v} мин</Pill>) },
+    { key: "name", label: t.columnAction, width: "35%", minWidth: "200px" },
+    { key: "role", label: t.columnRole, width: "20%", minWidth: "120px", render: (v) => <Badge tone={roleTone(v)}>{v || "—"}</Badge> },
+    { key: "section", label: t.columnSection, width: "15%", minWidth: "100px", render: (v) => <Badge tone={sectionTone(v)}>{v || "—"}</Badge> },
+    { key: "action_type", label: t.columnType, width: "15%", minWidth: "100px", render: (v) => <Badge tone="default">{v || "—"}</Badge> },
+    { key: "duration_min", label: t.columnDuration, width: "15%", minWidth: "110px", align: "right", render: (v) => (v == null ? "—" : <Pill>{v} {t.unitMin}</Pill>) },
   ];
 
   return (
@@ -294,7 +381,7 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
           className="analyticsExportBtn"
         >
           <DownloadIcon className="w-4 h-4" />
-          {exporting ? "Экспорт…" : "CSV"}
+          {exporting ? t.exportLoading : t.exportCsv}
         </button>
         <button
           type="button"
@@ -302,15 +389,15 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
           disabled={exporting}
           className="analyticsExportBtn"
         >
-          {exporting ? "Экспорт…" : "Excel"}
+          {exporting ? t.exportLoading : t.exportExcel}
         </button>
       </div>
-      {loading && !rows.length ? <AnalyticsLoading text="Загрузка реестра действий…" /> : null}
+      {loading && !rows.length ? <AnalyticsLoading text={t.loadingActions} /> : null}
       {error ? <AnalyticsError message={error} onRetry={() => loadData()} /> : null}
       {!loading && !error && !rows.length ? (
         <EmptyState
-          title="Нет действий"
-          description="Для выбранного scope и фильтров не найдено действий."
+          title={t.actionsEmptyTitle}
+          description={t.actionsEmptyDescription}
         />
       ) : null}
       {rows.length > 0 ? (
@@ -320,19 +407,6 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
         </>
       ) : null}
     </div>
-  );
-}
-
-function MetricCard({ label, value, unit = "", tone = "default", icon: Icon, sparklineItems }) {
-  return (
-    <DashboardMetricCard
-      title={label}
-      value={value}
-      unit={unit}
-      tone={tone}
-      icon={Icon}
-      sparklineItems={sparklineItems}
-    />
   );
 }
 
@@ -354,6 +428,10 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
   }, [embedded, initialScope, initialScopeId, initialModule]);
 
   const { data, loading, error, retry } = useAnalyticsDashboard(scope, scopeId);
+  const { rows: recalcRows, loading: recalcLoading, error: recalcError, retry: retryRecalc } = useAnalyticsRecalculation(scope, scopeId);
+  const { quality } = useAnalyticsQuality(scope, scopeId, recalcRows);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
   const derivedScopeIds = useMemo(() => {
     if (!data) return { workspaceId: "", projectId: "", sessionId: "" };
@@ -376,18 +454,38 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
-  function setModule(nextModule) {
+  function setModule(nextModule, filters = {}) {
     if (embedded) {
       setPageModule(nextModule);
       return;
     }
     const next = buildAnalyticsPath(scope, scopeId, nextModule);
-    window.history.pushState({}, "", next);
+    const url = new URL(next, window.location.href);
+    if (filters.source) url.searchParams.set("source", filters.source);
+    if (filters.property) url.searchParams.set("property", filters.property);
+    window.history.pushState({}, "", url.pathname + url.search);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
-  const title = scope === "session" ? "Сессия" : scope === "project" ? "Проект" : "Workspace";
-  const sparklineItems = data ? chartItems(data.actions_by_role) : [];
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshError("");
+    try {
+      const result = await apiRefreshAnalytics(scope, scopeId);
+      if (!result?.ok) {
+        setRefreshError(text(result?.error) || t.errorRefresh);
+      }
+    } catch (e) {
+      setRefreshError(String(e?.message || e || t.errorRefreshGeneric));
+    } finally {
+      setRefreshing(false);
+      retry();
+      retryRecalc();
+    }
+  }
+
+  const title = scope === "session" ? t.scopeSession : scope === "project" ? t.scopeProject : t.scopeWorkspace;
 
   return (
     <main className="analyticsHubPage" data-testid="analytics-page">
@@ -395,11 +493,8 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
         <header className="analyticsHubHeader">
           <div className="analyticsHubHeaderMain">
             <div className="analyticsHubHeaderTitleWrap">
-              <h1>Аналитика <span className="text-accent">{title}</span></h1>
+              <h1>{t.title} <span className="text-accent">{title}</span></h1>
               <span className="analyticsHubHeaderScopeId" title={scopeId}>{scopeId}</span>
-            </div>
-            <div className="analyticsHubHeaderMeta">
-              {data?.computed_at ? <span>Обновлено: {formatDate(data.computed_at)}</span> : null}
             </div>
           </div>
           <AnalyticsScopeSwitcher
@@ -432,34 +527,20 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
 
         <AnalyticsErrorBoundary>
           {module === ANALYTICS_MODULE_OVERVIEW && (
-            <div>
-              {loading && !data ? <AnalyticsLoading /> : null}
-              {error ? <AnalyticsError message={error} onRetry={retry} /> : null}
-              {data ? (
-                <div className="analyticsMetricsGrid">
-                  <MetricCard label="Действий" value={formatNumber(data.actions_total)} tone="blue" icon={ActivityIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Длительность" value={formatNumber(data.total_duration_min)} unit="мин" tone="teal" icon={ClockIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Крит. путь" value={formatNumber(data.critical_path_min)} unit="мин" tone="warning" icon={CriticalIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} tone="amber" icon={HandoffIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Открыто" value={formatNumber(data.open_questions)} tone="orange" icon={QuestionIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Критично" value={formatNumber(data.critical_questions)} tone="danger" icon={CriticalIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="slate" icon={SessionIcon} sparklineItems={sparklineItems} />
-                  <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="slate" icon={ProjectIcon} sparklineItems={sparklineItems} />
-                  {data.properties_summary ? (
-                    <>
-                      <MetricCard label="Свойств" value={formatNumber(data.properties_summary.total)} tone="accent" icon={TableIcon} sparklineItems={sparklineItems} />
-                      <MetricCard label="Пересчитано" value={formatNumber(data.properties_summary.recalculated_count)} tone="success" icon={ChartBarIcon} sparklineItems={sparklineItems} />
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+            <AnalyticsOverviewPanel
+              data={data}
+              quality={quality}
+              recalcRows={recalcRows}
+              loading={loading}
+              error={error}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              onRetry={retry}
+              onNavigate={setModule}
+            />
           )}
           {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
           {module === ANALYTICS_MODULE_PROPERTIES && <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} />}
-          {module === ANALYTICS_MODULE_DASHBOARDS && (
-            <AnalyticsDashboardsPanel scope={scope} scopeId={scopeId} data={data} loading={loading} error={error} retry={retry} />
-          )}
         </AnalyticsErrorBoundary>
       </section>
     </main>

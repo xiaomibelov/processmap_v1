@@ -22,7 +22,7 @@ const PRESETS = ["none", "viewer", "editor", "manager", "admin"];
 
 function permissionKeys(entityType) {
   if (entityType === "analytics") {
-    return ["dk_view", "dk_export", "fk_view", "fk_export", "manage_dashboards"];
+    return ["dk_view", "dk_export", "fk_view", "fk_export"];
   }
   if (entityType === "users" || entityType === "folders" || entityType === "workspaces") {
     return ["view", "edit", "manage", "admin"];
@@ -41,7 +41,6 @@ function presetPermissions(entityType, preset) {
     all.dk_export = true;
     all.fk_export = true;
     if (preset === "editor") return all;
-    all.manage_dashboards = true;
     if (preset === "manager") return all;
     return all;
   }

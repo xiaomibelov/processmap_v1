@@ -14,7 +14,7 @@ const ROLE_ORDER = ["org_owner", "org_admin", "editor", "project_manager", "org_
 export function usePermissionKeys(entityType) {
   return useMemo(() => {
     if (entityType === "analytics") {
-      return ["dk_view", "dk_export", "fk_view", "fk_export", "manage_dashboards"];
+      return ["dk_view", "dk_export", "fk_view", "fk_export"];
     }
     if (entityType === "users" || entityType === "folders" || entityType === "workspaces") {
       return ["view", "edit", "manage", "admin"];
@@ -33,7 +33,7 @@ export function formatPermissionKey(key) {
     dk_export: "DK Export",
     fk_view: "FK View",
     fk_export: "FK Export",
-    manage_dashboards: "Dashboards",
+
   };
   return map[key] || key;
 }

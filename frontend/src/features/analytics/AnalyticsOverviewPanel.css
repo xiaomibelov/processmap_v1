@@ -1,0 +1,400 @@
+.analyticsOverviewPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px;
+}
+
+.analyticsOverviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+
+.analyticsOverviewHeaderMain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.analyticsOverviewTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analyticsOverviewScopeId {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--analysis-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsOverviewMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--analysis-muted);
+}
+
+.analyticsOverviewStale {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: hsl(var(--warning));
+}
+
+.analyticsOverviewRefreshBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--bg-soft) / 0.6);
+  color: var(--analysis-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.analyticsOverviewRefreshBtn:hover:not(:disabled) {
+  background: hsl(var(--bg-soft));
+  border-color: hsl(var(--accent) / 0.4);
+}
+
+.analyticsOverviewRefreshBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.analyticsOverviewSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.analyticsOverviewSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.analyticsOverviewSectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--analysis-text);
+}
+
+.analyticsOverviewSectionAction {
+  font-size: 12px;
+}
+
+.analyticsOverviewSectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analyticsOverviewLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: hsl(var(--accent));
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.analyticsOverviewLink:hover {
+  text-decoration: underline;
+}
+
+.analyticsOverviewSummaryGrid,
+.analyticsOverviewQualityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .analyticsOverviewSummaryGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .analyticsOverviewQualityGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .analyticsOverviewSummaryGrid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+.analyticsOverviewMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: hsl(var(--bg-soft) / 0.4);
+  border: 1px solid hsl(var(--border) / 0.5);
+  min-width: 0;
+}
+
+.analyticsOverviewMetricValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--analysis-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analyticsOverviewMetricUnit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--analysis-muted);
+  margin-left: 4px;
+}
+
+.analyticsOverviewMetricLabel {
+  font-size: 11px;
+  color: var(--analysis-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analyticsOverviewQualityHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: hsl(var(--warning) / 0.08);
+  border: 1px solid hsl(var(--warning) / 0.2);
+  color: hsl(var(--warning));
+  font-size: 12px;
+}
+
+.analyticsOverviewAttentionList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analyticsOverviewAttentionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border) / 0.5);
+  background: hsl(var(--bg-soft) / 0.3);
+  color: var(--analysis-text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.analyticsOverviewAttentionRow:hover {
+  background: hsl(var(--bg-soft) / 0.6);
+}
+
+.analyticsOverviewAttentionRow--warning {
+  border-color: hsl(var(--warning) / 0.3);
+  background: hsl(var(--warning) / 0.06);
+}
+
+.analyticsOverviewAttentionRow--danger {
+  border-color: hsl(var(--danger) / 0.3);
+  background: hsl(var(--danger) / 0.06);
+}
+
+.analyticsOverviewAttentionRow--info {
+  border-color: hsl(var(--accent) / 0.3);
+  background: hsl(var(--accent) / 0.06);
+}
+
+.analyticsOverviewAttentionBadge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--analysis-muted);
+}
+
+.analyticsOverviewAttentionRow--warning .analyticsOverviewAttentionBadge {
+  background: hsl(var(--warning));
+}
+
+.analyticsOverviewAttentionRow--danger .analyticsOverviewAttentionBadge {
+  background: hsl(var(--danger));
+}
+
+.analyticsOverviewAttentionRow--info .analyticsOverviewAttentionBadge {
+  background: hsl(var(--accent));
+}
+
+.analyticsOverviewAttentionTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsOverviewAttentionCount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.analyticsOverviewProcessList,
+.analyticsOverviewSessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analyticsOverviewProcessRow,
+.analyticsOverviewSessionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: hsl(var(--bg-soft) / 0.3);
+  font-size: 13px;
+}
+
+.analyticsOverviewProcessTitle,
+.analyticsOverviewSessionTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--analysis-text);
+}
+
+.analyticsOverviewProcessMeta,
+.analyticsOverviewSessionMeta {
+  color: var(--analysis-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.analyticsOverviewEmpty {
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  color: var(--analysis-muted);
+  font-size: 13px;
+}
+
+/* Property table chips & meta (rendered by AnalyticsPropertiesPanel inside AnalyticsPage) */
+.analyticsPropertyChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid hsl(var(--border) / 0.4);
+}
+
+.analyticsPropertyChipsLabel {
+  font-size: 12px;
+  color: var(--analysis-muted);
+  white-space: nowrap;
+}
+
+.analyticsPropertyChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--bg-soft) / 0.4);
+  color: var(--analysis-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.analyticsPropertyChip:hover {
+  background: hsl(var(--bg-soft));
+}
+
+.analyticsPropertyChip--active {
+  background: hsl(var(--accent) / 0.12);
+  border-color: hsl(var(--accent) / 0.5);
+  color: hsl(var(--accent));
+}
+
+.analyticsPropertyChip--calc {
+  border-color: hsl(var(--warning) / 0.4);
+  background: hsl(var(--warning) / 0.06);
+}
+
+.analyticsPropertyChip--calc.analyticsPropertyChip--active {
+  background: hsl(var(--warning) / 0.16);
+  border-color: hsl(var(--warning) / 0.7);
+}
+
+.analyticsPropertyChipCount {
+  font-size: 10px;
+  color: var(--analysis-muted);
+  background: hsl(var(--bg-soft));
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.analyticsPropertyChip--active .analyticsPropertyChipCount {
+  color: hsl(var(--accent));
+  background: hsl(var(--accent) / 0.1);
+}
+
+.analyticsTableMeta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 0;
+}
+
+.analyticsTableMetaInfo {
+  font-size: 11px;
+  color: var(--analysis-muted);
+}
+
+.analyticsPropName--calc {
+  font-weight: 600;
+}
+
