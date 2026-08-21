@@ -7,12 +7,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from ..ai.process_projection import build_process_projection, projection_digest
 from ..legacy.request_context import request_active_org_id, require_authenticated_user
 from ..rag.indexer import delete_document, index_document
 from ..rag.search import BM25Index
-from ..rag.storage_rag import list_rag_chunks
+from ..rag.storage_rag import list_rag_chunks, upsert_rag_source_status
 from ..services.org_workspace import require_org_member_for_enterprise
-from ..storage import get_storage, get_rag_settings
+from ..storage import _connect, get_storage, get_rag_settings
+from .admin import _admin_context
 
 router = APIRouter(tags=["rag"])
 
@@ -158,6 +160,8 @@ def rag_index(inp: RagIndexIn, request: Request) -> Dict[str, Any]:
         "session_id": session_id,
         "session_title": _text(getattr(session, "title", "")),
     }
+    if source_type == "bpmn_xml":
+        metadata["projection_digest"] = projection_digest(build_process_projection(session))
 
     if inp.force:
         from ..rag.storage_rag import get_rag_document_by_source
@@ -276,6 +280,103 @@ def rag_index_product_actions(inp: ProductActionsRagIndexIn, request: Request) -
         "indexed": indexed,
         "unchanged": unchanged,
         "skipped": skipped,
+        "failed": failed,
+        "chunks_created": chunks_created,
+        "results": results,
+    }
+
+
+class RagIndexAllIn(BaseModel):
+    org_id: Optional[str] = Field(default=None, description="Target org (defaults to request active org)")
+    force: bool = Field(default=False, description="Reindex even if content hash matches")
+
+
+@router.post("/api/rag/index-all")
+def rag_index_all(inp: RagIndexAllIn, request: Request) -> Dict[str, Any]:
+    """Admin/org-admin bulk reindex of bpmn_xml for all sessions in an org."""
+    _uid, _is_admin, default_org_id, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+
+    target_org_id = _text(inp.org_id) or _text(default_org_id) or "org_default"
+
+    rows = []
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT id, title, bpmn_xml, bpmn_xml_version
+              FROM sessions
+             WHERE org_id = ?
+               AND bpmn_xml IS NOT NULL
+               AND trim(bpmn_xml) != ''
+               AND (deleted_at = 0 OR deleted_at IS NULL)
+            """,
+            [target_org_id],
+        ).fetchall()
+
+    total = 0
+    indexed = 0
+    unchanged = 0
+    failed = 0
+    chunks_created = 0
+    results: List[Dict[str, Any]] = []
+
+    for row in rows:
+        sid = _text(row["id"])
+        title = _text(row["title"])
+        xml = _text(row["bpmn_xml"])
+        total += 1
+        if not sid or not xml:
+            continue
+
+        projection = build_process_projection(
+            type("Session", (), {"nodes": [], "edges": [], "bpmn_xml": xml, "id": sid, "version": 0})()
+        )
+        digest = projection_digest(projection)
+        metadata = {
+            "source_type": "bpmn_xml",
+            "source_id": sid,
+            "session_id": sid,
+            "session_title": title,
+            "projection_digest": digest,
+        }
+
+        if inp.force:
+            from ..rag.storage_rag import get_rag_document_by_source
+            existing = get_rag_document_by_source(target_org_id, "bpmn_xml", sid)
+            if existing:
+                delete_document(target_org_id, existing["doc_id"])
+
+        try:
+            result = index_document(
+                org_id=target_org_id,
+                source_type="bpmn_xml",
+                source_id=sid,
+                content=xml,
+                metadata=metadata,
+                source_version=int(row["bpmn_xml_version"] or 0) or None,
+            )
+            upsert_rag_source_status(target_org_id, "bpmn_xml", sid)
+            created = int(result.get("chunks_created") or 0)
+            was_updated = bool(result.get("was_updated"))
+            chunks_created += created
+            if was_updated:
+                indexed += 1
+                status = "indexed"
+            else:
+                unchanged += 1
+                status = "unchanged"
+            results.append({"session_id": sid, "status": status, "doc_id": result.get("doc_id"), "chunks_created": created})
+        except Exception as exc:
+            failed += 1
+            results.append({"session_id": sid, "status": "failed", "error": _text(exc) or "index_failed"})
+
+    return {
+        "ok": True,
+        "org_id": target_org_id,
+        "total": total,
+        "indexed": indexed,
+        "unchanged": unchanged,
         "failed": failed,
         "chunks_created": chunks_created,
         "results": results,

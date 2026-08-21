@@ -4757,6 +4757,16 @@ class Storage:
                     ],
                 )
             con.commit()
+            # AGENT-2: фоновая переиндексация bpmn_xml после успешного сохранения.
+            # Локальный импорт, чтобы избежать циклического импорта на старте.
+            try:
+                from .rag_tasks import index_session_bpmn_xml
+
+                bpmn_xml_value = str(values.get("bpmn_xml") or "").strip()
+                if bpmn_xml_value:
+                    index_session_bpmn_xml.delay(sid, org_scope)
+            except Exception as exc:
+                logger.warning("save: failed to enqueue rag index task for %s: %s", sid, exc)
 
     def patch_session_meta(
         self,

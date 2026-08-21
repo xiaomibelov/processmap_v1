@@ -138,9 +138,65 @@
 | Confirm pending edit → `POST /agent/resume` 200/SSE, изменение применено | Canvas + PATCH /sessions/{id} без 404/409 | TBD | |
 | Reject pending edit → статус `rejected` | `agent_pending_edits.status=rejected` | TBD | |
 
+## Контур `feat/agent-2-schema-context`
+
+Цель: устранить «схема пуста» для AS IS-сессий, у которых истина в `bpmn_xml`,
+а `nodes/edges` пусты; обеспечить текущую схему в контексте сервисного агента.
+
+### Изменения в коде
+
+- **Backend (монолит):**
+  - `backend/app/ai/process_projection.py` — `build_process_projection` строит
+    projection из `bpmn_xml`, если `nodes/edges` пусты; digest считается по
+    steps/edges/schema.
+  - `backend/app/rag_tasks.py` — Celery-task `index_session_bpmn_xml` для
+    переиндексации `bpmn_xml` сессии (самодостаточный, без импортов из
+    `backend/app/tasks.py`).
+  - `backend/app/storage.py` — после `SessionStorage.save()` ставится
+    `.delay()` задача на индексацию (локальный импорт, ошибки enqueue
+    не ломают сохранение).
+  - `backend/app/routers/rag.py` — `POST /api/rag/index-all` (admin/org-admin)
+    для bulk-переиндексации всех сессий org с `bpmn_xml`; в метаданные
+    `bpmn_xml` пишется `projection_digest`.
+  - `backend/app/celery_app.py` — регистрация `rag_tasks` для worker.
+
+- **Backend (agent service):**
+  - `backend/services/agent/memory/context.py` — `load_context` fallback:
+    если проекция пуста, подменяет `steps` из top-3 RAG-чанков текущей сессии
+    (`source_type=bpmn_xml`, `session_id`-фильтр), пересчитывает digest.
+  - `backend/services/agent/memory/chat.py` — `_search_rag_prioritized` для
+    `doc_qa`/`schema_overview`: сначала поиск по текущей сессии, потом по
+    глобальному корпусу; `rag_context_chunks` подмешиваются в prompt
+    `_build_user_prompt` и `schema_overview`.
+
+- **Тесты:**
+  - `backend/tests/test_process_projection.py` — XML-сессия, session-state
+    регрессия, digest стабилен.
+  - `backend/tests/test_rag_tasks.py` — rag_tasks importable и не зависит от
+    `backend/app/tasks.py`.
+  - `backend/tests/test_rag_api.py` — `projection_digest` в метаданных,
+    `POST /api/rag/index-all`.
+  - `backend/services/agent/tests/test_context.py` — fallback на RAG при пустой
+    проекции.
+  - `backend/services/agent/tests/test_branches.py` — `doc_qa` ищет сначала
+    текущую сессию.
+
+### Приёмка на stage
+
+| Критерий | Артефакт | Вердикт | Дата |
+|---|---|---|---|
+| AS IS сессия с шагом «Процедить»: свободный вопрос «что тут?» → ответ описывает шаг и соседей | Тело SSE / JSON ответа | TBD | |
+| Rename «Процедить 1234» → карточка confirm с правильным узлом → Reject → без ошибки | `agent_pending_edits.status=rejected`, DOM | TBD | |
+| Session-state сессия отвечает как раньше | Регрессионный чат | TBD | |
+| Router cache жив, 0 LLM-вызовов на открытие/history | `llm_usage` count | TBD | |
+| После bulk `/api/rag/index-all` все AS IS сессии org имеют `rag_sources.last_indexed_at` | SQL-выборка | TBD | |
+| Изменение XML сессии → через ≤30 сек чанки переиндексированы (worker log) | `rag_sources.last_indexed_at` обновился | TBD | |
+
 ## Известные ограничения
 
 - `test_status_404_foreign_user` падает на локальной dev-БД (возвращает 200
   вместо 404). Это предсуществующая особенность/баг, не в scope данного контура.
 - Прямые INSERT в `llm_providers` на боевой/приёмочной БД запрещены;
   провайдер и промпты настраиваются только через `/admin/llm`.
+- Гибридный поиск (BM25 ⊕ vector) и embedding-sidecar — вне scope данного
+  контура, будут реализованы следующим PR (PR-2 по `AGENT2_PLAN.md`).
