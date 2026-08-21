@@ -838,6 +838,7 @@ def _xlsx_response(
 
 _EE_TIME_KEY = "ee_time"
 _INGREDIENT_VALUE_KEY = "ingredient_value"
+_INGREDIENT_VALUE_PRESENT = "ingredient_value_present"
 _INGREDIENT_KEY = "ingredient"
 _EE_OPERATION_KEY = "ee_operation"
 _INGREDIENT_UM_KEY = "ingredient_um"
@@ -849,31 +850,60 @@ _RECALC_CAPTURE_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY, _INGREDIENT_KEY}
 _MISSING = object()
 
 
-def compute_source(ee_time: float, ingredient_value: Any) -> float | str:
-    """Compute the Source value for the ?mode=source export.
+_SOURCE_PROPERTY = "property"
+_SOURCE_DEFAULT = "расчёт по умолчанию"
+_SOURCE_NO_DATA = "нет данных"
 
-    - ``ingredient_value`` is missing (the property key is absent) -> ``ee_time * 1.0``.
-    - ``ingredient_value`` is an empty string -> ``"нет данных"``.
-    - Otherwise the value is normalized (trim, strip trailing commas, ``"," -> "."``),
-      parsed as float, and if ``> 0`` the parsed value is returned as Source.
-    - Any parse error or non-positive value -> ``"нет данных"``.
+
+def classify_recalc_value(
+    ee_time: float, ingredient_value: Any, ingredient_value_present: bool
+) -> Dict[str, Any]:
+    """Classify an ingredient_value into A/B/C and compute result/source.
+
+    Returns a dict with:
+    - ``result``: ``float | None`` — ee_time multiplied by the parsed coefficient,
+      or ``None`` for case B.
+    - ``source``: one of ``property``, ``расчёт по умолчанию``, ``нет данных``.
+    - ``is_invalid``: ``True`` only for case B (empty/non-numeric ingredient_value).
+
+    Cases:
+    A. ``ingredient_value`` property is absent -> result = ee_time, source = default.
+    B. Property exists but value is empty/whitespace/non-numeric text -> result = None,
+       source = no_data, is_invalid = True.
+    C. Property exists and value is a number (including 0) -> result = ee_time * value,
+       source = property.
+
+    Note: comma decimal separator (e.g. "0,5") is intentionally NOT normalized;
+    it falls into case B and should be reported as an open question.
     """
-    if ingredient_value is _MISSING:
-        return round(ee_time * 1.0, 2)
+    if not ingredient_value_present:
+        return {
+            "result": round(float(ee_time), 2),
+            "source": _SOURCE_DEFAULT,
+            "is_invalid": False,
+        }
 
-    raw = _text(ingredient_value)
+    raw = _text(ingredient_value).strip()
     if raw == "" or raw == "—":
-        return "нет данных"
+        return {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True}
 
-    normalized = raw.strip().rstrip(",").replace(",", ".")
     try:
-        parsed = float(normalized)
+        parsed = float(raw)
     except ValueError:
-        return "нет данных"
+        return {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True}
 
-    if parsed > 0:
-        return round(parsed, 2)
-    return "нет данных"
+    return {
+        "result": round(float(ee_time) * parsed, 2),
+        "source": _SOURCE_PROPERTY,
+        "is_invalid": False,
+    }
+
+
+# Backward-compatible alias kept for callers that only need the source label.
+def compute_source(ee_time: float, ingredient_value: Any) -> str:
+    """Return only the source label for the legacy compute_source interface."""
+    present = ingredient_value is not _MISSING
+    return classify_recalc_value(ee_time, ingredient_value, present)["source"]
 
 
 # Backward-compatible alias for tests and existing callers.
@@ -962,13 +992,16 @@ def _build_recalculated_rows(
 
 
 def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Group Camunda properties by BPMN element and compute Source for the source export.
+    """Group Camunda properties by BPMN element and compute Source/result.
 
     Emits one row per element that has a numeric ``ee_time``. Missing
     ``ingredient_value`` (the property key is absent) is treated as a multiplier of
     ``1.0``. Empty or unparseable ``ingredient_value`` yields ``Source = "нет данных"``.
     ``ee_time``, ``ee_operation``, ``ingredient`` and ``ingredient_um`` are carried
     through when present.
+
+    This is the single source of truth for the analytics "Расчёт" table, the
+    ``?mode=source`` export and the empty-ingredient blocker.
     """
     by_element: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -991,6 +1024,7 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "bpmn_name": _text(row.get("bpmn_name")),
                 _EE_TIME_KEY: None,
                 _INGREDIENT_VALUE_KEY: _MISSING,
+                _INGREDIENT_VALUE_PRESENT: False,
                 _INGREDIENT_KEY: None,
                 _EE_OPERATION_KEY: "",
                 _INGREDIENT_UM_KEY: "",
@@ -1006,6 +1040,7 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             # The registry normalises an empty Camunda value to "—"; treat it as empty.
             raw = _text(row.get("value"))
             element[_INGREDIENT_VALUE_KEY] = "" if raw == "—" else raw
+            element[_INGREDIENT_VALUE_PRESENT] = True
         elif name == _INGREDIENT_KEY:
             element[_INGREDIENT_KEY] = _text(row.get("value"))
         elif name == _EE_OPERATION_KEY:
@@ -1020,8 +1055,16 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         ee_val = _parse_recalc_number(element.get(_EE_TIME_KEY))
         if ee_val is None:
             continue  # ee_time is required to emit a source row
-        source = compute_source(ee_val, element.get(_INGREDIENT_VALUE_KEY))
-        ing_display = "" if element.get(_INGREDIENT_VALUE_KEY) is _MISSING else element[_INGREDIENT_VALUE_KEY]
+        ing_present = bool(element.get(_INGREDIENT_VALUE_PRESENT))
+        classification = classify_recalc_value(
+            ee_val, element.get(_INGREDIENT_VALUE_KEY), ing_present
+        )
+        if ing_present:
+            ing_display = "" if element.get(_INGREDIENT_VALUE_KEY) is _MISSING else element[_INGREDIENT_VALUE_KEY]
+            ing_um = element.get(_INGREDIENT_UM_KEY) or ""
+        else:
+            ing_display = ""
+            ing_um = ""
         sid = element["session_id"]
         out_rows.append({
             "bpmn_id": element["bpmn_id"],
@@ -1030,8 +1073,9 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             _EE_OPERATION_KEY: element.get(_EE_OPERATION_KEY) or "",
             _INGREDIENT_VALUE_KEY: ing_display,
             _INGREDIENT_KEY: element.get(_INGREDIENT_KEY) or "",
-            _INGREDIENT_UM_KEY: element.get(_INGREDIENT_UM_KEY) or "",
-            "source": source,
+            _INGREDIENT_UM_KEY: ing_um,
+            "result": classification["result"],
+            "source": classification["source"],
             "session_id": sid,
             "session_title": element["session_title"],
             "workspace_id": element["workspace_id"],
@@ -1063,7 +1107,7 @@ def export_properties_recalculated_xlsx(
                 "ingredient_value": r[_INGREDIENT_VALUE_KEY],
             }
             for r in source_rows
-            if r["source"] == "нет данных"
+            if r["source"] == _SOURCE_NO_DATA
         ]
         if invalid_tasks:
             return JSONResponse(
@@ -1091,7 +1135,6 @@ def export_properties_recalculated_xlsx(
         formats = {
             _EE_TIME_KEY: {"num_format": "0.00"},
             _INGREDIENT_VALUE_KEY: {"num_format": "0.00"},
-            "source": {"num_format": "0.00"},
         }
         return _xlsx_response(source_rows, f"properties-source-{scope}-{scope_id}.xlsx", columns, formats)
 
@@ -1127,13 +1170,14 @@ def get_properties_recalculation(
 ):
     """JSON recalculation rows for the Analytics "Расчёт" UI section.
 
-    Same grouping/resolution as the recalculated xlsx export, including the
-    ingredient-catalog backfill (property -> catalog -> none).
+    Uses the same A/B/C classifier as the ``?mode=source`` export so that the
+    table, the "Расчёт (N)" counter, the blocker and the Excel export share a
+    single source of truth.
     """
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
-    recalc_rows = _build_recalculated_rows(rows, catalog_values=get_ingredient_values_by_name(oid))
+    recalc_rows = _build_source_rows(rows)
     resolved = sum(1 for r in recalc_rows if r.get("result") is not None)
     return _ok(
         {"rows": recalc_rows, "count": len(recalc_rows), "resolved": resolved},
