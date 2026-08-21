@@ -295,7 +295,7 @@ export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, 
     }
 
     return result;
-  }, [rows, search, sort, valueTypeFilter, usageRange, familyFilter]);
+  }, [rows, search, sort, valueTypeFilter, usageRange, familyFilter, nameFilter]);
 }
 
 export default function AnalyticsPropertiesTable({

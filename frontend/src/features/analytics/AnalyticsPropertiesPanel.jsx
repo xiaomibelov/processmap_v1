@@ -210,6 +210,8 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [page, setPage] = useState(1);
 
+  const [nameFilter, setNameFilter] = useState([]);
+
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [compareRows, setCompareRows] = useState([]);
 
@@ -266,8 +268,6 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       recalcAbortRef.current = null;
     }
   }, [scope, scopeId]);
-
-  const [nameFilter, setNameFilter] = useState([]);
 
   // Drill-down from AnalyticsOverviewPanel: ?source=...&property=...
   const [drillDownApplied, setDrillDownApplied] = useState(false);
