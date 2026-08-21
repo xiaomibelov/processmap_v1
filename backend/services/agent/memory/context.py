@@ -158,6 +158,11 @@ def load_context(
     history = list_turns(sid, uid, oid, limit=history_limit)
 
     row = dict(session_row or {})
-    session = SimpleNamespace(id=sid, org_id=oid, project_id=str(row.get("project_id") or ""))
+    session = SimpleNamespace(
+        id=sid,
+        org_id=oid,
+        project_id=str(row.get("project_id") or ""),
+        diagram_state_version=int(row.get("diagram_state_version") or 0),
+    )
 
     return AgentContext(session=session, projection=projection, digest=digest, history=history)
