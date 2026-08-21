@@ -52,3 +52,7 @@
 ## 8. Обязательный финальный proof в каждом серьезном контуре
 - Короткий git-proof (`branch`, `HEAD`, `status`, `diffstat`).
 - Короткий handoff-proof (что именно было целью, что закрыто, какие риски/ограничения остались).
+
+## 9. Известные операционные проблемы деплоя
+
+- **deploy-stage.yml и server-only конфиги:** workflow деплоит на stage через `git checkout -f` в `/opt/processmap/app`. Локальные серверные конфиги (`.env`, `.env.stage`, `docker-compose.ssl.yml`, `docker-compose.prod.yml`, `docker-compose.prod.gateway.yml`, `backend/alembic.stage.ini`) предварительно копируются во временную директорию, затем принудительно удаляются из рабочего дерева/index перед `git checkout -f`, а после checkout восстанавливаются. Это предотвращает ошибку `error: Entry '.env' not uptodate. Cannot merge.`, возникающую, если файл изменён, помечен `assume-unchanged` или находится в неслитом состоянии после неудачного деплоя.
