@@ -115,6 +115,25 @@ jobs:
               fi
             done
 
+            # Ensure preserved server-only files do not block `git checkout -f`.
+            # They may be modified, assume-unchanged, or left in an unmerged state
+            # from a previous failed deploy. They are restored from PRESERVE_DIR below.
+            for path in \
+              .env \
+              .env.stage \
+              docker-compose.ssl.yml \
+              docker-compose.prod.yml \
+              docker-compose.prod.gateway.yml \
+              backend/alembic.stage.ini; do
+              git update-index --no-assume-unchanged -- "${path}" 2>/dev/null || true
+              git update-index --no-skip-worktree -- "${path}" 2>/dev/null || true
+              if git ls-files --error-unmatch "${path}" >/dev/null 2>&1; then
+                git rm -f -- "${path}" >/dev/null 2>&1 || true
+              else
+                rm -f -- "${path}" || true
+              fi
+            done
+
             # Full checkout makes the stage worktree consistent after a failed
             # previous checkout; server-only config files are restored below.
             git checkout -f "${DEPLOY_SHA}"
