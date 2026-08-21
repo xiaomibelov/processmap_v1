@@ -84,3 +84,61 @@ def test_projection_empty_session():
     assert proj["steps"] == [] and proj["edges"] == []
     assert proj["meta"]["nodes_count"] == 0
     assert projection_digest(proj)  # digest считается и для пустой схемы
+
+
+def test_projection_from_bpmn_xml_when_nodes_empty():
+    """Если nodes/edges пусты, но есть bpmn_xml, проекция строится из XML."""
+    xml = (
+        '<definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="p1">'
+        '<bpmn:userTask id="t1" name="Нарезать куриную грудку"/>'
+        '<bpmn:serviceTask id="t2" name="Упаковать готовое блюдо"/>'
+        '<bpmn:sequenceFlow id="f1" sourceRef="t1" targetRef="t2"/>'
+        '</bpmn:process>'
+        '</definitions>'
+    )
+    sess = Session(id="xml_sess", title="XML-only", bpmn_xml=xml, nodes=[], edges=[])
+    proj = build_process_projection(sess)
+    assert [s["id"] for s in proj["steps"]] == ["t1", "t2"]
+    assert proj["steps"][0]["name_ru"] == "Нарезать куриную грудку"
+    assert proj["steps"][0]["type"] == "userTask"
+    assert proj["edges"] == [{"from": "t1", "to": "t2"}]
+    assert proj["meta"]["session_id"] == "xml_sess"
+    assert proj["meta"]["nodes_count"] == 2
+
+
+def test_projection_prefers_session_state_when_nodes_present():
+    """Если nodes непустые, bpmn_xml игнорируется — поведение не меняется."""
+    xml = '<definitions><bpmn:process><bpmn:userTask id="t1" name="XML name"/></bpmn:process></definitions>'
+    nodes = [Node(id="s1", type="step", title="Session step")]
+    edges = [Edge(from_id="s1", to_id="s2")]
+    sess = Session(id="mixed", title="Mixed", bpmn_xml=xml, nodes=nodes, edges=edges)
+    proj = build_process_projection(sess)
+    assert [s["id"] for s in proj["steps"]] == ["s1"]
+    assert proj["steps"][0]["name_ru"] == "Session step"
+    assert proj["edges"] == [{"from": "s1", "to": "s2"}]
+
+
+def test_projection_from_bpmn_xml_digest_stable_and_ignores_meta():
+    a = build_process_projection(Session(id="a", title="A", bpmn_xml=_SAMPLE_BPMN_XML, nodes=[], edges=[]))
+    b = build_process_projection(Session(id="b", title="B", bpmn_xml=_SAMPLE_BPMN_XML, nodes=[], edges=[], version=99))
+    assert projection_digest(a) == projection_digest(b)
+    assert len(projection_digest(a)) == 32
+
+
+def test_projection_from_bpmn_xml_digest_changes_when_graph_changes():
+    a = build_process_projection(Session(id="a", title="A", bpmn_xml=_SAMPLE_BPMN_XML, nodes=[], edges=[]))
+    changed_xml = _SAMPLE_BPMN_XML.replace('name="Упаковать"', 'name="Упаковать по-другому"')
+    b = build_process_projection(Session(id="b", title="B", bpmn_xml=changed_xml, nodes=[], edges=[]))
+    assert projection_digest(a) != projection_digest(b)
+
+
+_SAMPLE_BPMN_XML = (
+    '<definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+    '<bpmn:process id="p1">'
+    '<bpmn:userTask id="t1" name="Нарезать"/>'
+    '<bpmn:userTask id="t2" name="Упаковать"/>'
+    '<bpmn:sequenceFlow id="f1" sourceRef="t1" targetRef="t2"/>'
+    '</bpmn:process>'
+    '</definitions>'
+)

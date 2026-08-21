@@ -56,6 +56,61 @@ def _to_json_text(value: Any) -> str:
         return "{}"
 
 
+def _search_rag_prioritized(
+    q: str,
+    session_id: str,
+    token: str,
+    org_id: str,
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Двухкруговой поиск: сначала чанки текущей сессии, потом глобальный корпус."""
+    results: List[Dict[str, Any]] = []
+    seen: set = set()
+
+    def _result_key(r: Dict[str, Any], idx: int) -> str:
+        cid = str(r.get("chunk_id") or "").strip()
+        return cid if cid else f"__idx_{idx}"
+
+    try:
+        session_rag = search_rag(
+            q,
+            session_id,
+            token,
+            org_id=org_id,
+            source_type="bpmn_xml",
+            top_k=top_k,
+            min_score=0.0,
+        )
+        for i, r in enumerate(list(session_rag.get("results") or [])):
+            key = _result_key(r, i)
+            if key not in seen:
+                seen.add(key)
+                results.append(r)
+    except Exception:
+        pass
+
+    if len(results) < top_k:
+        try:
+            global_rag = search_rag(
+                q,
+                session_id,
+                token,
+                org_id=org_id,
+                source_type="",
+                top_k=top_k,
+                min_score=0.0,
+            )
+            for i, r in enumerate(list(global_rag.get("results") or [])):
+                key = _result_key(r, i)
+                if key not in seen:
+                    seen.add(key)
+                    results.append(r)
+        except Exception:
+            pass
+
+    return results[:top_k]
+
+
 def _step_ids(projection: Dict[str, Any]) -> set:
     return {str(s.get("id") or "").strip() for s in (projection.get("steps") or []) if str(s.get("id") or "").strip()}
 
@@ -174,6 +229,17 @@ def _build_user_prompt(ctx: AgentContext, payload: AgentChatIn) -> str:
         "=== BPMN-схема ===",
         projection_text,
     ]
+    rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
+    if rag_chunks:
+        chunk_lines = []
+        for c in rag_chunks[:5]:
+            eid = str(c.get("element_id") or "").strip()
+            name = str(c.get("element_name") or "").strip()
+            text = str(c.get("chunk_text") or "").strip()
+            header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
+            chunk_lines.append(f"{header}: {text}")
+        parts.append("=== Дополнительный контекст из BPMN/RAG ===")
+        parts.append("\n".join(chunk_lines))
     if history_text:
         parts.append("=== История диалога ===")
         parts.append(history_text)
@@ -396,11 +462,21 @@ def _run_schema_overview_branch(
         )
         return out
 
-    prompt_text = (
+    parts = [
         "Кратко опиши BPMN-схему ниже на русском языке. "
         "Не более 400 токенов. Схема:\n\n"
-        f"{_to_json_text(ctx.projection)}"
-    )
+        f"{_to_json_text(ctx.projection)}",
+    ]
+    rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
+    if rag_chunks:
+        parts.append("Дополнительный контекст из BPMN/RAG:\n")
+        for c in rag_chunks[:5]:
+            eid = str(c.get("element_id") or "").strip()
+            name = str(c.get("element_name") or "").strip()
+            text = str(c.get("chunk_text") or "").strip()
+            header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
+            parts.append(f"{header}: {text}")
+    prompt_text = "\n\n".join(parts)
     result = complete(
         FEATURE,
         payload={"input": prompt_text},
@@ -442,16 +518,13 @@ def _run_doc_qa_branch(
     client_turn_id: Optional[str] = None,
 ) -> AgentChatOut:
     try:
-        rag = search_rag(
+        results = _search_rag_prioritized(
             payload.message,
             session_id,
             token,
             org_id=org_id,
-            source_type="",
             top_k=5,
-            min_score=0.1,
         )
-        results = rag.get("results") or [] if isinstance(rag, dict) else []
     except Exception:
         results = []
 
@@ -970,17 +1043,26 @@ def run_turn_stream(
     prompt_text: Optional[str] = None
     max_tokens_for_stream = MAX_TOKENS
     if intent == "schema_overview":
-        prompt_text = (
+        parts = [
             "Кратко опиши BPMN-схему ниже на русском языке. "
             "Не более 400 токенов. Схема:\n\n"
-            f"{_to_json_text(ctx.projection)}"
-        )
+            f"{_to_json_text(ctx.projection)}",
+        ]
+        rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
+        if rag_chunks:
+            parts.append("Дополнительный контекст из BPMN/RAG:\n")
+            for c in rag_chunks[:5]:
+                eid = str(c.get("element_id") or "").strip()
+                name = str(c.get("element_name") or "").strip()
+                text = str(c.get("chunk_text") or "").strip()
+                header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
+                parts.append(f"{header}: {text}")
+        prompt_text = "\n\n".join(parts)
         max_tokens_for_stream = SCHEMA_OVERVIEW_MAX_TOKENS
         schedule_memory_update(sid, oid, ctx.digest)
     elif intent == "doc_qa":
         try:
-            rag = search_rag(payload.message, sid, token, org_id=oid, source_type="", top_k=5, min_score=0.1)
-            results = rag.get("results") or [] if isinstance(rag, dict) else []
+            results = _search_rag_prioritized(payload.message, sid, token, org_id=oid, top_k=5)
         except Exception:
             results = []
         if results:

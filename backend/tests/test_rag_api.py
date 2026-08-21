@@ -58,11 +58,13 @@ class RagApiTests(unittest.TestCase):
         )
         self.session_id = self._seed_session()
 
-        from app.routers.rag import ProductActionsRagIndexIn, RagIndexIn, rag_index, rag_index_product_actions, rag_search
+        from app.routers.rag import ProductActionsRagIndexIn, RagIndexAllIn, RagIndexIn, rag_index, rag_index_all, rag_index_product_actions, rag_search
         self.rag_search = rag_search
         self.rag_index = rag_index
+        self.rag_index_all = rag_index_all
         self.rag_index_product_actions = rag_index_product_actions
         self.RagIndexIn = RagIndexIn
+        self.RagIndexAllIn = RagIndexAllIn
         self.ProductActionsRagIndexIn = ProductActionsRagIndexIn
 
     def tearDown(self):
@@ -176,7 +178,8 @@ class RagApiTests(unittest.TestCase):
     def test_router_is_registered(self):
         from app.routers import ROUTERS
         from app.routers.rag import router as rag_router
-        self.assertIn(rag_router, ROUTERS)
+        # ROUTERS — tuple of (router, openapi_tags).
+        self.assertIn((rag_router, ["rag"]), ROUTERS)
 
     def test_router_has_rag_tag(self):
         from app.routers.rag import router as rag_router
@@ -401,6 +404,47 @@ class RagApiTests(unittest.TestCase):
             sort_keys=True,
         )
         self.assertEqual(interview_before, interview_after)
+
+    def _index_all(self, org_id: str = None, force: bool = False):
+        inp = self.RagIndexAllIn(org_id=org_id or self.org_id, force=force)
+        return self.rag_index_all(inp, self._req(org_id))
+
+    def test_index_bpmn_xml_stores_projection_digest_in_metadata(self):
+        result = self._index("bpmn_xml")
+        self.assertTrue(result["ok"])
+        # Проверяем, что в чанках есть projection_digest из XML-проекции.
+        search = self._search("Нарезка куриная", source_type="bpmn_xml", session_id=self.session_id)
+        self.assertGreater(search["total"], 0)
+        self.assertTrue(any(
+            (r.get("metadata") or {}).get("projection_digest")
+            for r in search["results"]
+        ))
+
+    def test_index_all_bulk_reindexes_sessions(self):
+        # Сначала индексируем одну сессию.
+        self._index("bpmn_xml")
+        # Создаём вторую сессию с XML в той же org.
+        sid2 = self.get_storage().create(
+            "RAG Bulk Session 2",
+            project_id=self.project_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        session2 = self.get_storage().load(sid2, org_id=self.org_id, is_admin=True)
+        session2.bpmn_xml = (
+            "<definitions><bpmn:process><bpmn:userTask id='u1' name='Вторая сессия шаг'/></bpmn:process></definitions>"
+        )
+        session2.bpmn_xml_version = 1
+        self.get_storage().save(session2, org_id=self.org_id, is_admin=True)
+
+        result = self._index_all()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["org_id"], self.org_id)
+        self.assertGreaterEqual(result["total"], 2)
+        self.assertGreater(result["indexed"] + result["unchanged"], 0)
+        # Обе сессии найдены поиском.
+        search = self._search("Вторая сессия шаг", source_type="bpmn_xml", session_id=sid2)
+        self.assertGreater(search["total"], 0)
 
 
 if __name__ == "__main__":
