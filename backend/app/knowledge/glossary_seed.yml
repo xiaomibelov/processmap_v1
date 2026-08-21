@@ -1,0 +1,54 @@
+version: 1
+equipment:
+  - canon: kotel_1
+    title: Котёл
+    aliases: ["котёл", "котел", "варочный котёл", "котел варочный"]
+  - canon: pot_1
+    title: Кастрюля
+    aliases: ["кастрюля", "кастрюлька"]
+  - canon: pan_1
+    title: Сковорода
+    aliases: ["сковорода", "сковородка"]
+  - canon: scale_1
+    title: Весы
+    aliases: ["весы", "электронные весы"]
+  - canon: blast_chiller_1
+    title: Камера интенсивного охлаждения
+    aliases: ["шокер", "шоковое охлаждение", "камера охлаждения", "интенсивное охлаждение"]
+
+resources:
+  - canon: water
+    title: Вода
+    aliases: ["вода"]
+  - canon: salt
+    title: Соль
+    aliases: ["соль"]
+  - canon: broth
+    title: Бульон
+    aliases: ["бульон", "бульёна", "бульончик"]
+  - canon: bones
+    title: Кости
+    aliases: ["кости", "говяжьи кости", "кости говяжьи"]
+
+units:
+  - canon: g
+    title: грамм
+    aliases: ["г", "гр", "грамм", "грамма", "граммов"]
+  - canon: kg
+    title: килограмм
+    aliases: ["кг", "килограмм", "килограмма", "килограммов"]
+  - canon: ml
+    title: миллилитр
+    aliases: ["мл", "миллилитр", "миллилитра", "миллилитров"]
+  - canon: l
+    title: литр
+    aliases: ["л", "литр", "литра", "литров"]
+  - canon: pcs
+    title: штука
+    aliases: ["шт", "штука", "штук", "ед"]
+  - canon: min
+    title: минута
+    aliases: ["мин", "минута", "минут", "минуты"]
+  - canon: h
+    title: час
+    aliases: ["ч", "час", "часа", "часов"]

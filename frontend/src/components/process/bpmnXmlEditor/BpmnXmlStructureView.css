@@ -1,0 +1,95 @@
+.bpmnXmlStructureView {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  flex: 0 0 220px;
+  min-height: 0;
+  background: #f9fafb;
+  border-left: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.bpmnXmlStructureHeader {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.bpmnXmlStructureList,
+.bpmnXmlStructureChildren {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+}
+
+.bpmnXmlStructureChildren {
+  flex: none;
+}
+
+.bpmnXmlStructureNode {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.bpmnXmlStructureRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.bpmnXmlStructureRow:hover {
+  background: #e5e7eb;
+}
+
+.bpmnXmlStructureToggle {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.bpmnXmlStructureToggle:hover {
+  color: #111827;
+}
+
+.bpmnXmlStructureTogglePlaceholder {
+  width: 14px;
+  flex: 0 0 auto;
+}
+
+.bpmnXmlStructureLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #1f2937;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  text-align: left;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+.bpmnXmlStructureEmpty {
+  padding: 12px;
+  font-size: 12px;
+  color: #6b7280;
+}

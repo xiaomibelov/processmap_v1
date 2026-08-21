@@ -1,0 +1,336 @@
+/* fpc: processstage_actions_right_v1 */
+.stageCard{
+  position: relative;
+}
+
+.processHeaderRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding: 10px 12px 6px;
+}
+
+.processHeaderLeft{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width: 140px;
+}
+
+.processHeaderRight{
+  display:flex;
+  align-items:center;
+  margin-left:auto;
+}
+
+.processActions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.iconBtn{
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(0,0,0,.18);
+  color: rgba(255,255,255,.92);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.iconBtn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.iconBtn.aiBtn{
+  width: auto;
+  padding: 0 12px;
+  font-weight: 700;
+}
+
+.iconBtn.aiBtn.active{
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.28);
+}
+
+.viewPills{
+  display:inline-flex;
+  gap: 8px;
+  margin-left: 10px;
+}
+
+.stageTitleRow{
+  padding: 0 12px 10px;
+}
+
+.stageTitle{
+  color: rgba(255,255,255,.90);
+  font-weight: 800;
+}
+
+@media (max-width: 900px){
+  .processHeaderRow{
+    flex-wrap: wrap;
+    align-items:flex-start;
+  }
+  .processHeaderRight{
+    width: 100%;
+    justify-content:flex-start;
+  }
+}
+
+/* fpc: bpmn_xml_linenumbers_v1 */
+.bpmnStageRoot{
+  width: 100%;
+}
+
+.bpmnDiagramWrap,
+.bpmnXmlWrap{
+  padding: 0 12px 12px;
+}
+
+.bpmnDiagramWrap.isHidden,
+.bpmnXmlWrap.isHidden{
+  display: none;
+}
+
+.xmlCode{
+  width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  padding: 10px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(255,255,255,.92);
+}
+
+.xmlLine{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.xmlNo{
+  flex: 0 0 auto;
+  width: 46px;
+  text-align: right;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: rgba(255,255,255,.70);
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.10);
+  user-select: none;
+}
+
+.xmlText{
+  flex: 1 1 auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* fpc: process_toolbar_and_xml_view_v1 */
+.processStageRoot{
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0,0,0,.28);
+}
+
+.processStageHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+}
+
+.processStageHeaderLeft{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width: 220px;
+}
+
+.processStageTitle{
+  font-weight: 700;
+  color: rgba(255,255,255,.92);
+}
+
+.processStageSub{
+  color: rgba(255,255,255,.70);
+  font-size: 13px;
+}
+
+.processStageHeaderRight{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap: nowrap;
+}
+
+.seg{
+  display:inline-flex;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  border-radius: 12px;
+  overflow:hidden;
+}
+
+.segBtn{
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segBtn.active{
+  background: rgba(0,0,0,.22);
+  color: rgba(255,255,255,.92);
+}
+
+.iconBtn{
+  height: 30px;
+  min-width: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.90);
+  font-weight: 700;
+  cursor: pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  white-space:nowrap;
+}
+
+.iconBtn.on{
+  background: rgba(79, 110, 255, .32);
+  border-color: rgba(120,160,255,.38);
+}
+
+.iconBtn:disabled,
+.segBtn:disabled{
+  opacity: .45;
+  cursor: default;
+}
+
+.processStageBody{
+  padding: 12px;
+}
+
+.processStageEmpty{
+  color: rgba(255,255,255,.78);
+  padding: 20px;
+}
+
+.bpmnStageRoot{
+  width: 100%;
+}
+
+.xmlPane{
+  width: 100%;
+}
+
+.xmlViewer{
+  margin-top: 10px;
+  width: 100%;
+  height: 420px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(120,160,255,.22);
+  background: rgba(0,0,0,.18);
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.xmlRow{
+  display:flex;
+  align-items:flex-start;
+  white-space: pre;
+}
+
+.xmlIdx{
+  width: 56px;
+  flex: 0 0 56px;
+  color: rgba(255,255,255,.45);
+  text-align:right;
+  padding-right: 12px;
+  user-select:none;
+}
+
+.xmlCode{
+  flex: 1 1 auto;
+  color: rgba(255,255,255,.90);
+  overflow: visible;
+}
+
+.fpcAiBadge{
+  max-width: 260px;
+  background: rgba(0,0,0,.62);
+  border: 1px solid rgba(120,160,255,.30);
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: rgba(255,255,255,.92);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+.fpcAiBadgeTitle{
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: rgba(255,255,255,.82);
+  margin-bottom: 6px;
+}
+
+.fpcAiBadgeQ{
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255,255,255,.90);
+  margin-top: 4px;
+}
+
+/* fpc: xml_wrap_fix_v1 */
+.xmlViewer{
+  overflow-x: hidden;
+}
+
+.xmlRow{
+  white-space: normal;
+}
+
+.xmlCode{
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+/* protects header buttons even if some browser tries to expand */
+.processStageRoot,
+.processStageHeader,
+.processStageBody{
+  max-width: 100%;
+}

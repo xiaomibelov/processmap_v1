@@ -1,0 +1,45 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function readHeaderSource() {
+  return fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
+}
+
+test("undo/redo controls use compact icon buttons with russian accessibility labels", () => {
+  const source = readHeaderSource();
+  assert.ok(
+    source.includes('aria-label="Шаг назад"'),
+    "undo button must expose russian aria-label",
+  );
+  assert.ok(
+    source.includes('aria-label="Повторить отменённое действие"'),
+    "redo button must expose russian aria-label",
+  );
+  assert.equal(
+    />\s*Шаг назад\s*</.test(source),
+    false,
+    "undo button must be icon-only, not long text",
+  );
+  assert.equal(
+    />\s*Повторить отменённое действие\s*</.test(source),
+    false,
+    "redo button must be icon-only, not long text",
+  );
+});
+
+test("right header cluster keeps notification anchor and hides git mirror technical badge", () => {
+  const source = readHeaderSource();
+  const rightClusterIdx = source.indexOf('className="diagramToolbarRightStatus"');
+  const notificationAnchorIdx = source.indexOf('data-testid="diagram-toolbar-notification-anchor"');
+  assert.ok(rightClusterIdx !== -1, "right status cluster must exist");
+  assert.ok(notificationAnchorIdx > rightClusterIdx, "notification anchor must be inside right status cluster");
+  assert.equal(source.includes('data-testid="diagram-toolbar-save-status"'), false);
+  assert.equal(source.includes('data-testid="diagram-toolbar-publish-git-mirror-status"'), false);
+  assert.equal(source.includes("Git-зеркало:"), false);
+});

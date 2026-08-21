@@ -1,0 +1,1648 @@
+from __future__ import annotations
+
+import json
+import logging
+import math
+import re
+import time
+from typing import Any, Dict, List, Literal, Set
+
+logger = logging.getLogger(__name__)
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
+
+from ..legacy.request_context import request_active_org_id
+from ..schemas.analytics import AnalyticsActionsQuery, AnalyticsDashboardOut, AnalyticsPropertiesQuery
+from ..services.analytics_authz import require_analytics_scope
+from ..storage import _connect, get_storage
+from ..analytics_read_model import (
+    refresh_analytics_for_session,
+    refresh_project_analytics_snapshot,
+    refresh_workspace_analytics_snapshot,
+)
+from ..routers.process_properties_registry import _extract_camunda_rows, _text
+from ..recipe.storage import get_ingredient_values_by_name
+from ..utils.parsing import parse_recalc_number
+from ..routers.product_actions_registry import _registry_row
+from ..analytics_cache import (
+    ANALYTICS_CACHE_TTL_SEC,
+    cached_analytics,
+    invalidate_analytics_scope,
+)
+from ..services.advanced_calculation import BpmnAnalyzer
+from ..save_services.analytics_aggregator.tasks import (
+    refresh_all_workspaces_analytics_task,
+    refresh_session_analytics_task,
+)
+
+router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+
+def _org_id_from_request(request: Request) -> str:
+    return request_active_org_id(request)
+
+
+def _ok(data: Any, meta: Dict[str, Any]) -> Dict[str, Any]:
+    return {"success": True, "data": data, "meta": meta}
+
+
+def _refresh_snapshot(scope_type: str, scope_id: str, org_id: str) -> bool:
+    try:
+        if scope_type == "session":
+            refresh_analytics_for_session(scope_id, org_id)
+        elif scope_type == "project":
+            refresh_project_analytics_snapshot(scope_id, org_id)
+        elif scope_type == "workspace":
+            refresh_workspace_analytics_snapshot(scope_id, org_id)
+        else:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any]:
+    def _row(scope_type: str, scope_id: str, org_id: str):
+        with _connect() as con:
+            if scope_type == "session":
+                return con.execute(
+                    "SELECT * FROM analytics_session_snapshots WHERE session_id=? AND org_id=?",
+                    (scope_id, org_id),
+                ).fetchone()
+            if scope_type == "project":
+                return con.execute(
+                    "SELECT * FROM analytics_project_snapshots WHERE project_id=? AND org_id=?",
+                    (scope_id, org_id),
+                ).fetchone()
+            if scope_type == "workspace":
+                return con.execute(
+                    "SELECT * FROM analytics_workspace_snapshots WHERE workspace_id=? AND org_id=?",
+                    (scope_id, org_id),
+                ).fetchone()
+        return None
+
+    row = _row(scope_type, scope_id, org_id)
+    if not row:
+        _refresh_snapshot(scope_type, scope_id, org_id)
+        row = _row(scope_type, scope_id, org_id)
+    if not row:
+        return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
+
+    if scope_type == "session":
+        base = {
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "project_id": row["project_id"] or "",
+            "workspace_id": row["workspace_id"] or "",
+            "total_duration_min": row["total_duration_min"] or 0,
+            "critical_path_min": row["critical_path_min"],
+            "actions_total": row["actions_total"] or 0,
+            "actions_by_role": json.loads(row["actions_by_role_json"] or "{}"),
+            "actions_by_section": json.loads(row["actions_by_section_json"] or "{}"),
+            "actions_by_type": json.loads(row["actions_by_type_json"] or "{}"),
+            "handoffs_count": row["handoffs_count"] or 0,
+            "open_questions": row["open_questions"] or 0,
+            "critical_questions": row["critical_questions"] or 0,
+            "sessions_count": 1,
+            "projects_count": 0,
+            "computed_at": row["computed_at"] or 0,
+        }
+    elif scope_type == "project":
+        base = {
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "workspace_id": row["workspace_id"] or "",
+            "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
+            "critical_path_min": None,
+            "actions_total": row["total_actions"] or 0,
+            "actions_by_role": {},
+            "actions_by_section": {},
+            "actions_by_type": {},
+            "handoffs_count": row["handoffs_count"] or 0,
+            "open_questions": 0,
+            "critical_questions": row["total_critical_questions"] or 0,
+            "sessions_count": row["sessions_count"] or 0,
+            "projects_count": 1,
+            "computed_at": row["computed_at"] or 0,
+        }
+    elif scope_type == "workspace":
+        base = {
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
+            "critical_path_min": None,
+            "actions_total": row["total_actions"] or 0,
+            "actions_by_role": {},
+            "actions_by_section": {},
+            "actions_by_type": {},
+            "handoffs_count": row["handoffs_count"] or 0,
+            "open_questions": 0,
+            "critical_questions": row["total_critical_questions"] or 0,
+            "sessions_count": row["sessions_count"] or 0,
+            "projects_count": row["projects_count"] or 0,
+            "computed_at": row["computed_at"] or 0,
+        }
+    else:
+        raise HTTPException(status_code=400, detail="invalid scope_type")
+
+    base.update(_compute_dashboard_extras(scope_type, scope_id, org_id, base))
+    return base
+
+
+def _session_rows_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        if scope_type == "session":
+            rows = con.execute(
+                "SELECT id, title, project_id, created_at, updated_at FROM sessions WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "project":
+            rows = con.execute(
+                "SELECT id, title, project_id, created_at, updated_at FROM sessions WHERE project_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "workspace":
+            rows = con.execute(
+                "SELECT s.id, s.title, s.project_id, s.created_at, s.updated_at "
+                "FROM sessions s JOIN projects p ON p.id=s.project_id "
+                "WHERE p.workspace_id=? AND s.org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        else:
+            rows = []
+    return [dict(r) for r in rows]
+
+
+def _session_snapshots_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        if scope_type == "session":
+            rows = con.execute(
+                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "FROM analytics_session_snapshots WHERE session_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "project":
+            rows = con.execute(
+                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "FROM analytics_session_snapshots WHERE project_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "workspace":
+            rows = con.execute(
+                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "FROM analytics_session_snapshots WHERE workspace_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        else:
+            rows = []
+    return [dict(r) for r in rows]
+
+
+def _project_titles_for_scope(scope_type: str, scope_id: str, org_id: str) -> Dict[str, str]:
+    with _connect() as con:
+        if scope_type == "project":
+            row = con.execute(
+                "SELECT id, title FROM projects WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchone()
+            return {row["id"]: row["title"]} if row else {}
+        elif scope_type == "workspace":
+            rows = con.execute(
+                "SELECT id, title FROM projects WHERE workspace_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+            return {r["id"]: r["title"] for r in rows}
+    return {}
+
+
+def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base: Dict[str, Any]) -> Dict[str, Any]:
+    sessions_count = int(base.get("sessions_count") or 0)
+    actions_total = int(base.get("actions_total") or 0)
+    avg_duration = (
+        int(base.get("total_duration_min") or 0)
+        if scope_type == "session"
+        else int(round(base.get("avg_duration_min") or 0))
+    )
+    projects_count = int(base.get("projects_count") or 0)
+    project_id = str(base.get("project_id") or "")
+
+    session_rows = _session_rows_for_scope(scope_type, scope_id, org_id)
+    now = int(time.time())
+    cutoff = now - 3600
+    active_now = sum(1 for s in session_rows if int(s.get("updated_at") or 0) >= cutoff)
+
+    if scope_type == "workspace":
+        unique_processes = projects_count
+    elif scope_type == "project":
+        unique_processes = 1
+    elif scope_type == "session" and project_id:
+        unique_processes = 1
+    else:
+        unique_processes = 0
+
+    kpi = {
+        "total_sessions": sessions_count,
+        "total_tasks": actions_total,
+        "active_now": active_now,
+        "avg_session_duration_min": avg_duration,
+        "unique_processes": unique_processes,
+    }
+
+    snapshots = _session_snapshots_for_scope(scope_type, scope_id, org_id)
+
+    by_type = base.get("actions_by_type") or {}
+    if not by_type:
+        for snap in snapshots:
+            snap_by_type = json.loads(snap.get("actions_by_type_json") or "{}")
+            for k, v in snap_by_type.items():
+                by_type[k] = by_type.get(k, 0) + int(v)
+    completed = int(by_type.get("step") or 0)
+    active = sum(int(by_type.get(k) or 0) for k in ("decision", "fork", "join"))
+    pending = sum(int(by_type.get(k) or 0) for k in ("timer", "message"))
+    failed = int(by_type.get("loss_event") or 0)
+    task_statuses = {
+        "completed": completed,
+        "active": active,
+        "failed": failed,
+        "pending": pending,
+    }
+
+    points_map: Dict[str, int] = {}
+    heatmap_hour = [0] * 24
+    heatmap_weekday = [0] * 7
+    for s in session_rows:
+        created_at = int(s.get("created_at") or 0)
+        updated_at = int(s.get("updated_at") or 0)
+        if created_at > 0:
+            day = time.strftime("%Y-%m-%d", time.gmtime(created_at))
+            points_map[day] = points_map.get(day, 0) + 1
+        if updated_at > 0:
+            t = time.gmtime(updated_at)
+            heatmap_hour[t.tm_hour] += 1
+            heatmap_weekday[t.tm_wday] += 1
+
+    points = [{"period": d, "sessions": points_map[d]} for d in sorted(points_map.keys())]
+    if scope_type == "session":
+        points = []
+
+    element_types = {"task": 0, "gateway": 0, "event": 0, "subprocess": 0}
+    for snap in snapshots:
+        snap_by_type = json.loads(snap.get("actions_by_type_json") or "{}")
+        element_types["task"] += int(snap_by_type.get("step") or 0)
+        element_types["gateway"] += sum(int(snap_by_type.get(k) or 0) for k in ("decision", "fork", "join"))
+        element_types["event"] += sum(int(snap_by_type.get(k) or 0) for k in ("loss_event", "timer", "message"))
+
+    project_titles = _project_titles_for_scope(scope_type, scope_id, org_id)
+    session_project_map = {s["id"]: s.get("project_id") or "" for s in session_rows}
+
+    prop_rows = _properties_rows(scope_type, scope_id, org_id)
+    properties_summary = _properties_summary(prop_rows)
+    properties_summary["recalculated_count"] = sum(
+        1 for r in _build_recalculated_rows(prop_rows) if r.get("result") is not None
+    )
+
+    process_durations: Dict[str, Dict[str, Any]] = {}
+    for snap in snapshots:
+        sid = snap.get("session_id")
+        pid = session_project_map.get(sid, "")
+        title = project_titles.get(pid) or snap.get("session_id") or "—"
+        info = process_durations.setdefault(title, {"durations": [], "sessions_count": 0})
+        info["durations"].append(int(snap.get("total_duration_min") or 0))
+        info["sessions_count"] += 1
+
+    process_duration_list = []
+    for title, info in process_durations.items():
+        durations = info["durations"]
+        avg = int(round(sum(durations) / max(len(durations), 1)))
+        process_duration_list.append({
+            "process_title": title,
+            "avg_duration_min": avg,
+            "sessions_count": info["sessions_count"],
+        })
+    process_duration_list.sort(key=lambda x: x["avg_duration_min"], reverse=True)
+    process_duration_list = process_duration_list[:5]
+
+    return {
+        "kpi": kpi,
+        "task_statuses": task_statuses,
+        "session_trend": {"granularity": "day", "points": points},
+        "bpmn_element_types": element_types,
+        "process_duration": process_duration_list,
+        "activity_heatmap": {"by_hour": heatmap_hour, "by_weekday": heatmap_weekday},
+        "properties_summary": properties_summary,
+    }
+
+
+@router.get("/dashboard")
+def get_dashboard(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    def _compute():
+        data = _load_snapshot(scope, scope_id, oid)
+        return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
+
+    return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+
+
+@router.get("/{scope}/{scope_id}/dashboard")
+def get_dashboard_path(
+    request: Request,
+    scope: str,
+    scope_id: str,
+    org_id: str | None = Query(None),
+):
+    if scope not in ("workspace", "project", "session"):
+        raise HTTPException(status_code=400, detail="invalid scope_type")
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    def _compute():
+        data = _load_snapshot(scope, scope_id, oid)
+        return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
+
+    return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+
+
+@router.post("/refresh")
+def refresh_analytics(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """Trigger an asynchronous refresh of analytics snapshots for the scope.
+
+    For session/project scope the existing per-session task is used; for
+    workspace scope the nightly workspace refresh task is used. The endpoint
+    returns immediately with the task id; the dashboard endpoint will reflect
+    the new snapshot once the task completes.
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    session_ids = []
+    task_id = None
+    queued = True
+    try:
+        if scope == "session":
+            task = refresh_session_analytics_task.delay(scope_id, oid)
+            task_id = task.id
+        elif scope == "project":
+            # Refresh all sessions in the project so the project rollup is rebuilt.
+            session_ids = _session_ids_for_scope(scope, scope_id, oid)
+            for sid in session_ids:
+                refresh_session_analytics_task.delay(sid, oid)
+        else:
+            task = refresh_all_workspaces_analytics_task.delay()
+            task_id = task.id
+    except Exception as exc:
+        # Broker may be unavailable; don't block the UI button.
+        logger.warning("analytics refresh enqueue failed for %s/%s: %s", scope, scope_id, exc)
+        queued = False
+
+    try:
+        invalidate_analytics_scope("dashboard", scope, scope_id, oid)
+    except Exception:
+        pass
+
+    return _ok(
+        {"scope_type": scope, "scope_id": scope_id, "task_id": task_id, "queued": queued},
+        {"refreshed_sessions": len(session_ids) if scope == "project" else None},
+    )
+
+
+@router.get("/quality")
+def get_quality(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """Aggregate data-quality metrics for the recalculation table.
+
+    Metrics are computed from the same source rows used by the recalculation
+    table, the ``?mode=source`` export and the blocker so that the Overview
+    quality section shares a single source of truth with those components.
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    rows = _build_source_rows(_properties_rows(scope, scope_id, oid))
+    total = len(rows)
+    if not total:
+        return _ok(
+            {
+                "ee_time_filled_pct": 0,
+                "ingredient_numeric_pct": 0,
+                "no_data_count": 0,
+                "total_elements_with_ee_time": 0,
+            },
+            {"scope_type": scope, "scope_id": scope_id},
+        )
+
+    no_data = sum(1 for r in rows if r["source"] == _SOURCE_NO_DATA)
+    property_rows = sum(1 for r in rows if r["source"] == _SOURCE_PROPERTY)
+    present_rows = total - sum(1 for r in rows if r["source"] == _SOURCE_DEFAULT)
+
+    return _ok(
+        {
+            "ee_time_filled_pct": 100,
+            "ingredient_numeric_pct": round((property_rows / max(present_rows, 1)) * 100, 1),
+            "no_data_count": no_data,
+            "total_elements_with_ee_time": total,
+        },
+        {"scope_type": scope, "scope_id": scope_id},
+    )
+
+
+def _session_ids_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[str]:
+    if scope_type == "session":
+        return [scope_id]
+    with _connect() as con:
+        if scope_type == "project":
+            rows = con.execute(
+                "SELECT id FROM sessions WHERE project_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+            return [r["id"] for r in rows]
+        if scope_type == "workspace":
+            rows = con.execute(
+                "SELECT s.id FROM sessions s JOIN projects p ON p.id=s.project_id "
+                "WHERE p.workspace_id=? AND s.org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+            return [r["id"] for r in rows]
+    return []
+
+
+def _properties_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
+    storage = get_storage()
+    if scope_type == "session":
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, session_ids=[scope_id], is_admin=True
+        )
+    elif scope_type == "project":
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, project_ids=[scope_id], is_admin=True
+        )
+    else:
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, workspace_id=scope_id, is_admin=True
+        )
+
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+    counts: Dict[tuple, int] = {}
+    session_counts: Dict[tuple, Set[str]] = {}
+    for source in sources:
+        session_id = source.get("session_id") or ""
+        for r in _extract_camunda_rows(source):
+            key = (r.get("element_id"), r.get("property_name"), r.get("property_value"))
+            counts[key] = counts.get(key, 0) + 1
+            session_counts.setdefault(key, set()).add(session_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "bpmn_id": r.get("element_id") or "",
+                "bpmn_name": r.get("element_title") or "",
+                "name": r.get("property_name") or "",
+                "value": r.get("property_value") or "",
+                "type": r.get("property_type") or "",
+                "category": r.get("property_group") or "",
+                "source": r.get("source") or "",
+                "element_type": r.get("element_type") or "",
+                "session_id": r.get("session_id") or "",
+                "session_title": r.get("session_title") or "",
+                "project_id": r.get("project_id") or "",
+                "project_title": r.get("project_title") or "",
+                "workspace_id": r.get("workspace_id") or "",
+                "org_id": r.get("org_id") or "",
+                "section": "",
+                "role": "",
+                "usage_count": 1,
+                "session_count": 1,
+            })
+
+    for row in rows:
+        row["usage_count"] = counts.get((row["bpmn_id"], row["name"], row["value"]), 1)
+        row["session_count"] = len(session_counts.get((row["bpmn_id"], row["name"], row["value"]), set())) or 1
+    return rows
+
+
+def _filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    return {
+        "type": sorted({str(r.get("type", "")) for r in rows if r.get("type")}),
+        "category": sorted({str(r.get("category", "")) for r in rows if r.get("category")}),
+        "source": sorted({str(r.get("source", "")) for r in rows if r.get("source")}),
+        "section": sorted({str(r.get("section", "")) for r in rows if r.get("section")}),
+        "role": sorted({str(r.get("role", "")) for r in rows if r.get("role")}),
+    }
+
+
+def _apply_filters(
+    rows: List[Dict[str, Any]],
+    type_filter: List[str],
+    category_filter: List[str],
+    source_filter: List[str],
+    section_filter: List[str],
+    role_filter: List[str],
+) -> List[Dict[str, Any]]:
+    def match(r: Dict[str, Any]) -> bool:
+        if type_filter and str(r.get("type", "")) not in type_filter:
+            return False
+        if category_filter and str(r.get("category", "")) not in category_filter:
+            return False
+        if source_filter and str(r.get("source", "")) not in source_filter:
+            return False
+        if section_filter and str(r.get("section", "")) not in section_filter:
+            return False
+        if role_filter and str(r.get("role", "")) not in role_filter:
+            return False
+        return True
+
+    return [r for r in rows if match(r)]
+
+
+_DURATION_SUFFIXES = ("мин", "ч", "с")
+
+
+def _is_visual_property(name: str) -> bool:
+    return str(name or "").lower().startswith("fpc-")
+
+
+def _infer_property_value_type(name: str, value: Any) -> str:
+    """Infer value_type from property name and raw value."""
+    name_lower = str(name or "").lower()
+    value_str = str(value or "")
+
+    if name_lower.startswith("fpc-"):
+        return "ui_config"
+    if any(name_lower.find(token) != -1 for token in ("duration", "work", "mode")):
+        return "duration"
+    if value_str.endswith(_DURATION_SUFFIXES):
+        return "duration"
+    try:
+        parsed = json.loads(value_str)
+        if isinstance(parsed, (dict, list)):
+            return "json"
+    except Exception:
+        pass
+    try:
+        float(value_str.replace(",", ".").replace(" ", ""))
+        return "number"
+    except Exception:
+        pass
+    return "string"
+
+
+def _infer_property_family(name: str, value_type: str) -> str:
+    """Map property name/value_type to a product-family bucket."""
+    name_lower = str(name or "").lower()
+    if name_lower.startswith("fpc-"):
+        return "ui_config"
+    if "ingredient" in name_lower:
+        return "ingredient"
+    if "equipment" in name_lower:
+        return "equipment"
+    if "container" in name_lower:
+        return "container"
+    if any(token in name_lower for token in ("duration", "work", "mode")) or value_type == "duration":
+        return "duration"
+    if value_type == "json":
+        return "structured"
+    return "other"
+
+
+def _properties_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_category: Dict[str, int] = {}
+    by_type: Dict[str, int] = {}
+    by_value_type: Dict[str, int] = {}
+    by_family: Dict[str, int] = {}
+    usable_rows: List[Dict[str, Any]] = []
+
+    for r in rows:
+        name = r.get("name", "")
+        if _is_visual_property(name):
+            continue
+        value_type = _infer_property_value_type(name, r.get("value"))
+        family = _infer_property_family(name, value_type)
+        row = dict(r)
+        row["value_type"] = value_type
+        row["property_family"] = family
+        usable_rows.append(row)
+        by_category[row.get("category") or "Не задана"] = by_category.get(row.get("category") or "Не задана", 0) + 1
+        by_type[row.get("type") or "Не задан"] = by_type.get(row.get("type") or "Не задан", 0) + 1
+        by_value_type[value_type] = by_value_type.get(value_type, 0) + 1
+        by_family[family] = by_family.get(family, 0) + 1
+
+    top_used = sorted(
+        usable_rows,
+        key=lambda r: (r.get("usage_count") or 0, r.get("name") or ""),
+        reverse=True,
+    )[:20]
+
+    def _sort_items(d: Dict[str, int]) -> List[Dict[str, Any]]:
+        return sorted([{"label": k, "count": v} for k, v in d.items()], key=lambda x: (-x["count"], x["label"]))
+
+    return {
+        "total": len(usable_rows),
+        "by_category": _sort_items(by_category),
+        "by_type": _sort_items(by_type),
+        "by_value_type": _sort_items(by_value_type),
+        "by_family": _sort_items(by_family),
+        "top_used": [
+            {
+                "name": r.get("name", ""),
+                "value": r.get("value", ""),
+                "type": r.get("type", ""),
+                "category": r.get("category", ""),
+                "value_type": r.get("value_type", ""),
+                "property_family": r.get("property_family", ""),
+                "usage_count": r.get("usage_count") or 0,
+            }
+            for r in top_used
+        ],
+    }
+
+
+def _actions_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_role: Dict[str, int] = {}
+    by_section: Dict[str, int] = {}
+    by_type: Dict[str, int] = {}
+
+    for r in rows:
+        role = str(r.get("role") or "Без роли")
+        section = str(r.get("section") or "Без секции")
+        action_type = str(r.get("type") or "Без типа")
+        by_role[role] = by_role.get(role, 0) + 1
+        by_section[section] = by_section.get(section, 0) + 1
+        by_type[action_type] = by_type.get(action_type, 0) + 1
+
+    def _sort_items(d: Dict[str, int]) -> List[Dict[str, Any]]:
+        return sorted([{"label": k, "count": v} for k, v in d.items()], key=lambda x: (-x["count"], x["label"]))
+
+    return {
+        "total": len(rows),
+        "by_role": _sort_items(by_role),
+        "by_section": _sort_items(by_section),
+        "by_type": _sort_items(by_type),
+    }
+
+
+@router.get("/properties")
+def get_properties(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
+    type_filter: List[str] = Query(default_factory=list),
+    category_filter: List[str] = Query(default_factory=list),
+    source_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    cache_params = {
+        "page": page,
+        "limit": limit,
+        "type_filter": sorted(type_filter),
+        "category_filter": sorted(category_filter),
+        "source_filter": sorted(source_filter),
+    }
+
+    def _compute():
+        rows = _properties_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+        total = len(rows)
+        start = (page - 1) * limit
+        end = start + limit
+        paged = rows[start:end]
+        options = _filter_options(rows)
+        return _ok(
+            {"rows": paged, "total": total, "page": page, "limit": limit, "filter_options": options},
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("properties", scope, scope_id, oid, params=cache_params, compute=_compute)
+
+
+def _actions_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
+    storage = get_storage()
+    if scope_type == "session":
+        sources = storage.list_product_action_registry_sources(
+            org_id=org_id, session_ids=[scope_id], is_admin=True
+        )
+    elif scope_type == "project":
+        sources = storage.list_product_action_registry_sources(
+            org_id=org_id, project_ids=[scope_id], is_admin=True
+        )
+    else:
+        sources = storage.list_product_action_registry_sources(
+            org_id=org_id, workspace_id=scope_id, is_admin=True
+        )
+
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+    for source in sources:
+        for index, action in enumerate(source.get("product_actions") or []):
+            r = _registry_row(source, action, index)
+            key = (
+                r.get("action_object") or r.get("product_name") or r.get("action_id") or "",
+                r.get("action_stage") or "",
+                r.get("role") or "",
+                r.get("action_type") or "",
+                r.get("product_group") or "",
+                r.get("product_name") or "",
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "bpmn_id": r.get("bpmn_element_id") or r.get("node_id") or "",
+                "name": r.get("action_object") or r.get("product_name") or r.get("action_id") or "",
+                "value": "",
+                "section": r.get("action_stage") or "",
+                "role": r.get("role") or "",
+                "type": r.get("action_type") or "",
+                "product_group": r.get("product_group") or "",
+                "product_name": r.get("product_name") or "",
+                "source": r.get("source") or "",
+            })
+    return rows
+
+
+@router.get("/actions")
+def get_actions(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
+    section_filter: List[str] = Query(default_factory=list),
+    role_filter: List[str] = Query(default_factory=list),
+    type_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    cache_params = {
+        "page": page,
+        "limit": limit,
+        "section_filter": sorted(section_filter),
+        "role_filter": sorted(role_filter),
+        "type_filter": sorted(type_filter),
+    }
+
+    def _compute():
+        rows = _actions_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+        total = len(rows)
+        start = (page - 1) * limit
+        end = start + limit
+        paged = rows[start:end]
+        options = _filter_options(rows)
+        return _ok(
+            {"rows": paged, "total": total, "page": page, "limit": limit, "filter_options": options},
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("actions", scope, scope_id, oid, params=cache_params, compute=_compute)
+
+
+def _csv_response(rows: List[Dict[str, Any]], filename: str, fieldnames: List[str]) -> Response:
+    import csv
+    import io
+
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return Response(
+        content=out.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/properties/export.csv")
+def export_properties_csv(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    type_filter: List[str] = Query(default_factory=list),
+    category_filter: List[str] = Query(default_factory=list),
+    source_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+    return _csv_response(
+        rows,
+        f"properties-{scope}-{scope_id}.csv",
+        ["bpmn_id", "bpmn_name", "name", "value", "type", "category", "source", "element_type", "session_count", "usage_count"],
+    )
+
+
+@router.get("/actions/export.csv")
+def export_actions_csv(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    section_filter: List[str] = Query(default_factory=list),
+    role_filter: List[str] = Query(default_factory=list),
+    type_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _actions_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+    return _csv_response(
+        rows,
+        f"actions-{scope}-{scope_id}.csv",
+        ["bpmn_id", "action_id", "name", "value", "section", "role", "action_type", "product_group", "product_name"],
+    )
+
+
+def _xlsx_response(
+    rows: List[Dict[str, Any]],
+    filename: str,
+    columns: List[tuple],
+    column_formats: Dict[str, Dict[str, Any]] | None = None,
+) -> Response:
+    import io
+
+    import xlsxwriter
+
+    out = io.BytesIO()
+    workbook = xlsxwriter.Workbook(out, {"in_memory": True})
+    worksheet = workbook.add_worksheet()
+
+    header_format = workbook.add_format({
+        "bold": True,
+        "bg_color": "#4F46E5",
+        "font_color": "#FFFFFF",
+        "border": 1,
+        "align": "center",
+        "valign": "vcenter",
+    })
+    cell_format = workbook.add_format({"border": 1, "valign": "vcenter"})
+
+    per_col_format = {}
+    if column_formats:
+        for key, fmt_kwargs in column_formats.items():
+            per_col_format[key] = workbook.add_format({"border": 1, "valign": "vcenter", **fmt_kwargs})
+
+    for col_idx, (_, label) in enumerate(columns):
+        worksheet.write(0, col_idx, label, header_format)
+
+    for row_idx, row in enumerate(rows, start=1):
+        for col_idx, (key, _) in enumerate(columns):
+            value = row.get(key)
+            if value is None:
+                value = ""
+            fmt = per_col_format.get(key, cell_format)
+            worksheet.write(row_idx, col_idx, value, fmt)
+
+    # Auto-width
+    for col_idx, (key, label) in enumerate(columns):
+        max_len = len(str(label))
+        for row in rows:
+            max_len = max(max_len, len(str(row.get(key) or "")))
+        worksheet.set_column(col_idx, col_idx, min(max_len + 3, 60))
+
+    worksheet.autofilter(0, 0, len(rows), len(columns) - 1)
+    worksheet.freeze_panes(1, 0)
+    workbook.close()
+    out.seek(0)
+
+    return Response(
+        content=out.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+
+_EE_TIME_KEY = "ee_time"
+_INGREDIENT_VALUE_KEY = "ingredient_value"
+_INGREDIENT_VALUE_PRESENT = "ingredient_value_present"
+_INGREDIENT_KEY = "ingredient"
+_EE_OPERATION_KEY = "ee_operation"
+_INGREDIENT_UM_KEY = "ingredient_um"
+_RECALC_REQUIRED_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY}
+_RECALC_CAPTURE_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY, _INGREDIENT_KEY}
+
+
+# Sentinel used to distinguish an absent ingredient_value property from an empty one.
+_MISSING = object()
+
+
+_SOURCE_PROPERTY = "property"
+_SOURCE_DEFAULT = "расчёт по умолчанию"
+_SOURCE_NO_DATA = "нет данных"
+
+
+_COMMA_DECIMAL_RE = re.compile(r"^\d+,\d+$")
+
+
+def _normalize_decimal_comma(value: Any) -> str:
+    """Normalize a single comma used as decimal separator.
+
+    Only strings matching ``^\\d+,\\d+$`` (digits, one comma, digits) are
+    converted to dot-decimal form. Everything else is returned as-is so that
+    multi-comma values like ``"1,2,3"`` or prefixes like ``"> 10"`` remain
+    text and fall through to the non-numeric branch.
+    """
+    raw = _text(value).strip()
+    if _COMMA_DECIMAL_RE.match(raw):
+        return raw.replace(",", ".")
+    return raw
+
+
+def classify_recalc_value(
+    ee_time: float, ingredient_value: Any, ingredient_value_present: bool
+) -> Dict[str, Any]:
+    """Classify an ingredient_value into A/B/C and compute result/source.
+
+    Returns a dict with:
+    - ``result``: ``float | None`` — ee_time multiplied by the parsed coefficient,
+      or ``None`` for case B.
+    - ``source``: one of ``property``, ``расчёт по умолчанию``, ``нет данных``.
+    - ``is_invalid``: ``True`` only for case B (empty/non-numeric ingredient_value).
+
+    Cases:
+    A. ``ingredient_value`` property is absent -> result = ee_time, source = default.
+    B. Property exists but value is empty/whitespace/non-numeric text -> result = None,
+       source = no_data, is_invalid = True.
+    C. Property exists and value is a number (including 0) -> result = ee_time * value,
+       source = property.
+
+    Decimal comma (e.g. "0,5") is normalized to dot-decimal per product-owner
+    decision 21/08/26, but only for the strict ``digits,digits`` pattern.
+    """
+    if not ingredient_value_present:
+        return {
+            "result": round(float(ee_time), 2),
+            "source": _SOURCE_DEFAULT,
+            "is_invalid": False,
+        }
+
+    raw = _normalize_decimal_comma(ingredient_value)
+    if raw == "" or raw == "—":
+        return {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True}
+
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True}
+
+    return {
+        "result": round(float(ee_time) * parsed, 2),
+        "source": _SOURCE_PROPERTY,
+        "is_invalid": False,
+    }
+
+
+# Backward-compatible alias kept for callers that only need the source label.
+def compute_source(ee_time: float, ingredient_value: Any) -> str:
+    """Return only the source label for the legacy compute_source interface."""
+    present = ingredient_value is not _MISSING
+    return classify_recalc_value(ee_time, ingredient_value, present)["source"]
+
+
+# Backward-compatible alias for tests and existing callers.
+_parse_recalc_number = parse_recalc_number
+
+
+def _build_recalculated_rows(
+    rows: List[Dict[str, Any]],
+    catalog_values: Dict[str, float] | None = None,
+) -> List[Dict[str, Any]]:
+    """Group Camunda properties by BPMN element and compute ee_time * ingredient_value.
+
+    Emits one row per element that has a numeric ``ee_time``. ``ingredient_value``
+    is resolved from the element property first (``source="property"``); when
+    missing, falls back to the recipe-ingredient catalog by ``ingredient`` name
+    (``source="catalog"``); otherwise ``source=None`` and ``result=None``
+    ("нет данных"). Session/project/workspace/org context is carried from the
+    first-seen row. Grouping stays by ``bpmn_id`` (cross-session collapse is a
+    known limitation).
+    """
+    catalog_values = catalog_values or {}
+    by_element: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        name = _text(row.get("name"))
+        if name not in _RECALC_CAPTURE_KEYS:
+            continue
+        bpmn_id = _text(row.get("bpmn_id"))
+        if not bpmn_id:
+            continue
+        element = by_element.get(bpmn_id)
+        if element is None:
+            element = {
+                "bpmn_id": bpmn_id,
+                "bpmn_name": _text(row.get("bpmn_name")),
+                _EE_TIME_KEY: None,
+                _INGREDIENT_VALUE_KEY: None,
+                _INGREDIENT_KEY: None,
+                "session_id": _text(row.get("session_id")),
+                "session_title": _text(row.get("session_title")),
+                "project_id": _text(row.get("project_id")),
+                "project_title": _text(row.get("project_title")),
+                "workspace_id": _text(row.get("workspace_id")),
+                "org_id": _text(row.get("org_id")),
+            }
+            by_element[bpmn_id] = element
+        # First-seen context is kept; the captured property value is last-write-wins
+        # (matches the previous behavior for ee_time / ingredient_value).
+        element[name] = _text(row.get("value"))
+        if not element["bpmn_name"]:
+            element["bpmn_name"] = _text(row.get("bpmn_name"))
+
+    out_rows: List[Dict[str, Any]] = []
+    for element in by_element.values():
+        ee_val = _parse_recalc_number(element.get(_EE_TIME_KEY))
+        if ee_val is None:
+            continue  # ee_time is required to emit a row
+        ing_val = _parse_recalc_number(element.get(_INGREDIENT_VALUE_KEY))
+        source: str | None = None
+        if ing_val is not None:
+            source = "property"
+        else:
+            ing_name = _text(element.get(_INGREDIENT_KEY)).strip().lower()
+            if ing_name and ing_name in catalog_values:
+                ing_val = float(catalog_values[ing_name])
+                source = "catalog"
+        result = round(ee_val * ing_val, 2) if ing_val is not None else None
+        sid = element["session_id"]
+        out_rows.append({
+            "bpmn_id": element["bpmn_id"],
+            "bpmn_name": element["bpmn_name"],
+            _EE_TIME_KEY: ee_val,
+            _INGREDIENT_VALUE_KEY: ing_val,
+            _INGREDIENT_KEY: element.get(_INGREDIENT_KEY) or None,
+            "result": result,
+            "source": source,
+            "session_id": sid,
+            "session_title": element["session_title"],
+            "project_id": element["project_id"],
+            "project_title": element["project_title"],
+            "workspace_id": element["workspace_id"],
+            "org_id": element["org_id"],
+            "source_url": f"/app?session={sid}" if sid else "",
+        })
+
+    return out_rows
+
+
+def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group Camunda properties by BPMN element and compute Source/result.
+
+    Emits one row per element that has a numeric ``ee_time``. Missing
+    ``ingredient_value`` (the property key is absent) is treated as a multiplier of
+    ``1.0``. Empty or unparseable ``ingredient_value`` yields ``Source = "нет данных"``.
+    ``ee_time``, ``ee_operation``, ``ingredient`` and ``ingredient_um`` are carried
+    through when present.
+
+    This is the single source of truth for the analytics "Расчёт" table, the
+    ``?mode=source`` export and the empty-ingredient blocker.
+    """
+    by_element: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        name = _text(row.get("name"))
+        if name not in (
+            _EE_TIME_KEY,
+            _INGREDIENT_VALUE_KEY,
+            _INGREDIENT_KEY,
+            _EE_OPERATION_KEY,
+            _INGREDIENT_UM_KEY,
+        ):
+            continue
+        bpmn_id = _text(row.get("bpmn_id"))
+        if not bpmn_id:
+            continue
+        element = by_element.get(bpmn_id)
+        if element is None:
+            element = {
+                "bpmn_id": bpmn_id,
+                "bpmn_name": _text(row.get("bpmn_name")),
+                _EE_TIME_KEY: None,
+                _INGREDIENT_VALUE_KEY: _MISSING,
+                _INGREDIENT_VALUE_PRESENT: False,
+                _INGREDIENT_KEY: None,
+                _EE_OPERATION_KEY: "",
+                _INGREDIENT_UM_KEY: "",
+                "session_id": _text(row.get("session_id")),
+                "session_title": _text(row.get("session_title")),
+                "workspace_id": _text(row.get("workspace_id")),
+                "org_id": _text(row.get("org_id")),
+            }
+            by_element[bpmn_id] = element
+        if name == _EE_TIME_KEY:
+            element[_EE_TIME_KEY] = _text(row.get("value"))
+        elif name == _INGREDIENT_VALUE_KEY:
+            # The registry normalises an empty Camunda value to "—"; treat it as empty.
+            raw = _text(row.get("value"))
+            element[_INGREDIENT_VALUE_KEY] = "" if raw == "—" else raw
+            element[_INGREDIENT_VALUE_PRESENT] = True
+        elif name == _INGREDIENT_KEY:
+            element[_INGREDIENT_KEY] = _text(row.get("value"))
+        elif name == _EE_OPERATION_KEY:
+            element[_EE_OPERATION_KEY] = _text(row.get("value"))
+        elif name == _INGREDIENT_UM_KEY:
+            element[_INGREDIENT_UM_KEY] = _text(row.get("value"))
+        if not element["bpmn_name"]:
+            element["bpmn_name"] = _text(row.get("bpmn_name"))
+
+    out_rows: List[Dict[str, Any]] = []
+    for element in by_element.values():
+        ee_val = _parse_recalc_number(element.get(_EE_TIME_KEY))
+        if ee_val is None:
+            continue  # ee_time is required to emit a source row
+        ing_present = bool(element.get(_INGREDIENT_VALUE_PRESENT))
+        classification = classify_recalc_value(
+            ee_val, element.get(_INGREDIENT_VALUE_KEY), ing_present
+        )
+        if ing_present:
+            ing_display = "" if element.get(_INGREDIENT_VALUE_KEY) is _MISSING else element[_INGREDIENT_VALUE_KEY]
+            ing_um = element.get(_INGREDIENT_UM_KEY) or ""
+        else:
+            ing_display = ""
+            ing_um = ""
+        sid = element["session_id"]
+        out_rows.append({
+            "bpmn_id": element["bpmn_id"],
+            "bpmn_name": element["bpmn_name"],
+            _EE_TIME_KEY: ee_val,
+            _EE_OPERATION_KEY: element.get(_EE_OPERATION_KEY) or "",
+            _INGREDIENT_VALUE_KEY: ing_display,
+            _INGREDIENT_KEY: element.get(_INGREDIENT_KEY) or "",
+            _INGREDIENT_UM_KEY: ing_um,
+            "result": classification["result"],
+            "source": classification["source"],
+            "session_id": sid,
+            "session_title": element["session_title"],
+            "workspace_id": element["workspace_id"],
+            "org_id": element["org_id"],
+            "source_url": f"/app?session={sid}" if sid else "",
+        })
+
+    return out_rows
+
+
+@router.get("/properties/export-recalculated.xlsx")
+def export_properties_recalculated_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    mode: Literal["source"] | None = Query(None),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+
+    if mode == "source":
+        source_rows = _build_source_rows(rows)
+        invalid_tasks = [
+            {
+                "bpmn_id": r["bpmn_id"],
+                "bpmn_name": r["bpmn_name"],
+                "ingredient_value": r[_INGREDIENT_VALUE_KEY],
+            }
+            for r in source_rows
+            if r["source"] == _SOURCE_NO_DATA
+        ]
+        if invalid_tasks:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "В схеме найдены не заполненные значения свойства ingredient_value, заполните значения и повторите операцию",
+                    "invalid_tasks": invalid_tasks,
+                },
+            )
+        columns = [
+            ("bpmn_id", "BPMN ID"),
+            ("bpmn_name", "BPMN Name"),
+            (_EE_TIME_KEY, "ee_time"),
+            (_EE_OPERATION_KEY, "ee_operation"),
+            (_INGREDIENT_VALUE_KEY, "ingredient_value"),
+            (_INGREDIENT_KEY, "ingredient"),
+            (_INGREDIENT_UM_KEY, "ingredient_um"),
+            ("source", "Source"),
+            ("session_id", "Session ID"),
+            ("session_title", "Session Name"),
+            ("workspace_id", "Workspace"),
+            ("org_id", "Organization"),
+            ("source_url", "Source URL"),
+        ]
+        formats = {
+            _EE_TIME_KEY: {"num_format": "0.00"},
+            _INGREDIENT_VALUE_KEY: {"num_format": "0.00"},
+        }
+        return _xlsx_response(source_rows, f"properties-source-{scope}-{scope_id}.xlsx", columns, formats)
+
+    recalc_rows = _build_recalculated_rows(rows, catalog_values=get_ingredient_values_by_name(oid))
+    columns = [
+        ("bpmn_id", "BPMN ID"),
+        ("bpmn_name", "BPMN Name"),
+        (_EE_TIME_KEY, "ee_time"),
+        (_INGREDIENT_VALUE_KEY, "ingredient_value"),
+        (_INGREDIENT_KEY, "ingredient"),
+        ("result", "Результат"),
+        ("source", "Source"),
+        ("session_id", "Session ID"),
+        ("session_title", "Session Name"),
+        ("workspace_id", "Workspace"),
+        ("org_id", "Organization"),
+        ("source_url", "Source URL"),
+    ]
+    formats = {
+        _EE_TIME_KEY: {"num_format": "0.00"},
+        _INGREDIENT_VALUE_KEY: {"num_format": "0.00"},
+        "result": {"num_format": "0.00"},
+    }
+    return _xlsx_response(recalc_rows, f"properties-recalculated-{scope}-{scope_id}.xlsx", columns, formats)
+
+
+@router.get("/properties/recalculation")
+def get_properties_recalculation(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """JSON recalculation rows for the Analytics "Расчёт" UI section.
+
+    Uses the same A/B/C classifier as the ``?mode=source`` export so that the
+    table, the "Расчёт (N)" counter, the blocker and the Excel export share a
+    single source of truth.
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+    recalc_rows = _build_source_rows(rows)
+    resolved = sum(1 for r in recalc_rows if r.get("result") is not None)
+    return _ok(
+        {"rows": recalc_rows, "count": len(recalc_rows), "resolved": resolved},
+        {"scope": scope, "scope_id": scope_id},
+    )
+
+
+@router.get("/properties/export.xlsx")
+def export_properties_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    type_filter: List[str] = Query(default_factory=list),
+    category_filter: List[str] = Query(default_factory=list),
+    source_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+    columns = [
+        ("bpmn_id", "BPMN ID"),
+        ("bpmn_name", "BPMN Name"),
+        ("name", "Свойство"),
+        ("value", "Значение"),
+        ("type", "Тип"),
+        ("category", "Категория"),
+        ("source", "Источник"),
+        ("element_type", "Тип элемента"),
+        ("session_count", "Использовано в сессиях"),
+        ("usage_count", "Использований"),
+    ]
+    formats = {
+        "bpmn_name": {"bold": True},
+        "session_count": {"num_format": "0"},
+    }
+    return _xlsx_response(rows, f"properties-{scope}-{scope_id}.xlsx", columns, formats)
+
+
+@router.get("/actions/export.xlsx")
+def export_actions_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    section_filter: List[str] = Query(default_factory=list),
+    role_filter: List[str] = Query(default_factory=list),
+    type_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _actions_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+    columns = [
+        ("bpmn_id", "BPMN ID"),
+        ("name", "Действие"),
+        ("section", "Секция"),
+        ("role", "Роль"),
+        ("type", "Тип"),
+        ("product_group", "Группа"),
+        ("product_name", "Продукт"),
+        ("source", "Источник"),
+    ]
+    return _xlsx_response(rows, f"actions-{scope}-{scope_id}.xlsx", columns)
+
+
+@router.get("/properties/summary")
+def get_properties_summary(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    type_filter: List[str] = Query(default_factory=list),
+    category_filter: List[str] = Query(default_factory=list),
+    source_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    cache_params = {
+        "type_filter": sorted(type_filter),
+        "category_filter": sorted(category_filter),
+        "source_filter": sorted(source_filter),
+    }
+
+    def _compute():
+        rows = _properties_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+        return _ok(
+            _properties_summary(rows),
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("properties_summary", scope, scope_id, oid, params=cache_params, compute=_compute)
+
+
+@router.get("/actions/summary")
+def get_actions_summary(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    section_filter: List[str] = Query(default_factory=list),
+    role_filter: List[str] = Query(default_factory=list),
+    type_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    cache_params = {
+        "section_filter": sorted(section_filter),
+        "role_filter": sorted(role_filter),
+        "type_filter": sorted(type_filter),
+    }
+
+    def _compute():
+        rows = _actions_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+        return _ok(
+            _actions_summary(rows),
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("actions_summary", scope, scope_id, oid, params=cache_params, compute=_compute)
+
+
+# ---------------------------------------------------------------------------
+# Advanced calculation export
+# ---------------------------------------------------------------------------
+
+
+def _load_session_bpmn_xml(session_id: str, org_id: str) -> str:
+    with _connect() as con:
+        row = con.execute(
+            "SELECT bpmn_xml FROM sessions WHERE id=? AND org_id=? LIMIT 1",
+            (session_id, org_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+    return row["bpmn_xml"] or ""
+
+
+def _advanced_xlsx_response(result, filename: str) -> Response:
+    import io
+
+    import xlsxwriter
+
+    out = io.BytesIO()
+    workbook = xlsxwriter.Workbook(out, {"in_memory": True})
+
+    header_format = workbook.add_format({
+        "bold": True,
+        "bg_color": "#4F46E5",
+        "font_color": "#FFFFFF",
+        "border": 1,
+        "align": "center",
+        "valign": "vcenter",
+    })
+    cell_format = workbook.add_format({"border": 1, "valign": "vcenter"})
+    num_format = workbook.add_format({"border": 1, "valign": "vcenter", "num_format": "0.00"})
+
+    def add_sheet(name: str, headers: List[str], rows: List[List[Any]], formats: List[Any] | None = None):
+        ws = workbook.add_worksheet(name)
+        for col, h in enumerate(headers):
+            ws.write(0, col, h, header_format)
+        fmt = formats or [cell_format] * len(headers)
+        for r_idx, row in enumerate(rows, start=1):
+            for c_idx, value in enumerate(row):
+                f = fmt[c_idx] if c_idx < len(fmt) else cell_format
+                ws.write(r_idx, c_idx, value, f)
+        # Auto-width with cap.
+        for col, h in enumerate(headers):
+            max_len = len(str(h))
+            for row in rows:
+                max_len = max(max_len, len(str(row[col] if col < len(row) else "")))
+            ws.set_column(col, col, min(max_len + 3, 60))
+        if rows:
+            ws.autofilter(0, 0, len(rows), len(headers) - 1)
+
+    # 1. Summary
+    parallel = result.parallel
+    add_sheet(
+        "Summary",
+        ["Metric", "Value"],
+        [
+            ["Total ee_time", result.total_ee_time],
+            ["Sequential time", parallel.sequential_time],
+            ["Parallel time (critical path)", parallel.parallel_time],
+            ["Time saved", parallel.time_saved],
+            ["Efficiency ratio", parallel.efficiency_ratio],
+            ["Paths found", len(result.paths)],
+            ["Critical path time (path enum)", max((p.total_ee_time for p in result.paths), default=0.0)],
+        ],
+        [cell_format, num_format],
+    )
+
+    # 2. Elements
+    add_sheet(
+        "Elements",
+        ["element_id", "element_name", "element_type", "ee_time", "properties"],
+        [
+            [el["element_id"], el["element_name"], el["element_type"], el["ee_time"], json.dumps(el["properties"], ensure_ascii=False)]
+            for el in result.elements
+        ],
+        [cell_format, cell_format, cell_format, num_format, cell_format],
+    )
+
+    # 3. Subprocesses
+    add_sheet(
+        "Subprocesses",
+        ["subprocess_id", "subprocess_name", "total_ee_time"],
+        [[s.subprocess_id, s.subprocess_name, s.total_ee_time] for s in result.subprocesses],
+        [cell_format, cell_format, num_format],
+    )
+
+    # 4. Paths
+    add_sheet(
+        "Paths",
+        ["path_id", "path_description", "total_ee_time", "is_critical"],
+        [[p.path_id, p.description, p.total_ee_time, "Y" if p.is_critical else "N"] for p in result.paths],
+        [cell_format, cell_format, num_format, cell_format],
+    )
+
+    # 5. Parallel
+    add_sheet(
+        "Parallel",
+        ["parallel_time", "sequential_time", "time_saved", "efficiency_ratio"],
+        [[parallel.parallel_time, parallel.sequential_time, parallel.time_saved, parallel.efficiency_ratio]],
+        [num_format, num_format, num_format, num_format],
+    )
+
+    # 6. Bottlenecks
+    add_sheet(
+        "Bottlenecks",
+        ["element_id", "element_name", "ee_time", "slack", "is_bottleneck"],
+        [[b.element_id, b.element_name, b.ee_time, b.slack, "Y" if b.is_bottleneck else "N"] for b in result.bottlenecks],
+        [cell_format, cell_format, num_format, num_format, cell_format],
+    )
+
+    # 7. Utilization
+    add_sheet(
+        "Utilization",
+        ["element_id", "element_name", "ee_time", "process_parallel_time", "utilization_rate"],
+        [[u.element_id, u.element_name, u.ee_time, u.process_parallel_time, u.utilization_rate] for u in result.utilization],
+        [cell_format, cell_format, num_format, num_format, num_format],
+    )
+
+    # 8. Ingredients Summary
+    if result.ingredients_summary:
+        add_sheet(
+            "Ingredients Summary",
+            ["ingredient_name", "total_quantity", "unit"],
+            [[s.ingredient_name, s.total_quantity, s.unit] for s in result.ingredients_summary],
+            [cell_format, num_format, cell_format],
+        )
+    else:
+        add_sheet("Ingredients Summary", ["ingredient_name", "total_quantity", "unit"], [["Нет данных", "", ""]])
+
+    # 9. Ingredients Detail
+    if result.ingredients_detail:
+        add_sheet(
+            "Ingredients Detail",
+            ["element_id", "element_name", "ingredient_name", "quantity", "unit"],
+            [[d.element_id, d.element_name, d.ingredient_name, d.quantity, d.unit] for d in result.ingredients_detail],
+            [cell_format, cell_format, cell_format, num_format, cell_format],
+        )
+    else:
+        add_sheet("Ingredients Detail", ["element_id", "element_name", "ingredient_name", "quantity", "unit"], [["Нет данных", "", "", "", ""]])
+
+    # 10. Resources
+    if result.resources:
+        add_sheet(
+            "Resources",
+            ["resource_name", "peak_consumption", "total_consumption", "unit"],
+            [[r.resource_name, r.peak_consumption, r.total_consumption, r.unit] for r in result.resources],
+            [cell_format, num_format, num_format, cell_format],
+        )
+    else:
+        add_sheet("Resources", ["resource_name", "peak_consumption", "total_consumption", "unit"], [["Нет данных", "", "", ""]])
+
+    # 11. Coverage
+    add_sheet(
+        "Coverage",
+        ["element_id", "element_name", "element_type", "ee_time_present", "operation_code_present",
+         "display_name_present", "recipe_context_present", "params_present", "allowed_outputs_present",
+         "coverage_score", "is_complete"],
+        [
+            [c.element_id, c.element_name, c.element_type,
+             "Y" if c.ee_time_present else "N",
+             "Y" if c.operation_code_present else "N",
+             "Y" if c.display_name_present else "N",
+             "Y" if c.recipe_context_present else "N",
+             "Y" if c.params_present else "N",
+             "Y" if c.allowed_outputs_present else "N",
+             c.coverage_score,
+             "Y" if c.is_complete else "N"]
+            for c in result.coverage
+        ],
+        [cell_format] * 10 + [cell_format],
+    )
+
+    # 12. Coverage Summary
+    cs = result.coverage_summary
+    add_sheet(
+        "Coverage Summary",
+        ["total_elements", "elements_with_ee_time", "elements_without_ee_time",
+         "average_coverage_score", "complete_elements_count", "incomplete_elements_count"],
+        [[cs.total_elements, cs.elements_with_ee_time, cs.elements_without_ee_time,
+          cs.average_coverage_score, cs.complete_elements_count, cs.incomplete_elements_count]],
+        [cell_format] * 6,
+    )
+
+    # 13. Warnings
+    warnings = result.warnings or ["No warnings"]
+    add_sheet("Warnings", ["warning"], [[w] for w in warnings], [cell_format])
+
+    workbook.close()
+    out.seek(0)
+    return Response(
+        content=out.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export-advanced-calculation.xlsx")
+def export_advanced_calculation_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    if scope != "session":
+        raise HTTPException(status_code=400, detail="only session scope is supported for advanced calculation")
+
+    bpmn_xml = _load_session_bpmn_xml(scope_id, oid)
+    if not bpmn_xml.strip():
+        raise HTTPException(status_code=422, detail="session has empty BPMN XML")
+
+    try:
+        analyzer = BpmnAnalyzer(bpmn_xml)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    result = analyzer.calculate()
+    short_id = scope_id[:8]
+    timestamp = int(time.time())
+    filename = f"advanced_calculation_{short_id}_{timestamp}.xlsx"
+    return _advanced_xlsx_response(result, filename)

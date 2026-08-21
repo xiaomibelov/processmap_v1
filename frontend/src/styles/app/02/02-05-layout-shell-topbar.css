@@ -1,0 +1,147 @@
+/* fpc: bpmn_n8n_bg_v1 */
+/* keep icon rendering natural; theme files handle contrast */
+.djs-palette, .djs-context-pad{
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+/* fpc: bpmn_toolbar_fullwidth_lefttoggle_v1 */
+
+/* left panel collapse */
+.appRoot.leftHidden .workspaceLeft{
+  display: none;
+}
+.appRoot.leftHidden .workspaceMain{
+  width: 100%;
+}
+
+/* make main truly fill */
+.workspace{
+  display:flex;
+  gap: 14px;
+}
+.workspaceMain{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.workspaceLeft{
+  flex: 0 0 340px;
+}
+
+/* process shell uses full available space */
+.processShell{
+  height: calc(100vh - 56px - 38px);
+  display:flex;
+  flex-direction:column;
+  min-width: 0;
+}
+.processBody{
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 12px 12px;
+}
+
+/* segmented tabs */
+.seg{
+  display:flex;
+  align-items:center;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  border-radius: 12px;
+  overflow:hidden;
+}
+.segBtn{
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  cursor: pointer;
+}
+.segBtn.on{
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.95);
+}
+.segBtn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* bpmn editor actions (placed left of tabs) */
+.bpmnTopActions{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+}
+
+/* icons right */
+.iconBtns{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+}
+.iconBtn{
+  height: 32px;
+  width: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.92);
+  cursor:pointer;
+}
+.iconBtn:hover{
+  background: rgba(255,255,255,.10);
+}
+
+/* bpmn fills full panel */
+.bpmnStage{
+  height: 100%;
+  display:flex;
+  flex-direction:column;
+  min-height: 0;
+}
+.bpmnMetaRow{
+  margin-bottom: 10px;
+}
+
+/* palette readable on dark is controlled by dark theme overrides */
+.djs-palette, .djs-context-pad{
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+/* topbar menu button spacing */
+.topbar .topMenuBtn{
+  margin-left: 8px;
+}
+
+/* fpc: topbar_delete_buttons_v1 */
+.iconBtn{
+  height: 34px;
+  width: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.92);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor: pointer;
+  user-select:none;
+}
+
+.iconBtn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.iconBtn.danger{
+  background: rgba(255, 80, 80, .10);
+  border-color: rgba(255, 120, 120, .22);
+}
+
+/* fpc: topbar_delete_and_wipe_dev_v1 */
+.dangerBtn{
+  background: rgba(255, 80, 80, .12);
+  border-color: rgba(255, 120, 120, .22);
+}

@@ -1,0 +1,171 @@
+:root{
+  --bg:#0b1020;
+  --bg2:#0a0f1c;
+  --panel:rgba(255,255,255,.06);
+  --panel2:rgba(255,255,255,.08);
+  --text:rgba(255,255,255,.92);
+  --muted:rgba(255,255,255,.65);
+  --border:rgba(255,255,255,.12);
+  --ring:rgba(98,167,255,.35);
+  --accent:#4a54ff;
+}
+
+html, body{
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(74,84,255,.25), transparent 60%),
+              radial-gradient(900px 500px at 80% 10%, rgba(98,167,255,.20), transparent 55%),
+              linear-gradient(180deg, var(--bg), var(--bg2));
+  color: var(--text);
+}
+
+.header{
+  background: linear-gradient(180deg, rgba(36,109,198,.95), rgba(22,86,164,.92));
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+
+.panel{
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow: 0 16px 48px rgba(0,0,0,.35);
+  backdrop-filter: blur(14px);
+}
+
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.10);
+  backdrop-filter: blur(12px);
+}
+
+.muted{ color:var(--muted) !important; }
+.small{ color:var(--muted); }
+
+.btn{
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.10);
+  color: var(--text);
+}
+
+.btn:hover{ background: rgba(255,255,255,.12); }
+.btn:disabled{ opacity:.55; }
+
+.primaryBtn{
+  background: linear-gradient(90deg, rgba(74,84,255,.88), rgba(98,167,255,.75));
+  border: 1px solid rgba(255,255,255,.12);
+  color: #fff;
+}
+
+.primaryBtn:hover{ filter: brightness(1.05); }
+.primaryBtn:disabled{ opacity:.55; }
+
+.iconBtn{
+  background: rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.10);
+  color: rgba(255,255,255,.9);
+}
+
+.iconBtn:hover{ background: rgba(255,255,255,.12); }
+
+.kpiItem{
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+.hr{ border-top:1px solid rgba(255,255,255,.10); }
+
+/* Inputs */
+.input{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  background: rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--text);
+}
+
+.input:focus{
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.inputRow{ display:flex; gap:10px; }
+
+/* Legacy form classes used across the app (keep them dark, not browser-white) */
+.textarea, .select{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  background: rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--text);
+}
+
+.textarea{ min-height:44px; }
+
+.textarea:focus, .select:focus{
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.select option{
+  background: #0b1020;
+  color: rgba(255,255,255,.92);
+}
+
+/* fpc: interview_select_clipping_guard_v1 */
+.interviewStage .interviewTimelineFilters .input{
+  height: 40px !important;
+  min-height: 40px !important;
+  line-height: 40px !important;
+  padding: 0 12px !important;
+}
+
+.interviewStage .interviewTimelineFilters .select,
+.interviewStage .interviewNodeBindSelect{
+  height: 40px !important;
+  min-height: 40px !important;
+  line-height: 40px !important;
+  padding: 0 40px 0 12px !important;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(240,248,255,.9) 50%),
+    linear-gradient(135deg, rgba(240,248,255,.9) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255,255,255,.12), rgba(255,255,255,.12));
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%,
+    calc(100% - 32px) 50%;
+  background-size: 6px 6px, 6px 6px, 1px 18px;
+  background-repeat: no-repeat;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* fpc: interview_boundaries_lane_select_guard_v1
+   Keep this block unchanged unless we intentionally redesign boundaries controls:
+   it prevents clipped values in "Стартовый цех" / "Финишный цех". */
+.interviewStage .interviewBoundaryLaneSelect{
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 40px !important;
+  height: auto !important;
+  line-height: 1.35 !important;
+  padding: 7px 36px 7px 12px !important;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(240,248,255,.9) 50%),
+    linear-gradient(135deg, rgba(240,248,255,.9) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255,255,255,.12), rgba(255,255,255,.12));
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%,
+    calc(100% - 32px) 50%;
+  background-size: 6px 6px, 6px 6px, 1px 18px;
+  background-repeat: no-repeat;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  background-clip: padding-box;
+}

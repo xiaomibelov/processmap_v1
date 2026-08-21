@@ -1,0 +1,220 @@
+import { promoteRuntimeElementIntoDrawioDoc } from "../drawioDocXml.js";
+import {
+  getDefaultRuntimeStylePreset,
+  resolveRuntimeStyleSurface,
+} from "../drawioRuntimeStylePresets.js";
+import { buildRuntimeWrappedTextMarkup } from "../drawioRuntimeText.js";
+import {
+  buildRuntimeNoteElementRow,
+  isDrawioNoteToolId,
+} from "./drawioRuntimeNote.js";
+
+function toText(value) {
+  return String(value || "").trim();
+}
+
+function toNumber(valueRaw, fallback = 0) {
+  const value = Number(valueRaw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function escapeAttr(valueRaw) {
+  return String(valueRaw || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function normalizeRuntimeTool(toolRaw) {
+  const tool = toText(toolRaw).toLowerCase();
+  if (tool === "select" || tool === "rect" || tool === "text" || tool === "container" || tool === "note") return tool;
+  return "";
+}
+
+function formatNumber(valueRaw) {
+  const value = toNumber(valueRaw, 0);
+  const rounded = Math.round(value * 1000) / 1000;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return String(rounded);
+}
+
+function buildRuntimeMarkupByTool({ toolId, elementId, x, y, styleRaw = null }) {
+  const id = escapeAttr(elementId);
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const presetSvg = styleRaw
+    ? styleRaw
+    : getDefaultRuntimeStylePreset(surface)?.svg || {};
+  if (toolId === "rect") {
+    const left = formatNumber(x - 60);
+    const top = formatNumber(y - 30);
+    return `<rect id="${id}" x="${left}" y="${top}" width="120" height="60" rx="8" fill="${escapeAttr(presetSvg.fill)}" stroke="${escapeAttr(presetSvg.stroke)}" stroke-width="${escapeAttr(presetSvg["stroke-width"])}"/>`;
+  }
+  if (toolId === "container") {
+    const left = formatNumber(x - 100);
+    const top = formatNumber(y - 60);
+    return `<rect id="${id}" x="${left}" y="${top}" width="200" height="120" rx="10" fill="${escapeAttr(presetSvg.fill)}" stroke="${escapeAttr(presetSvg.stroke)}" stroke-width="${escapeAttr(presetSvg["stroke-width"])}" stroke-dasharray="${escapeAttr(presetSvg["stroke-dasharray"])}"/>`;
+  }
+  if (toolId === "text") {
+    return buildRuntimeWrappedTextMarkup({
+      elementIdRaw: id,
+      textRaw: "Text",
+      xRaw: formatNumber(x),
+      yRaw: formatNumber(y),
+      widthRaw: 120,
+      fillRaw: presetSvg.fill || "#0f172a",
+      fontSizeRaw: 16,
+      fontFamilyRaw: "Arial, sans-serif",
+    });
+  }
+  return "";
+}
+
+function appendMarkupToSvgCache(svgCacheRaw, markupRaw, pointRaw = {}) {
+  const svgCache = toText(svgCacheRaw);
+  const markup = toText(markupRaw);
+  if (!markup) return svgCache;
+  const match = svgCache.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg>/i);
+  if (match) {
+    const attrs = String(match[1] || "");
+    const body = String(match[2] || "");
+    return `<svg${attrs}>${body}${markup}</svg>`;
+  }
+  const pointX = toNumber(pointRaw.x, 0);
+  const pointY = toNumber(pointRaw.y, 0);
+  const width = Math.max(1200, Math.round(pointX + 400));
+  const height = Math.max(800, Math.round(pointY + 300));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">${markup}</svg>`;
+}
+
+function ensureSvgCache(svgCacheRaw, pointRaw = {}) {
+  const svgCache = toText(svgCacheRaw);
+  if (/<svg\b[^>]*>/i.test(svgCache)) return svgCache;
+  const pointX = toNumber(pointRaw.x, 0);
+  const pointY = toNumber(pointRaw.y, 0);
+  const width = Math.max(1200, Math.round(pointX + 400));
+  const height = Math.max(800, Math.round(pointY + 300));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"></svg>`;
+}
+
+function resolveRuntimeElementId(toolIdRaw, existingRowsRaw = []) {
+  const toolId = normalizeRuntimeTool(toolIdRaw);
+  if (!toolId) return "";
+  const existingIds = new Set(
+    (Array.isArray(existingRowsRaw) ? existingRowsRaw : [])
+      .map((row) => toText(row?.id))
+      .filter(Boolean),
+  );
+  const base = `${toolId}_${Date.now().toString(36)}`;
+  let candidate = base;
+  let index = 1;
+  while (existingIds.has(candidate)) {
+    candidate = `${base}_${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function buildRuntimeElementRow({
+  elementId,
+  layerIdRaw,
+  zIndexRaw,
+  toolIdRaw,
+  pointRaw,
+  styleRaw = null,
+}) {
+  const toolId = normalizeRuntimeTool(toolIdRaw);
+  if (isDrawioNoteToolId(toolId)) {
+    return buildRuntimeNoteElementRow({
+      elementId,
+      layerIdRaw,
+      zIndexRaw,
+      pointRaw,
+      styleRaw,
+    });
+  }
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const defaultStyle = styleRaw || getDefaultRuntimeStylePreset(surface)?.svg || null;
+  return {
+    id: toText(elementId),
+    layer_id: toText(layerIdRaw) || "DL1",
+    visible: true,
+    locked: false,
+    deleted: false,
+    opacity: 1,
+    offset_x: 0,
+    offset_y: 0,
+    z_index: Math.max(0, Math.round(toNumber(zIndexRaw, 0))),
+    ...(toolId === "text" ? { text: "Text" } : {}),
+    ...(defaultStyle ? { style: defaultStyle } : {}),
+  };
+}
+
+function buildRuntimePlacementPatch({
+  metaRaw = {},
+  toolIdRaw,
+  pointRaw = {},
+}) {
+  const meta = metaRaw && typeof metaRaw === "object" ? metaRaw : {};
+  const toolId = normalizeRuntimeTool(toolIdRaw);
+  if (!toolId) return { changed: false, meta, createdId: "" };
+  const x = toNumber(pointRaw.x, 0);
+  const y = toNumber(pointRaw.y, 0);
+  const rows = Array.isArray(meta.drawio_elements_v1) ? meta.drawio_elements_v1 : [];
+  const createdId = resolveRuntimeElementId(toolId, rows);
+  if (!createdId) return { changed: false, meta, createdId: "" };
+  const noteTool = isDrawioNoteToolId(toolId);
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const defaultStyle = getDefaultRuntimeStylePreset(surface)?.svg || null;
+  const markup = buildRuntimeMarkupByTool({
+    toolId,
+    elementId: createdId,
+    x,
+    y,
+    styleRaw: defaultStyle,
+  });
+  if (!noteTool && !markup) return { changed: false, meta, createdId: "" };
+  const svgCache = noteTool
+    ? ensureSvgCache(meta.svg_cache, { x, y })
+    : appendMarkupToSvgCache(meta.svg_cache, markup, { x, y });
+  const layers = Array.isArray(meta.drawio_layers_v1) && meta.drawio_layers_v1.length
+    ? meta.drawio_layers_v1
+    : [{ id: "DL1", name: "Default", visible: true, locked: false, opacity: 1 }];
+  const activeLayerId = toText(meta.active_layer_id) || toText(layers[0]?.id) || "DL1";
+  const nextRows = rows.concat(buildRuntimeElementRow({
+    elementId: createdId,
+    layerIdRaw: activeLayerId,
+    zIndexRaw: rows.length,
+    toolIdRaw: toolId,
+    pointRaw: { x, y },
+    styleRaw: defaultStyle,
+  }));
+  const createdRow = nextRows[nextRows.length - 1];
+  return {
+    changed: true,
+    createdId,
+    meta: {
+      ...meta,
+      enabled: true,
+      interaction_mode: "edit",
+      active_tool: toolId,
+      doc_xml: noteTool
+        ? toText(meta.doc_xml)
+        : promoteRuntimeElementIntoDrawioDoc(meta.doc_xml, {
+          elementId: createdId,
+          toolId,
+          point: { x, y },
+          styleRaw: createdRow?.style || null,
+        }),
+      svg_cache: svgCache,
+      drawio_layers_v1: layers,
+      active_layer_id: activeLayerId,
+      drawio_elements_v1: nextRows,
+    },
+  };
+}
+
+export {
+  normalizeRuntimeTool,
+  buildRuntimePlacementPatch,
+};

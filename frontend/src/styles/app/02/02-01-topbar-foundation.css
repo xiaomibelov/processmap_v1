@@ -1,0 +1,106 @@
+/* fpc: graphite_vars_and_topbar_v1 */
+.graphite{
+  --ink: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.68);
+  --border: rgba(255,255,255,.14);
+  --panel: rgba(255,255,255,.06);
+}
+
+.graphite .btn{
+  background: rgba(0,0,0,.22);
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+
+.topbar{
+  height: 56px;
+}
+
+.topbar .topLeft{
+  min-width: 260px;
+}
+
+.topbar .topRight{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:nowrap;
+  overflow:visible;
+}
+
+.topbar .topSelect{
+  height: 34px;
+  line-height: 34px;
+  padding: 0 2px;
+  border-radius: 14px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.topbar .topSelect option{
+  background: #0d1326;
+  color: #fff;
+}
+
+.topbar .topSelect--project{ width: 100%; max-width: 100%; }
+.topbar .topSelect--session{ width: 100%; max-width: 100%; }
+
+.topbar .smallBtn{
+  height: 34px;
+  line-height: 34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px){
+  .topbar .topSelect--session{ width: 100%; max-width: 100%; }
+}
+
+@media (max-width: 900px){
+  .topbar{ height: auto; }
+  .topbar .topRight{ flex-wrap: wrap; overflow: visible; justify-content:flex-start; }
+  .topbar .topSelect--project,
+  .topbar .topSelect--session{
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* fpc: step17_text_visibility_v1 */
+.graphite input,
+.graphite textarea,
+.graphite select{
+  color: var(--ink);
+}
+
+.graphite input::placeholder,
+.graphite textarea::placeholder{
+  color: rgba(255,255,255,.45);
+}
+
+.topbar .topSelect{
+  color: var(--ink) !important;
+  font-weight: 700;
+  line-height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.topbar .topSelect:focus{
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(120,170,255,.20);
+}
+
+.bpmnSub{
+  opacity: .78;
+  font-size: 12px;
+  padding: 0 14px 10px;
+}

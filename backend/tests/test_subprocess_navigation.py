@@ -1,0 +1,309 @@
+import pytest
+from fastapi import HTTPException
+from app.services.session_service import navigate_to_subprocess, return_to_parent
+from app.storage import get_storage
+from app.repositories import project_repo, session_repo
+
+BPMN_ROOT = """<?xml version="1.0"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+  <process id="Process_root">
+    <startEvent id="start" />
+    <callActivity id="ca_1" calledElement="Process_sub" />
+    <endEvent id="end" />
+  </process>
+  <process id="Process_sub">
+    <startEvent id="sub_start" />
+    <task id="sub_task" />
+    <userTask id="sub_user_task" />
+    <endEvent id="sub_end" />
+  </process>
+</definitions>"""
+
+
+def _make_request(user, org):
+    class DummyRequest:
+        state = type("S", (), {"auth_user": user, "active_org_id": org, "is_admin": False})()
+        headers = {}
+    return DummyRequest()
+
+
+def test_navigate_to_embedded_subprocess():
+    st = get_storage()
+    owner = "owner_nav_1"
+    org = "org_nav_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    result = navigate_to_subprocess(sid, "ca_1", request=req)
+    assert result["subprocess_session_id"]
+    assert result["target_element_id"] == "sub_user_task"
+    assert len(result["breadcrumbs"]) == 2
+    assert "<bpmn:definitions" in (result.get("bpmn_xml") or "")
+
+    child = session_repo.load(result["subprocess_session_id"], user_id=owner, org_id=org, is_admin=True)
+    assert child.parent_session_id == sid
+    assert child.element_id_in_parent == "ca_1"
+
+
+def test_navigate_with_explicit_target():
+    owner = "owner_nav_2"
+    org = "org_nav_2"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    result = navigate_to_subprocess(sid, "ca_1", target_element_id="sub_task", request=req)
+    assert result["target_element_id"] == "sub_task"
+
+
+def test_return_to_parent():
+    owner = "owner_nav_3"
+    org = "org_nav_3"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    nav = navigate_to_subprocess(sid, "ca_1", request=req)
+    ret = return_to_parent(nav["subprocess_session_id"], request=req)
+    assert ret["parent_session_id"] == sid
+    assert ret["element_id_in_parent"] == "ca_1"
+
+
+def test_unauthorized_user_gets_403_or_404():
+    owner = "owner_nav_4"
+    intruder = "intruder_nav_4"
+    org = "org_nav_4"
+    other_org = "org_nav_4_other"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(intruder, other_org)
+    with pytest.raises(HTTPException) as exc_info:
+        navigate_to_subprocess(sid, "ca_1", request=req)
+    assert exc_info.value.status_code in (403, 404)
+
+
+def test_navigate_existing_child_reuses_session():
+    owner = "owner_nav_5"
+    org = "org_nav_5"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    first = navigate_to_subprocess(sid, "ca_1", request=req)
+    second = navigate_to_subprocess(sid, "ca_1", request=req)
+    assert first["subprocess_session_id"] == second["subprocess_session_id"]
+
+
+def test_atomic_child_upsert_prevents_duplicate():
+    owner = "owner_nav_6"
+    org = "org_nav_6"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    child_xml = "<definitions xmlns='http://www.omg.org/spec/BPMN/20100524/MODEL'><process id='p'/></definitions>"
+    stack = [
+        {"session_id": sid, "parent_session_id": "", "element_id_in_parent": "ca_1", "entered_at": "2024-01-01T00:00:00Z"},
+        {"session_id": "", "parent_session_id": sid, "element_id_in_parent": "", "entered_at": "2024-01-01T00:00:00Z"},
+    ]
+
+    first = session_repo.find_or_create_child_session(
+        root, "ca_1", child_xml, stack, "Sub", user_id=owner, org_id=org, is_admin=True
+    )
+    second = session_repo.find_or_create_child_session(
+        root, "ca_1", child_xml, stack, "Sub", user_id=owner, org_id=org, is_admin=True
+    )
+    assert first.id == second.id
+
+    st = get_storage()
+    rows = st.list(query="Sub", limit=10, user_id=owner, org_id=org, is_admin=True)
+    child_rows = [r for r in rows if r.get("parent_session_id") == sid and r.get("element_id_in_parent") == "ca_1"]
+    assert len(child_rows) == 1
+
+
+BPMN_WITH_SUBPROCESS = """<?xml version="1.0"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+  <process id="Process_root">
+    <startEvent id="start" />
+    <subProcess id="sub_1">
+      <startEvent id="sub_start" />
+      <task id="sub_task" />
+      <userTask id="sub_user_task" />
+      <endEvent id="sub_end" />
+    </subProcess>
+    <endEvent id="end" />
+  </process>
+</definitions>"""
+
+
+def test_navigate_to_embedded_subprocess_element():
+    owner = "owner_nav_sub_1"
+    org = "org_nav_sub_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_WITH_SUBPROCESS
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    result = navigate_to_subprocess(sid, "sub_1", request=req)
+    assert result["subprocess_session_id"]
+    assert result["target_element_id"] == "sub_user_task"
+    assert len(result["breadcrumbs"]) == 2
+
+    child = session_repo.load(result["subprocess_session_id"], user_id=owner, org_id=org, is_admin=True)
+    assert child.parent_session_id == sid
+    assert child.element_id_in_parent == "sub_1"
+    assert "<bpmn:definitions" in (child.bpmn_xml or "")
+    assert "bpmndi:BPMNShape" in (child.bpmn_xml or "")
+
+
+def test_child_bpmn_save_syncs_back_to_parent_subprocess():
+    from app._legacy_main import session_bpmn_save
+    from app.schemas.legacy_api import BpmnXmlIn
+
+    owner = "owner_sync_1"
+    org = "org_sync_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_WITH_SUBPROCESS
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    nav = navigate_to_subprocess(sid, "sub_1", request=req)
+    child_id = nav["subprocess_session_id"]
+
+    child = session_repo.load(child_id, user_id=owner, org_id=org, is_admin=True)
+    child_xml = child.bpmn_xml
+    assert child_xml
+
+    # Add a new task to the child XML.
+    import xml.etree.ElementTree as ET
+    BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
+    ET.register_namespace("bpmn", BPMN_NS)
+    child_root = ET.fromstring(child_xml)
+    process = child_root.find(f".//{{{BPMN_NS}}}process")
+    assert process is not None
+    ET.SubElement(process, f"{{{BPMN_NS}}}task", {"id": "sub_new_task", "name": "New child task"})
+    modified_xml = ET.tostring(child_root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+    # Use an admin request so that _can_edit_workspace allows the save.
+    class AdminRequest:
+        state = type("S", (), {
+            "auth_user": {"id": owner, "is_admin": True},
+            "active_org_id": org,
+            "is_admin": True,
+        })()
+        headers = {}
+
+    result = session_bpmn_save(child_id, BpmnXmlIn(xml=modified_xml), request=AdminRequest())
+    assert result["ok"] is True
+    assert result.get("parent_synced") is True
+
+    parent = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    assert 'id="sub_new_task"' in (parent.bpmn_xml or "")
+    # The parent subprocess still contains the original wrapper element.
+    assert '<subProcess id="sub_1"' in (parent.bpmn_xml or "") or '<bpmn:subProcess id="sub_1"' in (parent.bpmn_xml or "")
+
+
+BPMN_WITH_SUBPROCESS_PROPS = """<?xml version="1.0"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="defs">
+  <process id="Process_root">
+    <startEvent id="start" />
+    <subProcess id="sub_1">
+      <startEvent id="sub_start" />
+      <task id="sub_task">
+        <extensionElements>
+          <camunda:properties>
+            <camunda:property name="owner" value="ops" />
+          </camunda:properties>
+        </extensionElements>
+      </task>
+      <endEvent id="sub_end" />
+    </subProcess>
+    <endEvent id="end" />
+  </process>
+</definitions>"""
+
+STALE_CHILD_XML = """<?xml version="1.0"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="defs_stale">
+  <bpmn:process id="Process_stale">
+    <bpmn:task id="stale_task" name="STALE" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_stale">
+      <bpmndi:BPMNShape id="stale_task_di" bpmnElement="stale_task">
+        <dc:Bounds x="50" y="50" width="100" height="80" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>"""
+
+
+def test_navigate_heals_stale_child_xml_from_parent():
+    """Pre-fix stale child (valid-looking but outdated XML) must be synced
+    from the PARENT session's stored XML on navigation."""
+    owner = "owner_nav_heal_1"
+    org = "org_nav_heal_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_WITH_SUBPROCESS_PROPS
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    nav = navigate_to_subprocess(sid, "sub_1", request=req)
+    child_id = nav["subprocess_session_id"]
+    assert child_id
+
+    # Simulate the pre-fix state: child holds stale (but structurally valid)
+    # XML that differs from the parent file.
+    child = session_repo.load(child_id, user_id=owner, org_id=org, is_admin=True)
+    child.bpmn_xml = STALE_CHILD_XML
+    child.bpmn_meta = {
+        "camunda_extensions_by_element_id": {
+            "stale_task": {
+                "properties": {"extensionProperties": [], "extensionListeners": []},
+                "preservedExtensionElements": [],
+            }
+        }
+    }
+    session_repo.save(child, user_id=owner, org_id=org, is_admin=True)
+
+    nav2 = navigate_to_subprocess(sid, "sub_1", request=req)
+    assert nav2["subprocess_session_id"] == child_id
+    assert "stale_task" not in (nav2["bpmn_xml"] or "")
+    assert "sub_task" in (nav2["bpmn_xml"] or "")
+
+    healed = session_repo.load(child_id, user_id=owner, org_id=org, is_admin=True)
+    assert "sub_task" in (healed.bpmn_xml or "")
+    assert "stale_task" not in (healed.bpmn_xml or "")
+
+    # Camunda extensions must match the parent file content.
+    from app.camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
+
+    expected = extract_camunda_extensions_from_bpmn_xml(healed.bpmn_xml)
+    actual = (healed.bpmn_meta or {}).get("camunda_extensions_by_element_id") or {}
+    assert actual == expected
+    props = (actual.get("sub_task") or {}).get("properties", {}).get("extensionProperties") or []
+    assert [(p["name"], p["value"]) for p in props] == [("owner", "ops")]

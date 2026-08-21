@@ -1,0 +1,49 @@
+.wfbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  background: #16202f;
+  border: 1px solid #2a3648;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.wfbar__sep { color: #4a5a72; }
+.wfbar__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--ws-step-text, #9fb0c8);
+  border: 1px solid transparent;
+}
+.wfbar__step:hover { border-color: #3a4a62; color: var(--ws-step-hover, #d5e0ee); }
+.wfbar__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ws-step-num-bg, #2a3648);
+  color: var(--ws-step-num-text, #b8c6da);
+  font-size: 12px;
+}
+.wfbar__step--done { color: var(--ws-step-done, #7fce9b); }
+.wfbar__step--done .wfbar__num { background: var(--ws-step-done-bg, #1e4630); color: var(--ws-step-done, #7fce9b); }
+.wfbar__step--current {
+  color: var(--ws-step-current, #ffffff);
+  border-color: var(--ws-step-current-border, #3f6fd1);
+  background: var(--ws-step-current-bg, #1d2c47);
+}
+.wfbar__step--current .wfbar__num { background: var(--ws-step-current-num-bg, #3f6fd1); color: var(--ws-step-current, #fff); }
+/* UXF/B3 + Z0 TOBE-UX: недоступные шаги — solid-токены вместо opacity-гашения
+   (было #9fb0c8×0.55 ≈ 3.1:1 на #16202f; теперь ≥4.5:1, визуальная иерархия сохранена) */
+.wfbar__step--pending { color: var(--pm-tobe-step-pending, #b8c6da); }
+.wfbar__step--na { color: var(--pm-tobe-step-na, #8496ad); }
+.wfbar__step--na .wfbar__num { background: transparent; }
+.wfbar__step--next { border-color: var(--ws-step-next-border, #6b5bd2); }

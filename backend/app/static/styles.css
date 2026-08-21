@@ -1,0 +1,449 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0b0f19; color: #e8eefc; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.03); }
+.brand { font-weight: 700; letter-spacing: .2px; }
+.meta { display: flex; gap: 10px; align-items: center; }
+button { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); color: #e8eefc; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+button:hover { background: rgba(255,255,255,.12); }
+.btnGhost { background: transparent; border-color: rgba(255,255,255,.16); }
+.btnGhost:hover { background: rgba(255,255,255,.08); }
+.layout { display: grid; grid-template-columns: minmax(280px, 0.80fr) 2.20fr minmax(320px, 0.90fr); gap: 12px; padding: 12px; }
+.panel { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.10); border-radius: 16px; padding: 10px; min-height: calc(100vh - 70px); display: flex; flex-direction: column; }
+.panelTitle { font-weight: 650; margin-bottom: 8px; opacity: .95; }
+textarea { width: 100%; flex: 1; min-height: 280px; resize: vertical; padding: 10px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); color: #e8eefc; outline: none; }
+.row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.hint { font-size: 12px; opacity: .7; }
+
+.graphWrap { flex: 1; border-radius: 14px; border: 1px solid rgba(255,255,255,.10); background: rgba(0,0,0,.18); padding: 8px; overflow: auto; }
+.graphInner { position: relative; display: inline-block; min-width: 100%; min-height: 100%; }
+.graphOverlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; pointer-events: none; z-index: 3; }
+
+.nodeBadge { position: absolute; pointer-events: auto; z-index: 4; }
+.nodeBadgeBtn { padding: 3px 7px; border-radius: 999px; font-size: 11px; line-height: 1; border: 1px solid rgba(255,255,255,.20); background: rgba(255,255,255,.10); }
+.nodeBadgeBtn:hover { background: rgba(255,255,255,.14); }
+
+.nodeBadgeBtn.tone-critical { border-color: rgba(255,91,91,.65); background: rgba(255,91,91,.12); }
+.nodeBadgeBtn.tone-missing { border-color: rgba(255,184,0,.65); background: rgba(255,184,0,.12); }
+.nodeBadgeBtn.tone-ambig { border-color: rgba(59,130,246,.65); background: rgba(59,130,246,.12); }
+
+.qPopover { position: absolute; width: 320px; max-height: 360px; overflow: auto; border-radius: 14px; padding: 10px; background: rgba(8,10,14,.92); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 14px 38px rgba(0,0,0,.45); pointer-events: auto; z-index: 5; }
+.qPopoverTop { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
+.qPopoverTitle { font-weight: 650; font-size: 13px; opacity: .95; }
+.qPopoverClose { padding: 6px 8px; border-radius: 10px; }
+.qPopItem { border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); border-radius: 12px; padding: 10px; margin-top: 8px; }
+.qTop { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); opacity: .9; }
+.qText { margin: 8px 0; line-height: 1.35; }
+.qActions { display: flex; gap: 8px; align-items: center; }
+input { flex: 1; padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); color: #e8eefc; outline: none; }
+select { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); color: #e8eefc; outline: none; }
+
+.inspector { border: 1px solid rgba(255,255,255,.10); background: rgba(0,0,0,.18); border-radius: 14px; padding: 10px; min-height: 210px; }
+.insRow { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.insRow label { width: 92px; font-size: 12px; opacity: .75; }
+.insRow .grow { flex: 1; }
+.insTextarea { width: 100%; min-height: 70px; resize: vertical; padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); color: #e8eefc; outline: none; }
+.small { font-size: 12px; opacity: .7; }
+.link { color: #b8c7ff; text-decoration: none; }
+.link:hover { text-decoration: underline; }
+
+.qOptRow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.qOptBtn { padding: 6px 8px; border-radius: 10px; font-size: 12px; line-height: 1; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); }
+.qOptBtn:hover { background: rgba(255,255,255,.10); }
+
+.modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+.modal.hidden { display: none; }
+.modalBackdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.modalCard { position: relative; width: min(820px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: hidden; border-radius: 18px; border: 1px solid rgba(255,255,255,.12); background: rgba(8,10,14,.94); box-shadow: 0 22px 60px rgba(0,0,0,.55); }
+.modalTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 12px; border-bottom: 1px solid rgba(255,255,255,.10); }
+.modalTitle { font-weight: 700; letter-spacing: .2px; }
+.modalBody { padding: 12px; overflow: auto; max-height: calc(100vh - 120px); }
+
+.sessControls { display: flex; gap: 10px; align-items: center; }
+.sessList { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.sessItem { border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); border-radius: 14px; padding: 10px; display: flex; justify-content: space-between; gap: 12px; }
+.sessLeft { min-width: 0; }
+.sessTitle { font-weight: 650; }
+.sessMeta { font-size: 12px; opacity: .75; margin-top: 4px; }
+.sessPreview { font-size: 12px; opacity: .7; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+.sessRight { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.pill { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.16); opacity: .9; }
+
+.llmForm { display: flex; flex-direction: column; gap: 10px; }
+.llmRow { display: flex; gap: 10px; align-items: center; }
+.llmRow label { width: 120px; font-size: 12px; opacity: .8; }
+.llmRow .grow { flex: 1; }
+.llmNote { font-size: 12px; opacity: .72; line-height: 1.35; }
+.llmHint { margin-top: 6px; font-size: 12px; opacity: .7; }
+
+/* STEP18C1_DIAGRAM_FIRST
+   Make Mermaid panel dominant; shrink notes input.
+*/
+.layout { grid-template-columns: minmax(280px, 0.80fr) 2.20fr minmax(320px, 0.90fr); }
+
+.layout > .panel:first-child textarea#notes {
+  flex: none;
+  height: 220px;
+  min-height: 220px;
+}
+
+.layout > .panel:first-child .hint {
+  font-size: 12px;
+  opacity: .85;
+}
+
+@media (max-width: 1200px) {
+  .layout { grid-template-columns: 1fr; }
+  .panel { min-height: auto; }
+}
+/* STEP18C2_WORKSPACE_GRID
+   Workspace-first layout (fixed mapping):
+   DOM order is: 1) Process (Mermaid), 2) Tools, 3) Notes.
+   Desired layout:
+     - Process dominates (left)
+     - Tools on the right (narrow column)
+     - Notes as compact bottom composer under Process
+*/
+.layout {
+  grid-template-columns: 2.85fr minmax(360px, 0.90fr);
+  grid-template-rows: minmax(520px, 1fr) auto;
+  grid-template-areas: "process tools" "notes tools";
+  align-items: stretch;
+}
+
+/* Process panel (1st) */
+.layout > .panel:nth-child(1) { grid-area: process; min-height: 520px; }
+
+/* Tools panel (2nd) */
+.layout > .panel:nth-child(2) { grid-area: tools; min-height: 520px; }
+
+/* Notes panel (3rd) becomes composer */
+.layout > .panel:nth-child(3) { grid-area: notes; min-height: 0; }
+.layout > .panel:nth-child(3) textarea#notes {
+  flex: none;
+  height: 150px;
+  min-height: 150px;
+  max-height: 190px;
+}
+.layout > .panel:nth-child(3) .hint { font-size: 12px; opacity: .85; }
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas: none;
+  }
+  .layout > .panel:nth-child(1),
+  .layout > .panel:nth-child(2),
+  .layout > .panel:nth-child(3) {
+    grid-area: auto;
+    min-height: auto;
+  }
+  .layout > .panel:nth-child(3) textarea#notes { height: 180px; min-height: 180px; }
+}
+
+/* STEP18C3_PROCESS_FULLWIDTH
+   Put Process (Mermaid) on top, full width.
+   Move everything else to bottom row.
+   Uses :has() to bind panels by content (Chrome OK).
+*/
+.layout {
+  grid-template-columns: 1.65fr 1.00fr;
+  grid-template-rows: minmax(580px, 1fr) auto;
+  grid-template-areas: "process process" "notes tools";
+  align-items: stretch;
+}
+
+.layout > .panel:has(#mermaid) {
+  grid-area: process;
+  min-height: 580px;
+}
+.layout > .panel:has(textarea#notes) {
+  grid-area: notes;
+  min-height: 0;
+}
+.layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) {
+  grid-area: tools;
+  min-height: 0;
+}
+
+.layout > .panel:has(#mermaid) #mermaid {
+  width: 100%;
+  min-height: 520px;
+}
+
+.layout > .panel:has(textarea#notes) textarea#notes {
+  flex: none;
+  height: 160px;
+  min-height: 160px;
+  max-height: 220px;
+}
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas: "process" "notes" "tools";
+  }
+  .layout > .panel:has(#mermaid) { min-height: 520px; }
+}
+
+/* STEP18C3B_PROCESS_FULLWIDTH_FIX
+   Goals:
+   1) Process (Mermaid) truly spans full width and SVG scales up
+   2) Bottom row: Notes (left) + Tools (right)
+   3) Tools panel does NOT become a tall column; keep it compact with internal scroll
+   Uses :has() to bind panels by content (Chrome OK).
+*/
+.layout {
+  grid-template-columns: 1.25fr 1.00fr !important;
+  grid-template-rows: minmax(640px, 1fr) auto !important;
+  grid-template-areas: "process process" "notes tools" !important;
+}
+
+.layout > .panel:has(#mermaid) {
+  grid-area: process !important;
+  width: 100% !important;
+  min-height: 640px !important;
+}
+
+/* Make Mermaid SVG fill available width */
+.layout > .panel:has(#mermaid) #mermaid {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 560px !important;
+}
+.layout > .panel:has(#mermaid) #mermaid svg {
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+}
+
+.layout > .panel:has(textarea#notes) {
+  grid-area: notes !important;
+  min-height: 0 !important;
+}
+.layout > .panel:has(textarea#notes) textarea#notes {
+  flex: none !important;
+  height: 160px !important;
+  min-height: 160px !important;
+  max-height: 220px !important;
+}
+
+/* Tools panel = everything that is not Mermaid and not Notes */
+.layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) {
+  grid-area: tools !important;
+  min-height: 0 !important;
+  max-height: 260px !important;
+  overflow-y: auto !important;
+}
+
+/* Prevent inner tool blocks from forcing huge heights */
+.layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) > * {
+  min-height: 0 !important;
+}
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto !important;
+    grid-template-areas: "process" "notes" "tools" !important;
+  }
+  .layout > .panel:not(:has(#mermaid)):not(:has(textarea#notes)) {
+    max-height: none !important;
+  }
+}
+
+/* STEP18C3C_MERMAID_SCALE_FIX
+   Fix Mermaid becoming overly zoomed-in.
+   We keep Process panel full-width, but do NOT force SVG to width:100% (which upscales small diagrams).
+   Instead: max-width:100% + width:auto, and enable scrolling/panning inside the diagram viewport.
+*/
+.layout > .panel:has(#mermaid) #mermaid {
+  overflow: auto !important;
+}
+
+.layout > .panel:has(#mermaid) #mermaid svg {
+  width: auto !important;
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Keep the diagram visually centered when it is smaller than the viewport */
+.layout > .panel:has(#mermaid) #mermaid {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+}
+
+
+/* STEP18C3F_ZOOM_CONTROLS_CSS */
+.mermaid-wrap { position: relative; }
+/* STEP18C3G_WORKBENCH_LAYOUT */
+:root{
+  --fpc-gap: 14px;
+  --fpc-topbar-h: 58px;
+}
+
+.layout.layoutWorkBench{
+  display: flex;
+  flex-direction: column;
+  gap: var(--fpc-gap);
+  padding: 12px;
+  height: calc(100dvh - var(--fpc-topbar-h));
+}
+
+.layout.layoutWorkBench .panel{
+  min-height: 0 !important;
+}
+
+.layout.layoutWorkBench .panel.panelProcess{
+  flex: 0 0 min(62vh, 700px);
+  display: flex;
+  flex-direction: column;
+}
+
+.layout.layoutWorkBench .panel.panelProcess .graphWrap{
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout.layoutWorkBench .bottomRow{
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: var(--fpc-gap);
+  align-items: stretch;
+}
+
+.layout.layoutWorkBench .bottomRow .panel{
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout.layoutWorkBench .bottomRow textarea{
+  flex: 0 0 auto;
+  min-height: 120px !important;
+  max-height: 160px;
+}
+
+.layout.layoutWorkBench .bottomRow .panel .panelBody,
+.layout.layoutWorkBench .bottomRow .panel .box,
+.layout.layoutWorkBench .bottomRow .panel .inspector,
+.layout.layoutWorkBench .bottomRow .panel .scroll,
+.layout.layoutWorkBench .bottomRow .panel .content{
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 1100px){
+  .layout.layoutWorkBench{
+    height: auto;
+  }
+  .layout.layoutWorkBench .bottomRow{
+    grid-template-columns: 1fr;
+  }
+}
+
+/* STEP19B_MERMAID_ZOOM */
+
+#graphWrap{ position:relative; }
+#graphWrap{ height: clamp(380px, 62vh, 740px); }
+
+.mz-bar{
+  position:absolute;
+  top:12px;
+  right:16px;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(20,22,28,.55);
+  backdrop-filter: blur(10px);
+  z-index: 30;
+}
+.mz-btn{
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.90);
+  padding:6px 10px;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:12px;
+  line-height:1;
+}
+.mz-btn:hover{ background: rgba(255,255,255,.10); }
+.mz-label{
+  margin-left:6px;
+  font-size:12px;
+  color: rgba(255,255,255,.75);
+  white-space:nowrap;
+}
+
+/* FPC_ZOOM_V3_START */
+.fpc-zoom-host { position: relative; }
+
+.fpc-zoom-bar {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(20,24,32,0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  z-index: 20;
+}
+
+.fpc-zoom-btn {
+  appearance: none;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.92);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fpc-zoom-btn:hover { background: rgba(255,255,255,0.10); }
+
+.fpc-zoom-label {
+  margin-left: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.72);
+  min-width: 44px;
+  text-align: right;
+}
+/* FPC_ZOOM_V3_END */
+
+/* STEP20A: zoom+notes stabilization */
+.panelMermaid { position: relative; }
+#mermaid svg { max-width: none; }
+
+/* STEP20P2_NOTES_LOG_BEGIN */
+.notes-log{
+  width: 100%;
+  min-height: 86px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 10px;
+  margin: 8px 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  color: rgba(255,255,255,.86);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+/* STEP20P2_NOTES_LOG_END */

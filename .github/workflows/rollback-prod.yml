@@ -1,0 +1,41 @@
+name: Rollback Prod
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rollback prod to previous images
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -e
+
+            # Verify rollback images exist
+            docker image inspect processmap-gateway:rollback > /dev/null 2>&1 || \
+              { echo "[rollback] ERROR: processmap-gateway:rollback not found"; exit 1; }
+            docker image inspect app-api:rollback > /dev/null 2>&1 || \
+              { echo "[rollback] ERROR: app-api:rollback not found"; exit 1; }
+
+            # Re-tag rollback images as current
+            docker tag processmap-gateway:rollback processmap-gateway:dev
+            docker tag app-api:rollback app-api:latest
+
+            # Restart containers with rolled-back images (no rebuild)
+            cd /opt/processmap/app
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              up -d --no-deps api gateway
+
+            echo "[rollback-prod] done"

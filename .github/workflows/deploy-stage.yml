@@ -1,0 +1,240 @@
+name: Deploy to Stage
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      # Деплоит stage-контур на сервере, указанном в STAGE_HOST.
+      - name: Deploy target disclaimer
+        shell: bash
+        run: |
+          echo "::warning::This workflow deploys to /opt/processmap/app via STAGE_HOST secret."
+          echo "::warning::Stage URL: https://stage.processmap.ru; prod URL: https://processmap.ru. Stage/prod deploy only manually via deploy/deploy.sh on the server."
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          # полная история нужна шагу "Detect agent service changes" (git diff before..sha)
+          fetch-depth: 0
+
+      - name: Compute build metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            echo "build_time=${build_time}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # AGENT-SVC: agent-образ собираем только при изменении backend/services/agent/**
+      # (решение владельца). Если before-sha недоступен — считаем изменённым (safe).
+      - name: Detect agent service changes
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [ -z "${before}" ] || [ "${before}" = "0000000000000000000000000000000000000000" ]; then
+            echo "[changes] before-sha unavailable; assuming agent changed"
+            echo "agent=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if git diff --name-only "${before}" "${GITHUB_SHA}" | grep -q '^backend/services/agent/'; then
+            echo "[changes] backend/services/agent changed"
+            echo "agent=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "[changes] backend/services/agent unchanged"
+            echo "agent=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Deploy to stage server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/processmap/app
+
+            REQUESTED_REF="main"
+            EXPECTED_SHA="${{ github.sha }}"
+            AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
+            BUILD_TIME="${{ steps.meta.outputs.build_time }}"
+
+            echo "[deploy-stage] preflight: stage boundary"
+            test -f ".env.stage"
+            test -f "docker-compose.yml"
+            test -f "docker-compose.stage.yml"
+            stage_api_count="$(docker ps -q \
+              --filter label=com.docker.compose.project=processmap_stage \
+              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
+            prod_api_count="$(docker ps -q \
+              --filter label=com.docker.compose.project=app \
+              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
+            echo "[deploy-stage] stage api containers: ${stage_api_count}"
+            echo "[deploy-stage] prod api containers visible but not targeted: ${prod_api_count}"
+            [ "${stage_api_count}" -ge 1 ] || {
+              echo "[deploy-stage] ERROR: processmap_stage api container not found" >&2
+              exit 1
+            }
+
+            echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
+            echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
+
+            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            git fetch origin "${REQUESTED_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify origin/${REQUESTED_REF})"
+            echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
+            [ "${DEPLOY_SHA}" = "${EXPECTED_SHA}" ] || {
+              echo "[deploy-stage] ERROR: origin/main ${DEPLOY_SHA} != workflow sha ${EXPECTED_SHA}" >&2
+              exit 1
+            }
+
+            PRESERVE_DIR="$(mktemp -d /tmp/processmap-stage-preserve.XXXXXX)"
+            for path in \
+              .env \
+              .env.stage \
+              docker-compose.ssl.yml \
+              docker-compose.prod.yml \
+              docker-compose.prod.gateway.yml \
+              backend/alembic.stage.ini; do
+              if [ -e "${path}" ]; then
+                mkdir -p "${PRESERVE_DIR}/$(dirname "${path}")"
+                cp -a "${path}" "${PRESERVE_DIR}/${path}"
+              fi
+            done
+
+            # Full checkout makes the stage worktree consistent after a failed
+            # previous checkout; server-only config files are restored below.
+            git checkout -f "${DEPLOY_SHA}"
+
+            for path in \
+              .env \
+              .env.stage \
+              docker-compose.ssl.yml \
+              docker-compose.prod.yml \
+              docker-compose.prod.gateway.yml \
+              backend/alembic.stage.ini; do
+              if [ -e "${PRESERVE_DIR}/${path}" ]; then
+                mkdir -p "$(dirname "${path}")"
+                cp -a "${PRESERVE_DIR}/${path}" "${path}"
+              fi
+            done
+
+            echo "[deploy-stage] source diagnostics:"
+            git status --short
+            echo "[deploy-stage] file checksums after checkout:"
+            sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            echo "[deploy-stage] App.jsx sessions:"
+            grep -n "const \\[sessions" frontend/src/App.jsx || echo "NOT FOUND"
+            grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
+            echo "[deploy-stage] NotesMvpPanel sessions prop:"
+            grep -n "sessions = \\[]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
+
+            STAGE_FRESHNESS_SOURCE_FILE="/tmp/processmap-stage-deploy-fingerprint-${REQUESTED_REF//[^A-Za-z0-9._-]/_}-${DEPLOY_SHA:0:12}.json"
+            export STAGE_FRESHNESS_SOURCE_FILE
+
+            deploy/scripts/stage_freshness_proof.sh prepare-source \
+              --requested-ref "${REQUESTED_REF}" \
+              --resolved-sha "${DEPLOY_SHA}"
+
+            export BUILD_ID="${DEPLOY_SHA}"
+            export BUILD_BRANCH="${REQUESTED_REF}"
+            export BUILD_TIME="${BUILD_TIME}"
+            export BUILD_ENV="stage"
+            export VITE_BUILD_ID="${DEPLOY_SHA}"
+            export VITE_BUILD_BRANCH="${REQUESTED_REF}"
+            export VITE_BUILD_TIME="${BUILD_TIME}"
+            export VITE_BUILD_ENV="stage"
+
+            DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
+            export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
+            export VITE_DEPLOY_REQUESTED_REF="${REQUESTED_REF}"
+            export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+            export STAGE_IMAGE_TAG="${DEPLOY_SHA}"
+
+            ENV_FILE=".env.stage"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d; /^STAGE_IMAGE_TAG=/d' "${ENV_FILE}"
+            {
+              echo ""
+              echo "# Auto-injected by deploy-stage.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${DEPLOY_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${REQUESTED_REF}"
+              echo "BUILD_ENV=stage"
+              echo "VITE_BUILD_ID=${DEPLOY_SHA}"
+              echo "VITE_BUILD_TIME=${BUILD_TIME}"
+              echo "VITE_BUILD_BRANCH=${REQUESTED_REF}"
+              echo "VITE_BUILD_ENV=stage"
+              echo "VITE_DEPLOY_FINGERPRINT=${DEPLOY_FINGERPRINT}"
+              echo "VITE_DEPLOY_REQUESTED_REF=${REQUESTED_REF}"
+              echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
+              echo "STAGE_IMAGE_TAG=${DEPLOY_SHA}"
+            } >> "${ENV_FILE}"
+
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              config --quiet
+
+            echo "[deploy-stage] building images on server"
+            BUILD_SERVICES="api frontend notifications"
+            if [ "${AGENT_CHANGED}" = "true" ]; then
+              BUILD_SERVICES="${BUILD_SERVICES} agent"
+            fi
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              build ${BUILD_SERVICES}
+
+            echo "[deploy-stage] current frontend mounts:"
+            docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage] current frontend assets:"
+            docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              rm -fsv frontend 2>/dev/null || true
+            docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
+
+            UP_SERVICES="api frontend notifications"
+            if [ "${AGENT_CHANGED}" = "true" ]; then
+              UP_SERVICES="${UP_SERVICES} agent"
+            fi
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              up -d --no-deps --force-recreate -V ${UP_SERVICES}
+
+            echo "[deploy-stage] new frontend mounts:"
+            docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage] new frontend assets:"
+            docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+
+            deploy/scripts/stage_freshness_proof.sh verify-chain \
+              --requested-ref "${REQUESTED_REF}" \
+              --resolved-sha "${DEPLOY_SHA}"
+
+            rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
+
+            echo "[deploy-stage] done ref=${REQUESTED_REF} sha=${DEPLOY_SHA}"

@@ -1,0 +1,12 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install --include=dev --package-lock=false
+
+COPY . .
+
+EXPOSE 5177
+
+CMD ["sh", "-c", "if [ ! -f node_modules/tailwindcss/package.json ]; then npm install --include=dev --package-lock=false; fi && npm run dev -- --host 0.0.0.0 --port ${VITE_PORT:-5177}"]

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="Defs_ManySubprocesses">
+  <bpmn:process id="Process_ManySubprocesses" isExecutable="true">
+    <bpmn:subProcess id="SubProcess_01" name="Подпроцесс 01">
+      <bpmn:startEvent id="SubStart_01" />
+      <bpmn:task id="SubTask_01" name="Задача подпроцесса 01" />
+      <bpmn:endEvent id="SubEnd_01" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_02" name="Подпроцесс 02">
+      <bpmn:startEvent id="SubStart_02" />
+      <bpmn:task id="SubTask_02" name="Задача подпроцесса 02" />
+      <bpmn:endEvent id="SubEnd_02" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_03" name="Подпроцесс 03">
+      <bpmn:startEvent id="SubStart_03" />
+      <bpmn:task id="SubTask_03" name="Задача подпроцесса 03" />
+      <bpmn:endEvent id="SubEnd_03" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_04" name="Подпроцесс 04">
+      <bpmn:startEvent id="SubStart_04" />
+      <bpmn:task id="SubTask_04" name="Задача подпроцесса 04" />
+      <bpmn:endEvent id="SubEnd_04" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_05" name="Подпроцесс 05">
+      <bpmn:startEvent id="SubStart_05" />
+      <bpmn:task id="SubTask_05" name="Задача подпроцесса 05" />
+      <bpmn:endEvent id="SubEnd_05" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_06" name="Подпроцесс 06">
+      <bpmn:startEvent id="SubStart_06" />
+      <bpmn:task id="SubTask_06" name="Задача подпроцесса 06" />
+      <bpmn:endEvent id="SubEnd_06" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_07" name="Подпроцесс 07">
+      <bpmn:startEvent id="SubStart_07" />
+      <bpmn:task id="SubTask_07" name="Задача подпроцесса 07" />
+      <bpmn:endEvent id="SubEnd_07" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_08" name="Подпроцесс 08">
+      <bpmn:startEvent id="SubStart_08" />
+      <bpmn:task id="SubTask_08" name="Задача подпроцесса 08" />
+      <bpmn:endEvent id="SubEnd_08" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_09" name="Подпроцесс 09">
+      <bpmn:startEvent id="SubStart_09" />
+      <bpmn:task id="SubTask_09" name="Задача подпроцесса 09" />
+      <bpmn:endEvent id="SubEnd_09" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_10" name="Подпроцесс 10">
+      <bpmn:startEvent id="SubStart_10" />
+      <bpmn:task id="SubTask_10" name="Задача подпроцесса 10" />
+      <bpmn:endEvent id="SubEnd_10" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_11" name="Подпроцесс 11">
+      <bpmn:startEvent id="SubStart_11" />
+      <bpmn:task id="SubTask_11" name="Задача подпроцесса 11" />
+      <bpmn:endEvent id="SubEnd_11" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_12" name="Подпроцесс 12">
+      <bpmn:startEvent id="SubStart_12" />
+      <bpmn:task id="SubTask_12" name="Задача подпроцесса 12" />
+      <bpmn:endEvent id="SubEnd_12" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_13" name="Подпроцесс 13">
+      <bpmn:startEvent id="SubStart_13" />
+      <bpmn:task id="SubTask_13" name="Задача подпроцесса 13" />
+      <bpmn:endEvent id="SubEnd_13" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_14" name="Подпроцесс 14">
+      <bpmn:startEvent id="SubStart_14" />
+      <bpmn:task id="SubTask_14" name="Задача подпроцесса 14" />
+      <bpmn:endEvent id="SubEnd_14" />
+    </bpmn:subProcess>
+    <bpmn:subProcess id="SubProcess_15" name="Подпроцесс 15">
+      <bpmn:startEvent id="SubStart_15" />
+      <bpmn:task id="SubTask_15" name="Задача подпроцесса 15" />
+      <bpmn:endEvent id="SubEnd_15" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>

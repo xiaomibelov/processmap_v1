@@ -1,0 +1,219 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  acceptAiProductActions,
+  deleteProductActionForStep,
+  saveProductActionForStep,
+} from "./productActionsPersistence.js";
+
+const step = {
+  id: "step_1",
+  node_id: "Activity_1",
+  action: "Нарезать куриную грудку",
+  role: "Повар",
+};
+
+test("saveProductActionForStep calls interview analysis helper with product_actions patch", async () => {
+  const calls = [];
+  const response = await saveProductActionForStep({
+    sessionId: "sid_1",
+    currentAnalysis: {
+      custom_marker: "preserve-on-backend",
+      product_actions: [{ id: "pa_keep", step_id: "step_keep", product_name: "Рис" }],
+    },
+    step,
+    draft: {
+      id: "pa_1",
+      product_name: "Куриная грудка",
+      product_group: "Птица",
+      action_type: "нарезка",
+      action_stage: "подготовка",
+      action_object: "куриная грудка",
+      action_object_category: "ингредиент",
+      action_method: "нарезать ножом",
+    },
+    nowIso: "2026-05-05T12:00:00.000Z",
+    getBaseDiagramStateVersion: () => 7,
+    rememberDiagramStateVersion: () => null,
+    onSessionSync: () => null,
+    patchInterviewAnalysis: async (sid, patch, options) => {
+      calls.push({ sid, patch, options });
+      return { ok: true, status: 200, analysis: { product_actions: patch.product_actions } };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].sid, "sid_1");
+  assert.deepEqual(Object.keys(calls[0].patch), ["product_actions"]);
+  assert.equal(calls[0].patch.product_actions.length, 2);
+  assert.equal(calls[0].patch.product_actions[0].id, "pa_keep");
+  assert.equal(calls[0].patch.product_actions[1].id, "pa_1");
+  assert.equal(calls[0].patch.product_actions[1].bpmn_element_id, "Activity_1");
+  assert.equal(typeof calls[0].options.getBaseDiagramStateVersion, "function");
+  assert.equal(typeof calls[0].options.rememberDiagramStateVersion, "function");
+  assert.equal(typeof calls[0].options.onSessionSync, "function");
+});
+
+test("saveProductActionForStep surfaces conflict without converting it to success", async () => {
+  const response = await saveProductActionForStep({
+    sessionId: "sid_conflict",
+    currentAnalysis: { product_actions: [] },
+    step,
+    draft: { id: "pa_1", product_name: "Куриная грудка" },
+    patchInterviewAnalysis: async () => ({
+      ok: false,
+      status: 409,
+      error: "DIAGRAM_STATE_CONFLICT",
+    }),
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.status, 409);
+  assert.equal(response.error, "DIAGRAM_STATE_CONFLICT");
+});
+
+test("deleteProductActionForStep patches remaining product actions", async () => {
+  const calls = [];
+  const response = await deleteProductActionForStep({
+    sessionId: "sid_1",
+    currentAnalysis: {
+      product_actions: [
+        { id: "pa_delete", step_id: "step_1" },
+        { id: "pa_keep", step_id: "step_2" },
+      ],
+    },
+    actionId: "pa_delete",
+    patchInterviewAnalysis: async (sid, patch) => {
+      calls.push({ sid, patch });
+      return { ok: true, status: 200 };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].patch.product_actions.map((row) => row.id), ["pa_keep"]);
+});
+
+test("acceptAiProductActions saves selected AI rows through interview analysis patch helper", async () => {
+  const calls = [];
+  const response = await acceptAiProductActions({
+    sessionId: "sid_1",
+    currentAnalysis: {
+      product_actions: [{ id: "manual_keep", product_name: "Рис" }],
+    },
+    selectedActions: [
+      {
+        id: "ai_1",
+        step_id: "step_2",
+        bpmn_element_id: "Task_2",
+        step_label: "Упаковать сэндвич",
+        product_name: "Сэндвич",
+        product_group: "Готовые блюда",
+        action_type: "упаковка",
+        action_object: "сэндвич",
+        role: "Упаковщик",
+        confidence: 0.8,
+      },
+      {
+        id: "ai_duplicate",
+        duplicate_of: "manual_keep",
+        product_name: "Рис",
+      },
+    ],
+    nowIso: "2026-05-07T12:00:00.000Z",
+    patchInterviewAnalysis: async (sid, patch, options) => {
+      calls.push({ sid, patch, options });
+      return { ok: true, status: 200 };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].patch.product_actions.length, 2);
+  assert.equal(calls[0].patch.product_actions[0].id, "manual_keep");
+  assert.match(calls[0].patch.product_actions[1].id, /^pa_ai_20260507T120000000Z_1$/);
+  assert.equal(calls[0].patch.product_actions[1].ai_suggestion_id, "ai_1");
+  assert.equal(calls[0].patch.product_actions[1].source, "ai_suggested");
+  assert.equal(calls[0].patch.product_actions[1].manual_corrected, false);
+  assert.equal(response.acceptedProductActions.length, 1);
+});
+
+test("acceptAiProductActions creates distinct saved ids when batch AI rows reuse suggestion ids", async () => {
+  const calls = [];
+  const response = await acceptAiProductActions({
+    sessionId: "sid_1",
+    currentAnalysis: {
+      product_actions: [{ id: "manual_keep", product_name: "Рис" }],
+    },
+    selectedActions: [
+      {
+        id: "ai_pa_1",
+        step_id: "step_1",
+        bpmn_element_id: "Task_1",
+        step_label: "Взять суп",
+        product_name: "Суп",
+        action_type: "взятие",
+        action_object: "суп",
+      },
+      {
+        id: "ai_pa_1",
+        step_id: "step_2",
+        bpmn_element_id: "Task_2",
+        step_label: "Поставить суп",
+        product_name: "Суп",
+        action_type: "перекладывание",
+        action_object: "суп",
+      },
+      {
+        id: "ai_pa_2",
+        step_id: "step_3",
+        bpmn_element_id: "Task_3",
+        step_label: "Подать суп",
+        product_name: "Суп",
+        action_type: "другое",
+        action_object: "суп",
+      },
+    ],
+    nowIso: "2026-05-07T12:00:00.000Z",
+    patchInterviewAnalysis: async (sid, patch) => {
+      calls.push({ sid, patch });
+      return { ok: true, status: 200 };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].patch.product_actions.length, 4);
+  assert.deepEqual(calls[0].patch.product_actions.map((row) => row.id), [
+    "manual_keep",
+    "pa_ai_20260507T120000000Z_1",
+    "pa_ai_20260507T120000000Z_2",
+    "pa_ai_20260507T120000000Z_3",
+  ]);
+  assert.deepEqual(calls[0].patch.product_actions.slice(1).map((row) => row.ai_suggestion_id), [
+    "ai_pa_1",
+    "ai_pa_1",
+    "ai_pa_2",
+  ]);
+  assert.equal(response.productActions.length, 4);
+  assert.equal(response.acceptedProductActions.length, 3);
+});
+
+test("acceptAiProductActions does not save when nothing selectable is accepted", async () => {
+  let called = false;
+  const response = await acceptAiProductActions({
+    sessionId: "sid_1",
+    currentAnalysis: { product_actions: [{ id: "manual_keep", product_name: "Рис" }] },
+    selectedActions: [{ id: "ai_duplicate", duplicate_of: "manual_keep", product_name: "Рис" }],
+    patchInterviewAnalysis: async () => {
+      called = true;
+      return { ok: true };
+    },
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error, "no_selected_product_actions");
+  assert.equal(called, false);
+});

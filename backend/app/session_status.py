@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from typing import Any, Dict, Set
+
+from fastapi import HTTPException
+
+
+SESSION_STATUS_ORDER = ("draft", "in_progress", "review", "ready", "archived")
+SESSION_STATUS_SET = set(SESSION_STATUS_ORDER)
+
+# Manual workflow transitions.
+# `archived` is reversible so operators can reopen sessions without forced data rewrites.
+SESSION_STATUS_TRANSITIONS: Dict[str, Set[str]] = {
+    "draft": {"draft", "in_progress", "archived"},
+    "in_progress": {"draft", "in_progress", "review", "ready", "archived"},
+    "review": {"in_progress", "review", "ready", "archived"},
+    "ready": {"in_progress", "review", "ready", "archived"},
+    "archived": set(SESSION_STATUS_ORDER),
+}
+
+_SESSION_STATUS_ALIASES = {
+    "draft": "draft",
+    "in_work": "in_progress",
+    "inprogress": "in_progress",
+    "in_progress": "in_progress",
+    "review": "review",
+    "on_review": "review",
+    "ready": "ready",
+    "done": "ready",
+    "archive": "archived",
+    "archived": "archived",
+}
+
+
+def normalize_session_status(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    normalized = _SESSION_STATUS_ALIASES.get(value, value)
+    return normalized if normalized in SESSION_STATUS_SET else ""
+
+
+def validate_session_status_transition(
+    current_raw: Any,
+    next_raw: Any,
+    *,
+    can_edit: bool,
+    can_archive: bool,
+) -> str:
+    current_status = normalize_session_status(current_raw) or "draft"
+    next_status = normalize_session_status(next_raw)
+    if not next_status:
+        raise HTTPException(status_code=422, detail={"code": "STATUS_INVALID", "message": "invalid status"})
+    if not can_edit:
+        raise HTTPException(status_code=403, detail={"code": "STATUS_FORBIDDEN", "message": "forbidden"})
+    allowed = set(SESSION_STATUS_TRANSITIONS.get(current_status) or {current_status})
+    if next_status not in allowed:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "STATUS_TRANSITION_INVALID", "message": "invalid status transition", "current": current_status, "next": next_status},
+        )
+    if next_status == "archived" and not can_archive:
+        raise HTTPException(status_code=403, detail={"code": "STATUS_FORBIDDEN", "message": "forbidden"})
+    return next_status
+
+
+def count_report_versions(interview_raw: Any) -> int:
+    """Count report versions stored in interview.report_versions (dict of path -> list)."""
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    raw = interview.get("report_versions")
+    if not isinstance(raw, dict):
+        return 0
+    total = 0
+    for versions_raw in raw.values():
+        if not isinstance(versions_raw, list):
+            continue
+        total += sum(1 for item in versions_raw if isinstance(item, dict))
+    return int(total)
+
+
+def derive_session_status(
+    *,
+    version: Any = 0,
+    bpmn_xml_version: Any = 0,
+    interview_raw: Any = None,
+) -> str:
+    """Derive effective session status.
+
+    Mirrors the workspace-list derivation: manual interview.status wins,
+    otherwise ready when report versions exist, in_progress when the session
+    has any content, draft as the fallback.
+    """
+    interview = interview_raw if isinstance(interview_raw, dict) else {}
+    manual = normalize_session_status(interview.get("status"))
+    if manual:
+        return manual
+    if count_report_versions(interview) > 0:
+        return "ready"
+    try:
+        has_version = int(version or 0) > 0 or int(bpmn_xml_version or 0) > 0
+    except Exception:
+        has_version = False
+    if has_version or interview:
+        return "in_progress"
+    return "draft"
