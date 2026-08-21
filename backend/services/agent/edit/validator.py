@@ -42,6 +42,8 @@ def _validate_operation_code(
     code: str,
     token: str,
     session_id: str,
+    *,
+    org_id: str = "",
 ) -> None:
     """Проверить, что operation_code существует в каталоге и не запрещён."""
     from runners import monolith_client
@@ -50,7 +52,7 @@ def _validate_operation_code(
     if not code or code.lower() in FORBIDDEN_OPERATION_CODES:
         raise EditPlanValidationError(f"operation_code '{code}' запрещён", field="operation_code")
     try:
-        result = monolith_client.get_operation_catalog(code, token=token)
+        result = monolith_client.get_operation_catalog(code, token=token, org_id=org_id)
     except MonolithError as exc:
         raise EditPlanValidationError(f"каталог операций недоступен: {exc}", field="operation_code") from exc
     if result.get("_http_status", 200) != 200 or not result.get("code"):
@@ -63,6 +65,7 @@ def validate_edit_plan(
     token: str,
     session_id: str,
     *,
+    org_id: str = "",
     max_operations: int = 20,
 ) -> List[str]:
     """Валидировать план правок. Возвращает список ошибок (пустой — OK).
@@ -106,7 +109,7 @@ def validate_edit_plan(
                 errors.append(f"{prefix}: fields должен быть объектом")
             elif fields.get("operation_code"):
                 try:
-                    _validate_operation_code(str(fields["operation_code"]), token, session_id)
+                    _validate_operation_code(str(fields["operation_code"]), token, session_id, org_id=org_id)
                 except EditPlanValidationError as exc:
                     errors.append(f"{prefix}: {exc.message}")
 
@@ -120,7 +123,7 @@ def validate_edit_plan(
                 planned_new_nodes.add(node_id)
             if op.get("operation_code"):
                 try:
-                    _validate_operation_code(str(op["operation_code"]), token, session_id)
+                    _validate_operation_code(str(op["operation_code"]), token, session_id, org_id=org_id)
                 except EditPlanValidationError as exc:
                     errors.append(f"{prefix}: {exc.message}")
 

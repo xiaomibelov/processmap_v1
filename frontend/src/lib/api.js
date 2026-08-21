@@ -1186,6 +1186,8 @@ export async function apiAgentStream(sessionId, payload = {}, options = {}) {
   const headers = new Headers({ "Content-Type": "application/json" });
   const token = String(getAccessToken() || "").trim();
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const orgId = String(getActiveOrgId() || "").trim();
+  if (orgId) headers.set("X-Org-Id", orgId);
 
   let response;
   try {
@@ -1264,6 +1266,8 @@ export async function apiAgentResume(sessionId, payload = {}, options = {}) {
   const headers = new Headers({ "Content-Type": "application/json" });
   const token = String(getAccessToken() || "").trim();
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const orgId = String(getActiveOrgId() || "").trim();
+  if (orgId) headers.set("X-Org-Id", orgId);
 
   let response;
   try {

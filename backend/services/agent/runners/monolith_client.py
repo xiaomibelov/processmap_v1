@@ -23,18 +23,20 @@ def _base_url() -> str:
     return str(os.environ.get("MONOLITH_INTERNAL_URL") or "http://api:8000").strip().rstrip("/")
 
 
-def _headers(token: str) -> Dict[str, str]:
+def _headers(token: str, org_id: str = "") -> Dict[str, str]:
     headers = {"Accept": "application/json"}
     if str(token or "").strip():
         headers["Authorization"] = f"Bearer {str(token).strip()}"
+    if str(org_id or "").strip():
+        headers["X-Org-Id"] = str(org_id).strip()
     return headers
 
 
-def get_projection(session_id: str, *, token: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
+def get_projection(session_id: str, *, token: str = "", org_id: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
     """GET /api/sessions/{id}/agent/projection → {ok, projection, projection_digest, rev}."""
     url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/agent/projection"
     try:
-        resp = httpx.get(url, headers=_headers(token), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.get(url, headers=_headers(token, org_id), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     if resp.status_code != 200:
@@ -53,6 +55,7 @@ def search_rag(
     session_id: str,
     token: str,
     *,
+    org_id: str = "",
     source_type: str = "",
     top_k: int = 5,
     min_score: float = 0.1,
@@ -68,7 +71,7 @@ def search_rag(
         params["min_score"] = float(min_score)
     url = f"{_base_url()}/api/rag/search"
     try:
-        resp = httpx.get(url, headers=_headers(token), params=params, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.get(url, headers=_headers(token, org_id), params=params, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     if resp.status_code != 200:
@@ -82,11 +85,11 @@ def search_rag(
     return data
 
 
-def get_operation_catalog(code: str, *, token: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
+def get_operation_catalog(code: str, *, token: str = "", org_id: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
     """GET /api/operation-catalog/{code} → operation details."""
     url = f"{_base_url()}/api/operation-catalog/{str(code).strip()}"
     try:
-        resp = httpx.get(url, headers=_headers(token), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.get(url, headers=_headers(token, org_id), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -99,11 +102,11 @@ def get_operation_catalog(code: str, *, token: str = "", timeout_sec: int = DEFA
     return data
 
 
-def get_session(session_id: str, *, token: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
+def get_session(session_id: str, *, token: str = "", org_id: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
     """GET /api/sessions/{id} → session row with diagram_state_version."""
     url = f"{_base_url()}/api/sessions/{str(session_id).strip()}"
     try:
-        resp = httpx.get(url, headers=_headers(token), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.get(url, headers=_headers(token, org_id), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     if resp.status_code != 200:
@@ -117,11 +120,11 @@ def get_session(session_id: str, *, token: str = "", timeout_sec: int = DEFAULT_
     return data
 
 
-def get_session_graph(session_id: str, *, token: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
+def get_session_graph(session_id: str, *, token: str = "", org_id: str = "", timeout_sec: int = DEFAULT_TIMEOUT_SEC) -> Dict[str, Any]:
     """GET /api/sessions/{id}/graph → raw nodes/edges + diagram_state_version."""
     url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/graph"
     try:
-        resp = httpx.get(url, headers=_headers(token), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.get(url, headers=_headers(token, org_id), timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     if resp.status_code != 200:
@@ -140,12 +143,13 @@ def patch_session(
     token: str,
     body: Dict[str, Any],
     *,
+    org_id: str = "",
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
     """PATCH /api/sessions/{id} — session save path with CAS/rev guard."""
     url = f"{_base_url()}/api/sessions/{str(session_id).strip()}"
     try:
-        resp = httpx.patch(url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.patch(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -158,8 +162,8 @@ def patch_session(
     return data
 
 
-def _json_headers(token: str) -> Dict[str, str]:
-    headers = _headers(token)
+def _json_headers(token: str, org_id: str = "") -> Dict[str, str]:
+    headers = _headers(token, org_id)
     headers["Content-Type"] = "application/json"
     return headers
 
@@ -170,6 +174,7 @@ def patch_node(
     token: str,
     fields: Dict[str, Any],
     *,
+    org_id: str = "",
     base_diagram_state_version: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
@@ -179,7 +184,7 @@ def patch_node(
     if base_diagram_state_version is not None:
         body["base_diagram_state_version"] = int(base_diagram_state_version)
     try:
-        resp = httpx.post(url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.post(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -197,6 +202,7 @@ def add_node(
     token: str,
     node: Dict[str, Any],
     *,
+    org_id: str = "",
     base_diagram_state_version: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
@@ -206,7 +212,7 @@ def add_node(
     if base_diagram_state_version is not None:
         body["base_diagram_state_version"] = int(base_diagram_state_version)
     try:
-        resp = httpx.post(url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.post(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -224,6 +230,7 @@ def delete_node(
     node_id: str,
     token: str,
     *,
+    org_id: str = "",
     base_diagram_state_version: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
@@ -233,7 +240,7 @@ def delete_node(
     if base_diagram_state_version is not None:
         params["base_diagram_state_version"] = int(base_diagram_state_version)
     try:
-        resp = httpx.delete(url, headers=_headers(token), params=params, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.delete(url, headers=_headers(token, org_id), params=params, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -251,6 +258,7 @@ def add_edge(
     token: str,
     edge: Dict[str, Any],
     *,
+    org_id: str = "",
     base_diagram_state_version: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
@@ -260,7 +268,7 @@ def add_edge(
     if base_diagram_state_version is not None:
         body["base_diagram_state_version"] = int(base_diagram_state_version)
     try:
-        resp = httpx.post(url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.post(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -278,6 +286,7 @@ def delete_edge(
     token: str,
     edge: Dict[str, Any],
     *,
+    org_id: str = "",
     base_diagram_state_version: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
@@ -287,7 +296,7 @@ def delete_edge(
     if base_diagram_state_version is not None:
         body["base_diagram_state_version"] = int(base_diagram_state_version)
     try:
-        resp = httpx.request("DELETE", url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.request("DELETE", url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
@@ -304,6 +313,7 @@ def create_bpmn_version_snapshot(
     session_id: str,
     token: str,
     *,
+    org_id: str = "",
     source_action: str = "agent_edit",
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
@@ -316,7 +326,7 @@ def create_bpmn_version_snapshot(
     url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/bpmn/versions"
     body = {"xml": "", "source_action": str(source_action or "agent_edit")}
     try:
-        resp = httpx.post(url, headers=_json_headers(token), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+        resp = httpx.post(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
         raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
     try:
