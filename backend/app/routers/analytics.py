@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import time
 from typing import Any, Dict, List, Literal, Set
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -28,6 +31,10 @@ from ..analytics_cache import (
     invalidate_analytics_scope,
 )
 from ..services.advanced_calculation import BpmnAnalyzer
+from ..save_services.analytics_aggregator.tasks import (
+    refresh_all_workspaces_analytics_task,
+    refresh_session_analytics_task,
+)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -361,6 +368,98 @@ def get_dashboard_path(
         return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
 
     return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+
+
+@router.post("/refresh")
+def refresh_analytics(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """Trigger an asynchronous refresh of analytics snapshots for the scope.
+
+    For session/project scope the existing per-session task is used; for
+    workspace scope the nightly workspace refresh task is used. The endpoint
+    returns immediately with the task id; the dashboard endpoint will reflect
+    the new snapshot once the task completes.
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    session_ids = []
+    task_id = None
+    queued = True
+    try:
+        if scope == "session":
+            task = refresh_session_analytics_task.delay(scope_id, oid)
+            task_id = task.id
+        elif scope == "project":
+            # Refresh all sessions in the project so the project rollup is rebuilt.
+            session_ids = _session_ids_for_scope(scope, scope_id, oid)
+            for sid in session_ids:
+                refresh_session_analytics_task.delay(sid, oid)
+        else:
+            task = refresh_all_workspaces_analytics_task.delay()
+            task_id = task.id
+    except Exception as exc:
+        # Broker may be unavailable; don't block the UI button.
+        logger.warning("analytics refresh enqueue failed for %s/%s: %s", scope, scope_id, exc)
+        queued = False
+
+    try:
+        invalidate_analytics_scope("dashboard", scope, scope_id, oid)
+    except Exception:
+        pass
+
+    return _ok(
+        {"scope_type": scope, "scope_id": scope_id, "task_id": task_id, "queued": queued},
+        {"refreshed_sessions": len(session_ids) if scope == "project" else None},
+    )
+
+
+@router.get("/quality")
+def get_quality(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """Aggregate data-quality metrics for the recalculation table.
+
+    Metrics are computed from the same source rows used by the recalculation
+    table, the ``?mode=source`` export and the blocker so that the Overview
+    quality section shares a single source of truth with those components.
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    rows = _build_source_rows(_properties_rows(scope, scope_id, oid))
+    total = len(rows)
+    if not total:
+        return _ok(
+            {
+                "ee_time_filled_pct": 0,
+                "ingredient_numeric_pct": 0,
+                "no_data_count": 0,
+                "total_elements_with_ee_time": 0,
+            },
+            {"scope_type": scope, "scope_id": scope_id},
+        )
+
+    no_data = sum(1 for r in rows if r["source"] == _SOURCE_NO_DATA)
+    property_rows = sum(1 for r in rows if r["source"] == _SOURCE_PROPERTY)
+    present_rows = total - sum(1 for r in rows if r["source"] == _SOURCE_DEFAULT)
+
+    return _ok(
+        {
+            "ee_time_filled_pct": 100,
+            "ingredient_numeric_pct": round((property_rows / max(present_rows, 1)) * 100, 1),
+            "no_data_count": no_data,
+            "total_elements_with_ee_time": total,
+        },
+        {"scope_type": scope, "scope_id": scope_id},
+    )
 
 
 def _session_ids_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[str]:

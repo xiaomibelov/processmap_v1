@@ -6,6 +6,9 @@ import {
   formatPropertyValue,
   isJsonLike,
 } from "./propertyValueUtils.js";
+import { ru } from "../../shared/i18n/ru.js";
+
+const t = ru.analytics;
 
 function toText(value) {
   return String(value ?? "").trim();
@@ -15,10 +18,14 @@ function getRowKey(row) {
   return `${row.bpmn_id || ""}::${row.name || ""}::${row.value || ""}`;
 }
 
-const PINNED_PROPERTY_NAMES = new Set(["ee_time", "ingredient_value"]);
+const CALCULATION_PROPERTY_NAMES = new Set(["ee_time", "ingredient_value", "ingredient_um", "ee_operation"]);
+
+function isCalculationPropertyName(name) {
+  return CALCULATION_PROPERTY_NAMES.has(toText(name).toLowerCase());
+}
 
 function isPinnedPropertyName(name) {
-  return PINNED_PROPERTY_NAMES.has(toText(name).toLowerCase());
+  return isCalculationPropertyName(name);
 }
 
 function pinnedPriority(name) {
@@ -69,10 +76,7 @@ function UsageBar({ count, max }) {
 }
 
 function sessionCountLabel(n) {
-  const count = Number(n) || 0;
-  if (count === 1) return "1 сессия";
-  if (count >= 2 && count <= 4) return `${count} сессии`;
-  return `${count} сессий`;
+  return String(Number(n) || 0);
 }
 
 function SessionCountBadge({ count }) {
@@ -81,7 +85,7 @@ function SessionCountBadge({ count }) {
   return (
     <span
       className={`analyticsSessionBadge ${multi ? "analyticsSessionBadge--multi" : "analyticsSessionBadge--single"}`}
-      title={`Использовано в ${sessionCountLabel(c)}`}
+      title={t.usedInSessionsTitle.replace("{{count}}", c)}
     >
       {sessionCountLabel(c)}
     </span>
@@ -100,7 +104,7 @@ function JsonModal({ value, onClose }) {
     <div className="analyticsJsonModalOverlay" onClick={onClose}>
       <div className="analyticsJsonModal" onClick={(e) => e.stopPropagation()}>
         <div className="analyticsJsonModalHeader">
-          <h4>JSON значение</h4>
+          <h4>{t.jsonValueTitle}</h4>
           <button type="button" className="analyticsJsonModalClose" onClick={onClose}>×</button>
         </div>
         <pre className="analyticsJsonModalBody">{pretty}</pre>
@@ -122,7 +126,7 @@ function ValueCell({ row }) {
           type="button"
           className="analyticsValueJsonTrigger"
           onClick={() => setExpanded(true)}
-          title="Нажмите, чтобы развернуть JSON"
+          title={t.expandJsonTitle}
         >
           <Badge tone="purple">JSON</Badge>
           <span className="analyticsValueJsonPreview">{formatted}</span>
@@ -152,15 +156,15 @@ function ValueCell({ row }) {
 }
 
 const COLUMNS = [
-  { key: "select", label: "", width: "40px" },
-  { key: "bpmn_name", label: "BPMN Name", flex: "minmax(150px, 1.6fr)" },
-  { key: "name", label: "Свойство", flex: "minmax(180px, 2fr)" },
-  { key: "type", label: "Тип", flex: "minmax(100px, 1fr)" },
-  { key: "category", label: "Категория", flex: "minmax(120px, 1.2fr)" },
-  { key: "source", label: "Источник", flex: "minmax(140px, 1.5fr)" },
-  { key: "usage_count", label: "Использований", flex: "minmax(110px, 1fr)" },
-  { key: "session_count", label: "Сессий", flex: "minmax(100px, 1fr)" },
-  { key: "value", label: "Значение", flex: "minmax(160px, 1.5fr)" },
+  { key: "select", label: "", width: "44px" },
+  { key: "bpmn_name", label: "BPMN Name", flex: "minmax(200px, 2fr)" },
+  { key: "name", label: t.columnProperty, flex: "minmax(200px, 2fr)" },
+  { key: "type", label: t.columnPropertyType, flex: "minmax(120px, 1fr)" },
+  { key: "category", label: t.columnPropertyCategory, flex: "minmax(150px, 1.2fr)" },
+  { key: "source", label: t.columnPropertySource, flex: "minmax(180px, 1.5fr)" },
+  { key: "usage_count", label: t.columnUsageCount, flex: "minmax(130px, 1fr)" },
+  { key: "session_count", label: t.columnSessionCount, flex: "minmax(110px, 1fr)" },
+  { key: "value", label: t.columnPropertyValue, flex: "minmax(200px, 1.5fr)" },
 ];
 
 const GRID_TEMPLATE = COLUMNS.map((c) => c.width || c.flex).join(" ");
@@ -172,8 +176,9 @@ function HeaderCell({ col, sort, onSort }) {
     <div
       className={`analyticsPropTableHeadCell analyticsPropTableHeadCell--${col.key} ${sortable ? "analyticsPropTableHeadCell--sortable" : ""} ${active ? "analyticsPropTableHeadCell--active" : ""}`}
       onClick={() => sortable && onSort?.(col.key)}
+      title={col.label}
     >
-      {col.label}
+      <span className="analyticsPropTableHeadCellLabel">{col.label}</span>
       {active ? <span className="analyticsSortIndicator">{sort.dir === "asc" ? " ↑" : " ↓"}</span> : null}
     </div>
   );
@@ -184,6 +189,7 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
   const valueType = inferPropertyValueType(row.name, row.value);
   const family = inferPropertyFamily(row.name, valueType);
   const pinned = isPinnedPropertyName(row.name);
+  const calc = isCalculationPropertyName(row.name);
 
   return (
     <div
@@ -196,24 +202,24 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
           type="checkbox"
           checked={selectedRows.has(key)}
           onChange={() => onToggleRow(key, row)}
-          aria-label={`Выбрать ${row.name || "строку"}`}
+          aria-label={t.selectRowAria.replace("{{name}}", row.name || "—")}
         />
       </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--bpmnName" title={toText(row.bpmn_name)}>
         <span className="analyticsPropBpmnName">{toText(row.bpmn_name) || "—"}</span>
       </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--name" title={toText(row.name)}>
-        <span className={`analyticsPropName ${isPinnedPropertyName(row.name) ? "analyticsPropName--pinned" : ""}`}>
+        <span className={`analyticsPropName ${calc ? "analyticsPropName--calc" : ""}`}>
           {toText(row.name) || "—"}
-          {isPinnedPropertyName(row.name) ? (
-            <span className="analyticsPinnedIndicator" title="Приоритетное свойство"> ★</span>
+          {calc ? (
+            <span className="analyticsPinnedIndicator" title={t.calcPropertyTooltip}> ★</span>
           ) : null}
         </span>
       </div>
-      <div className="analyticsPropTableCell analyticsPropTableCell--type">
+      <div className="analyticsPropTableCell analyticsPropTableCell--type" title={toText(row.type)}>
         <Badge tone={propertyTypeTone(row.type, valueType)}>{toText(row.type) || valueType}</Badge>
       </div>
-      <div className="analyticsPropTableCell analyticsPropTableCell--category">
+      <div className="analyticsPropTableCell analyticsPropTableCell--category" title={toText(row.category)}>
         <Badge tone={categoryTone(row.category)}>{toText(row.category) || family}</Badge>
       </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--source" title={toText(row.source)}>
@@ -225,14 +231,14 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
       <div className="analyticsPropTableCell analyticsPropTableCell--sessions">
         <SessionCountBadge count={row.session_count || 0} />
       </div>
-      <div className="analyticsPropTableCell analyticsPropTableCell--value">
+      <div className="analyticsPropTableCell analyticsPropTableCell--value" title={toText(row.value)}>
         <ValueCell row={row} />
       </div>
     </div>
   );
 }
 
-export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, usageRange, familyFilter }) {
+export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, usageRange, familyFilter, nameFilter }) {
   return useMemo(() => {
     let result = [...rows];
 
@@ -243,6 +249,10 @@ export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, 
           toText(field).toLowerCase().includes(q)
         )
       );
+    }
+
+    if (nameFilter?.length) {
+      result = result.filter((r) => nameFilter.includes(toText(r.name)));
     }
 
     if (familyFilter?.length) {
@@ -306,7 +316,7 @@ export default function AnalyticsPropertiesTable({
             type="checkbox"
             checked={rows.length > 0 && rows.every((r) => selectedRows.has(getRowKey(r)))}
             onChange={(e) => onSelectAllVisible?.(e.target.checked, rows)}
-            aria-label="Выбрать все видимые"
+            aria-label={t.selectAllVisibleAria}
           />
         </div>
         {COLUMNS.slice(1).map((col) => (
@@ -315,7 +325,7 @@ export default function AnalyticsPropertiesTable({
       </div>
       <div className="analyticsPropTableBody">
         {rows.length === 0 ? (
-          <div className="analyticsPropTableEmpty">Нет свойств по выбранным фильтрам.</div>
+          <div className="analyticsPropTableEmpty">{t.noPropertiesByFilter}</div>
         ) : (
           rows.map((row, idx) => (
             <Row
