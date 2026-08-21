@@ -228,6 +228,43 @@ def test_doc_qa_branch_empty_rag_degrades_to_free_answer(admin_token, session_wi
     assert body["message"] == "Свободный ответ"
 
 
+def test_doc_qa_branch_searches_current_session_first(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    mock_route_intent_smalltalk.return_value = "doc_qa"
+    with mock.patch("memory.chat.complete") as fake_complete, mock.patch("memory.chat.search_rag") as fake_rag:
+
+        def _side_effect(q, session_id, token, **kwargs):
+            if kwargs.get("source_type") == "bpmn_xml":
+                return {"ok": True, "results": [{"chunk": "Шаг из текущей сессии", "score": 0.9}]}
+            return {"ok": True, "results": []}
+
+        fake_rag.side_effect = _side_effect
+        fake_complete.return_value = {
+            "ok": True,
+            "status": "ok",
+            "text": "Ответ по текущей сессии",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "provider_id": "p1",
+            "model": "m",
+            "prompt_version": 1,
+            "fallback": False,
+            "cached": False,
+        }
+        c = TestClient(app)
+        r = c.post(
+            f"/sessions/{session_with_steps}/agent/chat",
+            headers=_auth(admin_token),
+            json={"message": "опиши шаг"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert "Ответ по текущей сессии" in body["message"]
+    # Первый вызов должен быть с фильтром по текущей сессии.
+    calls = fake_rag.call_args_list
+    assert calls[0].kwargs.get("source_type") == "bpmn_xml"
+    assert calls[0].args[1] == session_with_steps
+
+
 def test_empty_schema_smalltalk_no_json(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
     """Acceptance: empty projection + smalltalk -> human text, no raw JSON."""
     mock_projection.return_value = {
