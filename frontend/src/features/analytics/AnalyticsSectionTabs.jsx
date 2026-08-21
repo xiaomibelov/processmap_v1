@@ -2,7 +2,6 @@ const TABS = [
   { key: "overview", label: "Обзор" },
   { key: "actions", label: "Реестр действий" },
   { key: "properties", label: "Реестр свойств" },
-  { key: "dashboards", label: "Дашборды" },
 ];
 
 export default function AnalyticsSectionTabs({ activeTab = "overview", onChange }) {

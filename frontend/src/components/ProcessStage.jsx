@@ -5,7 +5,6 @@ import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
 import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
-import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
 import AnalyticsPage from "../features/analytics/AnalyticsPage.jsx";
@@ -1214,19 +1213,15 @@ function ProcessStage({
     analyticsHubRoute,
     productActionsRegistryRoute,
     propertiesRegistryRoute,
-    dashboardsRoute,
     setAnalyticsHubRoute,
     setProductActionsRegistryRoute,
     setPropertiesRegistryRoute,
-    setDashboardsRoute,
     openAnalyticsHub,
     closeAnalyticsHub,
     openProductActionsRegistry,
     closeProductActionsRegistry,
     openPropertiesRegistry,
     closePropertiesRegistry,
-    openDashboards,
-    closeDashboards,
   } = useAnalyticsRouteState({
     sessionId: sid,
     projectId: activeProjectId,
@@ -7678,15 +7673,14 @@ function ProcessStage({
         ref={processBodyRef}
       >
         {!hasSession ? (
-          analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active || dashboardsRoute.active ? (
+          analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
             <div className="analyticsSurfaceLayout">
               <AnalyticsSectionTabs
-                activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : propertiesRegistryRoute.active ? "properties" : "dashboards"}
+                activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
                 onChange={(key) => {
                   if (key === "overview") openAnalyticsHub();
                   else if (key === "actions") openProductActionsRegistry();
                   else if (key === "properties") openPropertiesRegistry();
-                  else if (key === "dashboards") openDashboards();
                 }}
               />
               {analyticsHubRoute.active ? (
@@ -7713,24 +7707,13 @@ function ProcessStage({
                   onOpenSession={openProductActionsRegistrySession}
                   onClose={closeProductActionsRegistry}
                 />
-              ) : propertiesRegistryRoute.active ? (
+              ) : (
                 <ProcessPropertiesRegistryPage
                   scope="project"
                   workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
                   projectId={propertiesRegistryRoute.projectId || activeProjectId}
                   sessionId=""
                   onClose={closePropertiesRegistry}
-                />
-              ) : (
-                <AnalyticsDashboards
-                  workspaceId={dashboardsRoute.workspaceId || activeProjectWorkspaceId}
-                  projectId={dashboardsRoute.projectId || activeProjectId}
-                  sessionId=""
-                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
-                  sessionTitle=""
-                  onClose={closeDashboards}
-                  onOpenProductActionsRegistry={openProductActionsRegistry}
-                  onOpenPropertiesRegistry={openPropertiesRegistry}
                 />
               )}
             </div>
@@ -7744,15 +7727,14 @@ function ProcessStage({
               onClearRequestedProject={onClearWorkspaceProject}
             />
           )
-        ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active || dashboardsRoute.active ? (
+        ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
           <div className="analyticsSurfaceLayout">
             <AnalyticsSectionTabs
-              activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : propertiesRegistryRoute.active ? "properties" : "dashboards"}
+              activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
               onChange={(key) => {
                 if (key === "overview") openAnalyticsHub();
                 else if (key === "actions") openProductActionsRegistry();
                 else if (key === "properties") openPropertiesRegistry();
-                else if (key === "dashboards") openDashboards();
               }}
             />
             {analyticsHubRoute.active ? (
@@ -7779,24 +7761,13 @@ function ProcessStage({
                 onOpenSession={openProductActionsRegistrySession}
                 onClose={closeProductActionsRegistry}
               />
-            ) : propertiesRegistryRoute.active ? (
+            ) : (
               <ProcessPropertiesRegistryPage
                 scope="session"
                 workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
                 projectId={propertiesRegistryRoute.projectId || activeProjectId}
                 sessionId={sid}
                 onClose={closePropertiesRegistry}
-              />
-            ) : (
-              <AnalyticsDashboards
-                workspaceId={dashboardsRoute.workspaceId || activeProjectWorkspaceId}
-                projectId={dashboardsRoute.projectId || activeProjectId}
-                sessionId={sid}
-                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
-                sessionTitle={toText(draft?.title)}
-                onClose={closeDashboards}
-                onOpenProductActionsRegistry={openProductActionsRegistry}
-                onOpenPropertiesRegistry={openPropertiesRegistry}
               />
             )}
           </div>

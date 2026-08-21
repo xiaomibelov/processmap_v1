@@ -411,6 +411,14 @@ export const apiRoutes = {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
     }),
+    refresh: (scope, scopeId) => withQuery("/api/analytics/refresh", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
+    quality: (scope, scopeId) => withQuery("/api/analytics/quality", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
   },
   recipes: {
     list: () => "/api/recipes",
