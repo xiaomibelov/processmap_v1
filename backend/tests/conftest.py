@@ -3,6 +3,10 @@ import tempfile
 
 import pytest
 
+# AGENT-2: в тестах Celery-задачи индексации запускаются синхронно,
+# чтобы избежать подключения к Redis-брокеру в unit-тестах.
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "1")
+
 
 @pytest.fixture(autouse=True)
 def isolate_process_db():
