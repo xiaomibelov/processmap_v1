@@ -553,17 +553,13 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 401)
 
-    def test_get_properties_recalculation_shape_with_catalog_backfill(self):
-        from app.recipe.storage import create_ingredient
+    def test_get_properties_recalculation_shape_missing_ingredient_uses_default(self):
+        from app.routers.analytics import _SOURCE_DEFAULT
 
-        create_ingredient(
-            {"name": "Рис", "unit": "кг", "value": 1.2}, self.org_id, self.admin_id
-        )
         self._set_session_bpmn_meta({
             "camunda_extensions_by_element_id": {
                 "op1": {"properties": {"extensionProperties": [
-                    {"name": "ee_time", "value": "0,33*n"},
-                    {"name": "ingredient", "value": "Рис"},
+                    {"name": "ee_time", "value": "5.0"},
                 ]}}
             }
         })
@@ -578,40 +574,106 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(data["count"], 1)
         self.assertEqual(data["resolved"], 1)
         row = data["rows"][0]
-        self.assertEqual(row["source"], "catalog")
-        self.assertEqual(row["ingredient"], "Рис")
-        self.assertAlmostEqual(row["ingredient_value"], 1.2)
-        self.assertAlmostEqual(row["result"], round(0.33 * 1.2, 2))
+        self.assertEqual(row["source"], _SOURCE_DEFAULT)
+        self.assertEqual(row["ingredient_value"], "")
+        self.assertAlmostEqual(row["result"], 5.0)
 
-    def test_compute_source_missing_ingredient_uses_ee_time(self):
-        from app.routers.analytics import _MISSING, compute_source
+    def test_classify_recalc_value_case_a_missing_ingredient(self):
+        from app.routers.analytics import _MISSING, _SOURCE_DEFAULT, classify_recalc_value
 
-        self.assertEqual(compute_source(2.5, _MISSING), 2.5)
-        self.assertEqual(compute_source(0.0, _MISSING), 0.0)
+        self.assertEqual(
+            classify_recalc_value(5.0, _MISSING, False),
+            {"result": 5.0, "source": _SOURCE_DEFAULT, "is_invalid": False},
+        )
+        self.assertEqual(
+            classify_recalc_value(720.0, _MISSING, False),
+            {"result": 720.0, "source": _SOURCE_DEFAULT, "is_invalid": False},
+        )
+        # presence flag takes precedence over a supplied value.
+        self.assertEqual(
+            classify_recalc_value(3.0, "2", False),
+            {"result": 3.0, "source": _SOURCE_DEFAULT, "is_invalid": False},
+        )
 
-    def test_compute_source_empty_ingredient_is_no_data(self):
-        from app.routers.analytics import compute_source
+    def test_classify_recalc_value_case_a_zero_ee_time(self):
+        from app.routers.analytics import _MISSING, _SOURCE_DEFAULT, classify_recalc_value
 
-        self.assertEqual(compute_source(2.5, ""), "нет данных")
+        self.assertEqual(
+            classify_recalc_value(0.0, _MISSING, False),
+            {"result": 0.0, "source": _SOURCE_DEFAULT, "is_invalid": False},
+        )
 
-    def test_compute_source_valid_positive_ingredient(self):
-        from app.routers.analytics import compute_source
+    def test_classify_recalc_value_case_b_empty_or_whitespace(self):
+        from app.routers.analytics import _SOURCE_NO_DATA, classify_recalc_value
 
-        self.assertEqual(compute_source(2.0, "3"), 3.0)
-        self.assertEqual(compute_source(1.5, "10,0"), 10.0)
+        for value in ("", "   ", "—"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    classify_recalc_value(3.0, value, True),
+                    {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True},
+                )
 
-    def test_compute_source_comma_decimal_and_trailing_comma(self):
-        from app.routers.analytics import compute_source
+    def test_classify_recalc_value_case_b_invalid_text(self):
+        from app.routers.analytics import _SOURCE_NO_DATA, classify_recalc_value
 
-        self.assertEqual(compute_source(2.0, "1,5"), 1.5)
-        self.assertEqual(compute_source(2.0, " 1,5, "), 1.5)
+        result = classify_recalc_value(3.0, "abc", True)
+        self.assertIsNone(result["result"])
+        self.assertEqual(result["source"], _SOURCE_NO_DATA)
+        self.assertTrue(result["is_invalid"])
 
-    def test_compute_source_invalid_or_non_positive_is_no_data(self):
-        from app.routers.analytics import compute_source
+    def test_classify_recalc_value_case_b_comma_decimal_not_normalized(self):
+        from app.routers.analytics import _SOURCE_NO_DATA, classify_recalc_value
 
-        self.assertEqual(compute_source(2.0, "abc"), "нет данных")
-        self.assertEqual(compute_source(2.0, "0"), "нет данных")
-        self.assertEqual(compute_source(2.0, "-1"), "нет данных")
+        result = classify_recalc_value(5.0, "0,5", True)
+        self.assertIsNone(result["result"])
+        self.assertEqual(result["source"], _SOURCE_NO_DATA)
+        self.assertTrue(result["is_invalid"])
+
+    def test_classify_recalc_value_case_c_number_string(self):
+        from app.routers.analytics import _SOURCE_PROPERTY, classify_recalc_value
+
+        self.assertEqual(
+            classify_recalc_value(2.0, "3", True),
+            {"result": 6.0, "source": _SOURCE_PROPERTY, "is_invalid": False},
+        )
+
+    def test_classify_recalc_value_case_c_number_int_and_float(self):
+        from app.routers.analytics import _SOURCE_PROPERTY, classify_recalc_value
+
+        self.assertEqual(
+            classify_recalc_value(4.0, 2, True),
+            {"result": 8.0, "source": _SOURCE_PROPERTY, "is_invalid": False},
+        )
+        self.assertEqual(
+            classify_recalc_value(4.0, 2.5, True),
+            {"result": 10.0, "source": _SOURCE_PROPERTY, "is_invalid": False},
+        )
+
+    def test_classify_recalc_value_case_c_zero_is_valid(self):
+        from app.routers.analytics import _SOURCE_PROPERTY, classify_recalc_value
+
+        self.assertEqual(
+            classify_recalc_value(5.0, "0", True),
+            {"result": 0.0, "source": _SOURCE_PROPERTY, "is_invalid": False},
+        )
+
+    def test_classify_recalc_value_case_c_negative_number_is_valid(self):
+        from app.routers.analytics import _SOURCE_PROPERTY, classify_recalc_value
+
+        self.assertEqual(
+            classify_recalc_value(5.0, "-1", True),
+            {"result": -5.0, "source": _SOURCE_PROPERTY, "is_invalid": False},
+        )
+
+    def test_classify_recalc_value_present_true_with_missing_sentinel(self):
+        from app.routers.analytics import _MISSING, _SOURCE_NO_DATA, classify_recalc_value
+
+        # If caller erroneously marks the property present but passes the sentinel,
+        # it is treated as empty (case B) rather than as absent.
+        self.assertEqual(
+            classify_recalc_value(3.0, _MISSING, True),
+            {"result": None, "source": _SOURCE_NO_DATA, "is_invalid": True},
+        )
 
     def test_export_properties_recalculated_xlsx_source_mode_200(self):
         self._set_session_bpmn_meta({
@@ -711,26 +773,168 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(len(body["invalid_tasks"]), 1)
         self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "abc")
 
-    def test_build_source_rows_includes_ee_time_and_ingredient(self):
+    def test_export_properties_recalculated_xlsx_source_mode_200_missing_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_export_properties_recalculated_xlsx_source_mode_200_mixed_a_and_c(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": "2"},
+                        ]
+                    }
+                },
+                "op2": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "5.0"},
+                        ]
+                    }
+                },
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_export_properties_recalculated_xlsx_source_mode_422_multiple_invalid(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                },
+                "op2": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "5.0"},
+                            {"name": "ingredient_value", "value": "abc"},
+                        ]
+                    }
+                },
+                "op3": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "1.0"},
+                        ]
+                    }
+                },
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 422)
+        body = r.json()
+        self.assertIn("invalid_tasks", body)
+        self.assertEqual(len(body["invalid_tasks"]), 2)
+        by_id = {t["bpmn_id"]: t for t in body["invalid_tasks"]}
+        self.assertIn("op1", by_id)
+        self.assertIn("op2", by_id)
+        self.assertEqual(by_id["op1"]["ingredient_value"], "")
+        self.assertEqual(by_id["op2"]["ingredient_value"], "abc")
+
+    def _build_source_rows_single(self, rows):
         from app.routers.analytics import _build_source_rows
 
-        rows = [
+        out = _build_source_rows(rows)
+        self.assertEqual(len(out), 1)
+        return out[0]
+
+    def test_build_source_rows_export_shape_case_c_all_fields(self):
+        from app.routers.analytics import _SOURCE_PROPERTY
+
+        row = self._build_source_rows_single([
             {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "2,5"},
             {"bpmn_id": "op1", "name": "ingredient_value", "value": "2"},
             {"bpmn_id": "op1", "name": "ingredient", "value": "Котлеты ПФ"},
             {"bpmn_id": "op1", "name": "ee_operation", "value": "Смешивание"},
             {"bpmn_id": "op1", "name": "ingredient_um", "value": "кг"},
-        ]
-        out = _build_source_rows(rows)
-        self.assertEqual(len(out), 1)
-        row = out[0]
+        ])
         self.assertEqual(row["bpmn_id"], "op1")
         self.assertAlmostEqual(row["ee_time"], 2.5)
         self.assertEqual(row["ingredient"], "Котлеты ПФ")
         self.assertEqual(row["ee_operation"], "Смешивание")
         self.assertEqual(row["ingredient_value"], "2")
         self.assertEqual(row["ingredient_um"], "кг")
-        self.assertEqual(row["source"], 2.0)
+        self.assertEqual(row["source"], _SOURCE_PROPERTY)
+        self.assertAlmostEqual(row["result"], 5.0)
+
+    def test_build_source_rows_export_shape_case_a_missing_ingredient(self):
+        from app.routers.analytics import _SOURCE_DEFAULT
+
+        row = self._build_source_rows_single([
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "5.0"},
+            {"bpmn_id": "op1", "name": "ee_operation", "value": "Перемешать"},
+        ])
+        self.assertEqual(row["ee_operation"], "Перемешать")
+        self.assertEqual(row["ingredient_value"], "")
+        self.assertEqual(row["ingredient_um"], "")
+        self.assertEqual(row["source"], _SOURCE_DEFAULT)
+        self.assertAlmostEqual(row["result"], 5.0)
+
+    def test_build_source_rows_export_shape_case_b_empty_ingredient(self):
+        from app.routers.analytics import _SOURCE_NO_DATA
+
+        row = self._build_source_rows_single([
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "3.0"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": ""},
+            {"bpmn_id": "op1", "name": "ingredient_um", "value": "кг"},
+        ])
+        self.assertEqual(row["ingredient_value"], "")
+        self.assertEqual(row["ingredient_um"], "кг")
+        self.assertEqual(row["source"], _SOURCE_NO_DATA)
+        self.assertIsNone(row["result"])
+
+    def test_build_source_rows_export_shape_case_c_without_um(self):
+        from app.routers.analytics import _SOURCE_PROPERTY
+
+        row = self._build_source_rows_single([
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "4.0"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "2"},
+            {"bpmn_id": "op1", "name": "ingredient", "value": "Соль"},
+        ])
+        self.assertEqual(row["ingredient_value"], "2")
+        self.assertEqual(row["ingredient_um"], "")
+        self.assertEqual(row["source"], _SOURCE_PROPERTY)
+        self.assertAlmostEqual(row["result"], 8.0)
+
+    def test_build_source_rows_export_shape_um_without_ingredient_value_is_ignored(self):
+        from app.routers.analytics import _SOURCE_DEFAULT
+
+        row = self._build_source_rows_single([
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "6.0"},
+            {"bpmn_id": "op1", "name": "ingredient_um", "value": "кг"},
+        ])
+        self.assertEqual(row["ingredient_value"], "")
+        self.assertEqual(row["ingredient_um"], "")
+        self.assertEqual(row["source"], _SOURCE_DEFAULT)
+        self.assertAlmostEqual(row["result"], 6.0)
 
     def test_export_properties_recalculated_xlsx_source_mode_requires_auth(self):
         r = self.client.get(
