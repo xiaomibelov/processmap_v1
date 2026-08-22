@@ -20,6 +20,16 @@ import { apiGetSessionAnalysisViewModel } from "../../lib/api.js";
 import { buildBindingAssistantModel } from "./interview/bindingAssistant";
 import { markInterviewPerf, measureInterviewSpan } from "./interview/perf";
 import { ProcessAnalysisDashboard } from "../../features/process/analysis/ProcessAnalysisDashboard.jsx";
+import { createT } from "../../features/process/analysis/useProcessAnalysisI18n.js";
+import { buildSummaryPropsFromProcessMetrics } from "../../features/process/analysis/processAnalysisModel.js";
+import { ProcessAnalysisBoundariesTab } from "../../features/process/analysis/ProcessAnalysisBoundariesTab.jsx";
+import { ProcessAnalysisStepsTab } from "../../features/process/analysis/ProcessAnalysisStepsTab.jsx";
+import { ProcessAnalysisBranchesTab } from "../../features/process/analysis/ProcessAnalysisBranchesTab.jsx";
+import { ProcessAnalysisSummaryTab } from "../../features/process/analysis/ProcessAnalysisSummaryTab.jsx";
+import { ProcessAnalysisExceptionsTab } from "../../features/process/analysis/ProcessAnalysisExceptionsTab.jsx";
+import { ProcessAnalysisAiTab } from "../../features/process/analysis/ProcessAnalysisAiTab.jsx";
+
+const analysisT = createT("ru");
 
 const {
   SHOW_AI_QUESTIONS_BLOCK,
@@ -821,11 +831,378 @@ export default function InterviewStage({
   }, [sid]);
 
   if (isAnalysisRedesignEnabled()) {
+    const summaryBlockProps = buildSummaryPropsFromProcessMetrics(
+      sessionAnalysisViewModel?.analysis?.derived?.process_metrics,
+    );
+
     return (
       <ProcessAnalysisDashboard
         sessionId={sid}
         externalViewModel={sessionAnalysisViewModel}
         processTitle={processTitle}
+        defaultTabKey="steps"
+        tabs={[
+          {
+            key: "boundaries",
+            label: analysisT("processAnalysis.tabs.boundaries"),
+            content: (
+              <ProcessAnalysisBoundariesTab>
+                <BoundariesBlock
+                  boundariesComplete={boundariesComplete}
+                  uiPrefsDirty={uiPrefsDirty}
+                  uiPrefsSavedAt={uiPrefsSavedAt}
+                  saveUiPrefs={saveUiPrefs}
+                  collapsed={false}
+                  toggleBlock={() => {}}
+                  boundaries={data.boundaries}
+                  patchBoundary={patchBoundary}
+                  boundaryLaneOptions={boundaryLaneOptions}
+                  boundaryLaneOptionsFiltered={boundaryLaneOptionsFiltered}
+                  boundariesLaneFilter={boundariesLaneFilter}
+                  setBoundariesLaneFilter={setBoundariesLaneFilter}
+                  setUiPrefsDirty={setUiPrefsDirty}
+                  intermediateRolesAuto={intermediateRolesAuto}
+                  resetBoundaries={resetBoundaries}
+                />
+              </ProcessAnalysisBoundariesTab>
+            ),
+          },
+          {
+            key: "steps",
+            label: analysisT("processAnalysis.tabs.steps"),
+            content: (
+              <ProcessAnalysisStepsTab>
+                <div className="interviewBlock analysisStepBlock" data-testid="analysis-step-actions-section">
+                  <div className="analysisStepWorkspace" data-testid="analysis-step-workspace">
+                    <div className="analysisStepMainColumn">
+                      <details className="analysisBSection analysisBStepsSection" open data-testid="analysis-b-steps-section">
+                        <summary>
+                          <span>Шаги процесса</span>
+                          <span>{filteredTimelineView.length}/{timelineView.length}</span>
+                        </summary>
+                        <div className="analysisStepBody">
+                          <div className="analysisStepControlsCard">
+                            <TimelineControls
+                              quickStepDraft={quickStepDraft}
+                              setQuickStepDraft={setQuickStepDraft}
+                              addQuickStepFromInput={addQuickStepFromInput}
+                              addStep={addStep}
+                              subprocessDraft={subprocessDraft}
+                              setSubprocessDraft={setSubprocessDraft}
+                              addSubprocessLabel={addSubprocessLabel}
+                              filteredTimelineCount={filteredTimelineView.length}
+                              timelineCount={timelineView.length}
+                              isTimelineFiltering={isTimelineFiltering}
+                              resetTimelineFilters={resetTimelineFilters}
+                              saveUiPrefs={saveUiPrefs}
+                              uiPrefsSavedAt={uiPrefsSavedAt}
+                              uiPrefsDirty={uiPrefsDirty}
+                              showTimelineColsMenu={showTimelineColsMenu}
+                              setShowTimelineColsMenu={setShowTimelineColsMenu}
+                              resetTimelineColumns={resetTimelineColumns}
+                              hiddenTimelineCols={hiddenTimelineCols}
+                              toggleTimelineColumn={toggleTimelineColumn}
+                              timelineFilters={timelineFilters}
+                              patchTimelineFilter={patchTimelineFilter}
+                              timelineLaneOptions={timelineLaneOptions}
+                              timelineSubprocessOptions={timelineSubprocessOptions}
+                              selectedStepCount={selectedTimelineStepIds.length}
+                              onGroupSelectedSteps={handleGroupSelectedSteps}
+                              orderMode={orderMode}
+                              graphOrderLocked={graphOrderLocked}
+                              bpmnOrderFallback={bpmnOrderFallback}
+                              bpmnOrderHint={bpmnOrderHint}
+                              onSetOrderMode={handleSetOrderMode}
+                              onOpenBindingAssistant={() => {
+                                setBindingAssistantOpen(true);
+                                setBindingAssistantFeedback("");
+                              }}
+                              bindingIssueCount={bindingAssistant?.issueCount || 0}
+                              statusCounts={timelineStatusCounts}
+                              dodSnapshot={dodSnapshot}
+                              timelineViewMode={timelineViewMode}
+                              onSetTimelineViewMode={handleSetTimelineViewMode}
+                              branchViewMode={branchViewMode}
+                              onSetBranchViewMode={handleSetBranchViewMode}
+                              onToggleCollapse={() => toggleBlock("timeline")}
+                              devDebugEnabled={IS_DEV_BUILD}
+                              onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
+                            />
+                          </div>
+
+                          {timelineOperationNotice ? (
+                            <div className={`interviewAnnotationNotice ${timelineOperationNotice.type || "pending"}`}>
+                              {timelineOperationNotice.text}
+                            </div>
+                          ) : null}
+                          {isUiTransitionPending ? (
+                            <div className="interviewAnnotationNotice pending">Обновляю представление…</div>
+                          ) : null}
+                          {IS_DEV_BUILD && Array.isArray(interviewVMWarnings) && interviewVMWarnings.length ? (
+                            <div className="interviewAnnotationNotice warn" data-testid="interview-vm-warning">
+                              Диагностика представления: {interviewVMWarnings[0]}
+                            </div>
+                          ) : null}
+                          {annotationNotice ? (
+                            <div className={`interviewAnnotationNotice ${annotationNotice.type || "pending"}`}>
+                              {annotationNotice.text}
+                            </div>
+                          ) : null}
+                          {IS_DEV_BUILD && debugOverlayOpen ? (
+                            <InterviewDebugOverlay
+                              debugData={interviewDebug}
+                              sessionId={sid}
+                              debugTab={debugOverlayTab}
+                              onChangeTab={setDebugOverlayTab}
+                              onClose={() => setDebugOverlayOpen(false)}
+                            />
+                          ) : null}
+
+                          <div className="analysisStepTableCard" data-testid="analysis-step-table-card">
+                            <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
+                              <TimelineTable
+                                sessionId={sid}
+                                hiddenTimelineCols={hiddenTimelineCols}
+                                timelineLaneFilter={timelineFilters.lane}
+                                filteredTimelineView={filteredTimelineView}
+                                timelineView={timelineView}
+                                timelineColSpan={timelineColSpan}
+                                laneLinksByNode={laneLinksByNode}
+                                patchStep={patchStep}
+                                addTextAnnotation={handleAddTextAnnotation}
+                                annotationSyncByStepId={annotationSyncByStepId}
+                                xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
+                                nodeBindOptionsByStepId={nodeBindOptionsByStepId}
+                                addStepAfter={addStepAfter}
+                                aiCue={aiCue}
+                                setAiCue={setAiCue}
+                                aiBusyStepId={aiBusyStepId}
+                                aiQuestionMetaByStepId={aiQuestionMetaByStepId}
+                                addAiQuestions={addAiQuestions}
+                                toggleAiQuestionDiagram={toggleAiQuestionDiagram}
+                                deleteAiQuestion={deleteAiQuestion}
+                                addAiQuestionsNote={handleAddAiQuestionsNote}
+                                aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
+                                aiNoteStatus={aiNoteStatus}
+                                moveStep={moveStep}
+                                orderMode={orderMode}
+                                graphOrderLocked={graphOrderLocked}
+                                bpmnOrderFallback={bpmnOrderFallback}
+                                bpmnOrderHint={bpmnOrderHint}
+                                isTimelineFiltering={isTimelineFiltering}
+                                deleteStep={deleteStep}
+                                subprocessCatalog={subprocessCatalog}
+                                activeAnalysisStepId={analysisContextStepIds[0] || ""}
+                                selectedStepIds={selectedTimelineStepIds}
+                                onActivateStep={handleActivateAnalysisStep}
+                                onToggleStepSelection={handleToggleStepSelection}
+                                onToggleAllStepSelection={handleToggleAllStepSelection}
+                                stepTimeUnit={stepTimeUnit}
+                                dodSnapshot={dodSnapshot}
+                                tierFilters={timelineFilters?.tiers}
+                                branchViewMode={branchViewMode}
+                                branchExpandByGateway={branchExpandByGateway}
+                                onPatchBranchExpand={handlePatchBranchExpand}
+                                onSetTimelineViewMode={handleSetTimelineViewMode}
+                                pathMetrics={pathMetrics}
+                                productActionCountByStepId={productActionCountByStepId}
+                              />
+                            </Profiler>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <aside className="analysisStepCompanion" data-testid="analysis-step-companion">
+                      <details className="analysisBSection analysisBContextSection" open data-testid="analysis-b-context-section">
+                        <summary>
+                          <span>Шаг и продукт</span>
+                          <span>{selectedStepProductActionCount} действий</span>
+                        </summary>
+                        <section className="analysisSelectedStepCard" data-testid="analysis-selected-step-card">
+                          <div className="analysisSelectedStepEyebrow">{selectedStep ? "Выбранный шаг" : "Текущий шаг"}</div>
+                          {analysisContextStep ? (
+                            <>
+                              <div className="analysisSelectedStepTitle">{selectedStepContext.title}</div>
+                              <div className="analysisSelectedStepMeta">
+                                <span><b>Роль</b>{selectedStepContext.role || "не указана"}</span>
+                                <span><b>BPMN</b>{selectedStepContext.bpmnId || "нет привязки"}</span>
+                                <span><b>Время</b>{selectedStepContext.timing}</span>
+                                <span><b>Действия</b>{selectedStepProductActionCount}</span>
+                              </div>
+                              {selectedStep ? (
+                                <div className="analysisSelectedStepActions" data-testid="interview-selection-actions">
+                                  <button
+                                    type="button"
+                                    className="productActionsToolbarBtn"
+                                    data-testid="interview-selected-open-ai"
+                                    onClick={() => addAiQuestions(selectedStep)}
+                                  >
+                                    AI-вопросы ({Number(selectedStepAiMeta?.count || 0)})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="productActionsToolbarBtn"
+                                    data-testid="interview-selected-generate-ai"
+                                    onClick={() => addAiQuestions(selectedStep, { forceRefresh: true })}
+                                  >
+                                    Сгенерировать AI
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="productActionsToolbarBtn"
+                                    data-testid="interview-selected-open-binding"
+                                    onClick={() => setBindingAssistantOpen(true)}
+                                  >
+                                    Привязка BPMN
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="productActionsToolbarBtn"
+                                    style={{ color: "rgba(248,113,113,.92)", borderColor: "rgba(248,113,113,.32)" }}
+                                    data-testid="interview-selected-delete"
+                                    onClick={handleDeleteSelectedStep}
+                                  >
+                                    Удалить
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : (
+                            <div className="analysisStepEmptyState">
+                              Добавьте шаг процесса.
+                            </div>
+                          )}
+                        </section>
+
+                        <ProductActionsPanel
+                          sessionId={sid}
+                          sessionTitle={processTitle}
+                          projectId={sessionDraft?.project_id || sessionDraft?.projectId || ""}
+                          projectTitle={sessionDraft?.project_title || sessionDraft?.projectTitle || ""}
+                          interviewData={data}
+                          timelineView={timelineView}
+                          selectedStepIds={analysisContextStepIds}
+                          compact
+                          showStepContext={false}
+                          getBaseDiagramStateVersion={getBaseDiagramStateVersion}
+                          rememberDiagramStateVersion={rememberDiagramStateVersion}
+                          onSessionSync={onSessionSync}
+                          onOpenProductActionsRegistry={onOpenProductActionsRegistry}
+                        />
+                      </details>
+                      <details className="analysisBSection ragSearchSection" data-testid="rag-search-section">
+                        <summary>
+                          <span>RAG-агент</span>
+                        </summary>
+                        <RagSearchPanel sessionId={sid} />
+                      </details>
+                    </aside>
+                  </div>
+
+                  {timelineViewMode !== "matrix" ? (
+                    <details className="analysisBSection analysisSecondaryPanel" data-testid="analysis-secondary-panel">
+                      <summary>
+                        <span>{timelineViewMode === "paths" ? "Дополнительно · Сценарии и отчёты" : "Дополнительно · Граф анализа"}</span>
+                        <span>можно свернуть</span>
+                      </summary>
+                      {timelineViewMode === "diagram" ? (
+                        <Profiler id="InterviewDiagramView" onRender={handleProfilerRender}>
+                          <InterviewDiagramView
+                            dodSnapshot={dodSnapshot}
+                            selectedStepIds={selectedTimelineStepIds}
+                            onSelectStep={handleSelectSingleStep}
+                          />
+                        </Profiler>
+                      ) : null}
+                      {timelineViewMode === "paths" ? (
+                        <Profiler id="InterviewPathsView" onRender={handleProfilerRender}>
+                          <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю сценарии и отчёты…</div>}>
+                            <LazyInterviewPathsView
+                              active
+                              sessionId={sid}
+                              interviewData={data}
+                              interviewVM={interviewVM}
+                              interviewGraph={interviewGraph}
+                              tierFilters={timelineFilters?.tiers}
+                              selectedStepIds={selectedTimelineStepIds}
+                              onSelectStep={handleSelectSingleStep}
+                              onSetTimelineViewMode={handleSetTimelineViewMode}
+                              dodSnapshot={dodSnapshot}
+                              pathMetrics={pathMetrics}
+                              patchStep={patchStep}
+                              onReportBuildDebug={handleReportBuildDebug}
+                              onPerfReady={handlePathsPerfReady}
+                              externalIntent={pathsUiIntent}
+                            />
+                          </Suspense>
+                        </Profiler>
+                      ) : null}
+                    </details>
+                  ) : null}
+                </div>
+              </ProcessAnalysisStepsTab>
+            ),
+          },
+          {
+            key: "branches",
+            label: analysisT("processAnalysis.tabs.branches"),
+            content: (
+              <ProcessAnalysisBranchesTab>
+                <TransitionsBlock
+                  collapsed={false}
+                  toggleBlock={() => {}}
+                  transitionView={transitionView}
+                  timelineView={timelineView}
+                  patchTransitionWhen={patchTransitionWhen}
+                  addTransition={addTransition}
+                />
+              </ProcessAnalysisBranchesTab>
+            ),
+          },
+          {
+            key: "summary",
+            label: analysisT("processAnalysis.tabs.summary"),
+            content: (
+              <ProcessAnalysisSummaryTab>
+                <SummaryBlock {...summaryBlockProps} />
+              </ProcessAnalysisSummaryTab>
+            ),
+          },
+          {
+            key: "exceptions",
+            label: analysisT("processAnalysis.tabs.exceptions"),
+            content: (
+              <ProcessAnalysisExceptionsTab>
+                <ExceptionsBlock
+                  collapsed={false}
+                  toggleBlock={() => {}}
+                  exceptions={data.exceptions}
+                  addException={addException}
+                  patchException={patchException}
+                  deleteException={deleteException}
+                />
+              </ProcessAnalysisExceptionsTab>
+            ),
+          },
+          {
+            key: "ai",
+            label: analysisT("processAnalysis.tabs.ai"),
+            content: (
+              <ProcessAnalysisAiTab>
+                {SHOW_AI_QUESTIONS_BLOCK ? (
+                  <AiQuestionsBlock
+                    collapsed={false}
+                    toggleBlock={() => {}}
+                    aiRows={aiRows}
+                    patchQuestionStatus={patchQuestionStatus}
+                  />
+                ) : null}
+                <LlmAnalysisBlock sessionId={sid} steps={Array.isArray(timelineView) ? timelineView : []} />
+              </ProcessAnalysisAiTab>
+            ),
+          },
+        ]}
       />
     );
   }
