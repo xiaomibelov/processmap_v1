@@ -2760,12 +2760,10 @@ def _ensure_schema() -> None:
                 )
                 """
             )
-            try:
+            if not _column_exists(con, "analytics_session_snapshots", "elements_count"):
                 con.execute(
                     "ALTER TABLE analytics_session_snapshots ADD COLUMN elements_count INTEGER NOT NULL DEFAULT 0"
                 )
-            except Exception:
-                pass
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analytics_session_org_project ON analytics_session_snapshots(org_id, project_id)"
             )
