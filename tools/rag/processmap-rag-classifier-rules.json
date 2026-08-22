@@ -1,0 +1,160 @@
+{
+  "version": "1.0.0",
+  "description": "Rule-based document classifier for ProcessMap Agent RAG. No embeddings — path-pattern and extension heuristics only.",
+  "default_class": "draft",
+  "classes": {
+    "source_truth": {
+      "id": "source_truth",
+      "name": "Source Truth",
+      "description": "ADR, contracts, canonical API docs, fact packs",
+      "priority": "critical",
+      "metadata_tag": "truth:canonical",
+      "rules": [
+        { "type": "path_contains", "value": "ADR", "case_sensitive": false },
+        { "type": "path_contains", "value": "factpack", "case_sensitive": false },
+        { "type": "path_contains", "value": "contract", "case_sensitive": false },
+        { "type": "path_contains", "value": "ARCHITECTURE", "case_sensitive": false },
+        { "type": "path_contains", "value": "Architecture", "case_sensitive": true },
+        { "type": "filename_contains", "value": "factpack", "case_sensitive": false },
+        { "type": "filename_contains", "value": "contract", "case_sensitive": false }
+      ]
+    },
+    "evidence": {
+      "id": "evidence",
+      "name": "Evidence",
+      "description": "Runtime proof, screenshots, profiles, before/after reports",
+      "priority": "high",
+      "metadata_tag": "truth:evidence",
+      "rules": [
+        { "type": "path_contains", "value": "RUNTIME_EVIDENCE", "case_sensitive": false },
+        { "type": "path_contains", "value": "BASELINE", "case_sensitive": false },
+        { "type": "path_contains", "value": "PROFILE", "case_sensitive": false },
+        { "type": "path_contains", "value": "runtime", "case_sensitive": false },
+        { "type": "path_contains", "value": "evidence", "case_sensitive": false },
+        { "type": "filename_contains", "value": "proof", "case_sensitive": false },
+        { "type": "filename_contains", "value": "baseline", "case_sensitive": false },
+        { "type": "filename_contains", "value": "profile", "case_sensitive": false }
+      ]
+    },
+    "decision": {
+      "id": "decision",
+      "name": "Decision",
+      "description": "ADR, review verdicts, go/no-go decisions",
+      "priority": "critical",
+      "metadata_tag": "truth:canonical",
+      "rules": [
+        { "type": "path_contains", "value": "REVIEW_PASS", "case_sensitive": false },
+        { "type": "path_contains", "value": "CHANGES_REQUESTED", "case_sensitive": false },
+        { "type": "path_contains", "value": "REVIEW_BLOCKED", "case_sensitive": false },
+        { "type": "path_contains", "value": "Decisions", "case_sensitive": true },
+        { "type": "filename_contains", "value": "REVIEW_PASS", "case_sensitive": false },
+        { "type": "filename_contains", "value": "CHANGES_REQUESTED", "case_sensitive": false },
+        { "type": "filename_contains", "value": "verdict", "case_sensitive": false }
+      ]
+    },
+    "prompt_template": {
+      "id": "prompt_template",
+      "name": "Prompt Template",
+      "description": "Agent prompts, checklists, skill bindings",
+      "priority": "high",
+      "metadata_tag": "type:prompt",
+      "rules": [
+        { "type": "path_contains", "value": "PROMPT", "case_sensitive": false },
+        { "type": "path_contains", "value": "SKILL", "case_sensitive": false },
+        { "type": "path_contains", "value": "prompts", "case_sensitive": false },
+        { "type": "path_contains", "value": "Prompts", "case_sensitive": true },
+        { "type": "filename_contains", "value": "prompt", "case_sensitive": false },
+        { "type": "filename_contains", "value": "skill", "case_sensitive": false },
+        { "type": "filename_contains", "value": "EXECUTOR_PROMPT", "case_sensitive": false },
+        { "type": "filename_contains", "value": "REVIEWER_PROMPT", "case_sensitive": false }
+      ]
+    },
+    "code_map": {
+      "id": "code_map",
+      "name": "Code Map",
+      "description": "Export/import maps, module summaries, architecture notes",
+      "priority": "high",
+      "metadata_tag": "type:code_map",
+      "rules": [
+        { "type": "extension_in", "value": [".py", ".jsx", ".js", ".mjs", ".ts", ".tsx"] },
+        { "type": "path_contains", "value": "SOURCE_MAP", "case_sensitive": false },
+        { "type": "filename_contains", "value": "map", "case_sensitive": false },
+        { "type": "filename_contains", "value": "index", "case_sensitive": false }
+      ],
+      "min_lines": 200
+    },
+    "audit": {
+      "id": "audit",
+      "name": "Audit",
+      "description": "Performance audits, security audits, baseline profiles",
+      "priority": "high",
+      "metadata_tag": "truth:evidence",
+      "rules": [
+        { "type": "path_contains", "value": "AUDIT", "case_sensitive": false },
+        { "type": "path_contains", "value": "audit", "case_sensitive": true },
+        { "type": "path_contains", "value": "Audits", "case_sensitive": true },
+        { "type": "filename_contains", "value": "audit", "case_sensitive": false },
+        { "type": "filename_contains", "value": "security", "case_sensitive": false }
+      ]
+    },
+    "backlog": {
+      "id": "backlog",
+      "name": "Backlog",
+      "description": "Prioritized work items, epics, active tasks",
+      "priority": "normal",
+      "metadata_tag": "type:backlog",
+      "rules": [
+        { "type": "path_contains", "value": "BACKLOG", "case_sensitive": false },
+        { "type": "path_contains", "value": "EPIC", "case_sensitive": false },
+        { "type": "path_contains", "value": "backlog", "case_sensitive": true },
+        { "type": "path_contains", "value": "Epic", "case_sensitive": true },
+        { "type": "filename_contains", "value": "backlog", "case_sensitive": false },
+        { "type": "filename_contains", "value": "epic", "case_sensitive": false },
+        { "type": "filename_contains", "value": "todo", "case_sensitive": false }
+      ]
+    },
+    "draft": {
+      "id": "draft",
+      "name": "Draft",
+      "description": "WIP notes, unreviewed suggestions",
+      "priority": "low",
+      "metadata_tag": "truth:draft",
+      "rules": [
+        { "type": "path_contains", "value": "draft", "case_sensitive": false },
+        { "type": "path_contains", "value": "wip", "case_sensitive": false },
+        { "type": "path_contains", "value": "DRAFT", "case_sensitive": false },
+        { "type": "path_contains", "value": "WIP", "case_sensitive": false },
+        { "type": "filename_contains", "value": "draft", "case_sensitive": false },
+        { "type": "filename_contains", "value": "wip", "case_sensitive": false }
+      ]
+    },
+    "deprecated": {
+      "id": "deprecated",
+      "name": "Deprecated",
+      "description": "Outdated docs kept for historical search",
+      "priority": "low",
+      "metadata_tag": "truth:deprecated",
+      "rules": [
+        { "type": "path_contains", "value": "deprecated", "case_sensitive": false },
+        { "type": "path_contains", "value": "obsolete", "case_sensitive": false },
+        { "type": "path_contains", "value": "legacy", "case_sensitive": false },
+        { "type": "filename_contains", "value": "deprecated", "case_sensitive": false },
+        { "type": "filename_contains", "value": "obsolete", "case_sensitive": false },
+        { "type": "filename_contains", "value": "legacy", "case_sensitive": false }
+      ]
+    },
+    "raw_log": {
+      "id": "raw_log",
+      "name": "Raw Log",
+      "description": "Summarized only; never raw bulk",
+      "priority": "low",
+      "metadata_tag": "type:log",
+      "rules": [
+        { "type": "extension_in", "value": [".log"] },
+        { "type": "path_contains", "value": "raw_log", "case_sensitive": false },
+        { "type": "path_contains", "value": "logs", "case_sensitive": false },
+        { "type": "filename_contains", "value": "log", "case_sensitive": false }
+      ]
+    }
+  }
+}

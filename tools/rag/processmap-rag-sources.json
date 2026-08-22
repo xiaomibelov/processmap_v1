@@ -1,0 +1,208 @@
+{
+  "version": "1.0.0",
+  "project": "ProcessMap",
+  "updated": "2026-05-16T14:26:53Z",
+  "global_exclude_globs": [
+    "**/.env*",
+    "**/*.pem",
+    "**/*.key",
+    "**/id_rsa",
+    "**/id_ed25519",
+    "**/node_modules/**",
+    "**/frontend/dist/**",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/.git/**",
+    "**/.playwright-mcp/**",
+    "**/.agents/**",
+    "**/*.backup*",
+    "/srv/obsidian/project-atlas/ProcessMap/_Imported/**",
+    "**/debug-*.mjs",
+    "**/run-*.mjs"
+  ],
+  "sources": [
+    {
+      "id": "project-atlas",
+      "path": "/srv/obsidian/project-atlas/ProcessMap",
+      "category": "project_atlas",
+      "include_globs": [
+        "**/*.md"
+      ],
+      "exclude_globs": [
+        "_Imported/**",
+        "**/*.png",
+        "**/*.jpg",
+        "**/*.jpeg",
+        "**/*.gif",
+        "**/*.svg",
+        "**/*.mp4",
+        "**/*.webm"
+      ],
+      "truth_level": "canonical",
+      "indexing_priority": "critical",
+      "owner": "architecture-team",
+      "notes": "Primary Project Atlas knowledge base. 727 files, ~5.6 MB. Exclude _Imported until triaged."
+    },
+    {
+      "id": "planning-contours",
+      "path": "/opt/processmap-test/.planning/contours",
+      "category": "contour",
+      "include_globs": [
+        "**/*.md",
+        "**/*.json",
+        "**/*.mjs",
+        "**/*.js",
+        "**/*.py",
+        "**/*.sh",
+        "**/*.yml",
+        "**/*.yaml"
+      ],
+      "exclude_globs": [
+        "**/RAW_LOG*/**",
+        "**/*backup*",
+        "**/*.log"
+      ],
+      "truth_level": "evidence",
+      "indexing_priority": "critical",
+      "owner": "contour-executor",
+      "notes": "40 contours with verdicts. PLAN.md, EXEC_REPORT.md, REVIEW_REPORT.md are high-priority."
+    },
+    {
+      "id": "docs-curated",
+      "path": "/opt/processmap-test/docs",
+      "category": "docs",
+      "include_globs": [
+        "**/*.md"
+      ],
+      "exclude_globs": [
+        "debug/**",
+        "screenshots/**",
+        "**/*.png",
+        "**/*.jpg",
+        "**/*.jpeg",
+        "**/*.json"
+      ],
+      "truth_level": "canonical",
+      "indexing_priority": "high",
+      "owner": "product-team",
+      "notes": "Curated documentation: fact packs, API contracts, decomposition docs, test plans."
+    },
+    {
+      "id": "handoff-notes",
+      "path": "/opt/processmap-test/PROCESSMAP/HANDOFF",
+      "category": "docs",
+      "include_globs": [
+        "**/*.md"
+      ],
+      "exclude_globs": [],
+      "truth_level": "evidence",
+      "indexing_priority": "normal",
+      "owner": "devops-team",
+      "notes": "Deploy status and handoff notes. Curated only."
+    },
+    {
+      "id": "frontend-src",
+      "path": "/opt/processmap-test/frontend/src",
+      "category": "code",
+      "include_globs": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mjs"
+      ],
+      "exclude_globs": [
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/__tests__/**",
+        "**/generated/**",
+        "**/public/**",
+        "**/assets/**",
+        "**/*.css",
+        "**/*.scss",
+        "**/*.less",
+        "**/*.png",
+        "**/*.jpg",
+        "**/*.jpeg",
+        "**/*.gif",
+        "**/*.svg",
+        "**/*.woff",
+        "**/*.woff2",
+        "**/*.ttf",
+        "**/*.eot"
+      ],
+      "truth_level": "canonical",
+      "indexing_priority": "critical",
+      "owner": "frontend-team",
+      "notes": "Frontend source code. 1105 files estimated. Key modules: diagram, save, session, BPMN."
+    },
+    {
+      "id": "backend-src",
+      "path": "/opt/processmap-test/backend",
+      "category": "code",
+      "include_globs": [
+        "**/*.py",
+        "**/*.md",
+        "**/*.json",
+        "**/*.yml",
+        "**/*.yaml",
+        "**/*.sh"
+      ],
+      "exclude_globs": [
+        "**/__pycache__/**",
+        "**/*.pyc",
+        "**/*.egg-info/**",
+        "**/venv/**",
+        "**/.venv/**",
+        "**/env/**",
+        "**/requirements*.txt"
+      ],
+      "truth_level": "canonical",
+      "indexing_priority": "critical",
+      "owner": "backend-team",
+      "notes": "Backend FastAPI app. 282 files estimated. Key modules: routers, RAG, models, AI."
+    },
+    {
+      "id": "tools-src",
+      "path": "/opt/processmap-test/tools",
+      "category": "code",
+      "include_globs": [
+        "**/*.sh",
+        "**/*.mjs",
+        "**/*.js",
+        "**/*.py",
+        "**/*.md"
+      ],
+      "exclude_globs": [
+        "**/*.log",
+        "**/*.backup*"
+      ],
+      "truth_level": "canonical",
+      "indexing_priority": "normal",
+      "owner": "devops-team",
+      "notes": "Agent launcher scripts, mirror scripts, and utility tooling."
+    },
+    {
+      "id": "scripts-src",
+      "path": "/opt/processmap-test/scripts",
+      "category": "code",
+      "include_globs": [
+        "**/*.sh",
+        "**/*.mjs",
+        "**/*.js",
+        "**/*.py",
+        "**/*.md"
+      ],
+      "exclude_globs": [
+        "**/capture-cpu-profile.mjs",
+        "**/run-*.mjs",
+        "**/debug-*.mjs",
+        "**/*.log"
+      ],
+      "truth_level": "canonical",
+      "indexing_priority": "normal",
+      "owner": "devops-team",
+      "notes": "Build scripts, CI scripts, CPU profiling, and devflow automation."
+    }
+  ]
+}
