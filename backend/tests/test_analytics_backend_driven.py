@@ -365,6 +365,115 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertTrue(data["scope_title"])
         self.assertEqual(data["kpi"]["unique_processes"], data["projects_count"])
 
+    def test_dashboard_workspace_dirty_data_does_not_500(self):
+        """Workspace with empty project, session without XML and project without sessions."""
+        from app.storage import get_project_storage, get_storage
+
+        empty_project_id = get_project_storage().create(
+            "Empty Project", {}, user_id=self.admin_id, org_id=self.org_id, is_admin=True
+        )
+        no_xml_project_id = get_project_storage().create(
+            "No XML Project", {}, user_id=self.admin_id, org_id=self.org_id, is_admin=True
+        )
+        no_xml_session_id = get_storage().create(
+            "No XML Session",
+            project_id=no_xml_project_id,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.row_factory = sqlite3.Row
+            # Snapshot for the no-XML session (elements_count NULL / 0)
+            con.execute(
+                """
+                INSERT INTO analytics_session_snapshots
+                (session_id, org_id, project_id, workspace_id, total_duration_min, critical_path_min,
+                 actions_total, actions_by_role_json, actions_by_section_json, actions_by_type_json,
+                 handoffs_count, open_questions, critical_questions, unknown_duration_nodes_json, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    no_xml_session_id, self.org_id, no_xml_project_id, self.workspace_id,
+                    0, 0, 0, "{}", "{}", "{}", 0, 0, 0, "[]", 1710000001,
+                ),
+            )
+            con.commit()
+
+        r = self.client.get(
+            f"/api/analytics/dashboard?scope=workspace&scope_id={self.workspace_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()["data"]
+        self.assertEqual(data["scope_type"], "workspace")
+        self.assertIn("schemes", data)
+        self.assertIn("kpi", data)
+
+    def test_dashboard_project_dirty_data_does_not_500(self):
+        """Project with an empty project sibling and a session without snapshot."""
+        from app.storage import get_project_storage, get_storage
+
+        empty_project_id = get_project_storage().create(
+            "Empty Project 2", {}, user_id=self.admin_id, org_id=self.org_id, is_admin=True
+        )
+        orphan_session_id = get_storage().create(
+            "Orphan Session",
+            project_id=self.project_id,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+
+        r = self.client.get(
+            f"/api/analytics/dashboard?scope=project&scope_id={self.project_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()["data"]
+        self.assertEqual(data["scope_type"], "project")
+        self.assertIn("schemes", data)
+        self.assertIn("kpi", data)
+
+    def test_dashboard_session_dirty_data_does_not_500(self):
+        """Session scope with zero actions and no elements_count."""
+        from app.storage import get_storage
+
+        empty_session_id = get_storage().create(
+            "Empty Session",
+            project_id=self.project_id,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.row_factory = sqlite3.Row
+            con.execute(
+                """
+                INSERT INTO analytics_session_snapshots
+                (session_id, org_id, project_id, workspace_id, total_duration_min, critical_path_min,
+                 actions_total, actions_by_role_json, actions_by_section_json, actions_by_type_json,
+                 handoffs_count, open_questions, critical_questions, unknown_duration_nodes_json, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    empty_session_id, self.org_id, self.project_id, self.workspace_id,
+                    0, 0, 0, "{}", "{}", "{}", 0, 0, 0, "[]", 1710000002,
+                ),
+            )
+            con.commit()
+
+        r = self.client.get(
+            f"/api/analytics/dashboard?scope=session&scope_id={empty_session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()["data"]
+        self.assertEqual(data["scope_type"], "session")
+        self.assertIn("kpi", data)
+        self.assertEqual(data["kpi"]["total_tasks"], 0)
+
     def test_recalculate_helper_happy_path(self):
         from app.routers.analytics import _build_recalculated_rows
 
@@ -1124,6 +1233,108 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(body["data"]["no_data_count"], 1)
         self.assertEqual(body["data"]["ingredient_numeric_pct"], 50.0)
         self.assertEqual(body["data"]["ee_time_filled_pct"], 100)
+
+    def test_quality_partial_ee_time(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "2.0"},
+                            {"name": "ingredient_value", "value": "3"},
+                        ]
+                    }
+                },
+                "op2": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ingredient_value", "value": "4"},
+                        ]
+                    }
+                },
+                "op3": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": ""},
+                            {"name": "ingredient_value", "value": "5"},
+                        ]
+                    }
+                },
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/quality?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["total_elements_with_ee_time"], 1)
+        self.assertEqual(body["data"]["ee_time_filled_pct"], 33.3)
+
+    def test_quality_project_scope(self):
+        from app.storage import get_project_storage
+
+        other_project_id = get_project_storage().create(
+            "Other Project", {}, user_id=self.admin_id, org_id=self.org_id, is_admin=True
+        )
+        other_session_id = self.get_storage().create(
+            "Other Session",
+            project_id=other_project_id,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "2.0"},
+                            {"name": "ingredient_value", "value": "3"},
+                        ]
+                    }
+                },
+            }
+        })
+        self.get_storage().patch_session_meta(
+            other_session_id,
+            bpmn_meta={
+                "camunda_extensions_by_element_id": {
+                    "op2": {
+                        "properties": {
+                            "extensionProperties": [
+                                {"name": "ee_time", "value": "5.0"},
+                            ]
+                        }
+                    },
+                }
+            },
+            base_diagram_state_version=0,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+
+        r = self.client.get(
+            f"/api/analytics/quality?scope=project&scope_id={self.project_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["total_elements_with_ee_time"], 1)
+        self.assertEqual(body["data"]["ee_time_filled_pct"], 100)
+
+        r2 = self.client.get(
+            f"/api/analytics/quality?scope=project&scope_id={other_project_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r2.status_code, 200)
+        body2 = r2.json()
+        self.assertTrue(body2["success"])
+        self.assertEqual(body2["data"]["total_elements_with_ee_time"], 1)
+        self.assertEqual(body2["data"]["ee_time_filled_pct"], 100)
 
     def test_celery_beat_schedule_has_nightly_refresh(self):
         from app.celery_app import app
