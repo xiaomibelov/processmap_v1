@@ -328,6 +328,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     robotMetaOverlayEnabled,
     setRobotMetaOverlayEnabled,
     setRobotMetaOverlayFilters,
+    onAlignDiagram,
+    onResetCanvas,
   } = overflowModesSection;
   const setSearchOpenSafe = typeof setDiagramActionSearchOpen === "function" ? setDiagramActionSearchOpen : () => {};
 
@@ -1988,6 +1990,42 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     return next;
                   });
                 }}
+              />
+            </div>
+            <div className="diagramActionOverflowSection">
+              <div className="diagramActionOverflowSectionTitle">Редактирование</div>
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 4h12" />
+                    <path d="M2 8h10" />
+                    <path d="M2 12h8" />
+                  </svg>
+                }
+                label="Выровнять схему"
+                disabled={!isBpmnTab}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  onAlignDiagram?.();
+                }}
+                data-testid="diagram-action-align-diagram"
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 5a6 6 0 0110 4" />
+                    <path d="M13 11a6 6 0 01-10-4" />
+                    <path d="M3 1v4h4" />
+                    <path d="M13 15v-4h-4" />
+                  </svg>
+                }
+                label="Reset"
+                disabled={!hasSession || !isBpmnTab}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  onResetCanvas?.();
+                }}
+                data-testid="diagram-action-reset-canvas"
               />
             </div>
 

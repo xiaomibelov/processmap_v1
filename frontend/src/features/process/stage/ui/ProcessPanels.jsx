@@ -28,8 +28,6 @@ export default function ProcessPanels({ section = "top", view = {} }) {
     aiGenerateGate,
     aiQuestionsBusy,
     aiQuestionsStatus,
-    runToolbarReset,
-    runToolbarClear,
     openTemplatesPicker,
     openCreateTemplateModal,
     canCreateTemplateFromSelection,
@@ -202,8 +200,6 @@ export default function ProcessPanels({ section = "top", view = {} }) {
           aiGenerateGate={aiGenerateGate}
           aiQuestionsBusy={aiQuestionsBusy}
           aiQuestionsStatus={aiQuestionsStatus}
-          runToolbarReset={runToolbarReset}
-          runToolbarClear={runToolbarClear}
           openTemplatesPicker={openTemplatesPicker}
           openCreateTemplateModal={openCreateTemplateModal}
           canCreateTemplateFromSelection={canCreateTemplateFromSelection}

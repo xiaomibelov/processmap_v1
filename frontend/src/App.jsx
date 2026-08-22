@@ -616,6 +616,40 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
   delete incoming._sync_source;
   delete incoming._source;
   delete incoming._patch_payload_keys;
+  delete incoming._force_reset;
+
+  const sourceKey = String(source || "").trim().toLowerCase();
+  const isCanvasReset = sourceKey === "canvas_reset" || incomingRaw?._force_reset === true;
+  if (isCanvasReset) {
+    const resetBase = sessionToDraft(sid || null, {
+      ...ensureDraftShape(sid),
+      ...incoming,
+      session_id: sid || null,
+    });
+    return {
+      ...resetBase,
+      bpmn_xml: "",
+      bpmn_xml_version: 0,
+      version: 0,
+      diagram_state_version: 0,
+      diagramStateVersion: 0,
+      nodes: [],
+      edges: [],
+      bpmn_meta: emptyBpmnMeta(),
+      notes_by_element: {},
+      notes: [],
+      interview: {},
+      actors_derived: [],
+      title: String(prev?.title || ""),
+      roles: ensureArray(prev?.roles),
+      start_role: String(prev?.start_role || ""),
+      project_id: prev?.project_id || prev?.projectId || "",
+      projectId: prev?.project_id || prev?.projectId || "",
+      parent_session_id: prev?.parent_session_id || prev?.parentSessionId || "",
+      parentSessionId: prev?.parent_session_id || prev?.parentSessionId || "",
+    };
+  }
+
   let next = sessionToDraft(sid || null, {
     ...prev,
     ...incoming,
@@ -634,7 +668,6 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
       prevHash: fnv1aHex(prevXml),
     });
   } else if (incomingHasXml && incomingXml.trim() && prevXml.trim()) {
-    const sourceKey = String(source || "").trim().toLowerCase();
     const prevHash = fnv1aHex(prevXml);
     const incomingHash = fnv1aHex(incomingXml);
     const xmlChanged = incomingHash !== prevHash;
