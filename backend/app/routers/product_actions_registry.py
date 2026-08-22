@@ -20,6 +20,7 @@ from ..services.org_workspace import (
     project_scope_for_request,
     require_org_member_for_enterprise,
 )
+from ..services.process_analysis_read_model import build_session_process_analysis
 from ..storage import get_project_storage, get_storage, get_workspace_record
 
 router = APIRouter(tags=["product-actions-registry"])
@@ -817,6 +818,7 @@ def get_session_analysis_view_model(session_id: str, request: Request) -> Dict[s
     empty_state = _session_empty_state(rows)
     source_state = _session_source_state(session, rows)
     step_counts = _step_action_counts(rows)
+    process_metrics = build_session_process_analysis(session)
 
     interview_state = {
         "status": _text(interview.get("status")) or "draft",
@@ -843,6 +845,7 @@ def get_session_analysis_view_model(session_id: str, request: Request) -> Dict[s
             },
             "derived": {
                 "step_action_counts": step_counts,
+                "process_metrics": process_metrics,
             },
         },
         "interview_state": interview_state,
