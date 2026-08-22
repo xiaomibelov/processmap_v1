@@ -29,6 +29,21 @@ def _workspace_id_for_project(project_id: str, org_id: str) -> str:
     return str(getattr(project, "workspace_id", "") or "") if project else ""
 
 
+def _latest_bpmn_xml(session_id: str, org_id: str) -> str:
+    """Fallback to bpmn_versions when session.bpmn_xml is empty."""
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT bpmn_xml FROM bpmn_versions
+            WHERE session_id = ? AND org_id = ?
+            ORDER BY version_number DESC, created_at DESC
+            LIMIT 1
+            """,
+            (session_id, org_id),
+        ).fetchone()
+    return str(row["bpmn_xml"] or "") if row else ""
+
+
 def upsert_session_analytics_snapshot(
     session_id: str,
     org_id: str,
@@ -46,6 +61,8 @@ def upsert_session_analytics_snapshot(
     handoffs = analytics.get("handoffs") or {}
     coverage = analytics.get("coverage") or {}
     bpmn_xml = getattr(session, "bpmn_xml", None) or ""
+    if not bpmn_xml:
+        bpmn_xml = _latest_bpmn_xml(session_id, org_id)
     elements_count = count_bpmn_flow_nodes(bpmn_xml)
     computed_at = _now_ts()
     with _connect() as con:

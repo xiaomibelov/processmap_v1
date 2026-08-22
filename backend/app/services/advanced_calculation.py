@@ -33,6 +33,15 @@ _FLOW_NODE_TAGS = _TASK_TAGS | {
 }
 
 
+def _local_name(tag: str) -> str:
+    """Return the local part of a Clark-notation QName, e.g. '{ns}tag' -> 'tag'."""
+    if not tag:
+        return ""
+    if tag.startswith("{"):
+        return tag.split("}", 1)[-1]
+    return tag
+
+
 def count_bpmn_flow_nodes(bpmn_xml: str) -> int:
     """Return the number of BPMN flow nodes in a diagram.
 
@@ -40,6 +49,9 @@ def count_bpmn_flow_nodes(bpmn_xml: str) -> int:
     exclusiveGateway, parallelGateway, inclusiveGateway and subProcess elements.
     This matches the element set tracked by ``BpmnAnalyzer`` and is the working
     definition of "all BPMN elements" used by the analytics "Схемы" section.
+
+    The check uses the local tag name so it works for BPMN XML with the standard
+    namespace declaration, with a ``bpmn:`` prefix, or even without a namespace.
     """
     if not bpmn_xml or not bpmn_xml.strip():
         return 0
@@ -47,7 +59,8 @@ def count_bpmn_flow_nodes(bpmn_xml: str) -> int:
         root = ET.fromstring(bpmn_xml)
     except ET.ParseError:
         return 0
-    return sum(1 for elem in root.iter() if elem.tag in _FLOW_NODE_TAGS)
+    flow_node_names = {tag.split("}", 1)[-1] for tag in _FLOW_NODE_TAGS}
+    return sum(1 for elem in root.iter() if _local_name(elem.tag) in flow_node_names)
 
 
 BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI"

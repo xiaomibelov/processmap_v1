@@ -66,7 +66,11 @@ function useAnalyticsDashboard(scope, scopeId) {
       if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
-        setError(text(result?.error) || t.errorOverview);
+        const backendMessage = result?.data?.message;
+        const friendly = typeof backendMessage === "string" && backendMessage.trim()
+          ? backendMessage
+          : text(result?.error);
+        setError(friendly || t.errorOverview);
         return;
       }
       setData(result.data);
@@ -489,9 +493,10 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
     if (embedded) {
       setPageScope(targetScope);
       setPageScopeId(targetId);
+      setPageModule(ANALYTICS_MODULE_OVERVIEW);
       return;
     }
-    const next = buildAnalyticsPath(targetScope, targetId, module);
+    const next = buildAnalyticsPath(targetScope, targetId, ANALYTICS_MODULE_OVERVIEW);
     window.history.pushState({}, "", next);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
@@ -540,6 +545,24 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
               <h1>{t.title}: <span className="text-accent">{scopeTitle}</span></h1>
               <span className="analyticsHubHeaderScopeId" title={scopeId}>{scopeId}</span>
             </div>
+            {scope === "project" && derivedScopeIds.workspaceId ? (
+              <button
+                type="button"
+                className="analyticsHubBreadcrumb"
+                onClick={() => navigateTo("workspace", derivedScopeIds.workspaceId)}
+              >
+                {t.backToWorkspace}
+              </button>
+            ) : null}
+            {scope === "session" && derivedScopeIds.projectId ? (
+              <button
+                type="button"
+                className="analyticsHubBreadcrumb"
+                onClick={() => navigateTo("project", derivedScopeIds.projectId)}
+              >
+                {t.backToProject}
+              </button>
+            ) : null}
           </div>
           <AnalyticsScopeSwitcher
             scope={scope}
@@ -582,6 +605,7 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
               onRefresh={handleRefresh}
               onRetry={retry}
               onNavigate={setModule}
+              onScopeNavigate={navigateTo}
             />
           )}
           {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}

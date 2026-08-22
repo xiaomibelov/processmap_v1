@@ -89,37 +89,71 @@ function FactLine({ data }) {
   return <span className="analyticsOverviewFactLine">{parts.join(" · ")}</span>;
 }
 
-function SchemeRow({ scheme }) {
+function SchemeRow({ scheme, onScopeNavigate }) {
+  function handleNameClick(e) {
+    e.preventDefault();
+    onScopeNavigate?.("session", scheme.session_id);
+  }
+  function handleOpenClick(e) {
+    e.stopPropagation();
+  }
   return (
-    <a
-      href={`/app?session=${encodeURIComponent(scheme.session_id)}`}
-      className="analyticsSchemeRow"
-      title={scheme.session_title}
-      target="_blank"
-      rel="noreferrer"
-    >
-      <span className="analyticsSchemeName">{scheme.session_title || scheme.session_id}</span>
+    <div className="analyticsSchemeRow">
+      <button
+        type="button"
+        className="analyticsSchemeName analyticsSchemeName--nav"
+        onClick={handleNameClick}
+        title={`${t.openSessionScope}: ${scheme.session_title || scheme.session_id}`}
+      >
+        {scheme.session_title || scheme.session_id}
+      </button>
       <span className="analyticsSchemeMetric">{formatNumber(scheme.actions_total)}</span>
       <span className="analyticsSchemeMetric">{formatNumber(scheme.elements_count)}</span>
       <span className="analyticsSchemeMetric">{formatNumber(scheme.critical_count)}</span>
       <span className="analyticsSchemeMetric">{formatNumber(scheme.handoffs_count)}</span>
       <span className="analyticsSchemeMetric">{formatNumber(scheme.total_duration_min)}&nbsp;мин</span>
-    </a>
+      <a
+        href={`/app?session=${encodeURIComponent(scheme.session_id)}`}
+        className="analyticsSchemeOpen"
+        title={t.openScheme}
+        target="_blank"
+        rel="noreferrer"
+        onClick={handleOpenClick}
+      >
+        ↗
+      </a>
+    </div>
   );
 }
 
-function SchemeProject({ project, expanded, onToggle }) {
+function SchemeProject({ project, expanded, onToggle, onScopeNavigate }) {
+  function handleTitleClick(e) {
+    e.preventDefault();
+    onScopeNavigate?.("project", project.project_id);
+  }
   return (
     <div className="analyticsSchemeProject">
-      <button
-        type="button"
+      <div
         className={`analyticsSchemeProjectHeader ${expanded ? "analyticsSchemeProjectHeader--expanded" : ""}`}
-        onClick={onToggle}
       >
-        <span className="analyticsSchemeProjectToggle">{expanded ? "▼" : "▶"}</span>
-        <span className="analyticsSchemeProjectTitle">{project.project_title || project.project_id}</span>
+        <button
+          type="button"
+          className="analyticsSchemeProjectToggle"
+          onClick={onToggle}
+          aria-label={expanded ? t.collapse : t.expand}
+        >
+          {expanded ? "▼" : "▶"}
+        </button>
+        <button
+          type="button"
+          className="analyticsSchemeProjectTitle analyticsSchemeProjectTitle--nav"
+          onClick={handleTitleClick}
+          title={`${t.openProjectScope}: ${project.project_title || project.project_id}`}
+        >
+          {project.project_title || project.project_id}
+        </button>
         <span className="analyticsSchemeProjectMeta">{formatNumber(project.sessions?.length || 0)} схем</span>
-      </button>
+      </div>
       {expanded ? (
         <div className="analyticsSchemeProjectBody">
           <div className="analyticsSchemeHeaderRow">
@@ -131,7 +165,7 @@ function SchemeProject({ project, expanded, onToggle }) {
             <span className="analyticsSchemeMetric">{t.schemeDuration}</span>
           </div>
           {project.sessions.map((s) => (
-            <SchemeRow key={s.session_id} scheme={s} />
+            <SchemeRow key={s.session_id} scheme={s} onScopeNavigate={onScopeNavigate} />
           ))}
         </div>
       ) : null}
@@ -139,10 +173,10 @@ function SchemeProject({ project, expanded, onToggle }) {
   );
 }
 
-function SchemesSection({ data }) {
+function SchemesSection({ data, onScopeNavigate }) {
   const schemes = data?.schemes || [];
   const [expanded, setExpanded] = useState(() =>
-    schemes.length <= 1 ? new Set(schemes.map((p) => p.project_id)) : new Set()
+    new Set(schemes.map((p) => p.project_id))
   );
 
   const toggle = (projectId) => {
@@ -179,6 +213,7 @@ function SchemesSection({ data }) {
               project={project}
               expanded={expanded.has(project.project_id)}
               onToggle={() => toggle(project.project_id)}
+              onScopeNavigate={onScopeNavigate}
             />
           ))}
         </div>
@@ -250,6 +285,7 @@ export default function AnalyticsOverviewPanel({
   onRefresh,
   onRetry,
   onNavigate,
+  onScopeNavigate,
 }) {
   const title = useMemo(() => {
     if (!data) return "";
@@ -262,6 +298,8 @@ export default function AnalyticsOverviewPanel({
     () => (recalcRows || []).filter((r) => r.source === "нет данных"),
     [recalcRows]
   );
+
+  const criticalCount = data?.critical_questions || 0;
 
   if (loading && !data) {
     return <AnalyticsLoading text={t.loadingOverview} />;
@@ -318,7 +356,7 @@ export default function AnalyticsOverviewPanel({
           </button>
         }
       >
-        <SchemesSection data={data} />
+        <SchemesSection data={data} onScopeNavigate={onScopeNavigate} />
       </Section>
 
       <Section
@@ -368,14 +406,23 @@ export default function AnalyticsOverviewPanel({
               onClick={() => onNavigate?.(ANALYTICS_MODULE_PROPERTIES, { source: "нет данных" })}
             />
           ) : null}
+          {criticalCount > 0 ? (
+            <AttentionRow
+              tone="danger"
+              title={t.attentionCritical.replace("{{count}}", criticalCount)}
+              count={criticalCount}
+              onClick={() => onNavigate?.(ANALYTICS_MODULE_ACTIONS)}
+            />
+          ) : null}
           {(data.open_questions || 0) > 0 ? (
             <AttentionRow
               tone="info"
               title={t.attentionOpenQuestions.replace("{{count}}", data.open_questions)}
               count={data.open_questions}
+              onClick={() => onNavigate?.(ANALYTICS_MODULE_ACTIONS)}
             />
           ) : null}
-          {noDataRows.length === 0 && (data.open_questions || 0) === 0 ? (
+          {noDataRows.length === 0 && criticalCount === 0 && (data.open_questions || 0) === 0 ? (
             <p className="analyticsOverviewEmpty">{t.emptyAttention}</p>
           ) : null}
         </div>
