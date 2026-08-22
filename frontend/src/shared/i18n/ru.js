@@ -890,9 +890,11 @@ export const ru = {
   },
   diagram: {
     alignDiagram: "Выровнять схему",
-    resetCanvas: "Reset",
+    resetCanvas: "Сбросить",
     alignFailed: "Не удалось выровнять схему.",
     resetCanvasConfirm: "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.",
+    resetFailed: "Не удалось сбросить схему.",
+    editingSectionTitle: "Редактирование",
   },
 };
 
