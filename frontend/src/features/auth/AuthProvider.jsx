@@ -10,6 +10,8 @@ import {
   setActiveOrgId as persistActiveOrgId,
   getAccessToken,
   onAuthFailure,
+  readStoredActiveOrgId,
+  pickValidActiveOrgId,
 } from "../../lib/api";
 import { setTelemetryUserContext } from "../telemetry/telemetryClient.js";
 
@@ -38,7 +40,15 @@ export function AuthProvider({ children }) {
     setUser(me.user);
     const nextOrgs = Array.isArray(me.user?.orgs) ? me.user.orgs : [];
     const nextDefault = String(me.user?.default_org_id || "").trim();
-    const nextActive = String(me.user?.active_org_id || nextDefault || "").trim();
+    const serverActive = String(me.user?.active_org_id || nextDefault || "").trim();
+    const nextActive = pickValidActiveOrgId({
+      stored: readStoredActiveOrgId(),
+      serverActive,
+      serverDefault: nextDefault,
+      orgs: nextOrgs,
+      isAdmin: Boolean(me.user?.is_admin),
+    });
+    persistActiveOrgId(nextActive);
     setOrgs(nextOrgs);
     setDefaultOrgId(nextDefault);
     setActiveOrgId(nextActive);
@@ -57,7 +67,15 @@ export function AuthProvider({ children }) {
     if (!res.ok) return res;
     const nextOrgs = Array.isArray(res.items) ? res.items : [];
     const nextDefault = String(res.default_org_id || "").trim();
-    const nextActive = String(res.active_org_id || nextDefault || "").trim();
+    const serverActive = String(res.active_org_id || nextDefault || "").trim();
+    const nextActive = pickValidActiveOrgId({
+      stored: readStoredActiveOrgId(),
+      serverActive,
+      serverDefault: nextDefault,
+      orgs: nextOrgs,
+      isAdmin: Boolean(user?.is_admin),
+    });
+    persistActiveOrgId(nextActive);
     setOrgs(nextOrgs);
     setDefaultOrgId(nextDefault);
     setActiveOrgId(nextActive);
@@ -72,7 +90,7 @@ export function AuthProvider({ children }) {
       active_org_id: nextActive,
       default_org_id: nextDefault,
     };
-  }, []);
+  }, [user?.is_admin]);
 
   const switchOrg = useCallback(async (orgId, options = {}) => {
     const requested = String(orgId || "").trim();

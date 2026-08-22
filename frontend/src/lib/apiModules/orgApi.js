@@ -1,6 +1,6 @@
 import { isPlainObject } from "../apiClient.js";
 import { apiRoutes } from "../apiRoutes.js";
-import { apiRequest as request, getActiveOrgId, okOrError, setActiveOrgId } from "../apiCore.js";
+import { apiRequest as request, okOrError } from "../apiCore.js";
 
 export async function apiListOrgs() {
   const r = okOrError(await request(apiRoutes.orgs.list(), { method: "GET", retryAuth: true }));
@@ -8,7 +8,6 @@ export async function apiListOrgs() {
   const items = Array.isArray(r.data?.items) ? r.data.items : [];
   const active_org_id = String(r.data?.active_org_id || "").trim();
   const default_org_id = String(r.data?.default_org_id || "").trim();
-  if (active_org_id) setActiveOrgId(active_org_id);
   return { ok: true, status: r.status, items, active_org_id, default_org_id };
 }
 
