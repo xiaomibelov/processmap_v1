@@ -90,8 +90,6 @@ export default function DiagramToolbarOverflowMenu({
   openCreateTemplateModal,
   canCreateTemplateFromSelection,
   templateSelectionCount,
-  runToolbarReset,
-  runToolbarClear,
   hasSession,
   isBpmnTab,
   workbench,
@@ -324,35 +322,6 @@ export default function DiagramToolbarOverflowMenu({
         />
       </MenuSection>
 
-      <MenuSection>
-        <div className="diagramToolbarMenuRare">
-          <MenuItem
-            label={workbench.labels.reset}
-            title={workbench.labels.reset}
-            onClick={closeAfter(runToolbarReset)}
-            icon={
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 5a6 6 0 0110 4" />
-                <path d="M13 11a6 6 0 01-10-4" />
-                <path d="M3 1v4h4" />
-                <path d="M13 15v-4h-4" />
-              </svg>
-            }
-          />
-          <MenuItem
-            label={workbench.labels.clear}
-            title={workbench.clearTooltip}
-            onClick={closeAfter(runToolbarClear)}
-            icon={
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 4h12" />
-                <path d="M4 4v9a2 2 0 002 2h4a2 2 0 002-2V4" />
-                <path d="M6 2h4" />
-              </svg>
-            }
-          />
-        </div>
-      </MenuSection>
     </div>
   );
 }

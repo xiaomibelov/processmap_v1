@@ -888,6 +888,12 @@ export const ru = {
     laterTitle: "Скрыть на 30 минут",
     iconAria: "Доступно обновление",
   },
+  diagram: {
+    alignDiagram: "Выровнять схему",
+    resetCanvas: "Reset",
+    alignFailed: "Не удалось выровнять схему.",
+    resetCanvasConfirm: "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.",
+  },
 };
 
 export function trStatusInvite(status) {

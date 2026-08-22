@@ -90,27 +90,6 @@ export default function useProcessStageRuntimeGlue({
     importInputRef.current?.click?.();
   }
 
-  function requestToolbarDangerConfirm(kind = "reset") {
-    if (kind === "clear") {
-      return window.confirm("Очистить текущую диаграмму? Это действие нельзя отменить.");
-    }
-    return window.confirm("Сбросить диаграмму к последнему состоянию на backend?");
-  }
-
-  function runToolbarReset() {
-    if (!requestToolbarDangerConfirm("reset")) return;
-    void bpmnSync.resetBackend();
-    setSaveDirtyHint(false);
-    setToolbarMenuOpen(false);
-  }
-
-  function runToolbarClear() {
-    if (!requestToolbarDangerConfirm("clear")) return;
-    bpmnRef.current?.clearLocal?.();
-    setSaveDirtyHint(false);
-    setToolbarMenuOpen(false);
-  }
-
   async function toggleAiBottlenecks() {
     if (!hasSession || isInterview || aiStepBusy) return;
     if (isLocal) {
@@ -622,8 +601,6 @@ export default function useProcessStageRuntimeGlue({
 
   return {
     openImportDialog,
-    runToolbarReset,
-    runToolbarClear,
     toggleAiBottlenecks,
     exportBpmn,
     exportSessionZip,
