@@ -450,6 +450,23 @@ export function createBpmnStageImperativeApi(ctxBase) {
         });
       });
     },
+    alignDiagram: async () => {
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return { ok: false, error: "modeler_not_ready" };
+      const result = await callbacks.alignDiagramOnInstance?.(inst, {
+        reason: "align_diagram",
+        sid: String(values.sessionId || ""),
+      });
+      return result || { ok: false, error: "align_failed" };
+    },
+    resetCanvas: () => {
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return { ok: false, error: "modeler_not_ready" };
+      const result = callbacks.resetCanvasOnInstance?.(inst, {
+        applyXmlSnapshot: callbacks.applyXmlSnapshot,
+      });
+      return result || { ok: false, error: "reset_failed" };
+    },
     restoreViewport: (snapshot) => {
       runOnActiveInstance((inst) => {
         const canvas = inst.get("canvas");

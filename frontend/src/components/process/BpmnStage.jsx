@@ -374,6 +374,113 @@ ${laneShapesXml}
 </bpmn:definitions>`;
 }
 
+function isLayoutableFlowNode(element) {
+  if (!element) return false;
+  const type = String(element.type || element.$type || "").toLowerCase();
+  if (!type.startsWith("bpmn:")) return false;
+  if (type.includes("sequenceflow")) return false;
+  if (type.includes("lane")) return false;
+  if (type.includes("participant")) return false;
+  if (type.includes("label")) return false;
+  if (type.includes("definitions")) return false;
+  if (type.includes("process")) return false;
+  if (Array.isArray(element.waypoints) && element.waypoints.length > 0) return false;
+  if (!Number.isFinite(Number(element.x)) || !Number.isFinite(Number(element.y))) return false;
+  if (!(Number(element.width || 0) > 0) || !(Number(element.height || 0) > 0)) return false;
+  return true;
+}
+
+function computeSimpleGridLayout(registry) {
+  const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+  const nodes = all.filter(isLayoutableFlowNode);
+  if (nodes.length === 0) return [];
+
+  const sorted = [...nodes].sort((a, b) => {
+    const dy = Number(a.y || 0) - Number(b.y || 0);
+    if (Math.abs(dy) > 80) return dy;
+    return Number(a.x || 0) - Number(b.x || 0);
+  });
+
+  const cols = Math.max(1, Math.ceil(Math.sqrt(sorted.length)));
+  const colWidth = 220;
+  const rowHeight = 140;
+  const startX = 150;
+  const startY = 120;
+
+  return sorted.map((el, idx) => {
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    return {
+      element: el,
+      delta: {
+        x: startX + col * colWidth - Number(el.x || 0),
+        y: startY + row * rowHeight - Number(el.y || 0),
+      },
+    };
+  });
+}
+
+async function alignDiagramOnInstance(inst, options = {}) {
+  if (!inst) return { ok: false, error: "modeler_not_ready" };
+  try {
+    const modeling = inst.get("modeling");
+    const registry = inst.get("elementRegistry");
+    const canvas = inst.get("canvas");
+
+    const layout = computeSimpleGridLayout(registry);
+    for (const { element, delta } of layout) {
+      if (Math.abs(delta.x) < 2 && Math.abs(delta.y) < 2) continue;
+      modeling.moveElements([element], delta, element.parent);
+    }
+
+    const rowsByY = new Map();
+    for (const { element } of layout) {
+      const rowKey = Math.round(Number(element.y || 0) / 10);
+      if (!rowsByY.has(rowKey)) rowsByY.set(rowKey, []);
+      rowsByY.get(rowKey).push(element);
+    }
+    for (const rowElements of rowsByY.values()) {
+      if (rowElements.length > 1) {
+        modeling.alignElements(rowElements, "middle");
+      }
+    }
+
+    const connections = Array.isArray(registry?.getAll?.())
+      ? registry.getAll().filter((el) => Array.isArray(el?.waypoints) && el.waypoints.length > 0)
+      : [];
+    for (const connection of connections) {
+      try {
+        modeling.layoutConnection(connection);
+      } catch {
+        // ignore per-connection layout failures
+      }
+    }
+
+    if (canvas && typeof canvas.zoom === "function") {
+      canvas.zoom("fit-viewport");
+      const z = canvas.zoom();
+      if (!Number.isFinite(z) || z <= 0) canvas.zoom(1);
+    }
+
+    const saved = await inst.saveXML({ format: true });
+    const xml = String(saved?.xml || "");
+    return { ok: true, xml };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || "align_failed") };
+  }
+}
+
+function resetCanvasOnInstance(inst, { applyXmlSnapshot }) {
+  if (!inst) return { ok: false, error: "modeler_not_ready" };
+  try {
+    inst.clear();
+    applyXmlSnapshot?.("", "reset_canvas");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || "reset_failed") };
+  }
+}
+
 function _getCanvasSnapshotRaw(inst) {
   try {
     const canvas = inst?.get?.("canvas");
@@ -5858,6 +5965,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
+        alignDiagramOnInstance,
+        resetCanvasOnInstance,
+        applyXmlSnapshot,
         getBaseDiagramStateVersion: () => getBaseDiagramStateVersion?.(),
         rememberDiagramStateVersion: (version, opts) => rememberDiagramStateVersion?.(version, opts),
         flushSave: (reason, opts) => ensureBpmnCoordinator().flushSave(reason, opts),
