@@ -5,10 +5,10 @@ import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 import DiagramSearchInlineInput from "../search/diagramSearchInlineInput";
 import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../../../../lib/sessionNoteAggregates.js";
-import { ru } from "../../../../shared/i18n/ru";
+import { getDict } from "../../../../shared/i18n/index.js";
 import processmanIconRaw from "../../../../assets/icons/processman.svg?raw";
 
-const tProcessman = ru.processman;
+const tProcessman = getDict().processman;
 
 function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -1993,7 +1993,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               />
             </div>
             <div className="diagramActionOverflowSection">
-              <div className="diagramActionOverflowSectionTitle">Редактирование</div>
+              <div className="diagramActionOverflowSectionTitle">{getDict().diagram.editingSectionTitle}</div>
               <OverflowMenuItem
                 icon={
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2002,7 +2002,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     <path d="M2 12h8" />
                   </svg>
                 }
-                label="Выровнять схему"
+                label={getDict().diagram.alignDiagram}
                 disabled={!isBpmnTab}
                 onClick={() => {
                   closeDiagramPopovers();
@@ -2019,7 +2019,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     <path d="M13 15v-4h-4" />
                   </svg>
                 }
-                label="Reset"
+                label={getDict().diagram.resetCanvas}
                 disabled={!hasSession || !isBpmnTab}
                 onClick={() => {
                   closeDiagramPopovers();

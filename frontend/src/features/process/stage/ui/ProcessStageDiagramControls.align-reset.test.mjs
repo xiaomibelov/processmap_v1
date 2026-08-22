@@ -14,8 +14,8 @@ const sectionsSource = fs.readFileSync(
 test("ProcessStageDiagramControls overflow menu exposes Align and Reset canvas actions", () => {
   assert.match(controlsSource, /data-testid="diagram-action-align-diagram"/);
   assert.match(controlsSource, /data-testid="diagram-action-reset-canvas"/);
-  assert.match(controlsSource, /Выровнять схему/);
-  assert.match(controlsSource, /Reset/);
+  assert.match(controlsSource, /getDict\(\)\.diagram\.alignDiagram/);
+  assert.match(controlsSource, /getDict\(\)\.diagram\.resetCanvas/);
   assert.match(controlsSource, /onAlignDiagram\?\.\(\)/);
   assert.match(controlsSource, /onResetCanvas\?\.\(\)/);
 });

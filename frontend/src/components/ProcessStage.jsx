@@ -54,7 +54,7 @@ import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
 import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanErrorBoundary";
 import { isLlmNotConfigured } from "../features/process/processman/processmanView";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
-import { ru } from "../shared/i18n/ru";
+import { getDict } from "../shared/i18n/index.js";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
 import {
@@ -4616,7 +4616,7 @@ function ProcessStage({
     if (!hasSession || !isBpmnTab) return;
     const result = await Promise.resolve(bpmnRef.current?.alignDiagram?.());
     if (!result || result.ok === false) {
-      setGenErr(shortErr(result?.error || ru.diagram?.alignFailed || "Не удалось выровнять схему."));
+      setGenErr(shortErr(result?.error || getDict().diagram?.alignFailed || "Не удалось выровнять схему."));
       return;
     }
     const xml = String(result?.xml || "");
@@ -4625,19 +4625,19 @@ function ProcessStage({
         id: sid,
         session_id: sid,
         bpmn_xml: xml,
-        _sync_source: "align_diagram",
+        _sync_source: "canvas_align",
       });
     }
   }, [bpmnRef, hasSession, isBpmnTab, onSessionSync, setGenErr, sid]);
 
   const handleResetCanvas = useCallback(() => {
     if (!hasSession || !isBpmnTab) return;
-    const confirmed = window.confirm(ru.diagram?.resetCanvasConfirm || "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.");
+    const confirmed = window.confirm(getDict().diagram?.resetCanvasConfirm || "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.");
     if (!confirmed) return;
 
     const result = bpmnRef.current?.resetCanvas?.();
     if (result && result.ok === false) {
-      setGenErr(shortErr(result.error || "Не удалось сбросить схему."));
+      setGenErr(shortErr(result.error || getDict().diagram?.resetFailed || "Не удалось сбросить схему."));
       return;
     }
 
