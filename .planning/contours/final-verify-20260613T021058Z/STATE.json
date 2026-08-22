@@ -1,0 +1,17 @@
+{
+  "contour_id": "final-verify-20260613T021058Z",
+  "status": "planned",
+  "run_id": "wf-1781316659010-lbze",
+  "previous_contour": "stage-final/test-full-20260613T005118Z",
+  "repo": "/opt/processmap-test",
+  "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+  "branch_at_planning": "test/stage-final-test-full-20260613T005118Z",
+  "head": "e1143c14f901882c12dc550f71bfd6757d60b882",
+  "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882",
+  "merge_base": "e1143c14f901882c12dc550f71bfd6757d60b882",
+  "planned_branch": "test/final-verify-20260613T021058Z",
+  "planned_at": "2026-06-13T02:11:02Z",
+  "mode": "verification",
+  "allowed_changes": [".planning/contours/final-verify-20260613T021058Z/*"],
+  "notes": "Read-only final verification of stages 1-10 and stage-final. No product code changes."
+}

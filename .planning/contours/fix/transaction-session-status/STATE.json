@@ -1,0 +1,19 @@
+{
+  "contour": "fix/transaction-session-status",
+  "type": "fix",
+  "status": "ready_for_review",
+  "branch": "fix/transaction-session-status",
+  "head": "875dbcd9797e25123f0682bdd04624a99af076d8",
+  "origin_main": "38d4b3664e4de30733cc454fb6e006cce75d7eb5",
+  "worktree": "/opt/processmap-test/.worktrees/fix-transaction-session-status",
+  "rag_preflight": "done",
+  "obsidian_context": "RAG + AGENTS.md",
+  "gsd_context": "skills available, not invoked",
+  "root_cause": "frontend/src/App.jsx::changeCurrentSessionStatus does not send base_diagram_state_version",
+  "fix_target": "frontend/src/App.jsx",
+  "test_target": "frontend/src/App.session-status-patch.test.mjs",
+  "commit": "875dbcd9",
+  "remote_branch": "origin/fix/transaction-session-status",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/new/fix/transaction-session-status",
+  "blocker": "GitHub CLI not authenticated; PR must be created manually or via provided GH_TOKEN"
+}

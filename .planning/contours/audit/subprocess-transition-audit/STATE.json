@@ -1,0 +1,35 @@
+{
+  "contour": {
+    "type": "audit",
+    "name": "subprocess-transition-audit",
+    "path": ".planning/contours/audit/subprocess-transition-audit",
+    "role": "planner"
+  },
+  "source_truth": {
+    "repo_root": "/opt/processmap-test",
+    "branch": "fix/bpmn-drilldown-ui",
+    "remote_origin": "git@github.com:xiaomibelov/processmap_v1.git"
+  },
+  "phase": "ready_for_review",
+  "deliverables": {
+    "DIAGNOSIS.md": "complete",
+    "PLANE-1-BUSINESS.md": "complete",
+    "PLANE-2-PROCESS.md": "complete",
+    "PLANE-3-APPLICATION.md": "complete",
+    "PLANE-4-DATA.md": "complete",
+    "PLANE-5-INFRASTRUCTURE.md": "complete",
+    "SEPARATION-MAP.md": "complete",
+    "RECOMMENDATIONS.md": "complete",
+    "PLAN.md": "complete",
+    "STATE.json": "complete"
+  },
+  "gates": {
+    "gsd_discipline_recorded": true,
+    "source_runtime_truth_captured": true,
+    "bounded_scope_defined": true,
+    "acceptance_criteria_defined": true,
+    "no_product_code_written": true,
+    "no_merge_deploy_pr": true
+  },
+  "next_action": "User review; then create fix/feat contour for Phase 1 implementation"
+}

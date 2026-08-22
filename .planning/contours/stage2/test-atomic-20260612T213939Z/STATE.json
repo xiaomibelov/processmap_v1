@@ -1,0 +1,18 @@
+{
+  "contour_id": "stage2/test-atomic-20260612T213939Z",
+  "contour_type": "test",
+  "stage": "stage2",
+  "created_at": "2026-06-12T21:39:43Z",
+  "planner_status": "complete",
+  "worker_status": "pending",
+  "reviewer_status": "pending",
+  "verdict": null,
+  "blocked_reason": null,
+  "artifacts": {
+    "PLAN.md": "present",
+    "WORKER_PROMPT.md": "present",
+    "REVIEWER_PROMPT.md": "present",
+    "STATE.json": "present",
+    "READY_FOR_EXECUTION": "pending"
+  }
+}

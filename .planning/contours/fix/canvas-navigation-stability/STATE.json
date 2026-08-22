@@ -1,0 +1,35 @@
+{
+  "contour": "canvas-navigation-stability",
+  "type": "fix",
+  "branch": "fix/canvas-navigation-stability",
+  "head": "465afedd",
+  "base": "main",
+  "pr": 399,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/399",
+  "status": "awaiting_review",
+  "commits": [
+    "465afedd"
+  ],
+  "deploy": {
+    "target": "test-stand",
+    "url": "http://clearvestnic.ru:5177",
+    "build_info": {
+      "branch": "fix/canvas-navigation-stability",
+      "sha": "465afedd",
+      "timestamp": "2026-06-23T10:23:50Z",
+      "host": "clearvestnic.ru"
+    },
+    "healthcheck": "passed"
+  },
+  "mirrored": true,
+  "mirror_dest": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/fix/canvas-navigation-stability",
+  "updated_at": "2026-06-23T10:36:00Z",
+  "verification": {
+    "jitter": {
+      "status": "partial",
+      "forced_reflow_count": 1732,
+      "target": 100,
+      "residual_source": "useHybridLayerViewportController.js refreshHybridLayerCardSizes"
+    }
+  }
+}

@@ -1,0 +1,6621 @@
+{
+  "summary": {
+    "operations_total": 329,
+    "covered": 32,
+    "partial": 67,
+    "not_covered": 230,
+    "percent_covered": 9.7,
+    "percent_exercised": 30.1,
+    "calls_recorded": 433,
+    "calls_unmatched": 64
+  },
+  "by_tag": {
+    "admin": {
+      "total": 51,
+      "covered": 10,
+      "partial": 11,
+      "not_covered": 30,
+      "percent_covered": 19.6
+    },
+    "analytics": {
+      "total": 26,
+      "covered": 4,
+      "partial": 20,
+      "not_covered": 2,
+      "percent_covered": 15.4
+    },
+    "audit-log": {
+      "total": 2,
+      "covered": 0,
+      "partial": 2,
+      "not_covered": 0,
+      "percent_covered": 0.0
+    },
+    "auto-pass": {
+      "total": 3,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 3,
+      "percent_covered": 0.0
+    },
+    "clipboard": {
+      "total": 4,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 4,
+      "percent_covered": 0.0
+    },
+    "deployment-notices": {
+      "total": 4,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 4,
+      "percent_covered": 0.0
+    },
+    "dictionaries": {
+      "total": 8,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 8,
+      "percent_covered": 0.0
+    },
+    "error-events": {
+      "total": 6,
+      "covered": 1,
+      "partial": 1,
+      "not_covered": 4,
+      "percent_covered": 16.7
+    },
+    "explorer": {
+      "total": 32,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 32,
+      "percent_covered": 0.0
+    },
+    "feature-flags": {
+      "total": 3,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 3,
+      "percent_covered": 0.0
+    },
+    "health": {
+      "total": 2,
+      "covered": 2,
+      "partial": 0,
+      "not_covered": 0,
+      "percent_covered": 100.0
+    },
+    "kitchens": {
+      "total": 6,
+      "covered": 2,
+      "partial": 4,
+      "not_covered": 0,
+      "percent_covered": 33.3
+    },
+    "llm": {
+      "total": 2,
+      "covered": 2,
+      "partial": 0,
+      "not_covered": 0,
+      "percent_covered": 100.0
+    },
+    "notes": {
+      "total": 34,
+      "covered": 6,
+      "partial": 4,
+      "not_covered": 24,
+      "percent_covered": 17.6
+    },
+    "operation-catalog": {
+      "total": 4,
+      "covered": 0,
+      "partial": 4,
+      "not_covered": 0,
+      "percent_covered": 0.0
+    },
+    "org-groups": {
+      "total": 14,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 14,
+      "percent_covered": 0.0
+    },
+    "org-invites": {
+      "total": 9,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 9,
+      "percent_covered": 0.0
+    },
+    "org-listing": {
+      "total": 3,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 3,
+      "percent_covered": 0.0
+    },
+    "org-members": {
+      "total": 2,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 2,
+      "percent_covered": 0.0
+    },
+    "org-property-dictionary": {
+      "total": 10,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 10,
+      "percent_covered": 0.0
+    },
+    "organizations": {
+      "total": 17,
+      "covered": 0,
+      "partial": 3,
+      "not_covered": 14,
+      "percent_covered": 0.0
+    },
+    "process-properties-registry": {
+      "total": 10,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 10,
+      "percent_covered": 0.0
+    },
+    "process-templates": {
+      "total": 26,
+      "covered": 6,
+      "partial": 20,
+      "not_covered": 0,
+      "percent_covered": 23.1
+    },
+    "product-actions-ai": {
+      "total": 10,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 10,
+      "percent_covered": 0.0
+    },
+    "product-actions-registry": {
+      "total": 8,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 8,
+      "percent_covered": 0.0
+    },
+    "project-analytics": {
+      "total": 2,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 2,
+      "percent_covered": 0.0
+    },
+    "projects": {
+      "total": 6,
+      "covered": 0,
+      "partial": 1,
+      "not_covered": 5,
+      "percent_covered": 0.0
+    },
+    "rag": {
+      "total": 6,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 6,
+      "percent_covered": 0.0
+    },
+    "recipes": {
+      "total": 22,
+      "covered": 8,
+      "partial": 14,
+      "not_covered": 0,
+      "percent_covered": 36.4
+    },
+    "reference-resolver": {
+      "total": 2,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 2,
+      "percent_covered": 0.0
+    },
+    "reports": {
+      "total": 10,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 10,
+      "percent_covered": 0.0
+    },
+    "save-status": {
+      "total": 1,
+      "covered": 0,
+      "partial": 1,
+      "not_covered": 0,
+      "percent_covered": 0.0
+    },
+    "session-events": {
+      "total": 1,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 1,
+      "percent_covered": 0.0
+    },
+    "sessions": {
+      "total": 46,
+      "covered": 2,
+      "partial": 8,
+      "not_covered": 36,
+      "percent_covered": 4.3
+    },
+    "sku-bindings": {
+      "total": 14,
+      "covered": 2,
+      "partial": 12,
+      "not_covered": 0,
+      "percent_covered": 14.3
+    },
+    "system": {
+      "total": 17,
+      "covered": 1,
+      "partial": 0,
+      "not_covered": 16,
+      "percent_covered": 5.9
+    },
+    "templates": {
+      "total": 8,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 8,
+      "percent_covered": 0.0
+    },
+    "transformation": {
+      "total": 6,
+      "covered": 2,
+      "partial": 4,
+      "not_covered": 0,
+      "percent_covered": 33.3
+    },
+    "version": {
+      "total": 1,
+      "covered": 0,
+      "partial": 0,
+      "not_covered": 1,
+      "percent_covered": 0.0
+    }
+  },
+  "operations": [
+    {
+      "method": "GET",
+      "path": "/api/admin/agent-runs",
+      "operation_id": "admin_agent_runs_api_admin_agent_runs_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/agent-runs/{run_id}",
+      "operation_id": "admin_agent_run_detail_api_admin_agent_runs__run_id__get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai/executions",
+      "operation_id": "admin_ai_executions_api_admin_ai_executions_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai/modules",
+      "operation_id": "admin_ai_modules_api_admin_ai_modules_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai/prompts",
+      "operation_id": "admin_ai_prompts_api_admin_ai_prompts_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai/prompts",
+      "operation_id": "admin_create_ai_prompt_api_admin_ai_prompts_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai/prompts/active",
+      "operation_id": "admin_ai_active_prompt_api_admin_ai_prompts_active_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai/prompts/seed",
+      "operation_id": "admin_seed_ai_prompts_api_admin_ai_prompts_seed_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai/prompts/{prompt_id}",
+      "operation_id": "admin_ai_prompt_detail_api_admin_ai_prompts__prompt_id__get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai/prompts/{prompt_id}/activate",
+      "operation_id": "admin_activate_ai_prompt_api_admin_ai_prompts__prompt_id__activate_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai/prompts/{prompt_id}/archive",
+      "operation_id": "admin_archive_ai_prompt_api_admin_ai_prompts__prompt_id__archive_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai/provider-settings",
+      "operation_id": "admin_ai_provider_settings_api_admin_ai_provider_settings_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai/provider-settings",
+      "operation_id": "admin_save_ai_provider_settings_api_admin_ai_provider_settings_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai/provider-settings/verify",
+      "operation_id": "admin_verify_ai_provider_settings_api_admin_ai_provider_settings_verify_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/audit",
+      "operation_id": "admin_audit_api_admin_audit_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 3
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/dashboard",
+      "operation_id": "admin_dashboard_api_admin_dashboard_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/deployment-notices",
+      "operation_id": "list_deployment_notices_api_admin_deployment_notices_get",
+      "tags": [
+        "deployment-notices"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/deployment-notices",
+      "operation_id": "create_deployment_notice_api_admin_deployment_notices_post",
+      "tags": [
+        "deployment-notices"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/deployment-notices/{notice_id}",
+      "operation_id": "cancel_deployment_notice_api_admin_deployment_notices__notice_id__delete",
+      "tags": [
+        "deployment-notices"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/error-events",
+      "operation_id": "admin_error_events_api_admin_error_events_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/error-events/{event_id}",
+      "operation_id": "admin_error_event_detail_api_admin_error_events__event_id__get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/feature-flags",
+      "operation_id": "patch_feature_flags_endpoint_api_admin_feature_flags_patch",
+      "tags": [
+        "feature-flags"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/feature-flags/{key}",
+      "operation_id": "put_feature_flag_endpoint_api_admin_feature_flags__key__put",
+      "tags": [
+        "feature-flags"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/invites/{invite_id}/permissions",
+      "operation_id": "admin_invite_permissions_get_api_admin_invites__invite_id__permissions_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/invites/{invite_id}/permissions",
+      "operation_id": "admin_invite_permissions_patch_api_admin_invites__invite_id__permissions_patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/jobs",
+      "operation_id": "admin_jobs_api_admin_jobs_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/features",
+      "operation_id": "admin_llm_list_features_api_admin_llm_features_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 2
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/llm/features/{feature}",
+      "operation_id": "admin_llm_patch_feature_api_admin_llm_features__feature__patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/prompts",
+      "operation_id": "admin_llm_list_prompts_api_admin_llm_prompts_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/prompts",
+      "operation_id": "admin_llm_create_prompt_api_admin_llm_prompts_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 5,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/prompts/{prompt_id}/activate",
+      "operation_id": "admin_llm_activate_prompt_api_admin_llm_prompts__prompt_id__activate_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/prompts/{prompt_id}/rollback",
+      "operation_id": "admin_llm_rollback_prompt_api_admin_llm_prompts__prompt_id__rollback_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/providers",
+      "operation_id": "admin_llm_list_providers_api_admin_llm_providers_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [
+        "401",
+        "403"
+      ],
+      "calls": 6,
+      "tests": 3
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/providers",
+      "operation_id": "admin_llm_create_provider_api_admin_llm_providers_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/llm/providers/{provider_id}",
+      "operation_id": "admin_llm_delete_provider_api_admin_llm_providers__provider_id__delete",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 1
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/llm/providers/{provider_id}",
+      "operation_id": "admin_llm_patch_provider_api_admin_llm_providers__provider_id__patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/providers/{provider_id}/test",
+      "operation_id": "admin_llm_test_provider_api_admin_llm_providers__provider_id__test_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 5,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/usage",
+      "operation_id": "admin_llm_usage_api_admin_llm_usage_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 3
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/organizations/{org_id}/groups",
+      "operation_id": "list_groups_api_admin_organizations__org_id__groups_get",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/organizations/{org_id}/groups",
+      "operation_id": "create_group_api_admin_organizations__org_id__groups_post",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/organizations/{org_id}/groups/{group_id}",
+      "operation_id": "delete_group_api_admin_organizations__org_id__groups__group_id__delete",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/organizations/{org_id}/groups/{group_id}",
+      "operation_id": "patch_group_api_admin_organizations__org_id__groups__group_id__patch",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/organizations/{org_id}/groups/{group_id}/members",
+      "operation_id": "list_group_members_api_admin_organizations__org_id__groups__group_id__members_get",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/organizations/{org_id}/groups/{group_id}/members",
+      "operation_id": "add_group_member_api_admin_organizations__org_id__groups__group_id__members_post",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/organizations/{org_id}/groups/{group_id}/members/{user_id}",
+      "operation_id": "remove_group_member_api_admin_organizations__org_id__groups__group_id__members__user_id__delete",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/organizations/{org_id}/invites",
+      "operation_id": "list_org_invites_endpoint_api_admin_organizations__org_id__invites_get",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/organizations/{org_id}/invites",
+      "operation_id": "create_org_invite_endpoint_api_admin_organizations__org_id__invites_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/organizations/{org_id}/invites/{invite_id}/revoke",
+      "operation_id": "revoke_org_invite_endpoint_api_admin_organizations__org_id__invites__invite_id__revoke_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/orgs",
+      "operation_id": "admin_orgs_api_admin_orgs_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/orgs/{org_id}/status",
+      "operation_id": "admin_patch_org_status_api_admin_orgs__org_id__status_patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/permissions",
+      "operation_id": "admin_permissions_list_api_admin_permissions_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/permissions/bulk",
+      "operation_id": "admin_permissions_bulk_api_admin_permissions_bulk_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/permissions/entities",
+      "operation_id": "admin_permissions_entities_api_admin_permissions_entities_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/permissions/matrix",
+      "operation_id": "admin_permissions_matrix_api_admin_permissions_matrix_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/permissions/matrix/bulk",
+      "operation_id": "admin_permissions_matrix_bulk_api_admin_permissions_matrix_bulk_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/permissions/matrix/{principal_type}/{principal_id}/{entity_type}/{entity_id}",
+      "operation_id": "admin_permissions_matrix_patch_api_admin_permissions_matrix__principal_type___principal_id___entity_type___entity_id__patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/permissions/principals",
+      "operation_id": "admin_permissions_principals_api_admin_permissions_principals_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/permissions/{entity_type}/{entity_id}",
+      "operation_id": "admin_permissions_patch_api_admin_permissions__entity_type___entity_id__patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/projects",
+      "operation_id": "admin_projects_api_admin_projects_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/rag/settings",
+      "operation_id": "admin_rag_get_settings_api_admin_rag_settings_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/rag/settings",
+      "operation_id": "admin_rag_patch_settings_api_admin_rag_settings_patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/sessions",
+      "operation_id": "admin_sessions_api_admin_sessions_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/sessions/{session_id}",
+      "operation_id": "admin_session_detail_api_admin_sessions__session_id__get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/users",
+      "operation_id": "admin_users_api_admin_users_get",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users",
+      "operation_id": "admin_create_user_api_admin_users_post",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/users/{user_id}",
+      "operation_id": "admin_patch_user_api_admin_users__user_id__patch",
+      "tags": [
+        "admin"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/product-actions/registry/export.csv",
+      "operation_id": "export_product_actions_registry_csv_api_analysis_product_actions_registry_export_csv_post",
+      "tags": [
+        "product-actions-registry",
+        "product-actions-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/product-actions/registry/export.xlsx",
+      "operation_id": "export_product_actions_registry_xlsx_api_analysis_product_actions_registry_export_xlsx_post",
+      "tags": [
+        "product-actions-registry",
+        "product-actions-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/product-actions/registry/query",
+      "operation_id": "query_product_actions_registry_api_analysis_product_actions_registry_query_post",
+      "tags": [
+        "product-actions-registry",
+        "product-actions-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/product-actions/suggest-bulk",
+      "operation_id": "suggest_product_actions_bulk_api_analysis_product_actions_suggest_bulk_post",
+      "tags": [
+        "product-actions-ai",
+        "product-actions-ai"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/analysis/properties/registry/export",
+      "operation_id": "export_property_registry_api_analysis_properties_registry_export_get",
+      "tags": [
+        "process-properties-registry",
+        "process-properties-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/properties/registry/export.csv",
+      "operation_id": "export_process_properties_registry_csv_api_analysis_properties_registry_export_csv_post",
+      "tags": [
+        "process-properties-registry",
+        "process-properties-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/properties/registry/export.xlsx",
+      "operation_id": "export_process_properties_registry_xlsx_api_analysis_properties_registry_export_xlsx_post",
+      "tags": [
+        "process-properties-registry",
+        "process-properties-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/analysis/properties/registry/query",
+      "operation_id": "query_property_registry_metadata_api_analysis_properties_registry_query_get",
+      "tags": [
+        "process-properties-registry",
+        "process-properties-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/analysis/properties/registry/query",
+      "operation_id": "query_process_properties_registry_api_analysis_properties_registry_query_post",
+      "tags": [
+        "process-properties-registry",
+        "process-properties-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/actions",
+      "operation_id": "get_actions_api_analytics_actions_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/actions/export.csv",
+      "operation_id": "export_actions_csv_api_analytics_actions_export_csv_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/actions/export.xlsx",
+      "operation_id": "export_actions_xlsx_api_analytics_actions_export_xlsx_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/actions/summary",
+      "operation_id": "get_actions_summary_api_analytics_actions_summary_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/dashboard",
+      "operation_id": "get_dashboard_api_analytics_dashboard_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 6,
+      "tests": 5
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/export-advanced-calculation.xlsx",
+      "operation_id": "export_advanced_calculation_xlsx_api_analytics_export_advanced_calculation_xlsx_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 6,
+      "tests": 6
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/properties",
+      "operation_id": "get_properties_api_analytics_properties_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/properties/export-recalculated.xlsx",
+      "operation_id": "export_properties_recalculated_xlsx_api_analytics_properties_export_recalculated_xlsx_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 8,
+      "tests": 8
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/properties/export.csv",
+      "operation_id": "export_properties_csv_api_analytics_properties_export_csv_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/properties/export.xlsx",
+      "operation_id": "export_properties_xlsx_api_analytics_properties_export_xlsx_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/properties/recalculation",
+      "operation_id": "get_properties_recalculation_api_analytics_properties_recalculation_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/properties/summary",
+      "operation_id": "get_properties_summary_api_analytics_properties_summary_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/{scope}/{scope_id}/dashboard",
+      "operation_id": "get_dashboard_path_api_analytics__scope___scope_id__dashboard_get",
+      "tags": [
+        "analytics",
+        "analytics"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/audit-log",
+      "operation_id": "list_audit_log_endpoint_api_audit_log_get",
+      "tags": [
+        "audit-log",
+        "audit-log"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 18,
+      "tests": 9
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/invite/activate",
+      "operation_id": "auth_invite_activate_api_auth_invite_activate_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/invite/preview",
+      "operation_id": "auth_invite_preview_api_auth_invite_preview_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "operation_id": "auth_login_api_auth_login_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "401",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "operation_id": "auth_logout_api_auth_logout_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "operation_id": "auth_me_api_auth_me_get",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/refresh",
+      "operation_id": "auth_refresh_api_auth_refresh_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "401"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/backfill/workspace-folders",
+      "operation_id": "backfill_workspace_folders_api_backfill_workspace_folders_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/clipboard/bpmn",
+      "operation_id": "clear_current_bpmn_clipboard_api_clipboard_bpmn_delete",
+      "tags": [
+        "clipboard"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/clipboard/bpmn",
+      "operation_id": "get_current_bpmn_clipboard_api_clipboard_bpmn_get",
+      "tags": [
+        "clipboard"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/clipboard/bpmn/copy",
+      "operation_id": "copy_bpmn_element_to_clipboard_api_clipboard_bpmn_copy_post",
+      "tags": [
+        "clipboard"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/clipboard/bpmn/paste",
+      "operation_id": "paste_bpmn_clipboard_api_clipboard_bpmn_paste_post",
+      "tags": [
+        "clipboard"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/deployment-notice",
+      "operation_id": "get_public_deployment_notice_api_deployment_notice_get",
+      "tags": [
+        "deployment-notices"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/dictionaries/container-types",
+      "operation_id": "list_container_types_api_dictionaries_container_types_get",
+      "tags": [
+        "dictionaries",
+        "dictionaries"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/dictionaries/equipment-types",
+      "operation_id": "list_equipment_types_api_dictionaries_equipment_types_get",
+      "tags": [
+        "dictionaries",
+        "dictionaries"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/dictionaries/sku",
+      "operation_id": "list_sku_api_dictionaries_sku_get",
+      "tags": [
+        "dictionaries",
+        "dictionaries"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/dictionaries/zone-types",
+      "operation_id": "list_zone_types_api_dictionaries_zone_types_get",
+      "tags": [
+        "dictionaries",
+        "dictionaries"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/enterprise/workspace",
+      "operation_id": "get_enterprise_workspace_api_enterprise_workspace_get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/explorer",
+      "operation_id": "get_explorer_page_api_explorer_get",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/explorer/search",
+      "operation_id": "search_explorer_api_explorer_search_get",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/feature-flags",
+      "operation_id": "get_feature_flags_endpoint_api_feature_flags_get",
+      "tags": [
+        "feature-flags"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/folders/{folder_id}",
+      "operation_id": "delete_folder_api_folders__folder_id__delete",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/folders/{folder_id}",
+      "operation_id": "get_folder_api_folders__folder_id__get",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/folders/{folder_id}",
+      "operation_id": "rename_folder_api_folders__folder_id__patch",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/{folder_id}/move",
+      "operation_id": "move_folder_api_folders__folder_id__move_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/folders/{folder_id}/note-aggregate",
+      "operation_id": "get_folder_note_aggregate_api_folders__folder_id__note_aggregate_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/folders/{folder_id}/projects",
+      "operation_id": "create_project_in_folder_api_folders__folder_id__projects_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/glossary/add",
+      "operation_id": "glossary_add_api_glossary_add_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "operation_id": "api_health_api_health_get",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/health/process-template",
+      "operation_id": "health_check_api_health_process_template_get",
+      "tags": [
+        "health",
+        "health"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/invite/activate",
+      "operation_id": "auth_invite_activate_api_invite_activate_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/invite/resolve",
+      "operation_id": "auth_invite_preview_api_invite_resolve_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/invites/accept",
+      "operation_id": "accept_invite_endpoint_api_invites_accept_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/kitchens",
+      "operation_id": "list_kitchens_api_kitchens_get",
+      "tags": [
+        "kitchens",
+        "kitchens"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 3
+    },
+    {
+      "method": "POST",
+      "path": "/api/kitchens",
+      "operation_id": "create_kitchen_api_kitchens_post",
+      "tags": [
+        "kitchens",
+        "kitchens"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201",
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 17,
+      "tests": 12
+    },
+    {
+      "method": "PUT",
+      "path": "/api/kitchens/{kitchen_id}/equipment",
+      "operation_id": "replace_kitchen_equipment_api_kitchens__kitchen_id__equipment_put",
+      "tags": [
+        "kitchens",
+        "kitchens"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 4,
+      "tests": 4
+    },
+    {
+      "method": "POST",
+      "path": "/api/llm/feedback",
+      "operation_id": "llm_feedback_api_llm_feedback_post",
+      "tags": [
+        "llm"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401",
+        "404",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 6,
+      "tests": 6
+    },
+    {
+      "method": "POST",
+      "path": "/api/llm/session-title/questions",
+      "operation_id": "llm_session_title_questions_api_llm_session_title_questions_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/llm/status",
+      "operation_id": "llm_status_api_llm_status_get",
+      "tags": [
+        "llm"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [
+        "401",
+        "404"
+      ],
+      "calls": 11,
+      "tests": 11
+    },
+    {
+      "method": "GET",
+      "path": "/api/meta",
+      "operation_id": "api_meta_api_meta_get",
+      "tags": [
+        "system"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/note-comments/{comment_id}",
+      "operation_id": "delete_session_note_comment_api_note_comments__comment_id__delete",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/note-comments/{comment_id}",
+      "operation_id": "patch_note_comment_api_note_comments__comment_id__patch",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/note-mentions",
+      "operation_id": "list_my_note_mentions_api_note_mentions_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/note-mentions/{mention_id}/acknowledge",
+      "operation_id": "acknowledge_note_mention_api_note_mentions__mention_id__acknowledge_post",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/note-notifications",
+      "operation_id": "list_my_note_notifications_api_note_notifications_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/note-threads/{thread_id}",
+      "operation_id": "delete_session_note_thread_api_note_threads__thread_id__delete",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/note-threads/{thread_id}",
+      "operation_id": "patch_note_thread_api_note_threads__thread_id__patch",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/note-threads/{thread_id}/attention-acknowledgement",
+      "operation_id": "acknowledge_note_thread_attention_api_note_threads__thread_id__attention_acknowledgement_post",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/note-threads/{thread_id}/comments",
+      "operation_id": "add_note_thread_comment_api_note_threads__thread_id__comments_post",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/note-threads/{thread_id}/read",
+      "operation_id": "mark_note_thread_read_api_note_threads__thread_id__read_post",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications/error_events",
+      "operation_id": "proxy_list_error_events_api_notifications_error_events_get",
+      "tags": [
+        "error-events"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/error_events",
+      "operation_id": "proxy_create_error_event_api_notifications_error_events_post",
+      "tags": [
+        "error-events"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/notifications/error_events/{event_id}",
+      "operation_id": "proxy_delete_error_event_api_notifications_error_events__event_id__delete",
+      "tags": [
+        "error-events"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "204",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications/error_events/{event_id}",
+      "operation_id": "proxy_get_error_event_api_notifications_error_events__event_id__get",
+      "tags": [
+        "error-events"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/notifications/error_events/{event_id}",
+      "operation_id": "proxy_patch_error_event_api_notifications_error_events__event_id__patch",
+      "tags": [
+        "error-events"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/operation-catalog",
+      "operation_id": "list_operations_api_operation_catalog_get",
+      "tags": [
+        "operation-catalog",
+        "operation-catalog"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/operation-catalog/{code}",
+      "operation_id": "get_operation_api_operation_catalog__code__get",
+      "tags": [
+        "operation-catalog",
+        "operation-catalog"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs",
+      "operation_id": "list_orgs_endpoint_api_orgs_get",
+      "tags": [
+        "org-listing"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs",
+      "operation_id": "create_org_endpoint_api_orgs_post",
+      "tags": [
+        "org-listing"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}",
+      "operation_id": "patch_org_endpoint_api_orgs__org_id__patch",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/assignable-users",
+      "operation_id": "list_org_assignable_users_endpoint_api_orgs__org_id__assignable_users_get",
+      "tags": [
+        "org-members"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/audit",
+      "operation_id": "list_org_audit_endpoint_api_orgs__org_id__audit_get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/audit/cleanup",
+      "operation_id": "cleanup_org_audit_endpoint_api_orgs__org_id__audit_cleanup_post",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/git-mirror",
+      "operation_id": "get_org_git_mirror_endpoint_api_orgs__org_id__git_mirror_get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/git-mirror",
+      "operation_id": "patch_org_git_mirror_endpoint_api_orgs__org_id__git_mirror_patch",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/git-mirror/validate",
+      "operation_id": "validate_org_git_mirror_endpoint_api_orgs__org_id__git_mirror_validate_post",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/groups",
+      "operation_id": "list_groups_api_orgs__org_id__groups_get",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/groups",
+      "operation_id": "create_group_api_orgs__org_id__groups_post",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/orgs/{org_id}/groups/{group_id}",
+      "operation_id": "delete_group_api_orgs__org_id__groups__group_id__delete",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/groups/{group_id}",
+      "operation_id": "patch_group_api_orgs__org_id__groups__group_id__patch",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/groups/{group_id}/members",
+      "operation_id": "list_group_members_api_orgs__org_id__groups__group_id__members_get",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/groups/{group_id}/members",
+      "operation_id": "add_group_member_api_orgs__org_id__groups__group_id__members_post",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/orgs/{org_id}/groups/{group_id}/members/{user_id}",
+      "operation_id": "remove_group_member_api_orgs__org_id__groups__group_id__members__user_id__delete",
+      "tags": [
+        "org-groups"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/invites",
+      "operation_id": "list_org_invites_endpoint_api_orgs__org_id__invites_get",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/invites",
+      "operation_id": "create_org_invite_endpoint_api_orgs__org_id__invites_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/invites/accept",
+      "operation_id": "accept_org_invite_endpoint_api_orgs__org_id__invites_accept_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/invites/cleanup",
+      "operation_id": "cleanup_org_invites_endpoint_api_orgs__org_id__invites_cleanup_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/invites/{invite_id}/revoke",
+      "operation_id": "revoke_org_invite_endpoint_api_orgs__org_id__invites__invite_id__revoke_post",
+      "tags": [
+        "org-invites"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/members",
+      "operation_id": "list_org_members_endpoint_api_orgs__org_id__members_get",
+      "tags": [
+        "org-members"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/members/assign",
+      "operation_id": "assign_org_member_api_orgs__org_id__members_assign_post",
+      "tags": [
+        "org-listing"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/members/{user_id}",
+      "operation_id": "patch_org_member_endpoint_api_orgs__org_id__members__user_id__patch",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/projects",
+      "operation_id": "list_org_projects_api_orgs__org_id__projects_get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/projects",
+      "operation_id": "create_org_project_api_orgs__org_id__projects_post",
+      "tags": [
+        "organizations"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/projects/{project_id}",
+      "operation_id": "get_org_project_api_orgs__org_id__projects__project_id__get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/projects/{project_id}/members",
+      "operation_id": "list_org_project_members_api_orgs__org_id__projects__project_id__members_get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/projects/{project_id}/members",
+      "operation_id": "create_org_project_member_api_orgs__org_id__projects__project_id__members_post",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/orgs/{org_id}/projects/{project_id}/members/{user_id}",
+      "operation_id": "delete_org_project_member_api_orgs__org_id__projects__project_id__members__user_id__delete",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/projects/{project_id}/members/{user_id}",
+      "operation_id": "patch_org_project_member_api_orgs__org_id__projects__project_id__members__user_id__patch",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/projects/{project_id}/sessions",
+      "operation_id": "list_org_project_sessions_api_orgs__org_id__projects__project_id__sessions_get",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/projects/{project_id}/sessions",
+      "operation_id": "create_org_project_session_api_orgs__org_id__projects__project_id__sessions_post",
+      "tags": [
+        "organizations"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations",
+      "operation_id": "list_org_property_dictionary_operations_endpoint_api_orgs__org_id__property_dictionary_operations_get",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations",
+      "operation_id": "create_or_update_org_property_dictionary_operation_endpoint_api_orgs__org_id__property_dictionary_operations_post",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations/{operation_key}",
+      "operation_id": "get_org_property_dictionary_bundle_endpoint_api_orgs__org_id__property_dictionary_operations__operation_key__get",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations/{operation_key}",
+      "operation_id": "patch_org_property_dictionary_operation_endpoint_api_orgs__org_id__property_dictionary_operations__operation_key__patch",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations/{operation_key}/properties",
+      "operation_id": "create_or_update_org_property_dictionary_definition_endpoint_api_orgs__org_id__property_dictionary_operations__operation_key__properties_post",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations/{operation_key}/properties/{property_key}",
+      "operation_id": "delete_org_property_dictionary_definition_endpoint_api_orgs__org_id__property_dictionary_operations__operation_key__properties__property_key__delete",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations/{operation_key}/properties/{property_key}",
+      "operation_id": "patch_org_property_dictionary_definition_endpoint_api_orgs__org_id__property_dictionary_operations__operation_key__properties__property_key__patch",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/property-dictionary/operations/{operation_key}/properties/{property_key}/values",
+      "operation_id": "create_or_update_org_property_dictionary_value_endpoint_api_orgs__org_id__property_dictionary_operations__operation_key__properties__property_key__values_post",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/orgs/{org_id}/property-dictionary/values/{value_id}",
+      "operation_id": "delete_org_property_dictionary_value_endpoint_api_orgs__org_id__property_dictionary_values__value_id__delete",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/orgs/{org_id}/property-dictionary/values/{value_id}",
+      "operation_id": "patch_org_property_dictionary_value_endpoint_api_orgs__org_id__property_dictionary_values__value_id__patch",
+      "tags": [
+        "org-property-dictionary"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/orgs/{org_id}/sessions/{session_id}/reports/build",
+      "operation_id": "build_org_session_report_api_orgs__org_id__sessions__session_id__reports_build_post",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/sessions/{session_id}/reports/versions",
+      "operation_id": "list_org_session_report_versions_api_orgs__org_id__sessions__session_id__reports_versions_get",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}",
+      "operation_id": "delete_org_session_report_version_api_orgs__org_id__sessions__session_id__reports__version_id__delete",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}",
+      "operation_id": "get_org_session_report_version_api_orgs__org_id__sessions__session_id__reports__version_id__get",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/process-templates",
+      "operation_id": "list_templates_api_process_templates_get",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates",
+      "operation_id": "create_template_api_process_templates_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 23,
+      "tests": 23
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/import-bpmn",
+      "operation_id": "import_bpmn_api_process_templates_import_bpmn_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 8,
+      "tests": 8
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/precheck",
+      "operation_id": "precheck_draft_api_process_templates_precheck_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 5,
+      "tests": 5
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/transform-asis",
+      "operation_id": "transform_asis_endpoint_api_process_templates_transform_asis_post",
+      "tags": [
+        "transformation",
+        "transformation"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/process-templates/transformation-rules",
+      "operation_id": "list_transformation_rules_api_process_templates_transformation_rules_get",
+      "tags": [
+        "transformation",
+        "transformation"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/transformation-rules/seed",
+      "operation_id": "seed_transformation_rules_api_process_templates_transformation_rules_seed_post",
+      "tags": [
+        "transformation",
+        "transformation"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [
+        "403"
+      ],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/validate",
+      "operation_id": "validate_draft_api_process_templates_validate_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/process-templates/{template_id}",
+      "operation_id": "get_template_api_process_templates__template_id__get",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 3
+    },
+    {
+      "method": "PUT",
+      "path": "/api/process-templates/{template_id}",
+      "operation_id": "update_template_api_process_templates__template_id__put",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/{template_id}/new-draft",
+      "operation_id": "new_draft_api_process_templates__template_id__new_draft_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/{template_id}/precheck",
+      "operation_id": "precheck_template_api_process_templates__template_id__precheck_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/{template_id}/publish",
+      "operation_id": "publish_template_api_process_templates__template_id__publish_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404",
+        "409",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 10,
+      "tests": 7
+    },
+    {
+      "method": "POST",
+      "path": "/api/process-templates/{template_id}/validate",
+      "operation_id": "validate_template_api_process_templates__template_id__validate_post",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/process-templates/{template_id}/versions",
+      "operation_id": "list_versions_api_process_templates__template_id__versions_get",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/process-templates/{template_id}/versions/{version}/bpmn",
+      "operation_id": "version_bpmn_api_process_templates__template_id__versions__version__bpmn_get",
+      "tags": [
+        "process-templates",
+        "process-templates"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects",
+      "operation_id": "list_projects_api_projects_get",
+      "tags": [
+        "projects"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects",
+      "operation_id": "create_project_api_projects_post",
+      "tags": [
+        "projects"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/{project_id}",
+      "operation_id": "delete_project_api_api_projects__project_id__delete",
+      "tags": [
+        "projects"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}",
+      "operation_id": "get_project_api_projects__project_id__get",
+      "tags": [
+        "projects"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/projects/{project_id}",
+      "operation_id": "patch_project_api_projects__project_id__patch",
+      "tags": [
+        "projects"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/{project_id}",
+      "operation_id": "put_project_api_projects__project_id__put",
+      "tags": [
+        "projects"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/analytics",
+      "operation_id": "get_project_analytics_api_projects__project_id__analytics_get",
+      "tags": [
+        "project-analytics"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/explorer",
+      "operation_id": "get_project_explorer_api_projects__project_id__explorer_get",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/explorer/sessions",
+      "operation_id": "create_session_in_project_api_projects__project_id__explorer_sessions_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/move",
+      "operation_id": "move_project_api_projects__project_id__move_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/note-aggregate",
+      "operation_id": "get_project_note_aggregate_api_projects__project_id__note_aggregate_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/sessions",
+      "operation_id": "list_project_sessions_api_projects__project_id__sessions_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/sessions",
+      "operation_id": "create_project_session_api_projects__project_id__sessions_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 6,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/rag/index",
+      "operation_id": "rag_index_api_rag_index_post",
+      "tags": [
+        "rag",
+        "rag"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/rag/product-actions/index",
+      "operation_id": "rag_index_product_actions_api_rag_product_actions_index_post",
+      "tags": [
+        "rag",
+        "rag"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/rag/search",
+      "operation_id": "rag_search_api_rag_search_get",
+      "tags": [
+        "rag",
+        "rag"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/recipe-params",
+      "operation_id": "get_recipe_params_api_recipe_params_get",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [
+        "401"
+      ],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "PUT",
+      "path": "/api/recipe-params/{name}",
+      "operation_id": "put_recipe_param_api_recipe_params__name__put",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403",
+        "404",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 7,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/recipes",
+      "operation_id": "list_recipes_api_recipes_get",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 4,
+      "tests": 4
+    },
+    {
+      "method": "POST",
+      "path": "/api/recipes",
+      "operation_id": "create_recipe_api_recipes_post",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 16,
+      "tests": 16
+    },
+    {
+      "method": "GET",
+      "path": "/api/recipes/{recipe_id}",
+      "operation_id": "get_recipe_api_recipes__recipe_id__get",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 4,
+      "tests": 3
+    },
+    {
+      "method": "PUT",
+      "path": "/api/recipes/{recipe_id}",
+      "operation_id": "update_recipe_api_recipes__recipe_id__put",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 7,
+      "tests": 7
+    },
+    {
+      "method": "POST",
+      "path": "/api/recipes/{recipe_id}/clone",
+      "operation_id": "clone_recipe_api_recipes__recipe_id__clone_post",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/recipes/{recipe_id}/diff",
+      "operation_id": "diff_recipe_versions_api_recipes__recipe_id__diff_get",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 4,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/recipes/{recipe_id}/new-version",
+      "operation_id": "new_version_recipe_api_recipes__recipe_id__new_version_post",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 4,
+      "tests": 4
+    },
+    {
+      "method": "POST",
+      "path": "/api/recipes/{recipe_id}/publish",
+      "operation_id": "publish_recipe_api_recipes__recipe_id__publish_post",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 11,
+      "tests": 8
+    },
+    {
+      "method": "GET",
+      "path": "/api/recipes/{recipe_id}/versions",
+      "operation_id": "list_recipe_versions_api_recipes__recipe_id__versions_get",
+      "tags": [
+        "recipes",
+        "recipes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/reference/{source}/options",
+      "operation_id": "get_reference_options_api_reference__source__options_get",
+      "tags": [
+        "reference-resolver",
+        "reference-resolver"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/reports/{report_id}",
+      "operation_id": "delete_report_version_api_reports__report_id__delete",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/reports/{report_id}",
+      "operation_id": "get_report_version_api_reports__report_id__get",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions",
+      "operation_id": "list_sessions_api_sessions_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "operation_id": "create_session_api_sessions_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 3
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/note-aggregates",
+      "operation_id": "get_session_note_aggregates_api_sessions_note_aggregates_post",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}",
+      "operation_id": "delete_session_api_api_sessions__session_id__delete",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}",
+      "operation_id": "get_session_api_sessions__session_id__get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/{session_id}",
+      "operation_id": "patch_session_api_sessions__session_id__patch",
+      "tags": [
+        "sessions"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 5,
+      "tests": 5
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sessions/{session_id}",
+      "operation_id": "put_session_api_sessions__session_id__put",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/ai/questions",
+      "operation_id": "ai_questions_api_sessions__session_id__ai_questions_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/analysis/product-actions/batch-draft",
+      "operation_id": "get_batch_draft_api_sessions__session_id__analysis_product_actions_batch_draft_get",
+      "tags": [
+        "product-actions-ai",
+        "product-actions-ai"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sessions/{session_id}/analysis/product-actions/batch-draft",
+      "operation_id": "save_batch_draft_api_sessions__session_id__analysis_product_actions_batch_draft_put",
+      "tags": [
+        "product-actions-ai",
+        "product-actions-ai"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/analysis/product-actions/batch-suggest",
+      "operation_id": "batch_suggest_product_actions_api_sessions__session_id__analysis_product_actions_batch_suggest_post",
+      "tags": [
+        "product-actions-ai",
+        "product-actions-ai"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/analysis/product-actions/suggest",
+      "operation_id": "suggest_product_actions_api_sessions__session_id__analysis_product_actions_suggest_post",
+      "tags": [
+        "product-actions-ai",
+        "product-actions-ai"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/analysis/view-model",
+      "operation_id": "get_session_analysis_view_model_api_sessions__session_id__analysis_view_model_get",
+      "tags": [
+        "product-actions-registry",
+        "product-actions-registry"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/analytics",
+      "operation_id": "get_session_analytics_api_sessions__session_id__analytics_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/answer",
+      "operation_id": "answer_api_sessions__session_id__answer_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/answers",
+      "operation_id": "answer_v2_api_sessions__session_id__answers_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/auto-pass",
+      "operation_id": "auto_pass_status_api_sessions__session_id__auto_pass_get",
+      "tags": [
+        "auto-pass"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/auto-pass",
+      "operation_id": "run_auto_pass_api_sessions__session_id__auto_pass_post",
+      "tags": [
+        "auto-pass"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/auto-pass/precheck",
+      "operation_id": "auto_pass_precheck_api_sessions__session_id__auto_pass_precheck_get",
+      "tags": [
+        "auto-pass"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}/bpmn",
+      "operation_id": "session_bpmn_clear_api_sessions__session_id__bpmn_delete",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/bpmn",
+      "operation_id": "session_bpmn_export_api_sessions__session_id__bpmn_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sessions/{session_id}/bpmn",
+      "operation_id": "session_bpmn_save_api_sessions__session_id__bpmn_put",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 11,
+      "tests": 7
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/bpmn/restore/{version_id}",
+      "operation_id": "session_bpmn_restore_api_sessions__session_id__bpmn_restore__version_id__post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/bpmn/versions",
+      "operation_id": "session_bpmn_versions_list_api_sessions__session_id__bpmn_versions_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 1,
+      "tests": 1
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/bpmn/versions/{version_id}",
+      "operation_id": "session_bpmn_version_detail_api_sessions__session_id__bpmn_versions__version_id__get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/bpmn_meta",
+      "operation_id": "session_bpmn_meta_get_api_sessions__session_id__bpmn_meta_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/{session_id}/bpmn_meta",
+      "operation_id": "session_bpmn_meta_patch_api_sessions__session_id__bpmn_meta_patch",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/bpmn_meta/infer_rtiers",
+      "operation_id": "session_bpmn_meta_infer_rtiers_api_sessions__session_id__bpmn_meta_infer_rtiers_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/children",
+      "operation_id": "list_session_children_api_sessions__session_id__children_get",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/create-subprocesses",
+      "operation_id": "create_subprocess_sessions_api_sessions__session_id__create_subprocesses_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 2
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}/edges",
+      "operation_id": "delete_edge_api_sessions__session_id__edges_delete",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/edges",
+      "operation_id": "add_edge_api_sessions__session_id__edges_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/events",
+      "operation_id": "session_events_api_sessions__session_id__events_get",
+      "tags": [
+        "session-events"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/export",
+      "operation_id": "export_api_sessions__session_id__export_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/export.zip",
+      "operation_id": "export_zip_api_sessions__session_id__export_zip_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/graph",
+      "operation_id": "get_session_graph_api_sessions__session_id__graph_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/llm/analysis",
+      "operation_id": "llm_analysis_api_sessions__session_id__llm_analysis_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/llm/explain-step",
+      "operation_id": "llm_explain_step_route_api_sessions__session_id__llm_explain_step_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/llm/step-qa",
+      "operation_id": "llm_step_qa_route_api_sessions__session_id__llm_step_qa_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/llm/suggest-next",
+      "operation_id": "llm_suggest_next_route_api_sessions__session_id__llm_suggest_next_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/mentionable-users",
+      "operation_id": "list_session_mentionable_users_api_sessions__session_id__mentionable_users_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "404"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/meta",
+      "operation_id": "get_session_meta_api_sessions__session_id__meta_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/nodes",
+      "operation_id": "add_node_api_sessions__session_id__nodes_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}/nodes/{node_id}",
+      "operation_id": "delete_node_api_sessions__session_id__nodes__node_id__delete",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/nodes/{node_id}",
+      "operation_id": "patch_node_api_sessions__session_id__nodes__node_id__post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/note-aggregate",
+      "operation_id": "get_session_note_aggregate_api_sessions__session_id__note_aggregate_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/note-threads",
+      "operation_id": "list_session_note_threads_api_sessions__session_id__note_threads_get",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/note-threads",
+      "operation_id": "create_session_note_thread_api_sessions__session_id__note_threads_post",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/notes",
+      "operation_id": "post_notes_api_sessions__session_id__notes_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/notes/extraction-apply",
+      "operation_id": "post_notes_extraction_apply_api_sessions__session_id__notes_extraction_apply_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/notes/extraction-preview",
+      "operation_id": "post_notes_extraction_preview_api_sessions__session_id__notes_extraction_preview_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/overlays",
+      "operation_id": "session_overlays_api_sessions__session_id__overlays_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/paths/{path_id}/reports",
+      "operation_id": "list_path_report_versions_api_sessions__session_id__paths__path_id__reports_get",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/paths/{path_id}/reports",
+      "operation_id": "create_path_report_version_api_sessions__session_id__paths__path_id__reports_post",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}",
+      "operation_id": "delete_path_report_version_api_sessions__session_id__paths__path_id__reports__report_id__delete",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/paths/{path_id}/reports/{report_id}",
+      "operation_id": "get_path_report_version_detail_api_sessions__session_id__paths__path_id__reports__report_id__get",
+      "tags": [
+        "reports"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}/presence",
+      "operation_id": "leave_session_presence_api_api_sessions__session_id__presence_delete",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/presence",
+      "operation_id": "touch_session_presence_api_api_sessions__session_id__presence_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/recompute",
+      "operation_id": "recompute_api_sessions__session_id__recompute_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/{session_id}/status",
+      "operation_id": "change_session_status_endpoint_api_sessions__session_id__status_patch",
+      "tags": [
+        "save-status"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "403",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 9,
+      "tests": 7
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/subprocess/{element_id}/navigate",
+      "operation_id": "navigate_to_subprocess_api_sessions__session_id__subprocess__element_id__navigate_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/subprocesses-count",
+      "operation_id": "get_subprocesses_count_api_sessions__session_id__subprocesses_count_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/tldr",
+      "operation_id": "get_session_tldr_api_sessions__session_id__tldr_get",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{subprocess_session_id}/return",
+      "operation_id": "return_to_parent_api_sessions__subprocess_session_id__return_post",
+      "tags": [
+        "sessions"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/settings/llm",
+      "operation_id": "get_llm_settings_api_settings_llm_get",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/settings/llm",
+      "operation_id": "post_llm_settings_api_settings_llm_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/settings/llm/verify",
+      "operation_id": "post_llm_verify_api_settings_llm_verify_post",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/sku-bindings",
+      "operation_id": "list_bindings_api_sku_bindings_get",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "401"
+      ],
+      "undocumented_statuses": [],
+      "calls": 4,
+      "tests": 4
+    },
+    {
+      "method": "POST",
+      "path": "/api/sku-bindings",
+      "operation_id": "create_binding_api_sku_bindings_post",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201"
+      ],
+      "undocumented_statuses": [],
+      "calls": 7,
+      "tests": 5
+    },
+    {
+      "method": "POST",
+      "path": "/api/sku-bindings/{binding_id}/metrics",
+      "operation_id": "add_metric_sample_api_sku_bindings__binding_id__metrics_post",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201"
+      ],
+      "undocumented_statuses": [],
+      "calls": 3,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/sku-bindings/{binding_id}/pilot-metrics",
+      "operation_id": "pilot_metrics_api_sku_bindings__binding_id__pilot_metrics_get",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "POST",
+      "path": "/api/sku-bindings/{binding_id}/retire",
+      "operation_id": "retire_api_sku_bindings__binding_id__retire_post",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/sku-bindings/{binding_id}/rollout",
+      "operation_id": "rollout_api_sku_bindings__binding_id__rollout_post",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "partial",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 1
+    },
+    {
+      "method": "POST",
+      "path": "/api/sku-bindings/{binding_id}/start-pilot",
+      "operation_id": "start_pilot_api_sku_bindings__binding_id__start_pilot_post",
+      "tags": [
+        "sku-bindings",
+        "sku-bindings"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [
+        "200",
+        "409",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 8,
+      "tests": 5
+    },
+    {
+      "method": "POST",
+      "path": "/api/telemetry/error-events",
+      "operation_id": "ingest_error_event_api_telemetry_error_events_post",
+      "tags": [
+        "error-events"
+      ],
+      "status": "covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [
+        "201",
+        "422"
+      ],
+      "undocumented_statuses": [],
+      "calls": 2,
+      "tests": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/template-folders",
+      "operation_id": "list_template_folders_endpoint_api_template_folders_get",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/template-folders",
+      "operation_id": "create_template_folder_endpoint_api_template_folders_post",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/template-folders/{folder_id}",
+      "operation_id": "delete_template_folder_endpoint_api_template_folders__folder_id__delete",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/template-folders/{folder_id}",
+      "operation_id": "patch_template_folder_endpoint_api_template_folders__folder_id__patch",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/templates",
+      "operation_id": "list_templates_endpoint_api_templates_get",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/templates",
+      "operation_id": "create_template_endpoint_api_templates_post",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/templates/{template_id}",
+      "operation_id": "delete_template_endpoint_api_templates__template_id__delete",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/templates/{template_id}",
+      "operation_id": "patch_template_endpoint_api_templates__template_id__patch",
+      "tags": [
+        "templates"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspaces",
+      "operation_id": "list_workspaces_api_workspaces_get",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces",
+      "operation_id": "create_workspace_api_workspaces_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/workspaces/{workspace_id}",
+      "operation_id": "rename_workspace_api_workspaces__workspace_id__patch",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspaces/{workspace_id}/analytics",
+      "operation_id": "get_workspace_analytics_api_workspaces__workspace_id__analytics_get",
+      "tags": [
+        "project-analytics"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspaces/{workspace_id}/folders",
+      "operation_id": "create_folder_api_workspaces__workspace_id__folders_post",
+      "tags": [
+        "explorer",
+        "explorer"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "201",
+        "422"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "operation_id": "health_health_get",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/health/overlay-cache",
+      "operation_id": "health_overlay_cache_health_overlay_cache_get",
+      "tags": [
+        "system"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    },
+    {
+      "method": "GET",
+      "path": "/version",
+      "operation_id": "version_version_get",
+      "tags": [
+        "version"
+      ],
+      "status": "not_covered",
+      "documented_statuses": [
+        "200"
+      ],
+      "seen_statuses": [],
+      "undocumented_statuses": [],
+      "calls": 0,
+      "tests": 0
+    }
+  ],
+  "unmatched_calls": [
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/models",
+      "status": 401,
+      "test": "tests/test_admin_llm_api.py::test_models_rbac"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/models",
+      "status": 403,
+      "test": "tests/test_admin_llm_api.py::test_models_rbac"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/feature-models",
+      "status": 403,
+      "test": "tests/test_admin_llm_api.py::test_models_rbac"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/llm/feature-models/test_mdl_ae98e59f",
+      "status": 403,
+      "test": "tests/test_admin_llm_api.py::test_models_rbac"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/models",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_models_rbac"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/models",
+      "status": 201,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/models",
+      "status": 422,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/llm/models/llmmodel_d8018b076181",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/llm/models/nope",
+      "status": 404,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/models/llmmodel_d8018b076181/set-default",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/models",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/llm/models/llmmodel_d8018b076181",
+      "status": 422,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/llm/models/llmmodel_d8018b076181",
+      "status": 409,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/models/llmmodel_deepseek_chat/set-default",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/llm/models/llmmodel_d8018b076181",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/llm/models/llmmodel_d8018b076181",
+      "status": 404,
+      "test": "tests/test_admin_llm_api.py::test_models_crud_and_default_guards"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/llm/models",
+      "status": 201,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/feature-models",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/llm/feature-models/test_mdl_0a5d72f8",
+      "status": 422,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/llm/feature-models/test_mdl_0a5d72f8",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/feature-models",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/llm/feature-models/test_mdl_0a5d72f8",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/llm/feature-models",
+      "status": 200,
+      "test": "tests/test_admin_llm_api.py::test_feature_model_overrides"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/77c1ed38de/properties",
+      "status": 404,
+      "test": "tests/test_analytics_aggregator.py::TestAnalyticsAggregator::test_properties_endpoint_enqueues_analytics_refresh"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/a74dc6cea9/properties",
+      "status": 404,
+      "test": "tests/test_analytics_aggregator.py::TestAnalyticsAggregator::test_refresh_analytics_does_not_change_diagram_state_version"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 401,
+      "test": "tests/test_api_docs_access.py::test_docs_401_without_token"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 401,
+      "test": "tests/test_api_docs_access.py::test_docs_401_without_token"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 401,
+      "test": "tests/test_api_docs_access.py::test_docs_401_without_token"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 401,
+      "test": "tests/test_api_docs_access.py::test_docs_401_without_token"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 403,
+      "test": "tests/test_api_docs_access.py::test_docs_403_for_viewer"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 403,
+      "test": "tests/test_api_docs_access.py::test_docs_403_for_viewer"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 403,
+      "test": "tests/test_api_docs_access.py::test_docs_403_for_viewer"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 403,
+      "test": "tests/test_api_docs_access.py::test_docs_403_for_viewer"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_owner]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_owner]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_owner]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_owner]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_admin]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_admin]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_admin]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[org_admin]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[auditor]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[auditor]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[auditor]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_admin_level_roles[auditor]"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_platform_admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_platform_admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_platform_admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_200_for_platform_admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_html_and_openapi_json_valid"
+    },
+    {
+      "method": "GET",
+      "path": "/api/redoc",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_html_and_openapi_json_valid"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_docs_html_and_openapi_json_valid"
+    },
+    {
+      "method": "GET",
+      "path": "/api/openapi_ru.json",
+      "status": 200,
+      "test": "tests/test_api_docs_access.py::test_openapi_ru_enriched_spec"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/audit-log/aud_nonexistent",
+      "status": 404,
+      "test": "tests/test_audit_log_e8.py::test_audit_log_is_immutable"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/audit-log/aud_nonexistent",
+      "status": 404,
+      "test": "tests/test_audit_log_e8.py::test_audit_log_is_immutable"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/audit-log/aud_nonexistent",
+      "status": 404,
+      "test": "tests/test_audit_log_e8.py::test_audit_log_is_immutable"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/audit-log",
+      "status": 405,
+      "test": "tests/test_audit_log_e8.py::test_audit_log_is_immutable"
+    },
+    {
+      "method": "POST",
+      "path": "/api/audit-log",
+      "status": 405,
+      "test": "tests/test_audit_log_e8.py::test_audit_log_is_immutable"
+    },
+    {
+      "method": "GET",
+      "path": "/api/telemetry-proof/handled-404",
+      "status": 404,
+      "test": "tests/test_backend_exception_telemetry.py::BackendExceptionTelemetryTest::test_expected_handled_404_does_not_emit_backend_exception"
+    },
+    {
+      "method": "GET",
+      "path": "/api/telemetry-proof/backend-exception",
+      "status": 500,
+      "test": "tests/test_backend_exception_telemetry.py::BackendExceptionTelemetryTest::test_unhandled_backend_exception_persists_generated_request_id_event"
+    },
+    {
+      "method": "GET",
+      "path": "/api/telemetry-proof/backend-exception",
+      "status": 500,
+      "test": "tests/test_backend_exception_telemetry.py::BackendExceptionTelemetryTest::test_unhandled_backend_exception_preserves_explicit_client_request_id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/nonexistent_session_xyz/meta",
+      "status": 405,
+      "test": "tests/test_session_meta_endpoint.py::TestSessionMetaEndpoint::test_meta_endpoint_404_for_missing_session"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/abbd5c2bc0/meta",
+      "status": 405,
+      "test": "tests/test_session_meta_endpoint.py::TestSessionMetaEndpoint::test_meta_endpoint_is_not_shadowed_by_bpmn_meta_alias"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/5a601d4a27/meta",
+      "status": 405,
+      "test": "tests/test_session_meta_endpoint.py::TestSessionMetaEndpoint::test_meta_endpoint_returns_property_save_response"
+    }
+  ]
+}
