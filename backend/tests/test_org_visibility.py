@@ -151,6 +151,44 @@ class OrgVisibilityTest(unittest.TestCase):
         self.assertIn(str(self.org_inactive.get("id") or ""), org_ids)
         self.assertIn(self.default_org_id, org_ids)
 
+    def test_middleware_guard_blocks_inactive_org_for_non_admin(self):
+        from app.auth import create_access_token
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        editor_id = str(self.editor.get("id") or "")
+        inactive_id = str(self.org_inactive.get("id") or "")
+        token = create_access_token(editor_id)
+        client = TestClient(app)
+        response = client.get(
+            "/api/orgs",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Active-Org-Id": inactive_id,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json().get("detail"), "inactive_org")
+
+    def test_middleware_guard_allows_admin_into_inactive_org(self):
+        from app.auth import create_access_token
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        admin_id = str(self.admin.get("id") or "")
+        inactive_id = str(self.org_inactive.get("id") or "")
+        token = create_access_token(admin_id)
+        client = TestClient(app)
+        response = client.get(
+            "/api/orgs",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Active-Org-Id": inactive_id,
+            },
+        )
+        self.assertNotEqual(response.status_code, 403)
+        self.assertNotEqual(response.json().get("detail"), "inactive_org")
+
 
 if __name__ == "__main__":
     unittest.main()
