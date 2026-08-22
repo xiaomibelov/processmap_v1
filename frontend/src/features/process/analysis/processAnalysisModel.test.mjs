@@ -12,6 +12,7 @@ import {
   formatPercent,
   formatThroughput,
   mapProcessAnalysisViewModel,
+  buildSummaryPropsFromProcessMetrics,
 } from "./processAnalysisModel.js";
 import { ru } from "../../../shared/i18n/ru.js";
 
@@ -125,4 +126,29 @@ test("mapProcessAnalysisViewModel builds full model", () => {
   assert.equal(model.quality.warnings_total, 1);
   assert.equal(model.path_metrics.steps_count, 3);
   assert.equal(model.source_state.diagram_state_version, 7);
+});
+
+test("buildSummaryPropsFromProcessMetrics adapts read-model to SummaryBlock props", () => {
+  const props = buildSummaryPropsFromProcessMetrics(FULL_VIEW_MODEL.analysis.derived.process_metrics);
+  assert.equal(props.collapsed, false);
+  assert.equal(typeof props.toggleBlock, "function");
+  assert.equal(props.extendedAnalytics.stepsPerHour, 1.5);
+  assert.equal(props.extendedAnalytics.maxDurationStep.seq, "1");
+  assert.equal(props.extendedAnalytics.maxWaitStep.seq, "2");
+  assert.equal(props.extendedAnalytics.exceptionAddMinTotal, 5);
+  assert.equal(props.topWaits.length, 1);
+  assert.equal(props.topWaits[0].action, "Охлаждение");
+  assert.equal(props.exceptionsCount, 1);
+  assert.equal(props.dodSnapshot.counts.interview.stepsTotal, 3);
+  assert.equal(props.dodSnapshot.counts.interview.stepsBoundToBpmn, 2);
+  assert.equal(props.dodSnapshot.time.processTotalSec, 1800);
+});
+
+test("buildSummaryPropsFromProcessMetrics falls back for missing metrics", () => {
+  const props = buildSummaryPropsFromProcessMetrics(null);
+  assert.equal(props.collapsed, false);
+  assert.equal(props.extendedAnalytics.stepsPerHour, 0);
+  assert.equal(props.topWaits.length, 0);
+  assert.equal(props.exceptionsCount, 0);
+  assert.equal(props.dodSnapshot.counts.interview.stepsTotal, 0);
 });
