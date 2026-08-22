@@ -170,7 +170,10 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertTrue(body["success"])
         self.assertEqual(body["data"]["scope_type"], "session")
         self.assertEqual(body["data"]["actions_total"], 15)
+        self.assertEqual(body["data"]["scope_title"], "Analytics Session")
         self.assertEqual(body["meta"]["scope_type"], "session")
+
+
 
     def test_dashboard_project_returns_envelope(self):
         r = self.client.get(
@@ -182,6 +185,7 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertTrue(body["success"])
         self.assertEqual(body["data"]["scope_type"], "project")
         self.assertEqual(body["data"]["sessions_count"], 2)
+        self.assertTrue(body["data"]["scope_title"])
 
     def test_properties_requires_auth(self):
         r = self.client.get(f"/api/analytics/properties?scope=session&scope_id={self.session_id}")
@@ -358,6 +362,7 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(data["scope_type"], "workspace")
         self.assertIn("kpi", data)
         self.assertIn("session_trend", data)
+        self.assertTrue(data["scope_title"])
         self.assertEqual(data["kpi"]["unique_processes"], data["projects_count"])
 
     def test_recalculate_helper_happy_path(self):
@@ -743,7 +748,7 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         )
         self.assertTrue(r.content.startswith(b"PK"))
 
-    def test_export_properties_recalculated_xlsx_source_mode_422_empty_ingredient(self):
+    def test_export_properties_recalculated_xlsx_source_mode_200_empty_ingredient(self):
         self._set_session_bpmn_meta({
             "camunda_extensions_by_element_id": {
                 "op1": {
@@ -760,14 +765,14 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
             f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
             headers=self._headers(self.admin_token),
         )
-        self.assertEqual(r.status_code, 422)
-        body = r.json()
-        self.assertIn("invalid_tasks", body)
-        self.assertEqual(len(body["invalid_tasks"]), 1)
-        self.assertEqual(body["invalid_tasks"][0]["bpmn_id"], "op1")
-        self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertTrue(r.content.startswith(b"PK"))
 
-    def test_export_properties_recalculated_xlsx_source_mode_422_invalid_ingredient(self):
+    def test_export_properties_recalculated_xlsx_source_mode_200_invalid_ingredient(self):
         self._set_session_bpmn_meta({
             "camunda_extensions_by_element_id": {
                 "op1": {
@@ -784,11 +789,12 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
             f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
             headers=self._headers(self.admin_token),
         )
-        self.assertEqual(r.status_code, 422)
-        body = r.json()
-        self.assertIn("invalid_tasks", body)
-        self.assertEqual(len(body["invalid_tasks"]), 1)
-        self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "abc")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertTrue(r.content.startswith(b"PK"))
 
     def test_export_properties_recalculated_xlsx_source_mode_200_missing_ingredient(self):
         self._set_session_bpmn_meta({
@@ -834,7 +840,7 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200)
 
-    def test_export_properties_recalculated_xlsx_source_mode_422_multiple_invalid(self):
+    def test_export_properties_recalculated_xlsx_source_mode_200_multiple_invalid(self):
         self._set_session_bpmn_meta({
             "camunda_extensions_by_element_id": {
                 "op1": {
@@ -866,15 +872,49 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
             f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
             headers=self._headers(self.admin_token),
         )
-        self.assertEqual(r.status_code, 422)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_properties_gaps_endpoint_returns_invalid_rows(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                },
+                "op2": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "5.0"},
+                            {"name": "ingredient_value", "value": "abc"},
+                        ]
+                    }
+                },
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/gaps?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
         body = r.json()
-        self.assertIn("invalid_tasks", body)
-        self.assertEqual(len(body["invalid_tasks"]), 2)
-        by_id = {t["bpmn_id"]: t for t in body["invalid_tasks"]}
+        self.assertTrue(body.get("success"))
+        gaps = body["data"]["gaps"]
+        self.assertEqual(len(gaps), 2)
+        by_id = {g["bpmn_id"]: g for g in gaps}
         self.assertIn("op1", by_id)
         self.assertIn("op2", by_id)
-        self.assertEqual(by_id["op1"]["ingredient_value"], "")
-        self.assertEqual(by_id["op2"]["ingredient_value"], "abc")
+        self.assertEqual(by_id["op1"]["source"], "нет данных")
+        self.assertEqual(by_id["op2"]["source"], "нет данных")
+        self.assertIn("element_url", by_id["op1"])
 
     def _build_source_rows_single(self, rows):
         from app.routers.analytics import _build_source_rows

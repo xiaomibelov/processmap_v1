@@ -2748,6 +2748,7 @@ def _ensure_schema() -> None:
                   total_duration_min INTEGER NOT NULL DEFAULT 0,
                   critical_path_min INTEGER,
                   actions_total INTEGER NOT NULL DEFAULT 0,
+                  elements_count INTEGER NOT NULL DEFAULT 0,
                   actions_by_role_json TEXT NOT NULL DEFAULT '{}',
                   actions_by_section_json TEXT NOT NULL DEFAULT '{}',
                   actions_by_type_json TEXT NOT NULL DEFAULT '{}',
@@ -2759,6 +2760,12 @@ def _ensure_schema() -> None:
                 )
                 """
             )
+            try:
+                con.execute(
+                    "ALTER TABLE analytics_session_snapshots ADD COLUMN elements_count INTEGER NOT NULL DEFAULT 0"
+                )
+            except Exception:
+                pass
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analytics_session_org_project ON analytics_session_snapshots(org_id, project_id)"
             )
