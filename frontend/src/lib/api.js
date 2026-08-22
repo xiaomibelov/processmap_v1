@@ -47,6 +47,8 @@ export {
   getAccessToken,
   getActiveOrgId,
   onAuthFailure,
+  pickValidActiveOrgId,
+  readStoredActiveOrgId,
   setAccessToken,
   setActiveOrgId,
 } from "./apiCore.js";

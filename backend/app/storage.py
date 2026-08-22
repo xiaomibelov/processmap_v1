@@ -6126,8 +6126,20 @@ def resolve_active_org_id(
     uid = str(user_id or "").strip()
     requested = str(requested_org_id or "").strip()
     memberships = list_user_org_memberships(uid, is_admin=is_admin) if uid else []
-    if requested and any(str(item.get("org_id") or "") == requested for item in memberships):
-        return requested
+    admin = bool(is_admin)
+
+    def _is_active(org_id: str) -> bool:
+        for item in memberships:
+            if str(item.get("org_id") or "") == org_id:
+                return bool(item.get("is_active", True))
+        return False
+
+    if requested:
+        if admin or _is_active(requested):
+            return requested
+    active_memberships = [item for item in memberships if bool(item.get("is_active", True))]
+    if active_memberships:
+        return str(active_memberships[0].get("org_id") or _default_org_id())
     if memberships:
         return str(memberships[0].get("org_id") or _default_org_id())
     return _default_org_id()
