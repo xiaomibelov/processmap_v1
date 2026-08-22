@@ -829,6 +829,51 @@ export const ru = {
     selectAllVisibleAria: "Выбрать все видимые",
     noPropertiesByFilter: "Нет свойств по выбранным фильтрам.",
   },
+  // analysis-page-redesign — no-scroll dashboard read-model UI.
+  processAnalysis: {
+    title: "Анализ процессов",
+    back: "Назад",
+    tabs: {
+      overview: "Обзор",
+      steps: "Шаги",
+      branches: "Ветки BPMN",
+      exceptions: "Исключения",
+      ai: "AI",
+    },
+    kpi: {
+      lead: "Lead time",
+      active: "Активное время",
+      wait: "Ожидания",
+      throughput: "Throughput",
+    },
+    unit: {
+      min: "мин",
+      stepsPerHour: "шаг/час",
+    },
+    sections: {
+      distributions: "Распределение",
+      topWaits: "Топ-3 ожидания",
+      coverage: "Покрытие",
+      exceptions: "Исключения",
+      quality: "Качество BPMN",
+      qualityErrors: "ошибок",
+      qualityWarnings: "предупреждений",
+    },
+    coverage: {
+      bind: "Привязка к BPMN",
+      ai: "AI-покрытие шагов",
+      boundaries: "Границы процесса",
+    },
+    empty: {
+      title: "Нет данных",
+      description: "Добавьте шаги процесса, чтобы увидеть аналитику.",
+    },
+    error: {
+      title: "Не удалось загрузить аналитику",
+      retry: "Повторить",
+    },
+    loading: "Загружаем аналитику…",
+  },
   // UX-UPDATE — тост «Вышло обновление ProcessMap» (version.json + snooze 30 мин).
   // Парный словарь: shared/i18n/en.js.
   app_update: {

@@ -39,6 +39,18 @@ test("apiGetSessionAnalysisViewModel parses unified envelope and preserves all f
             },
             derived: {
               step_action_counts: { step_1: 2 },
+              process_metrics: {
+                time: { active_min: 10, wait_min: 2, lead_min: 12, mainline_min: 10, throughput_steps_per_hour: 5.0 },
+                counts: { steps_total: 2, steps_bound_to_bpmn: 2, tiers: { P0: 2, P1: 0, P2: 0, None: 0 } },
+                coverage: { bind_percent: 100, ai: { total: 0, done: 0, open: 0, step_coverage_percent: 0 }, boundaries: { filled: 2, total: 5, percent: 40 } },
+                distributions: { by_type: [], by_lane: [], by_subprocess: [] },
+                top_waits: [],
+                extremes: { max_duration_step: null, max_wait_step: null },
+                exceptions: { count: 0, add_min_total: 0 },
+                quality: { errors_total: 0, warnings_total: 0, items: [] },
+                path_metrics: { steps_count: 2, work_time_total_sec: 600, wait_time_total_sec: 120, total_time_sec: 720 },
+                source_state: { source: "process_analysis_read_model", version: "v1", computed_at: 1710000000, diagram_state_version: 1 },
+              },
             },
           },
           interview_state: { status: "in_progress", stage: "interview", updated_at: 1715600000 },
@@ -66,6 +78,8 @@ test("apiGetSessionAnalysisViewModel parses unified envelope and preserves all f
     assert.equal(out.analysis.product_actions.empty_state.kind, "not_empty");
     assert.equal(out.analysis.product_actions.source_state.interview_loaded, true);
     assert.deepEqual(out.analysis.derived.step_action_counts, { step_1: 2 });
+    assert.equal(out.analysis.derived.process_metrics.time.active_min, 10);
+    assert.equal(out.analysis.derived.process_metrics.counts.steps_total, 2);
     assert.equal(out.interview_state.status, "in_progress");
     assert.equal(out.interview_state.stage, "interview");
     assert.equal(out.interview_state.updated_at, 1715600000);

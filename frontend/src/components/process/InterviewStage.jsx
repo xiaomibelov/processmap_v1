@@ -19,6 +19,7 @@ import InterviewDebugOverlay from "./interview/InterviewDebugOverlay";
 import { apiGetSessionAnalysisViewModel } from "../../lib/api.js";
 import { buildBindingAssistantModel } from "./interview/bindingAssistant";
 import { markInterviewPerf, measureInterviewSpan } from "./interview/perf";
+import { ProcessAnalysisDashboard } from "../../features/process/analysis/ProcessAnalysisDashboard.jsx";
 
 const {
   SHOW_AI_QUESTIONS_BLOCK,
@@ -129,6 +130,15 @@ function recordReactProfile(id, phase, actualDuration, baseDuration) {
 
 const IS_DEV_BUILD = !!import.meta.env.DEV;
 const LazyInterviewPathsView = lazy(() => import("./interview/InterviewPathsView"));
+
+function isAnalysisRedesignEnabled() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem("fpc_analysis_redesign") === "1" || window.__FPC_ANALYSIS_REDESIGN__ === true;
+  } catch {
+    return false;
+  }
+}
 
 export default function InterviewStage({
   sessionId,
@@ -809,6 +819,16 @@ export default function InterviewStage({
       alive = false;
     };
   }, [sid]);
+
+  if (isAnalysisRedesignEnabled()) {
+    return (
+      <ProcessAnalysisDashboard
+        sessionId={sid}
+        externalViewModel={sessionAnalysisViewModel}
+        processTitle={processTitle}
+      />
+    );
+  }
 
   return (
     <div className="interviewStage">

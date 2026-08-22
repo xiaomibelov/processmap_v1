@@ -806,6 +806,7 @@ export async function apiGetSessionAnalysisViewModel(sessionId) {
       },
       derived: {
         step_action_counts: analysis.derived && typeof analysis.derived === "object" && analysis.derived.step_action_counts && typeof analysis.derived.step_action_counts === "object" ? analysis.derived.step_action_counts : {},
+        process_metrics: analysis.derived && typeof analysis.derived === "object" && analysis.derived.process_metrics && typeof analysis.derived.process_metrics === "object" ? analysis.derived.process_metrics : null,
       },
     },
     interview_state: data.interview_state && typeof data.interview_state === "object" ? data.interview_state : {},
