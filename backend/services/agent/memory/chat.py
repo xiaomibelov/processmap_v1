@@ -733,6 +733,7 @@ def _run_edit_canvas_branch(
         org_id=org_id,
         turn_id=turn_id,
         edit_plan=edit_plan,
+        base_diagram_state_version=getattr(ctx.session, "diagram_state_version", 0),
         now_ms=_now_ms(),
     )
 

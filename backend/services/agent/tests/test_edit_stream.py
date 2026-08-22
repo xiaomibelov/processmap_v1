@@ -187,7 +187,9 @@ def test_stream_edit_confirm_applies_plan(
 
     with mock.patch("runners.monolith_client.get_session") as fake_session, \
          mock.patch("routers.agent_resume.apply_edit_plan") as fake_apply:
-        fake_session.return_value = {"diagram_state_version": 5, "project_id": "proj_1"}
+        # base_diagram_state_version must match the pending edit's stored version
+        # (session fixture has diagram_state_version=0).
+        fake_session.return_value = {"diagram_state_version": 0, "project_id": "proj_1"}
         fake_apply.return_value = {"status": "applied", "operations_applied": 1, "snapshot_version_id": "snap_1"}
         with c.stream(
             "POST",

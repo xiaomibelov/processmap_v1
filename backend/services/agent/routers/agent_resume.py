@@ -97,14 +97,31 @@ def _resume_stream(
         yield _sse_event("error", {"status": "error", "error": f"failed to load session: {exc}"})
         return
 
-    base_version = int(session_data.get("diagram_state_version") or 0)
+    current_version = int(session_data.get("diagram_state_version") or 0)
+    pending_base_version = int(pending.get("base_diagram_state_version") or 0)
+
+    # Схема изменилась с момента предложения правки — не применяем.
+    if pending_base_version != current_version:
+        update_pending_edit_status(peid, "conflict_rev", resumed_by_user_id=user_id)
+        yield _sse_event(
+            "error",
+            {
+                "status": "conflict_rev",
+                "error": "схема изменилась, перечитайте",
+                "details": {
+                    "pending_base_version": pending_base_version,
+                    "server_current_version": current_version,
+                },
+            },
+        )
+        return
 
     try:
         result = apply_edit_plan(
             session_id=session_id,
             token=token,
             edit_plan=pending["edit_plan"],
-            base_diagram_state_version=base_version,
+            base_diagram_state_version=pending_base_version,
             org_id=org_id,
             create_snapshot=True,
         )
