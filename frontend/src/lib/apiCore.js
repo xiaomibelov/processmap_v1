@@ -33,13 +33,45 @@ function readStoredAccessToken() {
 
 accessToken = readStoredAccessToken();
 
-function readStoredActiveOrgId() {
+export function readStoredActiveOrgId() {
   if (typeof window === "undefined") return "";
   try {
     return String(window.localStorage?.getItem(ACTIVE_ORG_KEY) || "").trim();
   } catch {
     return "";
   }
+}
+
+export function pickValidActiveOrgId({
+  stored = "",
+  serverActive = "",
+  serverDefault = "",
+  orgs = [],
+  isAdmin = false,
+}) {
+  const all = Array.isArray(orgs) ? orgs : [];
+  const byId = new Map(
+    all.map((item) => [String(item?.org_id || item?.id || "").trim(), item]),
+  );
+
+  const candidates = [
+    String(stored || "").trim(),
+    String(serverActive || "").trim(),
+    String(serverDefault || "").trim(),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const item = byId.get(candidate);
+    if (!item) continue;
+    if (isAdmin || item.is_active !== false) return candidate;
+  }
+
+  const firstActive = all.find((item) => item?.is_active !== false);
+  if (firstActive) {
+    return String(firstActive.org_id || firstActive.id || "").trim();
+  }
+
+  return String(serverActive || serverDefault || "").trim();
 }
 
 activeOrgId = readStoredActiveOrgId();
@@ -501,7 +533,6 @@ export async function apiAuthMe() {
   const groups = Array.isArray(r.data?.groups) ? r.data.groups : [];
   const active_org_id = String(r.data?.active_org_id || r.data?.default_org_id || "").trim();
   const default_org_id = String(r.data?.default_org_id || "").trim();
-  if (active_org_id) setActiveOrgId(active_org_id);
   return {
     ok: true,
     status: r.status,
