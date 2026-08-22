@@ -272,4 +272,49 @@ export const en = {
     selectAllVisibleAria: "Select all visible",
     noPropertiesByFilter: "No properties matching the selected filters.",
   },
+  // analysis-page-redesign — no-scroll dashboard read-model UI.
+  processAnalysis: {
+    title: "Process analysis",
+    back: "Back",
+    tabs: {
+      overview: "Overview",
+      steps: "Steps",
+      branches: "BPMN branches",
+      exceptions: "Exceptions",
+      ai: "AI",
+    },
+    kpi: {
+      lead: "Lead time",
+      active: "Active time",
+      wait: "Wait time",
+      throughput: "Throughput",
+    },
+    unit: {
+      min: "min",
+      stepsPerHour: "steps/hour",
+    },
+    sections: {
+      distributions: "Distribution",
+      topWaits: "Top 3 waits",
+      coverage: "Coverage",
+      exceptions: "Exceptions",
+      quality: "BPMN quality",
+      qualityErrors: "errors",
+      qualityWarnings: "warnings",
+    },
+    coverage: {
+      bind: "BPMN binding",
+      ai: "AI step coverage",
+      boundaries: "Process boundaries",
+    },
+    empty: {
+      title: "No data",
+      description: "Add process steps to see analytics.",
+    },
+    error: {
+      title: "Failed to load analytics",
+      retry: "Retry",
+    },
+    loading: "Loading analytics…",
+  },
 };
