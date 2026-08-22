@@ -4,6 +4,7 @@ import {
   apiExportAnalyticsActionsXlsx,
   apiGetAnalyticsActions,
   apiGetAnalyticsDashboard,
+  apiGetAnalyticsGaps,
   apiGetAnalyticsPropertiesRecalculation,
   apiGetAnalyticsQuality,
   apiRefreshAnalytics,
@@ -129,6 +130,46 @@ function useAnalyticsRecalculation(scope, scopeId) {
   }, [loadData]);
 
   return { rows, loading, error, retry: () => loadData() };
+}
+
+function useAnalyticsGaps(scope, scopeId) {
+  const [gaps, setGaps] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const abortRef = useRef(null);
+
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiGetAnalyticsGaps(scope, scopeId, { signal });
+      if (signal?.aborted) return;
+      setLoading(false);
+      if (!result?.ok) {
+        setError(text(result?.error) || t.errorLoadingQuality);
+        return;
+      }
+      setGaps(result.gaps || []);
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || t.errorGeneric));
+    }
+  }, [scope, scopeId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
+
+  return { gaps, loading, error, retry: () => loadData() };
 }
 
 function useAnalyticsQuality(scope, scopeId, recalcRows) {
@@ -430,6 +471,7 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
   const { data, loading, error, retry } = useAnalyticsDashboard(scope, scopeId);
   const { rows: recalcRows, loading: recalcLoading, error: recalcError, retry: retryRecalc } = useAnalyticsRecalculation(scope, scopeId);
   const { quality } = useAnalyticsQuality(scope, scopeId, recalcRows);
+  const { gaps, retry: retryGaps } = useAnalyticsGaps(scope, scopeId);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
 
@@ -482,9 +524,11 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
       setRefreshing(false);
       retry();
       retryRecalc();
+      retryGaps();
     }
   }
 
+  const scopeTitle = data?.scope_title || scopeId;
   const title = scope === "session" ? t.scopeSession : scope === "project" ? t.scopeProject : t.scopeWorkspace;
 
   return (
@@ -493,7 +537,7 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
         <header className="analyticsHubHeader">
           <div className="analyticsHubHeaderMain">
             <div className="analyticsHubHeaderTitleWrap">
-              <h1>{t.title} <span className="text-accent">{title}</span></h1>
+              <h1>{t.title}: <span className="text-accent">{scopeTitle}</span></h1>
               <span className="analyticsHubHeaderScopeId" title={scopeId}>{scopeId}</span>
             </div>
           </div>
@@ -531,6 +575,7 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
               data={data}
               quality={quality}
               recalcRows={recalcRows}
+              gaps={gaps}
               loading={loading}
               error={error}
               refreshing={refreshing}
@@ -540,7 +585,9 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
             />
           )}
           {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
-          {module === ANALYTICS_MODULE_PROPERTIES && <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} />}
+          {module === ANALYTICS_MODULE_PROPERTIES && (
+            <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} gaps={gaps} />
+          )}
         </AnalyticsErrorBoundary>
       </section>
     </main>

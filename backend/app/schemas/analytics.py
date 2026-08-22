@@ -35,6 +35,22 @@ class AnalyticsDashboardProcessDurationOut(BaseModel):
     sessions_count: int = 0
 
 
+class AnalyticsDashboardSchemeSessionOut(BaseModel):
+    session_id: str
+    session_title: str
+    actions_total: int = 0
+    elements_count: int = 0
+    handoffs_count: int = 0
+    critical_count: int = 0
+    total_duration_min: int = 0
+
+
+class AnalyticsDashboardSchemeProjectOut(BaseModel):
+    project_id: str
+    project_title: str
+    sessions: List[AnalyticsDashboardSchemeSessionOut] = Field(default_factory=list)
+
+
 class AnalyticsDashboardActivityHeatmapOut(BaseModel):
     by_hour: List[int] = Field(default_factory=lambda: [0] * 24)
     by_weekday: List[int] = Field(default_factory=lambda: [0] * 7)
@@ -46,6 +62,7 @@ class AnalyticsDashboardOut(BaseModel):
     total_duration_min: int = 0
     critical_path_min: Optional[int] = None
     actions_total: int = 0
+    elements_count: int = 0
     actions_by_role: Dict[str, int] = Field(default_factory=dict)
     actions_by_section: Dict[str, int] = Field(default_factory=dict)
     actions_by_type: Dict[str, int] = Field(default_factory=dict)
@@ -55,6 +72,9 @@ class AnalyticsDashboardOut(BaseModel):
     sessions_count: int = 0
     projects_count: int = 0
     computed_at: int = 0
+    avg_tasks_per_session: float = 0.0
+    avg_elements_per_session: float = 0.0
+    schemes: List[AnalyticsDashboardSchemeProjectOut] = Field(default_factory=list)
     kpi: AnalyticsDashboardKpiOut = Field(default_factory=AnalyticsDashboardKpiOut)
     task_statuses: AnalyticsDashboardTaskStatusesOut = Field(default_factory=AnalyticsDashboardTaskStatusesOut)
     session_trend: AnalyticsDashboardSessionTrendOut = Field(default_factory=AnalyticsDashboardSessionTrendOut)
