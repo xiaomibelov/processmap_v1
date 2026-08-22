@@ -32,6 +32,11 @@
   flex-wrap: wrap;
 }
 
+.analyticsOverviewScopeTitle {
+  font-weight: 600;
+  color: var(--analysis-text);
+}
+
 .analyticsOverviewScopeId {
   font-size: 12px;
   font-weight: 400;
@@ -398,3 +403,182 @@
   font-weight: 600;
 }
 
+
+/* Schemes section (PLAN rev. 4) */
+.analyticsSchemesSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.analyticsSchemesHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.analyticsSchemesFacts {
+  font-size: 12px;
+  color: var(--analysis-muted);
+}
+
+.analyticsSchemesList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analyticsSchemeProject {
+  border: 1px solid hsl(var(--border) / 0.5);
+  border-radius: 8px;
+  background: hsl(var(--bg-soft) / 0.2);
+  overflow: hidden;
+}
+
+.analyticsSchemeProjectHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--analysis-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.analyticsSchemeProjectHeader:hover {
+  background: hsl(var(--bg-soft) / 0.5);
+}
+
+.analyticsSchemeProjectToggle {
+  font-size: 10px;
+  color: var(--analysis-muted);
+  width: 12px;
+  text-align: center;
+}
+
+.analyticsSchemeProjectTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsSchemeProjectMeta {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--analysis-muted);
+  white-space: nowrap;
+}
+
+.analyticsSchemeProjectBody {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid hsl(var(--border) / 0.4);
+}
+
+.analyticsSchemeHeaderRow,
+.analyticsSchemeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr));
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.analyticsSchemeHeaderRow {
+  background: hsl(var(--bg-soft) / 0.4);
+  color: var(--analysis-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.analyticsSchemeRow {
+  color: var(--analysis-text);
+  text-decoration: none;
+  border-top: 1px solid hsl(var(--border) / 0.3);
+  transition: background 0.12s ease;
+}
+
+.analyticsSchemeRow:hover {
+  background: hsl(var(--bg-soft) / 0.5);
+}
+
+.analyticsSchemeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsSchemeMetric {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.analyticsSchemeHeaderRow .analyticsSchemeMetric,
+.analyticsSchemeHeaderRow .analyticsSchemeName {
+  white-space: normal;
+  line-height: 1.2;
+}
+
+/* Gaps list */
+.analyticsGapsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.analyticsGapRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: hsl(var(--bg-soft) / 0.3);
+  color: var(--analysis-text);
+  font-size: 12px;
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+
+.analyticsGapRow:hover {
+  background: hsl(var(--bg-soft) / 0.6);
+}
+
+.analyticsGapName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.analyticsGapPath,
+.analyticsGapContext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--analysis-muted);
+}
+
+.analyticsGapsShowAll {
+  margin-top: 4px;
+}

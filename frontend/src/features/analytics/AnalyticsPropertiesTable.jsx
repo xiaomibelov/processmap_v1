@@ -157,14 +157,14 @@ function ValueCell({ row }) {
 
 const COLUMNS = [
   { key: "select", label: "", width: "44px" },
-  { key: "bpmn_name", label: "BPMN Name", flex: "minmax(200px, 2fr)" },
-  { key: "name", label: t.columnProperty, flex: "minmax(200px, 2fr)" },
-  { key: "type", label: t.columnPropertyType, flex: "minmax(120px, 1fr)" },
-  { key: "category", label: t.columnPropertyCategory, flex: "minmax(150px, 1.2fr)" },
-  { key: "source", label: t.columnPropertySource, flex: "minmax(180px, 1.5fr)" },
-  { key: "usage_count", label: t.columnUsageCount, flex: "minmax(130px, 1fr)" },
-  { key: "session_count", label: t.columnSessionCount, flex: "minmax(110px, 1fr)" },
-  { key: "value", label: t.columnPropertyValue, flex: "minmax(200px, 1.5fr)" },
+  { key: "bpmn_name", label: "BPMN Name", flex: "minmax(0, 2fr)" },
+  { key: "name", label: t.columnProperty, flex: "minmax(0, 2fr)" },
+  { key: "type", label: t.columnPropertyType, flex: "minmax(0, 1fr)" },
+  { key: "category", label: t.columnPropertyCategory, flex: "minmax(0, 1.2fr)" },
+  { key: "source", label: t.columnPropertySource, flex: "minmax(0, 1.5fr)" },
+  { key: "usage_count", label: t.columnUsageCount, flex: "minmax(0, 1fr)" },
+  { key: "session_count", label: t.columnSessionCount, flex: "minmax(0, 1fr)" },
+  { key: "value", label: t.columnPropertyValue, flex: "minmax(0, 1.5fr)" },
 ];
 
 const GRID_TEMPLATE = COLUMNS.map((c) => c.width || c.flex).join(" ");

@@ -2311,6 +2311,18 @@ export async function apiGetAnalyticsQuality(scope, scopeId, opts = {}) {
   };
 }
 
+export async function apiGetAnalyticsGaps(scope, scopeId, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.gaps(scope, scopeId), { signal: opts.signal }));
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
+  return {
+    ok: true,
+    status: r.status,
+    gaps: Array.isArray(data.gaps) ? data.gaps : [],
+    meta: r.meta,
+  };
+}
+
 // ------- Process Templates (Technologist) -------
 // POST /api/process-templates/import-bpmn (multipart file field `file`).
 // Returns { ui_model, report, draft_entities }.
