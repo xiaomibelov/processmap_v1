@@ -1,0 +1,86 @@
+{
+  "contour_id": "stage4/test-timeout-1781303549",
+  "created_at": "2026-06-12T22:32:33Z",
+  "updated_at": "2026-06-12T22:32:33Z",
+  "state": "ready_for_execution",
+  "base_truth": "origin/main",
+  "control_plane": ".planning/contours/stage4/test-timeout-1781303549",
+  "source_truth": {
+    "pwd": "/opt/processmap-test",
+    "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+    "branch": "analitics/analytics_work",
+    "head": "1fb821cb99207c12c59eb1aab05f30d02eae7730",
+    "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882",
+    "status": "dirty; frontend/src/features/process/stage/presence/useSessionPresence.test.mjs modified",
+    "untracked_files": [
+      ".planning/contours/stage1/",
+      ".planning/contours/stage2/",
+      ".planning/contours/stage3/",
+      ".planning/contours/stage4/",
+      ".planning/contours/test-launch-ui/",
+      ".planning/contours/test-launch-v1/",
+      ".worktrees/",
+      "bin/processmap-iterm-agents.sh",
+      "docker-compose.n8n.yml",
+      "file",
+      "scripts/cleanup-rag-index.sh",
+      "tools/pm-agent-copilot-planner-headless.sh",
+      "tools/pm-agent-terminal-headless.sh",
+      "tools/pm-agent2-worker-headless.sh",
+      "tools/pm-agent3-reviewer-headless.sh"
+    ]
+  },
+  "roles": {
+    "planner": {
+      "writes": [
+        "STATE.json",
+        "PLAN.md",
+        "WORKER_PROMPT.md",
+        "REVIEWER_PROMPT.md",
+        "READY_FOR_EXECUTION"
+      ]
+    },
+    "executor": {
+      "reads": [
+        "PLAN.md",
+        "WORKER_PROMPT.md"
+      ],
+      "writes": [
+        "EXECUTION_STARTED",
+        "EXEC_REPORT.md",
+        "READY_FOR_REVIEW"
+      ]
+    },
+    "reviewer": {
+      "reads": [
+        "PLAN.md",
+        "EXEC_REPORT.md",
+        "REVIEWER_PROMPT.md",
+        "git diff",
+        "validation output"
+      ],
+      "writes": [
+        "REVIEW_REPORT.md",
+        "REVIEW_PASS or CHANGES_REQUESTED"
+      ]
+    }
+  },
+  "markers": {
+    "ready_for_execution": true,
+    "execution_started": false,
+    "ready_for_review": false,
+    "review_pass": false,
+    "changes_requested": false,
+    "closed": false
+  },
+  "scope_guard": {
+    "product_code_allowed": true,
+    "allowed_files": [
+      "frontend/src/features/process/stage/presence/useSessionPresence.js",
+      "frontend/src/features/process/stage/presence/useSessionPresence.test.mjs"
+    ],
+    "bpmn_xml_allowed": false,
+    "schema_allowed": false,
+    "deploy_allowed": false
+  }
+}

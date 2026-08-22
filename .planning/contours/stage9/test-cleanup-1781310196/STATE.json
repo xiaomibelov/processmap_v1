@@ -1,0 +1,79 @@
+{
+  "contour_id": "stage9/test-cleanup-1781310196",
+  "created_at": "2026-06-13T00:23:20Z",
+  "updated_at": "2026-06-13T00:32:35Z",
+  "state": "ready_for_review",
+  "base_truth": "origin/main",
+  "control_plane": ".planning/contours/stage9/test-cleanup-1781310196",
+  "source_truth": {
+    "pwd": "/opt/processmap-test",
+    "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+    "branch_at_planning": "test/agent-max-total-time",
+    "head": "48f2950b8e2049797489f83c96b4af05b4323b1a",
+    "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882",
+    "merge_base": "e1143c14f901882c12dc550f71bfd6757d60b882",
+    "status": "clean except pre-existing unrelated untracked files",
+    "dirty_files": [],
+    "untracked_files": [
+      ".planning/contours/stage1/",
+      ".planning/contours/stage2/",
+      ".planning/contours/stage3/",
+      ".planning/contours/stage4/",
+      ".planning/contours/stage5/",
+      ".planning/contours/stage6/",
+      ".planning/contours/stage7/",
+      ".planning/contours/stage8/",
+      ".worktrees/"
+    ]
+  },
+  "roles": {
+    "planner": {
+      "writes": [
+        "STATE.json",
+        "PLAN.md",
+        "WORKER_PROMPT.md",
+        "REVIEWER_PROMPT.md",
+        "READY_FOR_EXECUTION"
+      ]
+    },
+    "executor": {
+      "reads": [
+        "PLAN.md",
+        "WORKER_PROMPT.md"
+      ],
+      "writes": [
+        "EXECUTION_STARTED",
+        "EXEC_REPORT.md",
+        "READY_FOR_REVIEW"
+      ]
+    },
+    "reviewer": {
+      "reads": [
+        "PLAN.md",
+        "EXEC_REPORT.md",
+        "REVIEWER_PROMPT.md",
+        "test output",
+        "cleanup log"
+      ],
+      "writes": [
+        "REVIEW_REPORT.md",
+        "REVIEW_PASS or CHANGES_REQUESTED"
+      ]
+    }
+  },
+  "markers": {
+    "ready_for_execution": true,
+    "execution_started": true,
+    "ready_for_review": true,
+    "review_pass": false,
+    "changes_requested": false,
+    "closed": false
+  },
+  "scope_guard": {
+    "product_code_allowed": false,
+    "allowed_files": [],
+    "bpmn_xml_allowed": false,
+    "schema_allowed": false,
+    "deploy_allowed": false
+  }
+}

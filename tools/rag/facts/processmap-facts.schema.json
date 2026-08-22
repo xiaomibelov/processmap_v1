@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "processmap-facts.schema.json",
+  "title": "ProcessMap Structured Facts Schema",
+  "description": "JSON Schema for all structured fact types in the ProcessMap Agent RAG facts registry.",
+  "type": "object",
+  "definitions": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "isoTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "statusEnum": {
+      "type": "string",
+      "enum": ["active", "superseded", "rejected", "draft", "deprecated"]
+    },
+    "confidenceEnum": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "severityEnum": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "passFailEnum": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "PARTIAL"]
+    },
+    "formalVerdictEnum": {
+      "type": "string",
+      "enum": ["REVIEW_PASS", "CHANGES_REQUESTED", "REVIEW_BLOCKED", "IN_PROGRESS"]
+    },
+    "userVisibleVerdictEnum": {
+      "type": "string",
+      "enum": ["solved", "not_solved", "unknown", "not_tested"]
+    },
+    "sourceRefs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  },
+  "allOf": [
+    {
+      "properties": {
+        "id": { "$ref": "#/definitions/uuid" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "runtime_fact",
+            "agent_rule",
+            "contour_fact",
+            "user_rejection_fact",
+            "decision_fact",
+            "validation_fact",
+            "bottleneck_fact"
+          ]
+        },
+        "status": { "$ref": "#/definitions/statusEnum" },
+        "source_refs": { "$ref": "#/definitions/sourceRefs" },
+        "updated_at": { "$ref": "#/definitions/isoTimestamp" }
+      },
+      "required": ["id", "type", "status", "source_refs", "updated_at"]
+    },
+    {
+      "oneOf": [
+        {
+          "$comment": "A. runtime_fact",
+          "properties": {
+            "type": { "const": "runtime_fact" },
+            "project": { "type": "string" },
+            "key": { "type": "string" },
+            "value": { "type": "string" },
+            "environment": { "type": "string" },
+            "valid_from": { "$ref": "#/definitions/isoTimestamp" },
+            "confidence": { "$ref": "#/definitions/confidenceEnum" }
+          },
+          "required": ["project", "key", "value", "environment", "confidence"]
+        },
+        {
+          "$comment": "B. agent_rule",
+          "properties": {
+            "type": { "const": "agent_rule" },
+            "role": {
+              "type": "string",
+              "enum": ["agent1", "agent2", "agent3", "all"]
+            },
+            "rule": { "type": "string" },
+            "condition": { "type": "string" },
+            "required_action": { "type": "string" },
+            "forbidden_action": { "type": "string" },
+            "severity": { "$ref": "#/definitions/severityEnum" }
+          },
+          "required": ["role", "rule", "severity"],
+          "anyOf": [
+            { "required": ["required_action"] },
+            { "required": ["forbidden_action"] }
+          ]
+        },
+        {
+          "$comment": "C. contour_fact",
+          "properties": {
+            "type": { "const": "contour_fact" },
+            "contour_id": { "type": "string" },
+            "area": { "type": "string" },
+            "formal_verdict": { "$ref": "#/definitions/formalVerdictEnum" },
+            "user_visible_verdict": { "$ref": "#/definitions/userVisibleVerdictEnum" },
+            "user_accepted": { "type": "boolean" },
+            "version": { "type": "string" },
+            "main_findings": { "type": "string" },
+            "metrics": { "type": "object" },
+            "limitations": { "type": "string" },
+            "next_recommended_contour": { "type": "string" }
+          },
+          "required": ["contour_id", "area", "formal_verdict", "user_visible_verdict", "main_findings"]
+        },
+        {
+          "$comment": "D. user_rejection_fact",
+          "properties": {
+            "type": { "const": "user_rejection_fact" },
+            "contour_id": { "type": "string" },
+            "rejected_verdict": { "$ref": "#/definitions/formalVerdictEnum" },
+            "reason": { "type": "string" },
+            "user_observation": { "type": "string" },
+            "required_next_action": { "type": "string" },
+            "severity": { "$ref": "#/definitions/severityEnum" }
+          },
+          "required": ["contour_id", "rejected_verdict", "reason", "user_observation", "required_next_action", "severity"]
+        },
+        {
+          "$comment": "E. decision_fact",
+          "properties": {
+            "type": { "const": "decision_fact" },
+            "decision": { "type": "string" },
+            "rationale": { "type": "string" },
+            "applies_to": { "type": "string" },
+            "forbidden_alternatives": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["decision", "rationale", "applies_to"]
+        },
+        {
+          "$comment": "F. validation_fact",
+          "properties": {
+            "type": { "const": "validation_fact" },
+            "query": { "type": "string" },
+            "expected_terms": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "expected_sources": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "current_result": { "type": "string" },
+            "pass_fail": { "$ref": "#/definitions/passFailEnum" },
+            "last_run": { "$ref": "#/definitions/isoTimestamp" }
+          },
+          "required": ["query", "expected_terms", "expected_sources", "current_result", "pass_fail", "last_run"]
+        },
+        {
+          "$comment": "G. bottleneck_fact",
+          "properties": {
+            "type": { "const": "bottleneck_fact" },
+            "area": { "type": "string" },
+            "problem": { "type": "string" },
+            "current_hypothesis": { "type": "string" },
+            "rejected_hypotheses": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "evidence": { "type": "string" },
+            "next_contour": { "type": "string" }
+          },
+          "required": ["area", "problem", "current_hypothesis", "evidence", "next_contour"]
+        }
+      ]
+    }
+  ]
+}

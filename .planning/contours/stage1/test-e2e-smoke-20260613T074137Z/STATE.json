@@ -1,0 +1,7 @@
+{
+  "contour_id": "stage1/test-e2e-smoke-20260613T074137Z",
+  "phase": "ready_for_execution",
+  "planner_status": "complete",
+  "worker_status": "pending",
+  "reviewer_status": "pending"
+}

@@ -1,0 +1,30 @@
+{
+  "contour_id": "stage3/test-heartbeat-1781302150",
+  "phase": "ready_for_merge_review",
+  "planner_status": "complete",
+  "worker_status": "complete",
+  "reviewer_status": "complete",
+  "rag_preflight": "/opt/processmap-test/.agents/run-state/heartbeat-1781302150/rag/RAG_PREFLIGHT.md",
+  "source_truth": {
+    "repo_root": "/opt/processmap-test",
+    "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+    "branch": "analitics/analytics_work",
+    "head": "1fb821cb99207c12c59eb1aab05f30d02eae7730",
+    "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882"
+  },
+  "bounded_files": [
+    "frontend/src/features/process/stage/presence/useSessionPresence.test.mjs"
+  ],
+  "deliverables": [
+    "PLAN.md",
+    "WORKER_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "STATE.json",
+    "READY_FOR_EXECUTION",
+    "EXEC_REPORT.md",
+    "READY_FOR_REVIEW",
+    "REVIEW_REPORT.md",
+    "READY_FOR_MERGE_REVIEW",
+    "REVIEW_PASS"
+  ]
+}

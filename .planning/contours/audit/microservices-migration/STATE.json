@@ -1,0 +1,52 @@
+{
+  "service": "notifications",
+  "contour": "/opt/processmap-test (test environment clearvestnic.ru:5177, project processmap_v1)",
+  "branch": "main",
+  "status": "ready_for_review",
+  "subtasks": {
+    "architecture_decision": {
+      "status": "done",
+      "summary": "HTTP REST chosen for monolith -> notifications; documented in SOLUTION.md"
+    },
+    "create_dtos": {
+      "status": "done",
+      "summary": "error_event_dto, notification_dto, system_event_dto created in monolith and service"
+    },
+    "create_repos": {
+      "status": "done",
+      "summary": "error_event_repo, notification_repo, system_event_repo created in monolith and service"
+    },
+    "service_routers": {
+      "status": "done",
+      "summary": "Service exposes /error_events, /notifications, /system-events with full CRUD"
+    },
+    "service_tests": {
+      "status": "done",
+      "summary": "18 service tests passed; 25 monolith regression tests passed"
+    },
+    "build_image": {
+      "status": "done",
+      "summary": "Docker image built and running as processmap_v1-notifications-1 on port 8008"
+    },
+    "root_infrastructure": {
+      "status": "done",
+      "summary": "docker-compose.yml updated; nginx config updated with /api/notifications/ route"
+    },
+    "cicd_update": {
+      "status": "done",
+      "summary": "deploy-stage.yml updated to checkout, build and up notifications service"
+    },
+    "monolith_delegation": {
+      "status": "done",
+      "summary": "Monolith endpoints /api/notifications/* delegate to service; /api/telemetry/error-events delegates with fallback"
+    },
+    "fallback_verification": {
+      "status": "done",
+      "summary": "All 3 domains fall back to monolith repos when notifications service is down"
+    },
+    "e2e_verification": {
+      "status": "done",
+      "summary": "Verified POST/GET for all 3 domains on clearvestnic.ru:5177"
+    }
+  }
+}
