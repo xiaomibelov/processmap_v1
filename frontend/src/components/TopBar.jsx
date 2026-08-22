@@ -11,6 +11,7 @@ import {
 } from "../lib/api.js";
 import { useSessionNoteAggregate, useSessionNoteAggregates } from "../lib/sessionNoteAggregates.js";
 import { canOpenOrgSettings as canOpenOrgSettingsRole } from "../features/admin/adminUtils";
+import { getDict } from "../shared/i18n/index.js";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -439,7 +440,11 @@ export default function TopBar({
                 {orgList.map((item, index) => {
                   const id = orgIdFrom(item);
                   const label = String(item?.name || item?.org_name || id || `Org ${index + 1}`).trim();
-                  return <option key={id || `org_${index}`} value={id}>{label}</option>;
+                  const isInactive = item?.is_active === false;
+                  const inactiveSuffix = isInactive && user?.is_admin
+                    ? ` (${getDict().topbar.inactiveOrgLabel || "отключена"})`
+                    : "";
+                  return <option key={id || `org_${index}`} value={id}>{`${label}${inactiveSuffix}`}</option>;
                 })}
               </select>
             </label>

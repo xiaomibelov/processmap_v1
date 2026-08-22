@@ -153,6 +153,19 @@ def register_auth_guard(app: FastAPI, *, public_paths: set[str]) -> None:
             active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
             request.state.active_org_id = active_org_id
             request.state.org_memberships = list_user_org_memberships(user_id, is_admin=is_admin)
+
+            if requested_org_id and not is_admin:
+                requested_membership = next(
+                    (item for item in (request.state.org_memberships or [])
+                     if str(item.get("org_id") or "") == requested_org_id),
+                    None,
+                )
+                if requested_membership and not bool(requested_membership.get("is_active", True)):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "inactive_org", "message": "organization is inactive"},
+                    )
+
             scope_tokens = push_storage_request_scope(user_id, is_admin, active_org_id)
         except AuthError as exc:
             return _auth_error_response(str(exc))

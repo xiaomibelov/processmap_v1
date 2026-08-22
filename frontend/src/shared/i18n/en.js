@@ -317,12 +317,6 @@ export const en = {
     },
     loading: "Loading analytics…",
   },
-  diagram: {
-    alignDiagram: "Align diagram",
-    resetCanvas: "Reset",
-    alignFailed: "Failed to align diagram.",
-    resetCanvasConfirm: "Are you sure? All diagram elements will be removed. This action cannot be undone.",
-    resetFailed: "Failed to reset diagram.",
-    editingSectionTitle: "Editing",
+
   },
 };
