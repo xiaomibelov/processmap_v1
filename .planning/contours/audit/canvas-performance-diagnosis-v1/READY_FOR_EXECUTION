@@ -1,0 +1,21 @@
+READY FOR EXECUTION
+
+Contour: audit/canvas-performance-diagnosis-v1
+Status: planned
+
+Planning pack is complete and ready for Agent 2 / Worker execution.
+
+Files delivered:
+1. PLAN.md — Main audit plan with strategy, phases, and constraints
+2. WORKER_PROMPT.md — Detailed instructions for Agent 2 / Worker
+3. REVIEWER_PROMPT.md — Review criteria and checklist for Agent 3
+4. RAG_PREFLIGHT_PLANNER.md — Context for planner (existing bottleneck facts, architecture)
+5. RAG_PREFLIGHT_REVIEWER.md — Context for reviewer (validation points, red flags)
+6. CANVAS_AUDIT_REQUIREMENTS.md — Bounded requirements contract
+7. MEASUREMENT_METHODOLOGY.md — Exact procedures for each measurement type
+8. DEVTOOLS_PROFILE_GUIDE.md — Chrome DevTools profiling via Playwright
+9. AGENT3_ACCEPTANCE_CRITERIA.md — 10 pass/fail criteria with scoring
+10. STATE.json — State tracking
+11. READY_FOR_EXECUTION — This file
+
+Next step: Agent 2 / Worker executes the audit using Playwright on :5177.

@@ -1,0 +1,142 @@
+[
+  {
+    "time": 1782746938730,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/app?project=d3b9ae9fda&session=f1f727aee7"
+  },
+  {
+    "time": 1782746938795,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/assets/index-DWqtnSwH.js"
+  },
+  {
+    "time": 1782746938795,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/assets/index-B-TWw5iD.css"
+  },
+  {
+    "time": 1782746938795,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/env.js"
+  },
+  {
+    "time": 1782746938929,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/feature-flags"
+  },
+  {
+    "time": 1782746938930,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/auth/me"
+  },
+  {
+    "time": 1782746939001,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/workspaces"
+  },
+  {
+    "time": 1782746939001,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/feature-flags"
+  },
+  {
+    "time": 1782746939008,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/meta"
+  },
+  {
+    "time": 1782746939022,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/note-mentions?limit=20"
+  },
+  {
+    "time": 1782746939022,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/note-notifications?limit=20&include_read=1"
+  },
+  {
+    "time": 1782746939024,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/meta"
+  },
+  {
+    "time": 1782746939024,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7"
+  },
+  {
+    "time": 1782746939128,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/explorer?workspace_id=ws_org_default_main"
+  },
+  {
+    "time": 1782746939128,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/projects"
+  },
+  {
+    "time": 1782746939209,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/projects/d3b9ae9fda/sessions?view=summary"
+  },
+  {
+    "time": 1782746939225,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/projects/d3b9ae9fda/explorer?workspace_id=ws_org_default_main&root_only=true&include_children_meta=true"
+  },
+  {
+    "time": 1782746939290,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7"
+  },
+  {
+    "time": 1782746939378,
+    "method": "POST",
+    "url": "http://127.0.0.1:5180/api/sessions/note-aggregates"
+  },
+  {
+    "time": 1782746939602,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7/bpmn?raw=1&include_overlay=0&_ts=1782746939580"
+  },
+  {
+    "time": 1782746939602,
+    "method": "POST",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7/presence"
+  },
+  {
+    "time": 1782746939602,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7/bpmn/versions?limit=1"
+  },
+  {
+    "time": 1782746939602,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7/auto-pass/precheck"
+  },
+  {
+    "time": 1782746939602,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7/meta"
+  },
+  {
+    "time": 1782746939645,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/assets/Modeler-CNbbMnMu.js"
+  },
+  {
+    "time": 1782746939646,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/assets/NavigatedViewer-DX9HW6xq.js"
+  },
+  {
+    "time": 1782746939646,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/assets/index-BkaoYn_O.js"
+  },
+  {
+    "time": 1782746939778,
+    "method": "GET",
+    "url": "http://127.0.0.1:5180/api/sessions/f1f727aee7/note-aggregate"
+  }
+]

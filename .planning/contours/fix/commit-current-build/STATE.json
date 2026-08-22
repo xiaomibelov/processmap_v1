@@ -1,0 +1,32 @@
+{
+  "contour": {
+    "type": "fix",
+    "name": "commit-current-build",
+    "path": ".planning/contours/fix/commit-current-build",
+    "role": "executor"
+  },
+  "source_truth": {
+    "repo_root": "/opt/processmap-test",
+    "branch": "fix/bpmn-drilldown-ui",
+    "remote_origin": "git@github.com:xiaomibelov/processmap_v1.git",
+    "head_before": "7f6232e28cb4ac32e40719f1f272ec7f36346db2",
+    "head_after": "c17c1eab",
+    "origin_main": "c97099f3fe22cd8ad1659a319065aac7cade0bbd"
+  },
+  "phase": "ready_for_review",
+  "deliverables": {
+    "COMMIT_LOG.md": "complete",
+    "PUSH_REPORT.md": "complete",
+    "PR_INSTRUCTIONS.md": "complete",
+    "STATE.json": "complete"
+  },
+  "gates": {
+    "git_status_captured": true,
+    "all_changes_committed": true,
+    "branch_pushed": true,
+    "no_pr_created": true,
+    "no_merge_deploy": true,
+    "clean_working_tree": true
+  },
+  "next_action": "User creates PR manually via https://github.com/xiaomibelov/processmap_v1/compare/main...fix/bpmn-drilldown-ui"
+}

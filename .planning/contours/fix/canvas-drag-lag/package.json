@@ -1,0 +1,16 @@
+{
+  "name": "canvas-drag-lag",
+  "version": "1.0.0",
+  "description": "",
+  "main": "profile_drag_lag.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.60.0",
+    "source-map": "^0.7.6"
+  }
+}

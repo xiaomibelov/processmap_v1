@@ -1,0 +1,26 @@
+{
+  "contour_id": "audit/rbac-test-coverage",
+  "contour_type": "audit",
+  "branch": "audit/rbac-test-coverage",
+  "baseline": "origin/main @ f3a1eaa0f2cd7db93bba771f7461b5e527b26648",
+  "role": "planner",
+  "status": "planned",
+  "artifacts": [
+    "PLAN.md",
+    "AUDIT-TESTS.md",
+    "STATE.json",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "READY_FOR_EXECUTION"
+  ],
+  "gates": {
+    "rag_preflight": true,
+    "source_runtime_truth": true,
+    "bounded_scope": true,
+    "acceptance_criteria": true,
+    "no_product_code_by_planner": true,
+    "no_merge_deploy_pr_without_approval": true
+  },
+  "next_role": "executor",
+  "next_action": "Wait for user approval of PLAN.md / AUDIT-TESTS.md. No product code changes expected in this contour.",
+  "notes": "Audit of 10 existing RBAC test files against 10 RBAC gaps. Only 1 gap fully covered; 7 partially; 2 not covered."
+}
