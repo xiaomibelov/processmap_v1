@@ -30,7 +30,7 @@ from ..analytics_cache import (
     cached_analytics,
     invalidate_analytics_scope,
 )
-from ..services.advanced_calculation import BpmnAnalyzer
+from ..services.advanced_calculation import BpmnAnalyzer, count_bpmn_flow_nodes, get_element_context
 from ..save_services.analytics_aggregator.tasks import (
     refresh_all_workspaces_analytics_task,
     refresh_session_analytics_task,
@@ -62,6 +62,28 @@ def _refresh_snapshot(scope_type: str, scope_id: str, org_id: str) -> bool:
         return False
 
 
+def _scope_title(scope_type: str, scope_id: str, org_id: str) -> str:
+    with _connect() as con:
+        if scope_type == "session":
+            row = con.execute(
+                "SELECT title FROM sessions WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchone()
+        elif scope_type == "project":
+            row = con.execute(
+                "SELECT title FROM projects WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchone()
+        elif scope_type == "workspace":
+            row = con.execute(
+                "SELECT title FROM workspaces WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchone()
+        else:
+            row = None
+    return row["title"] if row else ""
+
+
 def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any]:
     def _row(scope_type: str, scope_id: str, org_id: str):
         with _connect() as con:
@@ -86,18 +108,21 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
     if not row:
         _refresh_snapshot(scope_type, scope_id, org_id)
         row = _row(scope_type, scope_id, org_id)
+    scope_title = _scope_title(scope_type, scope_id, org_id) or scope_id
     if not row:
-        return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
+        return {"scope_type": scope_type, "scope_id": scope_id, "scope_title": scope_title, "computed_at": 0}
 
     if scope_type == "session":
         base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
+            "scope_title": scope_title,
             "project_id": row["project_id"] or "",
             "workspace_id": row["workspace_id"] or "",
             "total_duration_min": row["total_duration_min"] or 0,
             "critical_path_min": row["critical_path_min"],
             "actions_total": row["actions_total"] or 0,
+            "elements_count": row["elements_count"] or 0,
             "actions_by_role": json.loads(row["actions_by_role_json"] or "{}"),
             "actions_by_section": json.loads(row["actions_by_section_json"] or "{}"),
             "actions_by_type": json.loads(row["actions_by_type_json"] or "{}"),
@@ -112,6 +137,7 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
         base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
+            "scope_title": scope_title,
             "workspace_id": row["workspace_id"] or "",
             "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
             "critical_path_min": None,
@@ -130,6 +156,7 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
         base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
+            "scope_title": scope_title,
             "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
             "critical_path_min": None,
             "actions_total": row["total_actions"] or 0,
@@ -178,19 +205,22 @@ def _session_snapshots_for_scope(scope_type: str, scope_id: str, org_id: str) ->
     with _connect() as con:
         if scope_type == "session":
             rows = con.execute(
-                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "SELECT session_id, project_id, total_duration_min, actions_total, elements_count, "
+                "handoffs_count, critical_questions, actions_by_type_json, computed_at AS created_at "
                 "FROM analytics_session_snapshots WHERE session_id=? AND org_id=?",
                 (scope_id, org_id),
             ).fetchall()
         elif scope_type == "project":
             rows = con.execute(
-                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "SELECT session_id, project_id, total_duration_min, actions_total, elements_count, "
+                "handoffs_count, critical_questions, actions_by_type_json, computed_at AS created_at "
                 "FROM analytics_session_snapshots WHERE project_id=? AND org_id=?",
                 (scope_id, org_id),
             ).fetchall()
         elif scope_type == "workspace":
             rows = con.execute(
-                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "SELECT session_id, project_id, total_duration_min, actions_total, elements_count, "
+                "handoffs_count, critical_questions, actions_by_type_json, computed_at AS created_at "
                 "FROM analytics_session_snapshots WHERE workspace_id=? AND org_id=?",
                 (scope_id, org_id),
             ).fetchall()
@@ -251,6 +281,38 @@ def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base:
 
     snapshots = _session_snapshots_for_scope(scope_type, scope_id, org_id)
 
+    total_elements = sum(int(s.get("elements_count") or 0) for s in snapshots)
+    sessions_with_elements = sum(1 for s in snapshots if int(s.get("elements_count") or 0) > 0)
+    avg_tasks_per_session = round(actions_total / max(sessions_count, 1), 1)
+    avg_elements_per_session = round(total_elements / max(sessions_with_elements, 1), 1)
+
+    project_titles = _project_titles_for_scope(scope_type, scope_id, org_id)
+    session_title_map = {s["id"]: (s.get("title") or s["id"]) for s in session_rows}
+    session_project_map = {s["id"]: s.get("project_id") or "" for s in session_rows}
+
+    schemes_by_project: Dict[str, List[Dict[str, Any]]] = {}
+    for snap in snapshots:
+        pid = snap.get("project_id") or session_project_map.get(snap.get("session_id"), "")
+        schemes_by_project.setdefault(pid, []).append({
+            "session_id": snap.get("session_id"),
+            "session_title": session_title_map.get(snap.get("session_id"), snap.get("session_id")),
+            "actions_total": int(snap.get("actions_total") or 0),
+            "elements_count": int(snap.get("elements_count") or 0),
+            "handoffs_count": int(snap.get("handoffs_count") or 0),
+            "critical_count": int(snap.get("critical_questions") or 0),
+            "total_duration_min": int(snap.get("total_duration_min") or 0),
+        })
+
+    schemes = []
+    for pid in sorted(schemes_by_project.keys(), key=lambda p: project_titles.get(p) or p):
+        sessions = schemes_by_project[pid]
+        sessions.sort(key=lambda s: s["session_title"].lower())
+        schemes.append({
+            "project_id": pid,
+            "project_title": project_titles.get(pid) or pid,
+            "sessions": sessions,
+        })
+
     by_type = base.get("actions_by_type") or {}
     if not by_type:
         for snap in snapshots:
@@ -293,9 +355,6 @@ def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base:
         element_types["gateway"] += sum(int(snap_by_type.get(k) or 0) for k in ("decision", "fork", "join"))
         element_types["event"] += sum(int(snap_by_type.get(k) or 0) for k in ("loss_event", "timer", "message"))
 
-    project_titles = _project_titles_for_scope(scope_type, scope_id, org_id)
-    session_project_map = {s["id"]: s.get("project_id") or "" for s in session_rows}
-
     prop_rows = _properties_rows(scope_type, scope_id, org_id)
     properties_summary = _properties_summary(prop_rows)
     properties_summary["recalculated_count"] = sum(
@@ -331,6 +390,9 @@ def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base:
         "process_duration": process_duration_list,
         "activity_heatmap": {"by_hour": heatmap_hour, "by_weekday": heatmap_weekday},
         "properties_summary": properties_summary,
+        "avg_tasks_per_session": avg_tasks_per_session,
+        "avg_elements_per_session": avg_elements_per_session,
+        "schemes": schemes,
     }
 
 
@@ -1147,6 +1209,8 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 _INGREDIENT_UM_KEY: "",
                 "session_id": _text(row.get("session_id")),
                 "session_title": _text(row.get("session_title")),
+                "project_id": _text(row.get("project_id")),
+                "project_title": _text(row.get("project_title")),
                 "workspace_id": _text(row.get("workspace_id")),
                 "org_id": _text(row.get("org_id")),
             }
@@ -1195,12 +1259,67 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "source": classification["source"],
             "session_id": sid,
             "session_title": element["session_title"],
+            "project_id": element.get("project_id") or "",
+            "project_title": element.get("project_title") or "",
             "workspace_id": element["workspace_id"],
             "org_id": element["org_id"],
             "source_url": f"/app?session={sid}" if sid else "",
         })
 
     return out_rows
+
+
+def _load_session_bpmn_xml_for_scope(scope_type: str, scope_id: str, org_id: str) -> Dict[str, str]:
+    """Load BPMN XML for all sessions in the scope keyed by session_id."""
+    session_ids = _session_ids_for_scope(scope_type, scope_id, org_id)
+    if scope_type == "session":
+        session_ids = [scope_id]
+    result: Dict[str, str] = {}
+    if not session_ids:
+        return result
+    with _connect() as con:
+        placeholders = ",".join("?" * len(session_ids))
+        rows = con.execute(
+            f"SELECT id, bpmn_xml FROM sessions WHERE id IN ({placeholders}) AND org_id=?",
+            [*session_ids, org_id],
+        ).fetchall()
+    for row in rows:
+        result[str(row["id"])] = row["bpmn_xml"] or ""
+    return result
+
+
+@router.get("/properties/gaps")
+def get_properties_gaps(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """Return source-classification rows marked as 'нет данных' with positional context.
+
+    The context (predecessor/successor names and DI coordinates) is computed from
+    the session BPMN XML so the frontend can render a warning list with deep links
+    before exporting the recalculated Excel.
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    rows = _properties_rows(scope, scope_id, oid)
+    source_rows = _build_source_rows(rows)
+    gap_rows = [r for r in source_rows if r["source"] == _SOURCE_NO_DATA]
+
+    bpmn_by_session = _load_session_bpmn_xml_for_scope(scope, scope_id, oid)
+    for r in gap_rows:
+        sid = r.get("session_id")
+        bpmn_xml = bpmn_by_session.get(sid, "")
+        ctx = get_element_context(bpmn_xml, r.get("bpmn_id") or "")
+        r["context"] = ctx
+        r["element_url"] = f"/app?session={sid}&element={r.get('bpmn_id')}" if sid else ""
+
+    return _ok(
+        {"gaps": gap_rows},
+        {"scope_type": scope, "scope_id": scope_id, "count": len(gap_rows)},
+    )
 
 
 @router.get("/properties/export-recalculated.xlsx")
@@ -1217,23 +1336,9 @@ def export_properties_recalculated_xlsx(
 
     if mode == "source":
         source_rows = _build_source_rows(rows)
-        invalid_tasks = [
-            {
-                "bpmn_id": r["bpmn_id"],
-                "bpmn_name": r["bpmn_name"],
-                "ingredient_value": r[_INGREDIENT_VALUE_KEY],
-            }
-            for r in source_rows
-            if r["source"] == _SOURCE_NO_DATA
-        ]
-        if invalid_tasks:
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "error": "В схеме найдены не заполненные значения свойства ingredient_value, заполните значения и повторите операцию",
-                    "invalid_tasks": invalid_tasks,
-                },
-            )
+        # Per owner decision 21/08/26 the export is no longer blocked when
+        # ingredient_value is empty/non-numeric. Rows are exported with
+        # SOURCE = "нет данных" and an empty RESULT.
         columns = [
             ("bpmn_id", "BPMN ID"),
             ("bpmn_name", "BPMN Name"),

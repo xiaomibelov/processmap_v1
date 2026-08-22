@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ru } from "../../shared/i18n/ru.js";
 import {
   RefreshIcon,
@@ -77,14 +77,164 @@ function AttentionRow({ tone, title, count, onClick }) {
   );
 }
 
-function ProcessDurationRow({ title, avgDurationMin, sessionsCount }) {
+function FactLine({ data }) {
+  const parts = [];
+  if (data.sessions_count != null) parts.push(`${formatNumber(data.sessions_count)} ${t.factSessions}`);
+  if (data.projects_count != null) parts.push(`${formatNumber(data.projects_count)} ${t.factProjects}`);
+  if (data.properties_summary?.total != null) parts.push(`${formatNumber(data.properties_summary.total)} ${t.factProperties}`);
+  if (data.properties_summary?.recalculated_count != null) parts.push(`${formatNumber(data.properties_summary.recalculated_count)} ${t.factRecalculated}`);
+  if (data.total_duration_min != null) parts.push(`${formatNumber(data.total_duration_min)} ${t.factDuration}`);
+  if (data.critical_path_min != null) parts.push(`${formatNumber(data.critical_path_min)} ${t.factCriticalPath}`);
+  if (!parts.length) return <span className="analyticsOverviewFactLine">—</span>;
+  return <span className="analyticsOverviewFactLine">{parts.join(" · ")}</span>;
+}
+
+function SchemeRow({ scheme }) {
   return (
-    <div className="analyticsOverviewProcessRow">
-      <span className="analyticsOverviewProcessTitle" title={title}>{title || "—"}</span>
-      <span className="analyticsOverviewProcessMeta">
-        {avgDurationMin != null ? `${formatNumber(avgDurationMin)} мин` : "—"}
-        {sessionsCount != null ? ` · ${formatNumber(sessionsCount)} сессий` : null}
-      </span>
+    <a
+      href={`/app?session=${encodeURIComponent(scheme.session_id)}`}
+      className="analyticsSchemeRow"
+      title={scheme.session_title}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <span className="analyticsSchemeName">{scheme.session_title || scheme.session_id}</span>
+      <span className="analyticsSchemeMetric">{formatNumber(scheme.actions_total)}</span>
+      <span className="analyticsSchemeMetric">{formatNumber(scheme.elements_count)}</span>
+      <span className="analyticsSchemeMetric">{formatNumber(scheme.critical_count)}</span>
+      <span className="analyticsSchemeMetric">{formatNumber(scheme.handoffs_count)}</span>
+      <span className="analyticsSchemeMetric">{formatNumber(scheme.total_duration_min)}&nbsp;мин</span>
+    </a>
+  );
+}
+
+function SchemeProject({ project, expanded, onToggle }) {
+  return (
+    <div className="analyticsSchemeProject">
+      <button
+        type="button"
+        className={`analyticsSchemeProjectHeader ${expanded ? "analyticsSchemeProjectHeader--expanded" : ""}`}
+        onClick={onToggle}
+      >
+        <span className="analyticsSchemeProjectToggle">{expanded ? "▼" : "▶"}</span>
+        <span className="analyticsSchemeProjectTitle">{project.project_title || project.project_id}</span>
+        <span className="analyticsSchemeProjectMeta">{formatNumber(project.sessions?.length || 0)} схем</span>
+      </button>
+      {expanded ? (
+        <div className="analyticsSchemeProjectBody">
+          <div className="analyticsSchemeHeaderRow">
+            <span className="analyticsSchemeName">{t.schemes}</span>
+            <span className="analyticsSchemeMetric">{t.schemeTasks}</span>
+            <span className="analyticsSchemeMetric">{t.schemeElements}</span>
+            <span className="analyticsSchemeMetric">{t.schemeCritical}</span>
+            <span className="analyticsSchemeMetric">{t.schemeHandoffs}</span>
+            <span className="analyticsSchemeMetric">{t.schemeDuration}</span>
+          </div>
+          {project.sessions.map((s) => (
+            <SchemeRow key={s.session_id} scheme={s} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SchemesSection({ data }) {
+  const schemes = data?.schemes || [];
+  const [expanded, setExpanded] = useState(() =>
+    schemes.length <= 1 ? new Set(schemes.map((p) => p.project_id)) : new Set()
+  );
+
+  const toggle = (projectId) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+
+  return (
+    <div className="analyticsSchemesSection">
+      <div className="analyticsSchemesHeader">
+        <Metric
+          label={t.avgTasksPerSession}
+          value={formatNumber(data?.avg_tasks_per_session)}
+        />
+        <Metric
+          label={t.avgElementsPerSession}
+          value={formatNumber(data?.avg_elements_per_session)}
+        />
+      </div>
+      <div className="analyticsSchemesFacts">
+        <FactLine data={data} />
+      </div>
+      {schemes.length === 0 ? (
+        <p className="analyticsOverviewEmpty">{t.schemesEmpty}</p>
+      ) : (
+        <div className="analyticsSchemesList">
+          {schemes.map((project) => (
+            <SchemeProject
+              key={project.project_id}
+              project={project}
+              expanded={expanded.has(project.project_id)}
+              onToggle={() => toggle(project.project_id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GapContext({ ctx }) {
+  if (!ctx) return null;
+  const prev = (ctx.prev_names || []).join(", ");
+  const next = (ctx.next_names || []).join(", ");
+  const hasPosition = prev || next;
+  const coords = ctx.x != null && ctx.y != null
+    ? `${t.gapsPositionCoordinates}: ${Math.round(ctx.x)}, ${Math.round(ctx.y)}`
+    : "";
+  return (
+    <span className="analyticsGapContext">
+      {hasPosition
+        ? t.gapsContextBetween.replace("{{prev}}", prev || "…").replace("{{next}}", next || "…")
+        : coords || "—"}
+    </span>
+  );
+}
+
+function GapsList({ gaps, onNavigate }) {
+  if (!gaps?.length) return null;
+  const visible = gaps.slice(0, 5);
+  const rest = Math.max(gaps.length - visible.length, 0);
+  return (
+    <div className="analyticsGapsList">
+      {visible.map((gap, idx) => (
+        <a
+          key={idx}
+          href={gap.element_url || `/app?session=${encodeURIComponent(gap.session_id || "")}`}
+          className="analyticsGapRow"
+          target="_blank"
+          rel="noreferrer"
+          title={gap.bpmn_name}
+        >
+          <span className="analyticsGapName">{gap.bpmn_name || gap.bpmn_id}</span>
+          <span className="analyticsGapPath">
+            {gap.project_title || gap.project_id} → {gap.session_title || gap.session_id}
+          </span>
+          <GapContext ctx={gap.context} />
+        </a>
+      ))}
+      {rest > 0 ? (
+        <button
+          type="button"
+          className="analyticsOverviewLink analyticsGapsShowAll"
+          onClick={() => onNavigate?.(ANALYTICS_MODULE_PROPERTIES, { source: "нет данных" })}
+        >
+          Показать ещё {formatNumber(rest)} →
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -93,6 +243,7 @@ export default function AnalyticsOverviewPanel({
   data,
   quality,
   recalcRows,
+  gaps,
   loading,
   error,
   refreshing,
@@ -107,26 +258,10 @@ export default function AnalyticsOverviewPanel({
     return t.scopeWorkspace;
   }, [data]);
 
-  const actionsByRole = data?.actions_by_role || {};
-  const topRoles = useMemo(() => {
-    return Object.entries(actionsByRole)
-      .map(([label, value]) => ({ label, value: Number(value) || 0 }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-  }, [actionsByRole]);
-
   const noDataRows = useMemo(
     () => (recalcRows || []).filter((r) => r.source === "нет данных"),
     [recalcRows]
   );
-
-  const criticalRows = useMemo(
-    () => (recalcRows || []).filter((r) => r.source === "property" && (r.result || 0) > 0).slice(0, 5),
-    [recalcRows]
-  );
-
-  const processDurations = data?.process_duration || [];
-  const recentSessions = data?.recent_sessions || [];
 
   if (loading && !data) {
     return <AnalyticsLoading text={t.loadingOverview} />;
@@ -145,7 +280,8 @@ export default function AnalyticsOverviewPanel({
       <header className="analyticsOverviewHeader">
         <div className="analyticsOverviewHeaderMain">
           <h1 className="analyticsOverviewTitle">
-            {title} <span className="analyticsOverviewScopeId" title={data.scope_id}>{data.scope_id}</span>
+            {title}: <span className="analyticsOverviewScopeTitle">{data.scope_title || data.scope_id}</span>
+            <span className="analyticsOverviewScopeId" title={data.scope_id}>{data.scope_id}</span>
           </h1>
           <div className="analyticsOverviewMeta">
             <span className="analyticsOverviewUpdated">
@@ -171,7 +307,7 @@ export default function AnalyticsOverviewPanel({
       </header>
 
       <Section
-        title={t.summary}
+        title={t.schemes}
         action={
           <button
             type="button"
@@ -182,27 +318,7 @@ export default function AnalyticsOverviewPanel({
           </button>
         }
       >
-        <div className="analyticsOverviewSummaryGrid">
-          <Metric label={t.actionsCount} value={formatNumber(data.actions_total)} />
-          <Metric label={t.durationMin} value={`${formatNumber(data.total_duration_min)}`} unit="мин" />
-          <Metric
-            label={t.criticalPathMin}
-            value={data.critical_path_min != null ? formatNumber(data.critical_path_min) : "—"}
-            unit={data.critical_path_min != null ? "мин" : ""}
-          />
-          <Metric label={t.handoffs} value={formatNumber(data.handoffs_count)} />
-          <Metric label={t.sessions} value={formatNumber(data.sessions_count)} />
-          <Metric label={t.projects} value={formatNumber(data.projects_count)} />
-          <Metric label={t.openQuestions} value={formatNumber(data.open_questions)} />
-          <Metric
-            label={t.propertiesCount}
-            value={formatNumber(data.properties_summary?.total)}
-          />
-          <Metric
-            label={t.recalculated}
-            value={formatNumber(data.properties_summary?.recalculated_count)}
-          />
-        </div>
+        <SchemesSection data={data} />
       </Section>
 
       <Section
@@ -239,6 +355,7 @@ export default function AnalyticsOverviewPanel({
             {t.noDataHint}
           </p>
         ) : null}
+        <GapsList gaps={gaps} onNavigate={onNavigate} />
       </Section>
 
       <Section title={t.attention}>
@@ -251,14 +368,6 @@ export default function AnalyticsOverviewPanel({
               onClick={() => onNavigate?.(ANALYTICS_MODULE_PROPERTIES, { source: "нет данных" })}
             />
           ) : null}
-          {criticalRows.length > 0 ? (
-            <AttentionRow
-              tone="danger"
-              title={t.attentionCritical.replace("{{count}}", criticalRows.length)}
-              count={criticalRows.length}
-              onClick={() => onNavigate?.(ANALYTICS_MODULE_PROPERTIES, { property: "ee_time" })}
-            />
-          ) : null}
           {(data.open_questions || 0) > 0 ? (
             <AttentionRow
               tone="info"
@@ -266,50 +375,10 @@ export default function AnalyticsOverviewPanel({
               count={data.open_questions}
             />
           ) : null}
-          {noDataRows.length === 0 && criticalRows.length === 0 && (data.open_questions || 0) === 0 ? (
+          {noDataRows.length === 0 && (data.open_questions || 0) === 0 ? (
             <p className="analyticsOverviewEmpty">{t.emptyAttention}</p>
           ) : null}
         </div>
-      </Section>
-
-      <Section
-        title={t.structure}
-        action={
-          <button
-            type="button"
-            className="analyticsOverviewLink"
-            onClick={() => onNavigate?.(ANALYTICS_MODULE_PROPERTIES)}
-          >
-            {t.openProperties} →
-          </button>
-        }
-      >
-        {processDurations.length > 0 ? (
-          <div className="analyticsOverviewProcessList">
-            {processDurations.map((p, idx) => (
-              <ProcessDurationRow
-                key={idx}
-                title={p.process_title}
-                avgDurationMin={p.avg_duration_min}
-                sessionsCount={p.sessions_count}
-              />
-            ))}
-          </div>
-        ) : recentSessions.length > 0 ? (
-          <div className="analyticsOverviewSessionList">
-            {recentSessions.slice(0, 5).map((s) => (
-              <div key={s.id} className="analyticsOverviewSessionRow">
-                <span className="analyticsOverviewSessionTitle" title={s.title}>{s.title || s.id}</span>
-                <span className="analyticsOverviewSessionMeta">
-                  {s.actions_total != null ? `${formatNumber(s.actions_total)} действий` : null}
-                  {s.total_duration_min != null ? ` · ${formatNumber(s.total_duration_min)} мин` : null}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="analyticsOverviewEmpty">{t.emptyStructure}</p>
-        )}
       </Section>
     </div>
   );

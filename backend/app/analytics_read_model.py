@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .analytics import compute_analytics
+from .services.advanced_calculation import count_bpmn_flow_nodes
 from .storage import _connect, _ensure_schema, get_project_storage, get_storage
 
 
@@ -44,15 +45,17 @@ def upsert_session_analytics_snapshot(
     actions = analytics.get("actions") or {}
     handoffs = analytics.get("handoffs") or {}
     coverage = analytics.get("coverage") or {}
+    bpmn_xml = getattr(session, "bpmn_xml", None) or ""
+    elements_count = count_bpmn_flow_nodes(bpmn_xml)
     computed_at = _now_ts()
     with _connect() as con:
         con.execute(
             """
             INSERT INTO analytics_session_snapshots (
               session_id, org_id, project_id, workspace_id, total_duration_min, critical_path_min,
-              actions_total, actions_by_role_json, actions_by_section_json, actions_by_type_json,
+              actions_total, elements_count, actions_by_role_json, actions_by_section_json, actions_by_type_json,
               handoffs_count, open_questions, critical_questions, unknown_duration_nodes_json, computed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
               org_id=excluded.org_id,
               project_id=excluded.project_id,
@@ -60,6 +63,7 @@ def upsert_session_analytics_snapshot(
               total_duration_min=excluded.total_duration_min,
               critical_path_min=excluded.critical_path_min,
               actions_total=excluded.actions_total,
+              elements_count=excluded.elements_count,
               actions_by_role_json=excluded.actions_by_role_json,
               actions_by_section_json=excluded.actions_by_section_json,
               actions_by_type_json=excluded.actions_by_type_json,
@@ -77,6 +81,7 @@ def upsert_session_analytics_snapshot(
                 int(timing.get("total_duration_min") or 0),
                 int(timing.get("critical_path_min") or 0) if timing.get("critical_path_min") is not None else None,
                 int(actions.get("total") or 0),
+                int(elements_count),
                 _json_dumps(actions.get("by_role") or {}),
                 _json_dumps(actions.get("by_section") or {}),
                 _json_dumps(actions.get("by_type") or {}),

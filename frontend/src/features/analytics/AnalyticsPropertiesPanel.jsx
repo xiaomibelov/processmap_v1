@@ -177,7 +177,7 @@ function CompareDrawer({ rows, onClose }) {
   );
 }
 
-export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
+export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) {
   const [rawRows, setRawRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -385,25 +385,33 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     setExporting(false);
   }
 
-  async function handleServerExportRecalculatedXlsx() {
+  async function handleConfirmExportRecalculatedXlsx() {
     if (exporting) return;
     setExporting(true);
+    setSourceValidationModal((m) => ({ ...m, open: false }));
     const result = await apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId, { mode: "source" });
+    setExporting(false);
     if (!result?.ok) {
-      setExporting(false);
-      if (result?.status === 422 && Array.isArray(result?.data?.invalid_tasks)) {
-        setSourceValidationModal({
-          open: true,
-          message: result.data.error || "В схеме найдены не заполненные значения свойства ingredient_value.",
-          tasks: result.data.invalid_tasks,
-        });
-      }
+      setError(text(result?.error) || t.errorLoadingRecalcShort);
       return;
     }
     if (result.blob) {
       downloadBlob(result.blob, result.filename || `properties-recalculated-${scope}-${scopeId}.xlsx`);
     }
-    setExporting(false);
+  }
+
+  function handleRequestExportRecalculatedXlsx() {
+    if (exporting) return;
+    const invalidGaps = gaps.filter((r) => r.source === "нет данных");
+    if (invalidGaps.length > 0) {
+      setSourceValidationModal({
+        open: true,
+        message: t.gapsDescription,
+        tasks: invalidGaps,
+      });
+      return;
+    }
+    handleConfirmExportRecalculatedXlsx();
   }
 
   async function handleServerExportAdvancedCalculationXlsx() {
@@ -651,7 +659,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
               <button
                 type="button"
                 className="analyticsExportBtn"
-                onClick={handleServerExportRecalculatedXlsx}
+                onClick={handleRequestExportRecalculatedXlsx}
                 disabled={exporting}
               >
                 <DownloadIcon className="w-4 h-4" />
@@ -752,25 +760,58 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       {sourceValidationModal.open ? (
         <Modal
           open
-          title={t.sourceValidationTitle}
+          title={t.sourceWarningTitle}
           onClose={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
           footer={
-            <button
-              type="button"
-              className="analyticsExportBtn"
-              onClick={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
-            >
-              OK
-            </button>
+            <div className="analyticsModalFooter">
+              <button
+                type="button"
+                className="analyticsExportBtn analyticsExportBtn--secondary"
+                onClick={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
+              >
+                {t.gapsCancel}
+              </button>
+              <button
+                type="button"
+                className="analyticsExportBtn"
+                onClick={handleConfirmExportRecalculatedXlsx}
+                disabled={exporting}
+              >
+                {exporting ? t.exportLoading : t.gapsExport}
+              </button>
+            </div>
           }
         >
-          <p>{sourceValidationModal.message}</p>
+          <p className="analyticsGapsModalDescription">{sourceValidationModal.message}</p>
           {sourceValidationModal.tasks.length ? (
-            <ul className="analyticsRecalcValidationList">
-              {sourceValidationModal.tasks.map((t, idx) => (
-                <li key={idx}>{text(t.bpmn_name) || text(t.bpmn_id) || "—"}</li>
-              ))}
-            </ul>
+            <div className="analyticsGapsModalList">
+              {sourceValidationModal.tasks.map((gap, idx) => {
+                const ctx = gap.context || {};
+                const prev = (ctx.prev_names || []).join(", ") || "…";
+                const next = (ctx.next_names || []).join(", ") || "…";
+                const position = ctx.prev_names?.length || ctx.next_names?.length
+                  ? t.gapsContextBetween.replace("{{prev}}", prev).replace("{{next}}", next)
+                  : ctx.x != null && ctx.y != null
+                    ? `${t.gapsPositionCoordinates}: ${Math.round(ctx.x)}, ${Math.round(ctx.y)}`
+                    : "—";
+                return (
+                  <a
+                    key={idx}
+                    href={gap.element_url || `/app?session=${encodeURIComponent(gap.session_id || "")}`}
+                    className="analyticsGapsModalRow"
+                    target="_blank"
+                    rel="noreferrer"
+                    title={gap.bpmn_name}
+                  >
+                    <span className="analyticsGapsModalName">{text(gap.bpmn_name) || text(gap.bpmn_id) || "—"}</span>
+                    <span className="analyticsGapsModalPath">
+                      {text(gap.project_title) || text(gap.project_id) || "—"} → {text(gap.session_title) || text(gap.session_id) || "—"}
+                    </span>
+                    <span className="analyticsGapsModalPosition">{position}</span>
+                  </a>
+                );
+              })}
+            </div>
           ) : null}
         </Modal>
       ) : null}

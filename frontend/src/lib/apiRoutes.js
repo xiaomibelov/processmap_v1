@@ -419,6 +419,10 @@ export const apiRoutes = {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
     }),
+    gaps: (scope, scopeId) => withQuery("/api/analytics/properties/gaps", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
   },
   recipes: {
     list: () => "/api/recipes",
