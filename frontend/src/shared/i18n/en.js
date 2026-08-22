@@ -320,5 +320,4 @@ export const en = {
   topbar: {
     inactiveOrgLabel: "disabled",
   },
-  },
 };
