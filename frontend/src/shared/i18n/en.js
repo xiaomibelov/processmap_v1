@@ -277,9 +277,10 @@ export const en = {
     title: "Process analysis",
     back: "Back",
     tabs: {
-      overview: "Overview",
-      steps: "Steps",
+      boundaries: "Boundaries",
+      steps: "Process actions",
       branches: "BPMN branches",
+      summary: "Summary & time",
       exceptions: "Exceptions",
       ai: "AI",
     },

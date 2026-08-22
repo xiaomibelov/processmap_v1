@@ -834,9 +834,10 @@ export const ru = {
     title: "Анализ процессов",
     back: "Назад",
     tabs: {
-      overview: "Обзор",
-      steps: "Шаги",
+      boundaries: "Границы",
+      steps: "Действия процесса",
       branches: "Ветки BPMN",
+      summary: "Итоги и время",
       exceptions: "Исключения",
       ai: "AI",
     },

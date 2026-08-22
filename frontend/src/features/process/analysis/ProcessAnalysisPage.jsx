@@ -1,54 +1,29 @@
 import React, { useState, useCallback } from "react";
 import styles from "./ProcessAnalysis.module.css";
 
-const TABS = [
-  { key: "overview", labelKey: "processAnalysis.tabs.overview" },
-  { key: "steps", labelKey: "processAnalysis.tabs.steps" },
-  { key: "branches", labelKey: "processAnalysis.tabs.branches" },
-  { key: "exceptions", labelKey: "processAnalysis.tabs.exceptions" },
-  { key: "ai", labelKey: "processAnalysis.tabs.ai" },
-];
-
 export function ProcessAnalysisPage({
   title,
   processTitle,
   onBack,
+  tabs,
+  defaultTabKey,
   t,
-  renderOverview,
-  renderSteps,
-  renderBranches,
-  renderExceptions,
-  renderAi,
 }) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTabKey, setActiveTabKey] = useState(defaultTabKey || tabs[0]?.key);
+
+  const activeTab = tabs.find((tab) => tab.key === activeTabKey) || tabs[0];
 
   const handleKeyDown = useCallback(
-    (event, tabKey) => {
+    (event, tabIndex) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
-      const idx = TABS.findIndex((t) => t.key === tabKey);
-      const nextIdx = event.key === "ArrowLeft" ? Math.max(0, idx - 1) : Math.min(TABS.length - 1, idx + 1);
-      setActiveTab(TABS[nextIdx].key);
+      const nextIndex = event.key === "ArrowLeft"
+        ? Math.max(0, tabIndex - 1)
+        : Math.min(tabs.length - 1, tabIndex + 1);
+      setActiveTabKey(tabs[nextIndex].key);
     },
-    []
+    [tabs]
   );
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case "overview":
-        return renderOverview ? renderOverview() : null;
-      case "steps":
-        return renderSteps ? renderSteps() : null;
-      case "branches":
-        return renderBranches ? renderBranches() : null;
-      case "exceptions":
-        return renderExceptions ? renderExceptions() : null;
-      case "ai":
-        return renderAi ? renderAi() : null;
-      default:
-        return null;
-    }
-  };
 
   return (
     <div className={styles.page} data-testid="process-analysis-page">
@@ -72,25 +47,34 @@ export function ProcessAnalysisPage({
           </div>
         </div>
         <nav role="tablist" aria-label={t("processAnalysis.title")} className={styles.tabs}>
-          {TABS.map((tab) => (
+          {tabs.map((tab, index) => (
             <button
               key={tab.key}
               type="button"
               role="tab"
               id={`process-analysis-tab-btn-${tab.key}`}
-              aria-selected={activeTab === tab.key}
+              aria-selected={activeTabKey === tab.key}
               aria-controls={`process-analysis-tab-${tab.key}`}
               className={styles.tab}
-              onClick={() => setActiveTab(tab.key)}
-              onKeyDown={(e) => handleKeyDown(e, tab.key)}
-              tabIndex={activeTab === tab.key ? 0 : -1}
+              onClick={() => setActiveTabKey(tab.key)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
+              tabIndex={activeTabKey === tab.key ? 0 : -1}
             >
-              {t(tab.labelKey)}
+              {tab.label}
             </button>
           ))}
         </nav>
       </header>
-      <main className={styles.body}>{renderTabContent()}</main>
+      <main className={styles.body}>
+        <div
+          className={styles.tabPanel}
+          role="tabpanel"
+          id={`process-analysis-tab-${activeTab?.key}`}
+          aria-labelledby={`process-analysis-tab-btn-${activeTab?.key}`}
+        >
+          {activeTab?.content}
+        </div>
+      </main>
     </div>
   );
 }
