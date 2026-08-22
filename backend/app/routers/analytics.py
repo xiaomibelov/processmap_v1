@@ -76,7 +76,7 @@ def _scope_title(scope_type: str, scope_id: str, org_id: str) -> str:
             ).fetchone()
         elif scope_type == "workspace":
             row = con.execute(
-                "SELECT title FROM workspaces WHERE id=? AND org_id=?",
+                "SELECT name AS title FROM workspaces WHERE id=? AND org_id=?",
                 (scope_id, org_id),
             ).fetchone()
         else:
@@ -134,39 +134,45 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
             "computed_at": row["computed_at"] or 0,
         }
     elif scope_type == "project":
+        sessions_count = int(row["sessions_count"] or 0)
+        avg_duration_min = float(row["avg_duration_min"] or 0)
         base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
             "scope_title": scope_title,
             "workspace_id": row["workspace_id"] or "",
-            "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
+            "total_duration_min": int(round(avg_duration_min)) * sessions_count,
             "critical_path_min": None,
             "actions_total": row["total_actions"] or 0,
+            "elements_count": 0,
             "actions_by_role": {},
             "actions_by_section": {},
             "actions_by_type": {},
             "handoffs_count": row["handoffs_count"] or 0,
             "open_questions": 0,
             "critical_questions": row["total_critical_questions"] or 0,
-            "sessions_count": row["sessions_count"] or 0,
+            "sessions_count": sessions_count,
             "projects_count": 1,
             "computed_at": row["computed_at"] or 0,
         }
     elif scope_type == "workspace":
+        sessions_count = int(row["sessions_count"] or 0)
+        avg_duration_min = float(row["avg_duration_min"] or 0)
         base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
             "scope_title": scope_title,
-            "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
+            "total_duration_min": int(round(avg_duration_min)) * sessions_count,
             "critical_path_min": None,
             "actions_total": row["total_actions"] or 0,
+            "elements_count": 0,
             "actions_by_role": {},
             "actions_by_section": {},
             "actions_by_type": {},
             "handoffs_count": row["handoffs_count"] or 0,
             "open_questions": 0,
             "critical_questions": row["total_critical_questions"] or 0,
-            "sessions_count": row["sessions_count"] or 0,
+            "sessions_count": sessions_count,
             "projects_count": row["projects_count"] or 0,
             "computed_at": row["computed_at"] or 0,
         }
@@ -249,11 +255,13 @@ def _project_titles_for_scope(scope_type: str, scope_id: str, org_id: str) -> Di
 def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base: Dict[str, Any]) -> Dict[str, Any]:
     sessions_count = int(base.get("sessions_count") or 0)
     actions_total = int(base.get("actions_total") or 0)
-    avg_duration = (
-        int(base.get("total_duration_min") or 0)
-        if scope_type == "session"
-        else int(round(base.get("avg_duration_min") or 0))
-    )
+    total_duration_min = int(base.get("total_duration_min") or 0)
+    if scope_type == "session":
+        avg_duration = total_duration_min
+    elif sessions_count > 0:
+        avg_duration = int(round(total_duration_min / sessions_count))
+    else:
+        avg_duration = 0
     projects_count = int(base.get("projects_count") or 0)
     project_id = str(base.get("project_id") or "")
 
@@ -410,7 +418,19 @@ def get_dashboard(
         data = _load_snapshot(scope, scope_id, oid)
         return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
 
-    return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+    try:
+        return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+    except Exception as exc:
+        logger.exception("dashboard compute failed scope=%s scope_id=%s", scope, scope_id)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "internal_error",
+                "message": "Не удалось построить обзор. Попробуйте обновить страницу.",
+                "detail": str(exc),
+            },
+        )
 
 
 @router.get("/{scope}/{scope_id}/dashboard")
@@ -429,7 +449,19 @@ def get_dashboard_path(
         data = _load_snapshot(scope, scope_id, oid)
         return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
 
-    return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+    try:
+        return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
+    except Exception as exc:
+        logger.exception("dashboard compute failed scope=%s scope_id=%s", scope, scope_id)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "internal_error",
+                "message": "Не удалось построить обзор. Попробуйте обновить страницу.",
+                "detail": str(exc),
+            },
+        )
 
 
 @router.post("/refresh")
@@ -496,8 +528,10 @@ def get_quality(
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
 
-    rows = _build_source_rows(_properties_rows(scope, scope_id, oid))
-    total = len(rows)
+    property_rows = _properties_rows(scope, scope_id, oid)
+    source_rows = _build_source_rows(property_rows)
+
+    total = len(source_rows)
     if not total:
         return _ok(
             {
@@ -509,14 +543,33 @@ def get_quality(
             {"scope_type": scope, "scope_id": scope_id},
         )
 
-    no_data = sum(1 for r in rows if r["source"] == _SOURCE_NO_DATA)
-    property_rows = sum(1 for r in rows if r["source"] == _SOURCE_PROPERTY)
-    present_rows = total - sum(1 for r in rows if r["source"] == _SOURCE_DEFAULT)
+    no_data = sum(1 for r in source_rows if r["source"] == _SOURCE_NO_DATA)
+    property_rows_count = sum(1 for r in source_rows if r["source"] == _SOURCE_PROPERTY)
+    present_rows = total - sum(1 for r in source_rows if r["source"] == _SOURCE_DEFAULT)
+
+    # ee_time_filled_pct = share of unique BPMN elements that have a numeric
+    # ee_time among all unique BPMN elements carrying Camunda properties in the
+    # scope. Elements without any Camunda properties are not visible in the
+    # registry, so they are excluded from this metric.
+    element_ids = set()
+    ee_time_element_ids = set()
+    for row in property_rows:
+        eid = _text(row.get("bpmn_id") or row.get("element_id"))
+        if not eid:
+            continue
+        element_ids.add(eid)
+        if _text(row.get("name") or row.get("property_name")) == _EE_TIME_KEY:
+            if _parse_recalc_number(row.get("value") or row.get("property_value")) is not None:
+                ee_time_element_ids.add(eid)
+
+    ee_time_filled_pct = round(
+        (len(ee_time_element_ids) / max(len(element_ids), 1)) * 100, 1
+    )
 
     return _ok(
         {
-            "ee_time_filled_pct": 100,
-            "ingredient_numeric_pct": round((property_rows / max(present_rows, 1)) * 100, 1),
+            "ee_time_filled_pct": ee_time_filled_pct,
+            "ingredient_numeric_pct": round((property_rows_count / max(present_rows, 1)) * 100, 1),
             "no_data_count": no_data,
             "total_elements_with_ee_time": total,
         },
