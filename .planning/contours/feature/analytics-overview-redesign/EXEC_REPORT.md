@@ -158,31 +158,80 @@ docker run --rm -v ".../frontend:/app" -v "/app/node_modules" -w /app \
 
 ---
 
-## 4. Ограничения и открытые вопросы
+## 4. Доводка до приёмки stage 22/08/26 (PLAN ред. 5)
+
+### 4.1. P0 — «Обзор» падает на scope=workspace
+
+**Причина:** `backend/app/routers/analytics.py::_scope_title` делал `SELECT title FROM workspaces`, но в таблице колонка `name`.
+
+**Исправление:**
+- `SELECT name AS title FROM workspaces ...` в `_scope_title`.
+- Endpoint `GET /api/analytics/dashboard` (и `/{scope}/{id}/dashboard`) обёрнут в try/except и возвращает структурированную 500-ошибку с человекочитаемым `message`.
+- `frontend/src/features/analytics/AnalyticsPage.jsx::useAnalyticsDashboard` показывает `result.data.message`, а не сырой `error`.
+- Добавлены dirty-data тесты dashboard для всех трёх скоупов (`test_dashboard_*_dirty_data_does_not_500`).
+
+### 4.2. Аномалии данных (проект «Борщи», скрин 22/08/26)
+
+#### «среднее число элементов на схему = 0» при 72 тасках
+- Добавлен fallback в `backend/app/analytics_read_model.py::upsert_session_analytics_snapshot`: если `session.bpmn_xml` пустой, подгружается последняя версия из `bpmn_versions`.
+- `backend/app/services/advanced_calculation.py::count_bpmn_flow_nodes` теперь считает flow nodes по локальному имени тега, что работает для BPMN XML с namespace, с префиксом `bpmn:` и без namespace.
+- Добавлены unit-тесты `CountBpmnFlowNodesTests`.
+
+#### «критичные: 80» при 72 тасках
+- `critical_questions` в сессионном снапшоте = open questions с `issue_type == "CRITICAL"`. На stage FK критичных оказалось почти столько же, сколько действий, что делает метрику неинформативной.
+- Решение: отдельная KPI-метрика «критично» на «Обзор» не выводится. В секции «Требуют внимания» добавлен компактный пункт «Критичные пересчёты (N)» со ссылкой во вкладку «Действия». Окончательное решение по критерию остаётся за владельцем.
+
+#### «Качество данных: 0% ee_time» при 163 свойствах
+- Исправлен расчёт `ee_time_filled_pct` в `backend/app/routers/analytics.py::get_quality`: теперь это доля уникальных BPMN-элементов с числовым `ee_time` среди всех элементов с Camunda-свойствами в скоупе (ранее всегда возвращалось 100%).
+- Добавлены тесты `test_quality_partial_ee_time` и `test_quality_project_scope`.
+
+### 4.3. Навигация по дереву скоупов из «Обзора»
+
+- В секции «Схемы» строка проекта кликабельна → переход в `scope=project`; строка схемы кликабельна → переход в `scope=session`. Рядом со схемой остаётся ссылка «↗» для открытия схемы в редакторе (`/app?session=<id>`).
+- Добавлены компактные хлебные крошки в шапке аналитики: «← Назад к workspace» (для project) и «← Назад к проекту» (для session).
+- Использован существующий `AnalyticsScopeSwitcher`; второе дерево/сайдбар не добавляется.
+
+### 4.4. Минимизация «Требуют внимания»
+
+- Секция свёрнута до компактного списка проблем:
+  - «Не заполнен ingredient_value (N)» → «Свойства» с фильтром `source=нет данных`;
+  - «Критичные пересчёты (N)» → «Действия»;
+  - «Открытые вопросы (N)» → «Действия».
+
+### 4.5. Схемы — группы развёрнуты по умолчанию
+
+- Accordion проект → схема в секции «Схемы» теперь развёрнут по умолчанию для всех проектов. Сворачивание остаётся доступным, состояние — в пределах просмотра (React state).
+
+### 4.6. Проверка
+
+- **Backend:** `test_analytics_backend_driven.py` + `test_advanced_calculation.py::CountBpmnFlowNodesTests` — **77 passed**.
+- **Frontend smoke:** `npm run test:smoke` — **4/4 passed**.
+- **Frontend build:** `npm run build` — **успешно** (`built in 1m 13s`), без ошибок.
+
+---
+
+## 5. Ограничения и открытые вопросы
 
 - **Кап 500 записей** в таблице «Свойства» остаётся (сервер возвращает `limit=500`). Добавлена явная подпись; серверная пагинация — в бэклог.
 - **Drill-down query params** применяются только при первом монтировании `PropertiesPanel`; ручная смена фильтров не синхронизирует URL.
 - **Celery beat** требует запущенного `celery-worker` и Redis; endpoint refresh работает даже при недоступности брокера (resilient enqueue).
 - **Адаптивность** проверена визуально в dev-режиме; для 1280–1440px горизонтальный скролл не предполагается.
 - **Определение «элементов»** в среднем числе элементов на схему: flow nodes (BPMN task/userTask/serviceTask/startEvent/endEvent/gateway/subProcess). Зафиксировано в отчёте.
+- **ee_time_filled_pct** считается по элементам, у которых есть Camunda-свойства в реестре; элементы без свойств не учитываются.
 
 ---
 
-## 5. Git-state
+## 6. Git-state
 
 ```
 branch: feature/analytics-overview-redesign
-HEAD:                3cb2e7c7d974eb76d8247a4f11949537c981a8bb
-origin/main:         13c62ba9fe07f2cc26ac94093d359a5c5f563c2c
-origin/feature/analytics-overview-redesign: 319fc052563db0f2792d5b5af320b3ca13248c77
-PR:                  #795 (MERGED до repo reset 21/08/26); hotfix PR #796 (MERGED); новый PR можно создать из текущей ветки
-status:              ветка пересоздана от origin/main; 1 коммит впереди origin/main; push выполнен
+HEAD:                <см. git rev-parse HEAD>
+origin/main:         1079e72d33f3426c30e7e5040962cd820fc7dc65
+origin/feature/analytics-overview-redesign: f469473dfd77a16ef43ec84b0cd954a6de79e873 (до push)
+PR:                  #798 (MERGED в main 22/08/26); доводка ред. 5 — новый push в ту же ветку
+status:              ветка пересоздана от origin/main; 3 коммита впереди origin/main
 ```
 
-- Ветка `feature/analytics-overview-redesign` была пересоздана от актуального `origin/main` из-за force-push reset'а `origin/main`.
-- История старой ветки сохранена в `feature/analytics-overview-redesign-backup`.
-- В новую ветку скопированы только файлы контура `analytics-overview-redesign` (19 файлов вместо 1913).
+- Ветка `feature/analytics-overview-redesign` была пересоздана от актуального `origin/main`.
 - Изменения `fix/analytics-source-recalc-logic` (A/B/C-классификация, нормализация запятой) сохранены в `backend/app/routers/analytics.py`.
-- Теперь GitHub корректно сравнивает ветку с `main` и позволяет создать PR.
-- Mirror в Obsidian (`tools/pm-agent-mirror-report.sh`) — запустить после финального push.
 - **Merge/deploy только после явного approve пользователя.**
