@@ -447,13 +447,7 @@
   color: var(--analysis-text);
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease;
-}
-
-.analyticsSchemeProjectHeader:hover {
-  background: hsl(var(--bg-soft) / 0.5);
 }
 
 .analyticsSchemeProjectToggle {
@@ -461,6 +455,15 @@
   color: var(--analysis-muted);
   width: 12px;
   text-align: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.analyticsSchemeProjectToggle:hover {
+  color: var(--analysis-text);
 }
 
 .analyticsSchemeProjectTitle {
@@ -469,6 +472,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: hsl(var(--accent));
+  text-align: left;
+  cursor: pointer;
+}
+
+.analyticsSchemeProjectTitle:hover {
+  text-decoration: underline;
 }
 
 .analyticsSchemeProjectMeta {
@@ -487,7 +501,7 @@
 .analyticsSchemeHeaderRow,
 .analyticsSchemeRow {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 2fr) repeat(5, minmax(0, 1fr)) auto;
   align-items: center;
   min-height: 36px;
   padding: 0 12px;
@@ -519,6 +533,35 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: hsl(var(--accent));
+  text-align: left;
+  cursor: pointer;
+}
+
+.analyticsSchemeName:hover {
+  text-decoration: underline;
+}
+
+.analyticsSchemeOpen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--analysis-muted);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.analyticsSchemeOpen:hover {
+  background: hsl(var(--bg-soft));
+  color: var(--analysis-text);
 }
 
 .analyticsSchemeMetric {
@@ -534,6 +577,25 @@
 .analyticsSchemeHeaderRow .analyticsSchemeName {
   white-space: normal;
   line-height: 1.2;
+}
+
+/* Breadcrumbs inside AnalyticsPage header */
+.analyticsHubBreadcrumb {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: hsl(var(--accent));
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+
+.analyticsHubBreadcrumb:hover {
+  text-decoration: underline;
 }
 
 /* Gaps list */

@@ -531,5 +531,61 @@ class AdvancedCalculationRouterTests(unittest.TestCase):
         self.assertTrue(r.content.startswith(b"PK"))
 
 
+class CountBpmnFlowNodesTests(unittest.TestCase):
+    def test_count_with_standard_namespace(self):
+        from app.services.advanced_calculation import count_bpmn_flow_nodes
+
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1">
+  <process id="Process_1">
+    <startEvent id="Start_1" />
+    <task id="Task_1" />
+    <task id="Task_2" />
+    <exclusiveGateway id="Gateway_1" />
+    <endEvent id="End_1" />
+  </process>
+</definitions>
+"""
+        self.assertEqual(count_bpmn_flow_nodes(xml), 5)
+
+    def test_count_with_bpmn_prefix(self):
+        from app.services.advanced_calculation import count_bpmn_flow_nodes
+
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1">
+  <bpmn:process id="Process_1">
+    <bpmn:startEvent id="Start_1" />
+    <bpmn:task id="Task_1" />
+    <bpmn:userTask id="Task_2" />
+    <bpmn:serviceTask id="Task_3" />
+    <bpmn:subProcess id="Sub_1" />
+    <bpmn:endEvent id="End_1" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+        self.assertEqual(count_bpmn_flow_nodes(xml), 6)
+
+    def test_count_without_namespace(self):
+        from app.services.advanced_calculation import count_bpmn_flow_nodes
+
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<definitions id="Definitions_1">
+  <process id="Process_1">
+    <startEvent id="Start_1" />
+    <task id="Task_1" />
+    <endEvent id="End_1" />
+  </process>
+</definitions>
+"""
+        self.assertEqual(count_bpmn_flow_nodes(xml), 3)
+
+    def test_count_empty_or_invalid_xml(self):
+        from app.services.advanced_calculation import count_bpmn_flow_nodes
+
+        self.assertEqual(count_bpmn_flow_nodes(""), 0)
+        self.assertEqual(count_bpmn_flow_nodes("   "), 0)
+        self.assertEqual(count_bpmn_flow_nodes("not xml"), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
