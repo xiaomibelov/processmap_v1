@@ -318,6 +318,7 @@ export const en = {
     },
     loading: "Loading analytics…",
   },
-
+  topbar: {
+    inactiveOrgLabel: "disabled",
   },
 };
