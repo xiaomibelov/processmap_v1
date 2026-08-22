@@ -31,10 +31,24 @@ test("InterviewStage imports ProcessAnalysisDashboard behind feature flag", () =
   assert.match(source, /fpc_analysis_redesign/);
 });
 
-test("ProcessAnalysisDashboard uses backend read-model", () => {
+test("ProcessAnalysisDashboard uses backend read-model and renders tabs via ProcessAnalysisPage", () => {
   const source = readFile("frontend/src/features/process/analysis/ProcessAnalysisDashboard.jsx");
   assert.match(source, /useProcessAnalysisViewModel/);
-  assert.match(source, /ProcessAnalysisOverview/);
+  assert.match(source, /ProcessAnalysisPage/);
+  assert.doesNotMatch(source, /ProcessAnalysisOverview/);
+  assert.doesNotMatch(source, /ProcessAnalysisSkeleton/);
+});
+
+test("InterviewStage constructs six original-section tabs for redesign", () => {
+  const source = readFile("frontend/src/components/process/InterviewStage.jsx");
+  assert.match(source, /key:\s*"boundaries"/);
+  assert.match(source, /key:\s*"steps"/);
+  assert.match(source, /key:\s*"branches"/);
+  assert.match(source, /key:\s*"summary"/);
+  assert.match(source, /key:\s*"exceptions"/);
+  assert.match(source, /key:\s*"ai"/);
+  assert.match(source, /defaultTabKey="steps"/);
+  assert.match(source, /buildSummaryPropsFromProcessMetrics/);
 });
 
 test("apiGetSessionAnalysisViewModel exposes process_metrics", () => {
