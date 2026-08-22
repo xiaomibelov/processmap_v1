@@ -1,0 +1,24 @@
+{
+  "contour_id": "premium-urgent-task-analytics-ui-ux-addi-mqdketwb",
+  "type": "uiux",
+  "priority": "premium/urgent",
+  "phase": "ready_for_execution",
+  "planner_status": "complete",
+  "worker_status": "pending",
+  "reviewer_status": "pending",
+  "branch": "feature/analytics-fields-export",
+  "feature_flag": "USE_ANALYTICS_FIELDS_EXPORT",
+  "estimated_hours": "6-10",
+  "rag_status": "invalid_user",
+  "design_system_source": "ui-ux-pro-max",
+  "created_at": "2026-06-14T09:11:40Z",
+  "artifacts": [
+    "PLAN.md",
+    "WORKER_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "RUNTIME_NAVIGATION.md",
+    "RUNTIME_PROOF_CHECKLIST.md",
+    "STATE.json",
+    "READY_FOR_EXECUTION"
+  ]
+}

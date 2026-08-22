@@ -1,0 +1,534 @@
+{
+  "run_at": "2026-06-27T07:27:27.734Z",
+  "total_facts": 53,
+  "pass_count": 27,
+  "fail_count": 78,
+  "warn_count": 0,
+  "results": [
+    {
+      "check": "1-parse:processmap-runtime-facts.json",
+      "status": "PASS",
+      "message": "Parsed 9 facts"
+    },
+    {
+      "check": "1-parse:processmap-agent-rules.json",
+      "status": "PASS",
+      "message": "Parsed 8 facts"
+    },
+    {
+      "check": "1-parse:processmap-contour-facts.ndjson",
+      "status": "PASS",
+      "message": "Parsed 9 facts"
+    },
+    {
+      "check": "1-parse:processmap-user-rejections.ndjson",
+      "status": "PASS",
+      "message": "Parsed 5 facts"
+    },
+    {
+      "check": "1-parse:processmap-decisions.ndjson",
+      "status": "PASS",
+      "message": "Parsed 10 facts"
+    },
+    {
+      "check": "1-parse:processmap-validation-facts.json",
+      "status": "PASS",
+      "message": "Parsed 8 facts"
+    },
+    {
+      "check": "1-parse:processmap-bottleneck-facts.ndjson",
+      "status": "PASS",
+      "message": "Parsed 4 facts"
+    },
+    {
+      "check": "2-common-fields",
+      "status": "PASS",
+      "message": "All facts have id, type, status, source_refs, updated_at"
+    },
+    {
+      "check": "3-unique-ids",
+      "status": "PASS",
+      "message": "All 53 IDs are unique"
+    },
+    {
+      "check": "4-allowed-type",
+      "status": "PASS",
+      "message": "All types are in allowed set"
+    },
+    {
+      "check": "5-source-refs-exist:rt-server-host",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-repo-root",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-frontend-url",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-frontend-url",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-api-health-url",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-api-health-url",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-project-atlas-server",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-project-atlas-local",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-contour-root",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-git-branch",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/PLAN.md"
+    },
+    {
+      "check": "5-source-refs-exist:rt-origin-main",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/PLAN.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-agent1-gsd",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-agent3-gsd",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-agent3-fresh-runtime",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-agent3-exact-scenario",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-agent3-real-drag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-agent3-real-drag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-no-product-changes-in-rag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-source-registry-and-index-policy-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:rule-rag-read-only",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-bootstrap",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-bootstrap",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-source-registry",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-source-registry-and-index-policy-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-source-registry",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-source-registry-and-index-policy-v1/SOURCE_REGISTRY_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-bm25-search",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-bm25-manifest-search-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-bm25-search",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-bm25-manifest-search-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-coverage-hardening",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-coverage-hardening",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-rag-coverage-hardening",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/COVERAGE_HARDENING_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/PROFILER_EVIDENCE.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/RUNTIME_BEFORE_AFTER.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-drag-ledger-rework",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-drag-ledger-rework",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1/VERSION_UPDATE_LEDGER_PROOF.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-real-drag-engine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-real-drag-engine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REAL_DRAG_BASELINE.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-real-drag-engine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/ENGINE_EVALUATION.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-loading-state-machine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-loading-state-machine-and-canvas-controller-decomposition-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-loading-state-machine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-loading-state-machine-and-canvas-controller-decomposition-v1/LOADING_STATE_MACHINE_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-visible-version-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-visible-version-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/VISIBLE_VERSION_PROOF.md"
+    },
+    {
+      "check": "5-source-refs-exist:cf-fix-visible-version-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/VIEWER_FIRST_DESIGN.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/RUNTIME_BEFORE_AFTER.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-fix-drag-ledger-rework",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-fix-drag-ledger-rework",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-fix-real-drag-engine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-fix-real-drag-engine",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-synthetic-zoom-not-drag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-synthetic-zoom-not-drag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REAL_DRAG_BASELINE.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-version-marker-on-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/VERSION_MARKER_RELOCATION_PROOF.md"
+    },
+    {
+      "check": "5-source-refs-exist:ur-version-marker-on-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/VISIBLE_VERSION_PROOF.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-rag-read-only",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-rag-no-auto-mutate",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-source-registry-and-index-policy-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-ai-drafts-not-truth",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-version-marker-off-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/VISIBLE_VERSION_PROOF.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-version-marker-off-canvas",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/VIEWER_FIRST_DESIGN.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-version-increment-visible",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1/VERSION_UPDATE_LEDGER_PROOF.md"
+    },
+    {
+      "check": "5-source-refs-exist:dec-decomposition-first",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-loading-state-machine-and-canvas-controller-decomposition-v1/DECOMPOSITION_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q1-diagram-review-pass-rules",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q2-perf-drag-hot-path",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q3-current-diagram-lag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q4-rag-forbidden-actions",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q5-indexed-source-paths",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q6-test-runtime",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-q7-agent3-diagram-review",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-coverage-hardening-summary",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/COVERAGE_HARDENING_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:val-coverage-hardening-summary",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-diagram-drag-lag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/PROFILER_EVIDENCE.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-diagram-drag-lag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REAL_DRAG_BASELINE.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-diagram-drag-lag",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-visible-version-and-large-canvas-lag-v1/CANVAS_LAG_ROOT_CAUSE.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-react-cpu-95",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/PROFILER_EVIDENCE.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-react-cpu-95",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/fix/diagram-loading-state-machine-and-canvas-controller-decomposition-v1/DECOMPOSITION_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-rag-retrieval-7of7",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/COVERAGE_HARDENING_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-rag-retrieval-7of7",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-rag-retrieval-7of7",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-rag-next-preflight",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/PLAN.md"
+    },
+    {
+      "check": "5-source-refs-exist:bn-rag-next-preflight",
+      "status": "FAIL",
+      "message": "source_refs path does not exist: /opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/EXECUTOR_PROMPT.md"
+    },
+    {
+      "check": "6-allowed-status",
+      "status": "PASS",
+      "message": "All statuses are in allowed set"
+    },
+    {
+      "check": "7-allowed-confidence-severity",
+      "status": "PASS",
+      "message": "All confidence/severity values are valid"
+    },
+    {
+      "check": "8-rejection-contour-id",
+      "status": "PASS",
+      "message": "All user_rejection_facts reference contour_id"
+    },
+    {
+      "check": "9-contour-verdicts",
+      "status": "PASS",
+      "message": "All contour_facts have valid formal_verdict and user_visible_verdict"
+    },
+    {
+      "check": "10-agent-rule",
+      "status": "PASS",
+      "message": "All agent_rules have valid role and required_action/forbidden_action"
+    },
+    {
+      "check": "11-decision-rationale",
+      "status": "PASS",
+      "message": "All decision_facts have rationale"
+    },
+    {
+      "check": "12-validation-expected",
+      "status": "PASS",
+      "message": "All validation_facts have pass_fail, expected_terms, and expected_sources"
+    },
+    {
+      "check": "13-excluded-paths",
+      "status": "PASS",
+      "message": "No source_refs point to excluded secrets paths"
+    },
+    {
+      "check": "14-secret-like",
+      "status": "PASS",
+      "message": "No secret-like patterns found in fact values"
+    },
+    {
+      "check": "15-draft-truth",
+      "status": "PASS",
+      "message": "No draft facts present"
+    },
+    {
+      "check": "16-pass-not-solved:cf-perf-drag-hot-path",
+      "status": "PASS",
+      "message": "REVIEW_PASS with not_solved is explicitly allowed and documented"
+    },
+    {
+      "check": "16-pass-not-solved:cf-fix-drag-ledger-rework",
+      "status": "PASS",
+      "message": "REVIEW_PASS with not_solved is explicitly allowed and documented"
+    },
+    {
+      "check": "16-pass-not-solved:cf-fix-real-drag-engine",
+      "status": "PASS",
+      "message": "REVIEW_PASS with not_solved is explicitly allowed and documented"
+    },
+    {
+      "check": "17-rejection-override:cf-perf-drag-hot-path",
+      "status": "PASS",
+      "message": "User rejection fact overrides formal REVIEW_PASS for contour perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1"
+    },
+    {
+      "check": "17-rejection-override:cf-fix-drag-ledger-rework",
+      "status": "PASS",
+      "message": "User rejection fact overrides formal REVIEW_PASS for contour fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1"
+    },
+    {
+      "check": "17-rejection-override:cf-fix-real-drag-engine",
+      "status": "PASS",
+      "message": "User rejection fact overrides formal REVIEW_PASS for contour fix/diagram-real-drag-performance-and-engine-decomposition-v1"
+    },
+    {
+      "check": "18-rag-coverage-7of7",
+      "status": "PASS",
+      "message": "Coverage hardening fact records 7/7 PASS with 1,803 files: val-coverage-hardening-summary"
+    }
+  ]
+}

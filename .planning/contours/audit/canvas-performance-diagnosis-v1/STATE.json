@@ -1,0 +1,37 @@
+{
+  "contour_id": "audit/canvas-performance-diagnosis-v1",
+  "status": "planned",
+  "agent1_planner": {
+    "done": true,
+    "timestamp": "2026-05-28T06:55:00Z",
+    "deliverables": [
+      "PLAN.md",
+      "WORKER_PROMPT.md",
+      "REVIEWER_PROMPT.md",
+      "RAG_PREFLIGHT_PLANNER.md",
+      "RAG_PREFLIGHT_REVIEWER.md",
+      "CANVAS_AUDIT_REQUIREMENTS.md",
+      "MEASUREMENT_METHODOLOGY.md",
+      "DEVTOOLS_PROFILE_GUIDE.md",
+      "AGENT3_ACCEPTANCE_CRITERIA.md",
+      "STATE.json",
+      "READY_FOR_EXECUTION"
+    ]
+  },
+  "agent2_worker": {
+    "status": "pending",
+    "timestamp": null,
+    "deliverables": [],
+    "notes": null
+  },
+  "agent3_reviewer": {
+    "status": "pending",
+    "timestamp": null,
+    "deliverables": [],
+    "notes": null
+  },
+  "final_status": null,
+  "review_status": null,
+  "blocking_issues": [],
+  "non_blocking_suggestions": []
+}

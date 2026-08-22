@@ -1,0 +1,1715 @@
+{
+  "files_audited": 133,
+  "service_module_counts": {
+    "unmapped": 41,
+    "shared/legacy": 5,
+    "agents": 7,
+    "analytics": 4,
+    "rbac": 13,
+    "process-core": 17,
+    "canvas-engine": 11,
+    "shared/core": 9,
+    "notifications": 5,
+    "assets": 3,
+    "shared/models": 4,
+    "search": 6,
+    "shared/redis": 3,
+    "discussions": 1,
+    "shared/utils": 3,
+    "sessions": 1
+  },
+  "circular_imports": [
+    [
+      "_legacy_main",
+      "services.project_service"
+    ],
+    [
+      "_legacy_main",
+      "overlay_cache",
+      "tasks",
+      "services.session_service"
+    ],
+    [
+      "routers.sessions",
+      "save_services.property_save.property_save_service",
+      "_legacy_main"
+    ],
+    [
+      "overlay_cache",
+      "tasks",
+      "services.session_service"
+    ],
+    [
+      "services.project_service",
+      "_legacy_main"
+    ],
+    [
+      "services.session_service",
+      "_legacy_main",
+      "routers.sessions"
+    ],
+    [
+      "celery_app",
+      "save_services.analytics_aggregator.tasks"
+    ],
+    [
+      "tasks",
+      "overlay_cache"
+    ],
+    [
+      "services.session_service",
+      "_legacy_main"
+    ],
+    [
+      "tasks",
+      "services.session_service",
+      "overlay_cache"
+    ],
+    [
+      "services.session_service",
+      "overlay_cache",
+      "tasks"
+    ],
+    [
+      "routers.sessions",
+      "services.session_service",
+      "_legacy_main"
+    ],
+    [
+      "tasks",
+      "services.session_service",
+      "_legacy_main",
+      "celery_app"
+    ],
+    [
+      "save_services.property_save.property_save_service",
+      "_legacy_main",
+      "routers.sessions"
+    ],
+    [
+      "services.session_service",
+      "_legacy_main",
+      "celery_app",
+      "tasks"
+    ],
+    [
+      "services.session_service",
+      "_legacy_main",
+      "overlay_cache",
+      "tasks"
+    ],
+    [
+      "overlay_cache",
+      "tasks",
+      "services.session_service",
+      "_legacy_main"
+    ],
+    [
+      "_legacy_main",
+      "services.session_service"
+    ],
+    [
+      "tasks",
+      "celery_app"
+    ],
+    [
+      "_legacy_main",
+      "celery_app",
+      "tasks",
+      "services.session_service"
+    ],
+    [
+      "overlay_cache",
+      "tasks"
+    ],
+    [
+      "services.org_service",
+      "_legacy_main"
+    ],
+    [
+      "tasks",
+      "services.session_service",
+      "_legacy_main",
+      "overlay_cache"
+    ],
+    [
+      "services.org_service",
+      "_legacy_main",
+      "routers.org"
+    ],
+    [
+      "routers.org",
+      "services.org_service",
+      "_legacy_main"
+    ],
+    [
+      "_legacy_main",
+      "routers.sessions",
+      "services.session_service"
+    ],
+    [
+      "celery_app",
+      "tasks",
+      "services.session_service",
+      "_legacy_main"
+    ],
+    [
+      "celery_app",
+      "tasks"
+    ],
+    [
+      "_legacy_main",
+      "services.org_service"
+    ],
+    [
+      "_legacy_main",
+      "routers.org",
+      "services.org_service"
+    ],
+    [
+      "_legacy_main",
+      "routers.sessions",
+      "save_services.property_save.property_save_service"
+    ],
+    [
+      "save_services.analytics_aggregator.tasks",
+      "celery_app"
+    ]
+  ],
+  "tables": [
+    "admin_entity_permissions",
+    "ai_execution_log",
+    "ai_prompt_versions",
+    "analytics_metrics",
+    "analytics_project_snapshots",
+    "analytics_session_snapshots",
+    "analytics_workspace_snapshots",
+    "audit_log",
+    "bpmn_versions",
+    "containers",
+    "equipment",
+    "error_events",
+    "feature_flags",
+    "ingredients",
+    "note_comment_mentions",
+    "note_comments",
+    "note_thread_attention_acknowledgements",
+    "note_thread_reads",
+    "note_threads",
+    "org_invites",
+    "org_memberships",
+    "org_property_dictionary_defs",
+    "org_property_dictionary_operations",
+    "org_property_dictionary_values",
+    "orgs",
+    "process_property_metadata",
+    "project_memberships",
+    "projects",
+    "rag_chunks",
+    "rag_documents",
+    "rag_embeddings",
+    "rag_eval_cases",
+    "rag_feedback",
+    "rag_settings",
+    "rag_sources",
+    "session_presence",
+    "session_state_versions",
+    "sessions",
+    "storage_meta",
+    "template_folders",
+    "templates",
+    "users",
+    "workspace_folders",
+    "workspaces"
+  ],
+  "table_usage": {
+    "audit_log": [
+      "_legacy_main.py",
+      "services/org_service.py",
+      "storage.py"
+    ],
+    "equipment": [
+      "_legacy_main.py",
+      "ai/deepseek_client.py",
+      "ai/deepseek_questions.py",
+      "exporters/mermaid.py",
+      "glossary.py",
+      "models.py",
+      "normalizer.py",
+      "resources.py",
+      "routers/analytics.py",
+      "schemas/legacy_api.py",
+      "services/session_service.py",
+      "storage.py",
+      "validators/coverage.py",
+      "validators/disposition.py"
+    ],
+    "error_events": [
+      "_legacy_main.py",
+      "auto_pass_jobs.py",
+      "auto_pass_telemetry.py",
+      "routers/__init__.py",
+      "routers/admin.py",
+      "routers/auto_pass.py",
+      "routers/error_events.py",
+      "startup/middleware.py",
+      "storage.py"
+    ],
+    "org_invites": [
+      "_legacy_main.py",
+      "routers/__init__.py",
+      "services/auth_service.py",
+      "storage.py"
+    ],
+    "orgs": [
+      "_legacy_main.py",
+      "legacy/request_context.py",
+      "routers/admin.py",
+      "routers/org.py",
+      "routers/org_invites.py",
+      "routers/org_listing.py",
+      "routers/org_members.py",
+      "routers/org_property_dictionary.py",
+      "routers/reports.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py",
+      "services/auth_service.py",
+      "services/publish_git_mirror.py",
+      "storage.py",
+      "utils/authz.py",
+      "utils/response_builders.py"
+    ],
+    "projects": [
+      "_legacy_main.py",
+      "analytics_read_model.py",
+      "routers/__init__.py",
+      "routers/admin.py",
+      "routers/analytics.py",
+      "routers/explorer.py",
+      "routers/notes.py",
+      "routers/org.py",
+      "routers/process_properties_registry.py",
+      "routers/product_actions_registry.py",
+      "routers/project_analytics.py",
+      "routers/projects.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "services/analytics_authz.py",
+      "services/publish_git_mirror.py",
+      "storage.py",
+      "utils/authz.py"
+    ],
+    "sessions": [
+      "_legacy_main.py",
+      "ai/module_catalog.py",
+      "auto_pass_telemetry.py",
+      "redis_cache.py",
+      "routers/__init__.py",
+      "routers/_shared.py",
+      "routers/admin.py",
+      "routers/analytics.py",
+      "routers/auto_pass.py",
+      "routers/explorer.py",
+      "routers/notes.py",
+      "routers/org.py",
+      "routers/process_properties_registry.py",
+      "routers/product_actions_ai.py",
+      "routers/product_actions_registry.py",
+      "routers/project_analytics.py",
+      "routers/reports.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "save_services/property_save/property_save_api.py",
+      "save_services/status_service/status_api.py",
+      "schemas/analytics.py",
+      "services/analytics_authz.py",
+      "services/org_service.py",
+      "services/publish_git_mirror.py",
+      "services/session_service.py",
+      "session_status.py",
+      "startup/middleware.py",
+      "storage.py",
+      "tasks.py",
+      "utils/authz.py"
+    ],
+    "users": [
+      "_legacy_main.py",
+      "auth.py",
+      "routers/admin.py",
+      "routers/notes.py",
+      "routers/org_members.py",
+      "storage.py"
+    ],
+    "analytics_project_snapshots": [
+      "analytics_read_model.py",
+      "routers/analytics.py",
+      "storage.py"
+    ],
+    "analytics_session_snapshots": [
+      "analytics_read_model.py",
+      "routers/analytics.py",
+      "storage.py"
+    ],
+    "analytics_workspace_snapshots": [
+      "analytics_read_model.py",
+      "routers/analytics.py",
+      "storage.py"
+    ],
+    "rag_chunks": [
+      "rag/storage_rag.py",
+      "routers/admin.py",
+      "storage.py"
+    ],
+    "rag_documents": [
+      "rag/storage_rag.py",
+      "routers/admin.py",
+      "storage.py"
+    ],
+    "rag_sources": [
+      "rag/storage_rag.py",
+      "routers/admin.py",
+      "storage.py"
+    ],
+    "feature_flags": [
+      "routers/__init__.py",
+      "routers/feature_flags.py",
+      "storage.py"
+    ],
+    "templates": [
+      "routers/__init__.py",
+      "routers/templates.py",
+      "storage.py",
+      "utils/authz.py"
+    ],
+    "org_memberships": [
+      "routers/admin.py",
+      "services/analytics_authz.py",
+      "startup/middleware.py",
+      "storage.py"
+    ],
+    "rag_eval_cases": [
+      "routers/admin.py",
+      "storage.py"
+    ],
+    "rag_feedback": [
+      "routers/admin.py",
+      "storage.py"
+    ],
+    "rag_settings": [
+      "routers/admin.py",
+      "storage.py"
+    ],
+    "workspaces": [
+      "routers/admin.py",
+      "routers/explorer.py",
+      "routers/project_analytics.py",
+      "services/analytics_authz.py",
+      "services/publish_git_mirror.py",
+      "storage.py"
+    ],
+    "template_folders": [
+      "routers/templates.py",
+      "storage.py"
+    ],
+    "project_memberships": [
+      "services/analytics_authz.py",
+      "storage.py"
+    ]
+  },
+  "schemas": [
+    "Question",
+    "Node",
+    "Edge",
+    "ReportVersion",
+    "Session",
+    "Project",
+    "CreateProjectIn",
+    "UpdateProjectIn",
+    "User",
+    "RefreshTokenRecord",
+    "ErrorEventIn",
+    "ErrorEventStored",
+    "ClipboardCopyIn",
+    "ClipboardPasteIn",
+    "ClipboardContext",
+    "ClipboardMetadata",
+    "ClipboardElementBase",
+    "ClipboardTaskElement",
+    "ClipboardTaskPayload",
+    "ClipboardDiBounds",
+    "ClipboardDiWaypoint",
+    "ClipboardFragmentNode",
+    "ClipboardFragmentEdge",
+    "ClipboardFragment",
+    "ClipboardSubprocessPayload",
+    "ClipboardPreview",
+    "ClipboardCopyResponse",
+    "ClipboardReadResponse",
+    "ClipboardClearResponse",
+    "ClipboardPasteResponse",
+    "AuthLoginIn",
+    "AuthTokenOut",
+    "AuthMeOut",
+    "OrgCreateIn",
+    "OrgPatchIn",
+    "OrgGitMirrorPatchIn",
+    "ProjectMemberUpsertIn",
+    "ProjectMemberPatchIn",
+    "OrgMemberPatchIn",
+    "OrgInviteCreateIn",
+    "OrgInviteAcceptIn",
+    "InvitePreviewIn",
+    "InviteActivateIn",
+    "CreateSessionIn",
+    "UpdateSessionIn",
+    "SessionPresenceTouchIn",
+    "NotesIn",
+    "NotesExtractionPreviewIn",
+    "NotesExtractionApplyIn",
+    "AnswerIn",
+    "NodePatchIn",
+    "CreateNodeIn",
+    "CreateEdgeIn",
+    "GlossaryAddIn",
+    "LlmSettingsIn",
+    "LlmVerifyIn",
+    "AiQuestionsIn",
+    "SessionTitleQuestionsIn",
+    "BpmnXmlIn",
+    "BpmnMetaPatchIn",
+    "SessionMetaPatchIn",
+    "StatusPatchIn",
+    "InferRtiersIn",
+    "BpmnRestoreIn",
+    "CreatePathReportVersionIn",
+    "SubprocessNavigateOut",
+    "SubprocessReturnOut",
+    "AnalyticsDashboardKpiOut",
+    "AnalyticsDashboardTaskStatusesOut",
+    "AnalyticsDashboardTrendPointOut",
+    "AnalyticsDashboardSessionTrendOut",
+    "AnalyticsDashboardProcessDurationOut",
+    "AnalyticsDashboardActivityHeatmapOut",
+    "AnalyticsDashboardOut",
+    "AnalyticsPropertiesQuery",
+    "AnalyticsActionsQuery",
+    "RagIndexIn",
+    "ProductActionsRagIndexIn",
+    "ProcessPropertiesRegistryFilters",
+    "ProcessPropertiesRegistryQueryIn",
+    "CreateOrgBody",
+    "AssignOrgMemberBody",
+    "ProductActionsSuggestIn",
+    "ProductActionsBulkSuggestIn",
+    "BatchDraftIn",
+    "ProductActionsBatchSuggestIn",
+    "ProductActionsRegistryFilters",
+    "ProductActionsRegistryQueryIn",
+    "CreateNoteThreadBody",
+    "AddNoteCommentBody",
+    "PatchNoteCommentBody",
+    "PatchNoteThreadBody",
+    "SessionNoteAggregatesBody",
+    "TemplateCreateIn",
+    "TemplatePatchIn",
+    "TemplateFolderCreateIn",
+    "TemplateFolderPatchIn",
+    "AutoPassRunIn",
+    "WorkspaceOut",
+    "FolderItem",
+    "OwnerOut",
+    "ProjectItem",
+    "ContextFolder",
+    "ContextOut",
+    "BreadcrumbItem",
+    "ExplorerPage",
+    "SessionItem",
+    "ProjectPage",
+    "CreateFolderBody",
+    "RenameFolderBody",
+    "MoveFolderBody",
+    "MoveProjectBody",
+    "CreateProjectBody",
+    "CreateSessionBody",
+    "CreateWorkspaceBody",
+    "AdminUserPermissionSet",
+    "AdminUserMembershipIn",
+    "AdminUserCreateBody",
+    "AdminUserPatchBody",
+    "AdminAiPromptDraftBody",
+    "AdminAiProviderSettingsBody",
+    "AdminPermissionUpdate",
+    "AdminPermissionBulkItem",
+    "AdminPermissionBulkBody",
+    "OperationUpsertIn",
+    "DefinitionUpsertIn",
+    "ValueUpsertIn"
+  ],
+  "schema_usage": {
+    "Question": [
+      "_legacy_main.py",
+      "ai/deepseek_questions.py",
+      "models.py",
+      "resources.py",
+      "utils/legacy_normalization.py",
+      "validators/coverage.py",
+      "validators/disposition.py",
+      "validators/loss.py"
+    ],
+    "Node": [
+      "_legacy_main.py",
+      "ai/deepseek_questions.py",
+      "analytics.py",
+      "auto_pass_engine.py",
+      "clipboard/materializer.py",
+      "exporters/mermaid.py",
+      "models.py",
+      "normalizer.py",
+      "resources.py",
+      "routers/product_actions_ai.py",
+      "services/session_service.py",
+      "utils/legacy_normalization.py",
+      "validators/coverage.py",
+      "validators/disposition.py",
+      "validators/loss.py"
+    ],
+    "Edge": [
+      "_legacy_main.py",
+      "exporters/mermaid.py",
+      "models.py",
+      "resources.py",
+      "routers/product_actions_ai.py",
+      "services/session_service.py",
+      "utils/legacy_normalization.py"
+    ],
+    "ReportVersion": [
+      "_legacy_main.py",
+      "models.py"
+    ],
+    "Session": [
+      "_legacy_main.py",
+      "ai/deepseek_questions.py",
+      "analytics.py",
+      "clipboard/materializer.py",
+      "clipboard/serializer.py",
+      "exporters/yaml_export.py",
+      "models.py",
+      "repositories/session_repo.py",
+      "routers/auto_pass.py",
+      "routers/product_actions_ai.py",
+      "routers/rag.py",
+      "services/publish_git_mirror.py",
+      "services/session_service.py",
+      "storage.py",
+      "utils/authz.py"
+    ],
+    "Project": [
+      "_legacy_main.py",
+      "models.py",
+      "routers/explorer.py",
+      "services/org_service.py",
+      "services/project_service.py",
+      "storage.py"
+    ],
+    "CreateProjectIn": [
+      "_legacy_main.py",
+      "models.py",
+      "routers/org.py",
+      "routers/projects.py"
+    ],
+    "UpdateProjectIn": [
+      "_legacy_main.py",
+      "models.py",
+      "routers/org.py",
+      "routers/projects.py"
+    ],
+    "AuthLoginIn": [
+      "_legacy_main.py",
+      "routers/auth.py",
+      "schemas/legacy_api.py"
+    ],
+    "AuthTokenOut": [
+      "_legacy_main.py",
+      "routers/auth.py",
+      "schemas/legacy_api.py"
+    ],
+    "AuthMeOut": [
+      "_legacy_main.py",
+      "routers/auth.py",
+      "schemas/legacy_api.py"
+    ],
+    "OrgCreateIn": [
+      "_legacy_main.py",
+      "schemas/legacy_api.py"
+    ],
+    "OrgPatchIn": [
+      "_legacy_main.py",
+      "routers/org.py",
+      "schemas/legacy_api.py"
+    ],
+    "OrgGitMirrorPatchIn": [
+      "_legacy_main.py",
+      "routers/org.py",
+      "schemas/legacy_api.py"
+    ],
+    "ProjectMemberUpsertIn": [
+      "_legacy_main.py",
+      "routers/org.py",
+      "schemas/legacy_api.py"
+    ],
+    "ProjectMemberPatchIn": [
+      "_legacy_main.py",
+      "routers/org.py",
+      "schemas/legacy_api.py"
+    ],
+    "OrgMemberPatchIn": [
+      "_legacy_main.py",
+      "routers/org.py",
+      "schemas/legacy_api.py"
+    ],
+    "OrgInviteCreateIn": [
+      "_legacy_main.py",
+      "routers/org_invites.py",
+      "schemas/legacy_api.py"
+    ],
+    "OrgInviteAcceptIn": [
+      "_legacy_main.py",
+      "routers/org_invites.py",
+      "schemas/legacy_api.py"
+    ],
+    "InvitePreviewIn": [
+      "_legacy_main.py",
+      "routers/auth.py",
+      "schemas/legacy_api.py"
+    ],
+    "InviteActivateIn": [
+      "_legacy_main.py",
+      "routers/auth.py",
+      "schemas/legacy_api.py"
+    ],
+    "CreateSessionIn": [
+      "_legacy_main.py",
+      "routers/org.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "UpdateSessionIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "SessionPresenceTouchIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "NotesIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "NotesExtractionPreviewIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "NotesExtractionApplyIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "AnswerIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "NodePatchIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "CreateNodeIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "CreateEdgeIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "GlossaryAddIn": [
+      "_legacy_main.py",
+      "schemas/legacy_api.py"
+    ],
+    "LlmSettingsIn": [
+      "_legacy_main.py",
+      "schemas/legacy_api.py"
+    ],
+    "LlmVerifyIn": [
+      "_legacy_main.py",
+      "schemas/legacy_api.py"
+    ],
+    "AiQuestionsIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "SessionTitleQuestionsIn": [
+      "_legacy_main.py",
+      "schemas/legacy_api.py"
+    ],
+    "BpmnXmlIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "BpmnMetaPatchIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "InferRtiersIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "BpmnRestoreIn": [
+      "_legacy_main.py",
+      "routers/sessions.py",
+      "routers/sessions_new.py",
+      "schemas/legacy_api.py"
+    ],
+    "CreatePathReportVersionIn": [
+      "_legacy_main.py",
+      "schemas/legacy_api.py"
+    ],
+    "ClipboardTaskElement": [
+      "clipboard/materializer.py",
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardTaskPayload": [
+      "clipboard/materializer.py",
+      "clipboard/models.py",
+      "clipboard/serializer.py",
+      "clipboard/service.py"
+    ],
+    "ClipboardFragmentNode": [
+      "clipboard/materializer.py",
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardFragmentEdge": [
+      "clipboard/materializer.py",
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardSubprocessPayload": [
+      "clipboard/materializer.py",
+      "clipboard/models.py",
+      "clipboard/serializer.py",
+      "clipboard/service.py"
+    ],
+    "ClipboardPasteResponse": [
+      "clipboard/materializer.py",
+      "clipboard/models.py",
+      "clipboard/service.py"
+    ],
+    "ClipboardContext": [
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardMetadata": [
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardDiBounds": [
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardDiWaypoint": [
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardFragment": [
+      "clipboard/models.py",
+      "clipboard/serializer.py"
+    ],
+    "ClipboardPreview": [
+      "clipboard/models.py",
+      "clipboard/service.py"
+    ],
+    "ClipboardCopyResponse": [
+      "clipboard/models.py",
+      "clipboard/service.py"
+    ],
+    "ClipboardReadResponse": [
+      "clipboard/models.py",
+      "clipboard/service.py"
+    ],
+    "ClipboardClearResponse": [
+      "clipboard/models.py",
+      "clipboard/service.py"
+    ],
+    "ErrorEventIn": [
+      "error_events/__init__.py",
+      "error_events/schema.py",
+      "routers/error_events.py"
+    ],
+    "ErrorEventStored": [
+      "error_events/__init__.py",
+      "error_events/background.py",
+      "error_events/domain.py",
+      "error_events/schema.py"
+    ],
+    "User": [
+      "models.py",
+      "routers/explorer.py"
+    ],
+    "AnalyticsDashboardOut": [
+      "routers/analytics.py",
+      "schemas/analytics.py"
+    ],
+    "AnalyticsPropertiesQuery": [
+      "routers/analytics.py",
+      "schemas/analytics.py"
+    ],
+    "AnalyticsActionsQuery": [
+      "routers/analytics.py",
+      "schemas/analytics.py"
+    ],
+    "SessionMetaPatchIn": [
+      "routers/sessions.py",
+      "save_services/property_save/property_save_api.py",
+      "schemas/legacy_api.py"
+    ],
+    "SubprocessNavigateOut": [
+      "routers/sessions.py",
+      "schemas/legacy_api.py"
+    ],
+    "SubprocessReturnOut": [
+      "routers/sessions.py",
+      "schemas/legacy_api.py"
+    ],
+    "StatusPatchIn": [
+      "save_services/status_service/status_api.py",
+      "schemas/legacy_api.py"
+    ]
+  },
+  "event_markers": {
+    "redis_client": [
+      "_legacy_main.py",
+      "auto_pass_jobs.py",
+      "redis_cache.py",
+      "redis_client.py",
+      "redis_lock.py",
+      "routers/admin.py",
+      "routers/auto_pass.py",
+      "routers/feature_flags.py",
+      "startup/boot_checks.py"
+    ],
+    "redis_cache": [
+      "_legacy_main.py",
+      "analytics_cache.py",
+      "cache/session_cache.py",
+      "clipboard/redis_store.py",
+      "redis_cache.py",
+      "routers/explorer.py",
+      "routers/templates.py",
+      "services/org_service.py",
+      "services/project_service.py",
+      "services/session_service.py",
+      "tasks.py"
+    ],
+    "redis_lock": [
+      "_legacy_main.py",
+      "clipboard/materializer.py",
+      "redis_lock.py",
+      "routers/auto_pass.py"
+    ],
+    "background": [
+      "_legacy_main.py",
+      "auto_pass_jobs.py",
+      "error_events/background.py",
+      "error_events/schema.py",
+      "routers/auto_pass.py"
+    ],
+    "event": [
+      "_legacy_main.py",
+      "ai/deepseek_questions.py",
+      "auto_pass_engine.py",
+      "error_events/schema.py",
+      "exporters/bpmn.py",
+      "routers/analytics.py",
+      "routers/process_properties_registry.py",
+      "rtiers.py",
+      "save_services/analytics_aggregator/__init__.py",
+      "services/bpmn_navigation.py"
+    ],
+    "enqueue": [
+      "auto_pass_jobs.py",
+      "save_services/analytics_aggregator/publisher.py"
+    ],
+    "publish": [
+      "services/publish_git_mirror.py"
+    ]
+  },
+  "matrix": {
+    "shared/legacy": {
+      "rbac": {
+        "import": [
+          "_legacy_main.py -> auth",
+          "_legacy_main.py -> routers.auth",
+          "_legacy_main.py -> routers.org",
+          "_legacy_main.py -> services.auth_service",
+          "_legacy_main.py -> services.org_invites",
+          "_legacy_main.py -> services.org_service",
+          "_legacy_main.py -> services.org_workspace",
+          "_legacy_main.py -> utils.auth_helpers",
+          "legacy/request_context.py -> auth"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/redis": {
+        "import": [
+          "_legacy_main.py -> redis_cache",
+          "_legacy_main.py -> redis_client",
+          "_legacy_main.py -> redis_lock"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "unmapped": {
+        "import": [
+          "_legacy_main.py -> analytics_cache",
+          "_legacy_main.py -> analytics_read_model",
+          "_legacy_main.py -> cache.session_cache",
+          "_legacy_main.py -> camunda_meta_utils",
+          "_legacy_main.py -> celery_app",
+          "_legacy_main.py -> metrics",
+          "_legacy_main.py -> overlay_cache",
+          "_legacy_main.py -> services.project_service",
+          "_legacy_main.py -> services.publish_git_mirror",
+          "_legacy_main.py -> services.runtime_meta"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "process-core": {
+        "import": [
+          "_legacy_main.py -> auto_pass_telemetry",
+          "_legacy_main.py -> exporters.yaml_export",
+          "_legacy_main.py -> glossary",
+          "_legacy_main.py -> normalizer",
+          "_legacy_main.py -> resources",
+          "_legacy_main.py -> routers.sessions",
+          "_legacy_main.py -> rtiers",
+          "_legacy_main.py -> services.bpmn_navigation",
+          "_legacy_main.py -> services.session_service",
+          "_legacy_main.py -> session_status",
+          "_legacy_main.py -> validators.coverage",
+          "_legacy_main.py -> validators.disposition",
+          "_legacy_main.py -> validators.loss"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "agents": {
+        "import": [
+          "_legacy_main.py -> ai.deepseek_client",
+          "_legacy_main.py -> ai.deepseek_questions",
+          "_legacy_main.py -> ai.execution_log",
+          "_legacy_main.py -> ai.prompt_registry"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/models": {
+        "import": [
+          "_legacy_main.py -> models",
+          "_legacy_main.py -> schemas.legacy_api"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "assets": {
+        "import": [
+          "_legacy_main.py -> storage",
+          "legacy/request_context.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "canvas-engine": {
+        "import": [
+          "_legacy_main.py -> exporters.bpmn",
+          "_legacy_main.py -> exporters.mermaid"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/core": {
+        "import": [
+          "_legacy_main.py -> settings",
+          "_legacy_main.py -> startup.static_mounts"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "notifications": {
+        "import": [
+          "_legacy_main.py -> error_events.background",
+          "_legacy_main.py -> error_events.domain"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/utils": {
+        "import": [
+          "_legacy_main.py -> utils.legacy_normalization",
+          "_legacy_main.py -> utils.response_builders"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "analytics": {
+        "import": [
+          "_legacy_main.py -> analytics"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "agents": {
+      "shared/models": {
+        "import": [
+          "ai/deepseek_questions.py -> models",
+          "routers/product_actions_ai.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "assets": {
+        "import": [
+          "ai/execution_log.py -> storage",
+          "ai/prompt_registry.py -> storage",
+          "routers/product_actions_ai.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/core": {
+        "import": [
+          "ai/module_catalog.py -> settings",
+          "routers/product_actions_ai.py -> settings"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/product_actions_ai.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/product_actions_ai.py -> services.org_workspace"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "analytics": {
+      "shared/models": {
+        "import": [
+          "analytics.py -> models",
+          "routers/analytics.py -> schemas.analytics"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "assets": {
+        "import": [
+          "routers/analytics.py -> storage",
+          "routers/project_analytics.py -> storage",
+          "services/analytics_authz.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/analytics.py -> legacy.request_context",
+          "routers/project_analytics.py -> _legacy_main",
+          "services/analytics_authz.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "unmapped": {
+        "import": [
+          "routers/analytics.py -> analytics_cache",
+          "routers/analytics.py -> analytics_read_model",
+          "routers/analytics.py -> routers.product_actions_registry"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "process-core": {
+        "import": [
+          "routers/analytics.py -> routers.process_properties_registry"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/project_analytics.py -> utils.authz"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "unmapped": {
+      "shared/redis": {
+        "import": [
+          "analytics_cache.py -> redis_cache",
+          "cache/session_cache.py -> redis_cache",
+          "routers/admin.py -> redis_client",
+          "routers/auto_pass.py -> redis_client",
+          "routers/auto_pass.py -> redis_lock",
+          "routers/explorer.py -> redis_cache",
+          "routers/feature_flags.py -> redis_client",
+          "services/project_service.py -> redis_cache",
+          "tasks.py -> redis_cache"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "analytics": {
+        "import": [
+          "analytics_read_model.py -> analytics",
+          "routers/__init__.py -> analytics"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "assets": {
+        "import": [
+          "analytics_read_model.py -> storage",
+          "repositories/org_repo.py -> storage",
+          "repositories/project_repo.py -> storage",
+          "repositories/session_repo.py -> storage",
+          "routers/admin.py -> storage",
+          "routers/auto_pass.py -> storage",
+          "routers/explorer.py -> storage",
+          "routers/feature_flags.py -> storage",
+          "routers/product_actions_registry.py -> storage",
+          "routers/reference_resolver.py -> storage",
+          "save_services/property_save/property_save_service.py -> storage",
+          "save_services/status_service/status_service.py -> storage",
+          "services/project_service.py -> storage",
+          "services/publish_git_mirror.py -> storage",
+          "tasks.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/models": {
+        "import": [
+          "repositories/session_repo.py -> models",
+          "routers/projects.py -> models",
+          "save_services/property_save/property_save_api.py -> schemas.legacy_api",
+          "save_services/status_service/status_api.py -> schemas.legacy_api",
+          "services/project_service.py -> models",
+          "services/publish_git_mirror.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/_shared.py -> legacy.route_registry",
+          "routers/admin.py -> _legacy_main",
+          "routers/auto_pass.py -> _legacy_main",
+          "routers/explorer.py -> legacy.request_context",
+          "routers/feature_flags.py -> legacy.request_context",
+          "routers/product_actions_registry.py -> legacy.request_context",
+          "routers/reference_resolver.py -> legacy.request_context",
+          "save_services/property_save/property_save_service.py -> _legacy_main",
+          "save_services/property_save/property_save_service.py -> legacy.request_context",
+          "save_services/status_service/status_service.py -> _legacy_main",
+          "save_services/status_service/status_service.py -> legacy.request_context",
+          "services/project_service.py -> _legacy_main",
+          "services/project_service.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "agents": {
+        "import": [
+          "routers/admin.py -> ai.execution_log",
+          "routers/admin.py -> ai.module_catalog",
+          "routers/admin.py -> ai.prompt_registry"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/core": {
+        "import": [
+          "routers/admin.py -> settings"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "process-core": {
+        "import": [
+          "routers/admin.py -> auto_pass_jobs",
+          "routers/auto_pass.py -> auto_pass_engine",
+          "routers/auto_pass.py -> auto_pass_jobs",
+          "routers/auto_pass.py -> auto_pass_telemetry",
+          "save_services/status_service/status_service.py -> session_status",
+          "tasks.py -> services.session_service"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/admin.py -> auth",
+          "routers/admin.py -> utils.authz",
+          "routers/auto_pass.py -> services.org_workspace",
+          "routers/explorer.py -> auth",
+          "routers/explorer.py -> services.org_workspace",
+          "routers/product_actions_registry.py -> services.org_workspace",
+          "routers/reference_resolver.py -> services.org_workspace",
+          "save_services/property_save/property_save_service.py -> services.org_workspace",
+          "save_services/status_service/status_service.py -> services.org_workspace",
+          "services/project_service.py -> services.org_workspace",
+          "services/project_service.py -> utils.authz"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "sessions": {
+        "import": [
+          "save_services/property_save/property_save_service.py -> utils.session_helpers"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "canvas-engine": {
+        "import": [
+          "services/publish_git_mirror.py -> exporters.bpmn"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "rbac": {
+      "assets": {
+        "import": [
+          "auth.py -> storage",
+          "routers/org_listing.py -> storage",
+          "routers/org_property_dictionary.py -> storage",
+          "services/auth_service.py -> storage",
+          "services/org_service.py -> storage",
+          "services/org_workspace.py -> storage",
+          "utils/authz.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/auth.py -> legacy.request_context",
+          "routers/org_listing.py -> legacy.request_context",
+          "services/org_invites.py -> legacy.request_context",
+          "services/org_service.py -> _legacy_main",
+          "services/org_service.py -> legacy.request_context",
+          "services/org_workspace.py -> legacy.request_context",
+          "utils/authz.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/models": {
+        "import": [
+          "routers/auth.py -> schemas.legacy_api",
+          "routers/org.py -> models",
+          "routers/org.py -> schemas.legacy_api",
+          "routers/org_invites.py -> schemas.legacy_api",
+          "utils/authz.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/utils": {
+        "import": [
+          "services/auth_service.py -> utils.response_builders",
+          "services/org_workspace.py -> utils.response_builders"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/redis": {
+        "import": [
+          "services/org_service.py -> redis_cache"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "unmapped": {
+        "import": [
+          "services/org_service.py -> repositories.org_repo",
+          "services/org_service.py -> repositories.project_repo"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "process-core": {
+      "notifications": {
+        "import": [
+          "auto_pass_jobs.py -> error_events.background",
+          "auto_pass_telemetry.py -> error_events.domain"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/redis": {
+        "import": [
+          "auto_pass_jobs.py -> redis_client",
+          "services/session_service.py -> redis_cache"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "assets": {
+        "import": [
+          "auto_pass_telemetry.py -> storage",
+          "routers/process_properties_registry.py -> storage",
+          "services/session_service.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/models": {
+        "import": [
+          "exporters/yaml_export.py -> models",
+          "normalizer.py -> models",
+          "resources.py -> models",
+          "routers/sessions.py -> schemas.legacy_api",
+          "routers/sessions_new.py -> schemas.legacy_api",
+          "services/session_service.py -> models",
+          "validators/coverage.py -> models",
+          "validators/disposition.py -> models",
+          "validators/loss.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/process_properties_registry.py -> legacy.request_context",
+          "services/session_service.py -> _legacy_main",
+          "services/session_service.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/process_properties_registry.py -> services.org_workspace",
+          "services/session_service.py -> utils.authz"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "unmapped": {
+        "import": [
+          "routers/sessions.py -> save_services.property_save.property_save_service",
+          "services/session_service.py -> analytics_read_model",
+          "services/session_service.py -> cache.session_cache",
+          "services/session_service.py -> overlay_cache",
+          "services/session_service.py -> repositories.session_repo"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "sessions": {
+        "import": [
+          "services/session_service.py -> utils.session_helpers"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "canvas-engine": {
+      "shared/legacy": {
+        "import": [
+          "clipboard/api.py -> _legacy_main",
+          "clipboard/materializer.py -> _legacy_main",
+          "clipboard/service.py -> _legacy_main",
+          "clipboard/service.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/redis": {
+        "import": [
+          "clipboard/materializer.py -> redis_lock",
+          "clipboard/redis_store.py -> redis_cache"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/models": {
+        "import": [
+          "clipboard/materializer.py -> models",
+          "clipboard/redis_store.py -> models",
+          "clipboard/serializer.py -> models",
+          "clipboard/service.py -> models",
+          "exporters/mermaid.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "notifications": {
+      "assets": {
+        "import": [
+          "error_events/background.py -> storage",
+          "error_events/domain.py -> storage",
+          "routers/error_events.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "search": {
+      "assets": {
+        "import": [
+          "rag/storage_rag.py -> storage",
+          "routers/rag.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/rag.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/rag.py -> services.org_workspace"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "discussions": {
+      "assets": {
+        "import": [
+          "routers/notes.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/notes.py -> auth",
+          "routers/notes.py -> services.org_workspace"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/notes.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "assets": {
+      "shared/redis": {
+        "import": [
+          "routers/templates.py -> redis_cache"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "rbac": {
+        "import": [
+          "routers/templates.py -> utils.authz"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "routers/templates.py -> _legacy_main"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "process-core": {
+        "import": [
+          "storage.py -> services.bpmn_navigation"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/models": {
+        "import": [
+          "storage.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "shared/core": {
+      "rbac": {
+        "import": [
+          "startup/app_factory.py -> auth",
+          "startup/middleware.py -> auth"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/legacy": {
+        "import": [
+          "startup/app_factory.py -> _legacy_main",
+          "startup/middleware.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "shared/redis": {
+        "import": [
+          "startup/boot_checks.py -> redis_client"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      },
+      "assets": {
+        "import": [
+          "startup/boot_checks.py -> storage",
+          "startup/middleware.py -> storage"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "shared/utils": {
+      "shared/models": {
+        "import": [
+          "utils/legacy_normalization.py -> models"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    },
+    "sessions": {
+      "shared/legacy": {
+        "import": [
+          "utils/session_helpers.py -> legacy.request_context"
+        ],
+        "shared_db": [],
+        "shared_model": [],
+        "event": []
+      }
+    }
+  }
+}

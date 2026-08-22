@@ -1,0 +1,61 @@
+{
+  "tag": "notes",
+  "targets": 2,
+  "passed": 2,
+  "needs_human": 0,
+  "usage": {
+    "calls": 3,
+    "model": "deepseek-v4-flash",
+    "prompt_tokens": 11304,
+    "completion_tokens": 17575
+  },
+  "duration_sec": 717.7,
+  "results": [
+    {
+      "operation_id": "get_folder_note_aggregate_api_folders__folder_id__note_aggregate_get",
+      "method": "GET",
+      "path": "/api/folders/{folder_id}/note-aggregate",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "passed",
+      "iterations": 1,
+      "file": "tests/llm_generated/test_get_folder_note_aggregate_api_folders__folder_id__note_aggregate_get.py",
+      "gate_history": [
+        {
+          "iteration": 1,
+          "ok": true,
+          "gate": "",
+          "reason": ""
+        }
+      ]
+    },
+    {
+      "operation_id": "list_session_mentionable_users_api_sessions__session_id__mentionable_users_get",
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/mentionable-users",
+      "tags": [
+        "notes",
+        "notes"
+      ],
+      "status": "passed",
+      "iterations": 2,
+      "file": "tests/llm_generated/test_list_session_mentionable_users_api_sessions__session_id__mentionable_users_get.py",
+      "gate_history": [
+        {
+          "iteration": 1,
+          "ok": false,
+          "gate": "pytest",
+          "reason": "    def test_list_session_mentionable_users_invalid_session_id_returns_422():\n        user = create_user(\"llm_gen_mentionable_422@local\", \"password\")\n        uid = str(user[\"id\"])\n        org_id = \"org_llm_gen_mentionable_422\"\n        create_org_record(\"Mentionable Org 422\", created_by=uid, org_id=org_id)\n        upsert_org_membership(org_id, uid, \"owner\")\n        headers = {\"Authorization\": f\"Bearer {create_access_token(uid)}\"}\n    \n        client = TestClient(app)\n        response = client.get(\n            \"/api/sessions/not-a-uuid/mentionable-users\",\n            headers=headers,\n        )\n    \n>       assert response.status_code == 422\nE       assert 404 == 422\nE        +  where 404 = <Response [404 Not Found]>.status_code\n\ntests/llm_generated/test_list_session_mentionable_users_api_sessions__session_id__mentionable_users_get.py:63: AssertionError\n=============================== warnings summary ===============================\n.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:151\n  /root/processmap_v1_worktrees/llm-test-generator/backend/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:151: UserWarning: Field \"model_class\" has conflict with protected namespace \"model_\".\n  \n  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.\n    warnings.warn(\n\n.venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:272\n.venv/lib/python3.12/site-packages/pydantic/_internal/_config.py:272\n.venv/lib/python3."
+        },
+        {
+          "iteration": 2,
+          "ok": true,
+          "gate": "",
+          "reason": ""
+        }
+      ]
+    }
+  ]
+}

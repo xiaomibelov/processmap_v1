@@ -1,0 +1,37 @@
+{
+  "contour": "fix/subprocess-navigate-owner-scope",
+  "type": "fix",
+  "status": "EXECUTED_LOCAL",
+  "created_at": "2026-08-20",
+  "executed_at": "2026-08-20",
+  "branch": "fix/subprocess-navigate-owner-scope",
+  "worktree": "p0-work-worktrees/fix-subprocess-navigate-owner-scope",
+  "head": "1f707f83 (docs-коммит артефактов); code HEAD = 8b87b96fd786e8b95ec4d98340d882c71b816469",
+  "base": "origin/main = 06f519d5",
+  "commits": [
+    "7863b42c test(subprocess): RED regression tests for owner-scope sync + telemetry fields",
+    "903df9c2 fix(subprocess): sync child sessions under owner scope; enrich backend exception telemetry",
+    "8b87b96f fix(telemetry): keep no-leak contract in exception events",
+    "docs(planning): contour artifacts (последний коммит ветки, HEAD)"
+  ],
+  "dependency": {
+    "fix/subprocess-preserve-di-on-sync": "MERGED (PR #762, merge 4d7550df)"
+  },
+  "rag_preflight": {
+    "status": "failed",
+    "detail": "localhost:8011 → invalid_user; контекст прочитан вручную"
+  },
+  "tests": {
+    "runner": "cd backend && python -m pytest tests -q -p no:cacheprovider (venv p0-work-worktrees/feat-endpoint-regression-scanner/.venv, py3.11)",
+    "red": "7 failed / 2 passed на origin/main-коде; PermissionError из storage.py:4503 подтверждён",
+    "green_new": "9 passed (test_subprocess_navigate_owner_scope.py)",
+    "full_fix_head": "41 failed, 1188 passed (34:16) — все падения pre-existing/flaky",
+    "full_baseline_origin_main": "40 failed, 1180 passed (40:13)",
+    "delta": "0 устойчивых новых падений; telemetry-регрессия устранена коммитом 8b87b96f"
+  },
+  "deviations": [
+    "PLAN §2.4: exception_message не добавлен — конфликт с no-leak контрактом test_backend_exception_telemetry; оставлены os_errno/os_filename/os_filename2"
+  ],
+  "artifacts": ["PLAN.md", "EXEC_REPORT.md", "PR.md", "STATE.json"],
+  "next": "push + PR — после approve; merge/deploy — только по явному решению"
+}

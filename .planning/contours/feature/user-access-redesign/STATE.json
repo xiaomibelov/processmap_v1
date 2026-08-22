@@ -1,0 +1,28 @@
+{
+  "contour_id": "feature/user-access-redesign",
+  "contour_type": "feature",
+  "branch": "feature/user-access-redesign",
+  "baseline": "origin/main @ f3a1eaa0f2cd7db93bba771f7461b5e527b26648",
+  "role": "executor",
+  "status": "implemented",
+  "artifacts": [
+    "PLAN.md",
+    "UI.md",
+    "API.md",
+    "TESTS.md",
+    "PR.md",
+    "STATE.json",
+    "RAG_PREFLIGHT_PLANNER.md"
+  ],
+  "gates": {
+    "rag_preflight": true,
+    "source_runtime_truth": true,
+    "bounded_scope": true,
+    "acceptance_criteria": true,
+    "no_product_code_by_planner": true,
+    "no_merge_deploy_pr_without_approval": true
+  },
+  "next_role": "reviewer",
+  "next_action": "Review implementation: backend permissions storage/API, frontend drawer/table/filters/permission matrix, tests, build.",
+  "notes": "Backend permissions_json column and API are in place. AdminUsersPanel redesigned with Drawer, Table, Filters, PermissionMatrix, AvatarInitials, useUserAccessForm and userAccessUtils. Frontend node tests and build pass; backend regression tests pass."
+}

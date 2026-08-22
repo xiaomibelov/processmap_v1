@@ -1,0 +1,85 @@
+{
+  "contour_id": "stage7/test-maxtime-1781307868",
+  "created_at": "2026-06-12T23:44:28Z",
+  "updated_at": "2026-06-12T23:44:31Z",
+  "state": "ready_for_execution",
+  "base_truth": "origin/main",
+  "control_plane": ".planning/contours/stage7/test-maxtime-1781307868",
+  "source_truth": {
+    "pwd": "/opt/processmap-test",
+    "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+    "branch_at_planning": "test/versioning-edge-cases",
+    "head": "48f2950b8e2049797489f83c96b4af05b4323b1a",
+    "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882",
+    "merge_base": "e1143c14f901882c12dc550f71bfd6757d60b882",
+    "status": "clean except pre-existing unrelated untracked files",
+    "dirty_files": [],
+    "untracked_files": [
+      ".planning/contours/stage1/",
+      ".planning/contours/stage2/",
+      ".planning/contours/stage3/",
+      ".planning/contours/stage4/",
+      ".planning/contours/stage5/",
+      ".planning/contours/stage6/",
+      ".worktrees/",
+      "bin/processmap-iterm-agents.sh",
+      "docker-compose.n8n.yml",
+      "file",
+      "scripts/cleanup-rag-index.sh"
+    ]
+  },
+  "roles": {
+    "planner": {
+      "writes": [
+        "STATE.json",
+        "PLAN.md",
+        "WORKER_PROMPT.md",
+        "REVIEWER_PROMPT.md",
+        "READY_FOR_EXECUTION"
+      ]
+    },
+    "executor": {
+      "reads": [
+        "PLAN.md",
+        "WORKER_PROMPT.md"
+      ],
+      "writes": [
+        "EXECUTION_STARTED",
+        "EXEC_REPORT.md",
+        "READY_FOR_REVIEW"
+      ]
+    },
+    "reviewer": {
+      "reads": [
+        "PLAN.md",
+        "EXEC_REPORT.md",
+        "REVIEWER_PROMPT.md",
+        "git diff",
+        "test output"
+      ],
+      "writes": [
+        "REVIEW_REPORT.md",
+        "REVIEW_PASS or CHANGES_REQUESTED"
+      ]
+    }
+  },
+  "markers": {
+    "ready_for_execution": true,
+    "execution_started": false,
+    "ready_for_review": false,
+    "review_pass": false,
+    "changes_requested": false,
+    "closed": false
+  },
+  "scope_guard": {
+    "product_code_allowed": true,
+    "allowed_files": [
+      "tools/agent-ui/lib/checkTotalTime.js",
+      "tools/agent-ui/lib/checkTotalTime.test.js",
+      "tools/agent-ui/server.js"
+    ],
+    "bpmn_xml_allowed": false,
+    "schema_allowed": false,
+    "deploy_allowed": false
+  }
+}

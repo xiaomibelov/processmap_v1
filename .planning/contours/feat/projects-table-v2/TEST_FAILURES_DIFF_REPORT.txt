@@ -1,0 +1,6 @@
+origin/main failures: 62 lines (ПОЛНЫЙ frontend suite, node --test src/)
+branch failures: 62 lines
+diff result: IDENTICAL (IDENTICAL_FAILURE_SETS — все падения pre-existing на origin/main)
+Note: 62 — это множество падений ПОЛНОГО фронтенд-сьюта. Explorer-подмножество
+(node --test src/features/explorer/, 112 тестов) имеет 111 pass / 1 fail; этот 1 fail
+(pre-existing source-тест SessionRow) входит в те же 62 — цифры сопоставимы.
