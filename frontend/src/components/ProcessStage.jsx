@@ -54,6 +54,7 @@ import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
 import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanErrorBoundary";
 import { isLlmNotConfigured } from "../features/process/processman/processmanView";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
+import { getDict } from "../shared/i18n/index.js";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
 import {
@@ -4610,6 +4611,68 @@ function ProcessStage({
     }
     refreshDiagramUndoRedoState();
   }, [refreshDiagramUndoRedoState, setGenErr]);
+
+  const handleAlignDiagram = useCallback(async () => {
+    if (!hasSession || !isBpmnTab) return;
+    const result = await Promise.resolve(bpmnRef.current?.alignDiagram?.());
+    if (!result || result.ok === false) {
+      setGenErr(shortErr(result?.error || getDict().diagram?.alignFailed || "Не удалось выровнять схему."));
+      return;
+    }
+    const xml = String(result?.xml || "");
+    if (xml) {
+      onSessionSync?.({
+        id: sid,
+        session_id: sid,
+        bpmn_xml: xml,
+        _sync_source: "canvas_align",
+      });
+    }
+  }, [bpmnRef, hasSession, isBpmnTab, onSessionSync, setGenErr, sid]);
+
+  const handleResetCanvas = useCallback(() => {
+    if (!hasSession || !isBpmnTab) return;
+    const confirmed = window.confirm(getDict().diagram?.resetCanvasConfirm || "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.");
+    if (!confirmed) return;
+
+    const result = bpmnRef.current?.resetCanvas?.();
+    if (result && result.ok === false) {
+      setGenErr(shortErr(result.error || getDict().diagram?.resetFailed || "Не удалось сбросить схему."));
+      return;
+    }
+
+    sessionWorkspaceTruthOwnerRef.current = null;
+    sessionWorkspaceTruthOwnerSidRef.current = "";
+    diagramStateVersionSidRef.current = "";
+    diagramStateVersionRef.current = 0;
+
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(`fpc_bpmn_xml_${sid}`);
+        window.localStorage.removeItem(`fpc_bpmn_runtime_cache:${sid}`);
+        const pid = String(draft?.project_id || draft?.projectId || "").trim();
+        if (pid) {
+          window.localStorage.removeItem(`fpc_bpmn_snapshots:snapshots:${pid}:${sid}`);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    onSessionSync?.({
+      id: sid,
+      session_id: sid,
+      bpmn_xml: "",
+      bpmn_xml_version: 0,
+      version: 0,
+      diagram_state_version: 0,
+      nodes: [],
+      edges: [],
+      _sync_source: "canvas_reset",
+      _force_reset: true,
+    });
+  }, [bpmnRef, draft?.projectId, draft?.project_id, hasSession, isBpmnTab, onSessionSync, setGenErr, sid]);
+
   const aiGenerateGate = useMemo(
     () => getAiGenerateGate({
       hasSession,
@@ -7204,8 +7267,6 @@ function ProcessStage({
 
   const {
     openImportDialog,
-    runToolbarReset,
-    runToolbarClear,
     toggleAiBottlenecks,
     exportBpmn,
     exportSessionZip,
@@ -7392,8 +7453,6 @@ function ProcessStage({
     runAiCommand,
     commandStatus,
     commandHistory,
-    runToolbarReset,
-    runToolbarClear,
     openTemplatesPicker,
     openCreateTemplateModal,
     canCreateTemplateFromSelection,
@@ -8078,6 +8137,8 @@ function ProcessStage({
                     processmanOpen,
                     onToggleProcessman: toggleProcessman,
                     processmanNoKey: isLlmNotConfigured(processmanLlmStatus),
+                    onAlignDiagram: handleAlignDiagram,
+                    onResetCanvas: handleResetCanvas,
                   })}
                   />
                 ) : null}

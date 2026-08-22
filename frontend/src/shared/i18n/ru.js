@@ -888,8 +888,7 @@ export const ru = {
     laterTitle: "Скрыть на 30 минут",
     iconAria: "Доступно обновление",
   },
-  topbar: {
-    inactiveOrgLabel: "отключена",
+
   },
 };
 

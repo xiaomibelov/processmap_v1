@@ -301,6 +301,8 @@ const OVERFLOW_MODES_KEYS = [
   "insertBetweenBusy",
   "canInsertBetween",
   "insertBetweenErrorMessage",
+  "onAlignDiagram",
+  "onResetCanvas",
 ];
 
 export function buildDiagramTopbarSectionView(view = {}) {
