@@ -1,0 +1,62 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--pm-tobe-fg, #0f172a);
+  font-family: var(--pm-tobe-font-body, 'Fira Sans', system-ui, sans-serif);
+}
+
+.icon {
+  color: var(--pm-tobe-danger, #dc2626);
+  flex: 0 0 auto;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pm-tobe-fg, #0f172a);
+}
+
+.message {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pm-tobe-muted-fg, #64748b);
+  max-width: 420px;
+}
+
+.retry {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--pm-tobe-border, #e4e7eb);
+  background: var(--pm-tobe-surface, #ffffff);
+  color: var(--pm-tobe-fg, #0f172a);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.retry:hover {
+  background: var(--pm-tobe-muted, #f1f3f5);
+}
+
+.retry:focus-visible {
+  outline: 2px solid var(--pm-tobe-primary, #1e3a5f);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retry {
+    transition: none;
+  }
+}
