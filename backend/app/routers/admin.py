@@ -34,11 +34,14 @@ from ..storage import (
     count_error_events,
     delete_org_membership,
     delete_admin_entity_permission,
+    get_agent_conversation,
     get_error_event,
     get_project_storage,
     get_storage,
     get_user_org_role,
     list_admin_entity_permissions,
+    list_agent_conversation_turns,
+    list_agent_conversations,
     list_audit_log,
     list_error_events,
     list_org_groups,
@@ -53,12 +56,14 @@ from ..storage import (
     set_admin_invite_permissions,
     get_admin_invite_permissions,
     set_org_active,
+    update_agent_conversation_summary,
     upsert_admin_entity_permission,
     upsert_org_membership,
     _connect,
     _admin_entity_permission_defaults,
     _admin_entity_permission_keys,
 )
+from ..ai.gateway import complete
 
 router = APIRouter()
 
@@ -1513,187 +1518,180 @@ def admin_jobs(request: Request) -> Any:
     }
 
 
-@router.get("/api/admin/agent-runs")
-def admin_agent_runs(request: Request) -> Any:
-    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
-    if err is not None:
-        return err
-    root = _as_text(os.environ.get("PROCESSMAP_REPO_ROOT")) or "/opt/processmap-test"
-    run_state_dir = os.path.join(root, ".agents", "run-state")
-    runs: List[Dict[str, Any]] = []
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-    if os.path.isdir(run_state_dir):
-        for entry in os.listdir(run_state_dir):
-            run_path = os.path.join(run_state_dir, entry)
-            if not os.path.isdir(run_path):
-                continue
-            run_id = entry
-            cid_path = os.path.join(run_path, "CID")
-            contour_id = ""
-            try:
-                with open(cid_path, "r", encoding="utf-8") as f:
-                    contour_id = _as_text(f.read())
-            except Exception:
-                contour_id = ""
-            stop_requested = os.path.exists(os.path.join(run_path, "STOP_REQUESTED"))
-            agents: List[Dict[str, Any]] = []
-            last_activity_at = 0
-            scripts_dir = os.path.join(run_path, "scripts")
-            if os.path.isdir(scripts_dir):
-                for script_name in os.listdir(scripts_dir):
-                    m = re.match(r"agent-(\d+)-(\d+)\.sh$", script_name)
-                    if m:
-                        agents.append({"agent": m.group(1), "pid": m.group(2), "highlight": False})
-            for log_name in os.listdir(run_path):
-                m = re.match(r"kimi-agent-(\d+)-(\d+)\.log$", log_name)
-                if m:
-                    log_path = os.path.join(run_path, log_name)
-                    try:
-                        mtime = int(os.path.getmtime(log_path))
-                    except Exception:
-                        mtime = 0
-                    if mtime > last_activity_at:
-                        last_activity_at = mtime
-                    agent_num = m.group(1)
-                    for a in agents:
-                        if a["agent"] == agent_num:
-                            break
-                    else:
-                        agents.append({"agent": agent_num, "pid": "", "highlight": False})
-            for token_name in os.listdir(run_path):
-                m = re.match(r"highlight-agent-(\d+)\.token$", token_name)
-                if m:
-                    agent_num = m.group(1)
-                    for a in agents:
-                        if a["agent"] == agent_num:
-                            a["highlight"] = True
-                            break
-                    else:
-                        agents.append({"agent": agent_num, "pid": "", "highlight": True})
-            agents.sort(key=lambda a: _as_int(a.get("agent"), 0))
-            if stop_requested:
-                status = "stopping"
-            elif last_activity_at > 0 and (now_ts - last_activity_at) <= 300:
-                status = "active"
-            else:
-                status = "completed"
-            runs.append(
-                {
-                    "run_id": run_id,
-                    "contour_id": contour_id,
-                    "status": status,
-                    "stop_requested": stop_requested,
-                    "started_at": last_activity_at,
-                    "last_activity_at": last_activity_at,
-                    "agents": agents,
-                }
-            )
-    runs.sort(key=lambda r: (-_as_int(r.get("last_activity_at"), 0), _as_text(r.get("run_id"))))
+_AGENT_RUN_CLOSE_SECONDS = 24 * 3600
+
+
+def _agent_run_user_map() -> Dict[str, Dict[str, Any]]:
     return {
-        "ok": True,
-        "generated_at": _now_iso(),
-        "runs": runs,
-        "count": len(runs),
+        str(row.get("id") or ""): _as_dict(row)
+        for row in list_auth_users()
+        if str(row.get("id") or "")
     }
 
 
-@router.get("/api/admin/agent-runs/{run_id}")
-def admin_agent_run_detail(request: Request, run_id: str) -> Any:
-    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+def _agent_run_session_meta(org_id: str, scope_raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return _session_meta_map(org_id=org_id, scope_raw=scope_raw or {})
+
+
+def _conversation_summary_payload(turns: List[Dict[str, Any]]) -> Dict[str, Any]:
+    summary_turns: List[Dict[str, Any]] = []
+    for turn in turns:
+        text = str(turn.get("text") or "").strip()
+        if not text:
+            continue
+        summary_turns.append({
+            "role": str(turn.get("role") or ""),
+            "text": text[:800],
+            "action": turn.get("action"),
+        })
+    return {"turns": summary_turns}
+
+
+def _generate_conversation_summary(
+    turns: List[Dict[str, Any]],
+    org_id: str,
+    user_id: str,
+) -> Optional[str]:
+    """Lazy summary for a closed conversation. Never raises."""
+    payload = _conversation_summary_payload(turns)
+    try:
+        result = complete(
+            "agent_summary",
+            payload,
+            org_id=org_id,
+            user_id=user_id,
+            max_tokens=400,
+        )
+    except Exception:
+        return None
+    if not result.get("ok"):
+        return None
+    text = str(result.get("text") or "").strip()
+    return text or None
+
+
+@router.get("/api/admin/agent-runs")
+def admin_agent_runs(
+    request: Request,
+    user_id: str = "",
+    org_id: str = "",
+    limit: int = 20,
+    offset: int = 0,
+) -> Any:
+    uid, is_admin, active_org_id, _role, scope, err = _admin_context(request)
     if err is not None:
         return err
-    root = _as_text(os.environ.get("PROCESSMAP_REPO_ROOT")) or "/opt/processmap-test"
-    run_path = os.path.join(root, ".agents", "run-state", run_id)
-    if not os.path.isdir(run_path):
-        return {"ok": False, "error": "run_not_found", "run_id": run_id}
+    requested_org_id = _as_text(org_id)
+    if requested_org_id and requested_org_id != _as_text(active_org_id) and not bool(is_admin):
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+    effective_org_id = requested_org_id if bool(is_admin) and requested_org_id else _as_text(active_org_id)
+    if not effective_org_id:
+        return _legacy_main._enterprise_error(422, "validation_error", "org_id is required")
 
-    cid_path = os.path.join(run_path, "CID")
-    contour_id = ""
-    try:
-        with open(cid_path, "r", encoding="utf-8") as f:
-            contour_id = _as_text(f.read())
-    except Exception:
-        contour_id = ""
+    lim = max(1, min(_as_int(limit, 20), 50))
+    off = max(0, _as_int(offset, 0))
+    items, total = list_agent_conversations(
+        effective_org_id,
+        user_id=_as_text(user_id) or None,
+        limit=lim,
+        offset=off,
+    )
 
-    stop_requested = os.path.exists(os.path.join(run_path, "STOP_REQUESTED"))
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-
-    agents: List[Dict[str, Any]] = []
-    last_activity_at = 0
-
-    scripts_dir = os.path.join(run_path, "scripts")
-    if os.path.isdir(scripts_dir):
-        for script_name in os.listdir(scripts_dir):
-            m = re.match(r"agent-(\d+)-(\d+)\.sh$", script_name)
-            if m:
-                agents.append({"agent": m.group(1), "pid": m.group(2), "highlight": False, "log": ""})
-
-    for log_name in os.listdir(run_path):
-        m = re.match(r"kimi-agent-(\d+)-(\d+)\.log$", log_name)
-        if m:
-            log_path = os.path.join(run_path, log_name)
-            try:
-                mtime = int(os.path.getmtime(log_path))
-            except Exception:
-                mtime = 0
-            if mtime > last_activity_at:
-                last_activity_at = mtime
-            agent_num = m.group(1)
-            log_text = ""
-            try:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as lf:
-                    log_text = lf.read()
-            except Exception:
-                log_text = ""
-            for a in agents:
-                if a["agent"] == agent_num:
-                    a["log"] = log_text
-                    break
-            else:
-                agents.append({"agent": agent_num, "pid": "", "highlight": False, "log": log_text})
-
-    for token_name in os.listdir(run_path):
-        m = re.match(r"highlight-agent-(\d+)\.token$", token_name)
-        if m:
-            agent_num = m.group(1)
-            for a in agents:
-                if a["agent"] == agent_num:
-                    a["highlight"] = True
-                    break
-            else:
-                agents.append({"agent": agent_num, "pid": "", "highlight": True, "log": ""})
-
-    agents.sort(key=lambda a: _as_int(a.get("agent"), 0))
-
-    if stop_requested:
-        status = "stopping"
-    elif last_activity_at > 0 and (now_ts - last_activity_at) <= 300:
-        status = "active"
-    else:
-        status = "completed"
-
-    contour_dir = os.path.join(root, ".planning", "contours", contour_id)
-    markers: Dict[str, Any] = {}
-    marker_names = [
-        "AGENT_RUN_ID", "READY_FOR_EXECUTION", "WORKER_STARTED", "WORKER_DONE",
-        "WORKER_REPORT.md", "REVIEW_STARTED", "REVIEW_PASS", "CHANGES_REQUESTED",
-        "REVIEW_REPORT.md", "EXEC_BLOCKED.md", "REVIEW_BLOCKED.md", "REWORK_REQUEST.md",
-    ]
-    if os.path.isdir(contour_dir):
-        for name in marker_names:
-            path = os.path.join(contour_dir, name)
-            markers[name] = {"exists": os.path.exists(path), "mtime": int(os.path.getmtime(path)) if os.path.exists(path) else 0}
+    user_map = _agent_run_user_map()
+    meta_map = _agent_run_session_meta(effective_org_id, scope or {})
+    rows: List[Dict[str, Any]] = []
+    for conv in items:
+        user = user_map.get(conv.get("user_id") or "", {})
+        session_meta = _as_dict(meta_map.get(conv.get("session_id") or ""))
+        rows.append({
+            "conversation_id": conv["id"],
+            "org_id": conv["org_id"],
+            "session_id": conv["session_id"],
+            "project_id": _as_text(session_meta.get("project_id")),
+            "user_id": conv["user_id"],
+            "user_email": _as_text(user.get("email")),
+            "user_name": _as_text(user.get("full_name")),
+            "turn_count": conv["turn_count"],
+            "total_tokens": conv["total_tokens"],
+            "first_activity_at": conv["first_activity_at"],
+            "last_activity_at": conv["last_activity_at"],
+            "status": conv["status"],
+            "applied_count": conv["applied_count"],
+            "rejected_count": conv["rejected_count"],
+        })
 
     return {
         "ok": True,
-        "run_id": run_id,
-        "contour_id": contour_id,
-        "status": status,
-        "stop_requested": stop_requested,
-        "started_at": last_activity_at,
-        "last_activity_at": last_activity_at,
-        "agents": agents,
-        "markers": markers,
+        "org_id": effective_org_id,
+        "items": rows,
+        "count": total,
+        "page": {"limit": lim, "offset": off, "total": total},
+    }
+
+
+@router.get(
+    "/api/admin/agent-runs/{conversation_id}",
+    responses={404: {"description": "Conversation not found"}},
+)
+def admin_agent_run_detail(
+    request: Request,
+    conversation_id: str,
+    refresh: bool = False,
+) -> Any:
+    uid, is_admin, active_org_id, _role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    cid = _as_text(conversation_id)
+    if not cid:
+        return _legacy_main._enterprise_error(422, "validation_error", "conversation_id is required")
+
+    conv = get_agent_conversation(cid)
+    if conv is None:
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+
+    conv_org_id = _as_text(conv.get("org_id"))
+    if not bool(is_admin) and conv_org_id != _as_text(active_org_id):
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+
+    turns = list_agent_conversation_turns(cid, limit=200)
+    summary = conv.get("summary")
+    summary_missing = False
+    if conv.get("status") == "closed" and (not summary or bool(refresh)):
+        generated = _generate_conversation_summary(turns, conv_org_id, uid or "")
+        if generated:
+            update_agent_conversation_summary(cid, generated)
+            summary = generated
+        else:
+            summary_missing = True
+
+    user_map = _agent_run_user_map()
+    user = user_map.get(conv.get("user_id") or "", {})
+    meta_map = _agent_run_session_meta(conv_org_id, scope or {})
+    session_meta = _as_dict(meta_map.get(conv.get("session_id") or ""))
+
+    return {
+        "ok": True,
+        "item": {
+            "conversation_id": conv["id"],
+            "org_id": conv_org_id,
+            "session_id": conv["session_id"],
+            "project_id": _as_text(session_meta.get("project_id")),
+            "user_id": conv["user_id"],
+            "user_email": _as_text(user.get("email")),
+            "user_name": _as_text(user.get("full_name")),
+            "turn_count": conv["turn_count"],
+            "total_tokens": conv["total_tokens"],
+            "first_activity_at": conv["first_activity_at"],
+            "last_activity_at": conv["last_activity_at"],
+            "status": conv["status"],
+            "summary": summary,
+            "summary_missing": summary_missing,
+            "turns": turns,
+            "actions": {
+                "applied": conv["applied_count"],
+                "rejected": conv["rejected_count"],
+            },
+        },
     }
 
 

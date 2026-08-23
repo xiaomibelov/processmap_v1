@@ -158,7 +158,7 @@ function AdminAppInner({
     eventId: telemetryFilters.event_id,
   });
   const ragQ = useAdminRagData({ enabled: route.section === "rag" });
-  const agentRunsQ = useAdminAgentRunsData({ enabled: route.section === "agent-runs" && !toText(route.runId) });
+  const agentRunsQ = useAdminAgentRunsData({ enabled: route.section === "agent-runs" && !toText(route.runId), userId: "" });
   const agentRunDetailQ = useAdminAgentRunDetailData({
     enabled: route.section === "agent-runs" && Boolean(toText(route.runId)),
     runId: route.runId,

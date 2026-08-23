@@ -63,6 +63,17 @@ def _ensure_agent_schema() -> None:
             ON agent_conversations(org_id, session_id, user_id)
             """
         )
+        # SQLite не поддерживает ADD COLUMN IF NOT EXISTS; ловим ошибку дубликата.
+        try:
+            con.execute("ALTER TABLE agent_conversations ADD COLUMN summary TEXT")
+        except Exception:
+            pass
+        con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated_at
+            ON agent_conversations(updated_at)
+            """
+        )
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_turns (
