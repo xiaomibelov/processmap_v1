@@ -20,9 +20,11 @@ from ..storage import get_storage, list_session_presence, _count_bpmn_activities
 from ..utils.authz import session_access_from_request
 from .._legacy_main import (
     _can_edit_workspace,
-    _org_role_for_request,
     _request_auth_user,
 )
+from ..orgs import _require_org_active_for_writes
+from ..services.org_workspace import org_role_for_request
+from ..sessions_core import _legacy_load_session_scoped
 from ..services.bpmn_navigation import (
     called_element_id,
     extract_subprocess_xml,
@@ -754,6 +756,50 @@ async def bpmn_upload(
         base_diagram_state_version=base_version,
     )
     return bpmn_save(session_id, inp, request)
+
+
+def bpmn_version_create(
+    session_id: str,
+    inp: Any,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Create a BPMN version snapshot from the current stored bpmn_xml."""
+    sid = str(session_id or "").strip()
+    sess, oid, _ = _legacy_load_session_scoped(sid, request)
+    if not sess:
+        raise_session_not_found(session_id)
+    _require_org_active_for_writes(request, oid)
+
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    role = org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if is_admin else "")
+    if not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    xml = str(getattr(sess, "bpmn_xml", "") or "").strip()
+    if not xml:
+        raise HTTPException(status_code=400, detail="bpmn_xml is empty")
+
+    source_action = str(getattr(inp, "source_action", None) or "agent_edit").strip()
+    import_note = str(getattr(inp, "import_note", None) or "").strip()
+    st = get_storage()
+    snap = st.create_bpmn_version_snapshot(
+        sid,
+        bpmn_xml=xml,
+        source_action=source_action,
+        diagram_state_version=int(getattr(sess, "diagram_state_version", 0) or 0),
+        session_version=int(getattr(sess, "version", 0) or 0),
+        session_updated_at=int(getattr(sess, "updated_at", 0) or 0),
+        created_by=user_id,
+        org_id=oid,
+        import_note=import_note,
+    )
+    return {
+        "ok": True,
+        "version_id": str(snap.get("id") or "").strip() or None,
+        "version_number": int(snap.get("version_number") or 0) or None,
+    }
 
 
 def bpmn_versions_list(

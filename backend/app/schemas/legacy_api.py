@@ -324,6 +324,11 @@ class BpmnXmlIn(BaseModel):
     )
 
 
+class BpmnVersionCreateIn(BaseModel):
+    source_action: Optional[str] = Field(default="agent_edit", examples=["agent_edit"])
+    import_note: Optional[str] = Field(default=None, examples=["Snapshot before agent edit"])
+
+
 class BpmnMetaPatchIn(BaseModel):
     flowId: Optional[str] = Field(default=None, examples=["Flow_1"])
     happy: Optional[bool] = None
