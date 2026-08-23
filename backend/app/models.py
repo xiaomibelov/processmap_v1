@@ -94,6 +94,9 @@ class Session(BaseModel):
     diagram_last_write_actor_label: str = Field(default="", exclude=True)
     diagram_last_write_at: int = Field(default=0, exclude=True)
     diagram_last_write_changed_keys: List[str] = Field(default_factory=list, exclude=True)
+    rag_readiness_status: str = "not_ready"
+    rag_queued_at: Optional[int] = None
+    rag_indexed_at: Optional[int] = None
     version: int = 0
     owner_user_id: str = ""
     org_id: str = ""
