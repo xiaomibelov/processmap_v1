@@ -317,6 +317,4 @@ export const en = {
     },
     loading: "Loading analytics…",
   },
-
-  },
 };
