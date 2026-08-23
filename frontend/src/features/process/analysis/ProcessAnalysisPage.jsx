@@ -1,5 +1,30 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import styles from "./ProcessAnalysis.module.css";
+
+const TabButton = React.forwardRef(function TabButton(
+  { tab, index, activeTabKey, onSelect, onKeyDown, title },
+  ref
+) {
+  const isActive = activeTabKey === tab.key;
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      role="tab"
+      id={`process-analysis-tab-btn-${tab.key}`}
+      aria-selected={isActive}
+      aria-controls={`process-analysis-tab-${tab.key}`}
+      title={title}
+      className={`${styles.tab} ${isActive ? styles.tabActive : ""}`}
+      onClick={() => onSelect(tab.key)}
+      onKeyDown={(e) => onKeyDown(e, index)}
+      tabIndex={isActive ? 0 : -1}
+    >
+      <span className={styles.tabLabel}>{tab.label}</span>
+    </button>
+  );
+});
 
 export function ProcessAnalysisPage({
   title,
@@ -10,8 +35,13 @@ export function ProcessAnalysisPage({
   t,
 }) {
   const [activeTabKey, setActiveTabKey] = useState(defaultTabKey || tabs[0]?.key);
+  const tabRefs = useRef({});
 
   const activeTab = tabs.find((tab) => tab.key === activeTabKey) || tabs[0];
+
+  const handleSelect = useCallback((key) => {
+    setActiveTabKey(key);
+  }, []);
 
   const handleKeyDown = useCallback(
     (event, tabIndex) => {
@@ -20,7 +50,11 @@ export function ProcessAnalysisPage({
       const nextIndex = event.key === "ArrowLeft"
         ? Math.max(0, tabIndex - 1)
         : Math.min(tabs.length - 1, tabIndex + 1);
-      setActiveTabKey(tabs[nextIndex].key);
+      const nextKey = tabs[nextIndex].key;
+      setActiveTabKey(nextKey);
+      requestAnimationFrame(() => {
+        tabRefs.current[nextKey]?.focus();
+      });
     },
     [tabs]
   );
@@ -48,20 +82,18 @@ export function ProcessAnalysisPage({
         </div>
         <nav role="tablist" aria-label={t("processAnalysis.title")} className={styles.tabs}>
           {tabs.map((tab, index) => (
-            <button
+            <TabButton
               key={tab.key}
-              type="button"
-              role="tab"
-              id={`process-analysis-tab-btn-${tab.key}`}
-              aria-selected={activeTabKey === tab.key}
-              aria-controls={`process-analysis-tab-${tab.key}`}
-              className={styles.tab}
-              onClick={() => setActiveTabKey(tab.key)}
-              onKeyDown={(e) => handleKeyDown(e, index)}
-              tabIndex={activeTabKey === tab.key ? 0 : -1}
-            >
-              {tab.label}
-            </button>
+              tab={tab}
+              index={index}
+              activeTabKey={activeTabKey}
+              onSelect={handleSelect}
+              onKeyDown={handleKeyDown}
+              title={tab.tooltip || tab.label}
+              ref={(el) => {
+                tabRefs.current[tab.key] = el;
+              }}
+            />
           ))}
         </nav>
       </header>

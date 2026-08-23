@@ -282,6 +282,42 @@ export const en = {
     selectAllVisibleAria: "Select all visible",
     noPropertiesByFilter: "No properties matching the selected filters.",
   },
+  // analysis-page-redesign — unified analysis tabs (PR-2).
+  // Paired dictionary: shared/i18n/ru.js.
+  analysis: {
+    tabs: {
+      boundaries: "Boundaries",
+      steps: "Actions",
+      branches: "Branches",
+      summary: "Summary",
+      exceptions: "Exceptions",
+      ai: "AI",
+    },
+    empty: {
+      title: "No data",
+      description: "Add process steps to see analytics.",
+    },
+    error: {
+      title: "Failed to load analytics",
+      retry: "Retry",
+    },
+    loading: "Loading analytics…",
+    searchPlaceholder: "Search…",
+    filterPlaceholder: "Filter",
+    branchesEmpty: "No transitions for the current filter.",
+    exceptionsEmpty: "Add process exceptions.",
+    aiEmpty: "AI analysis has not been run yet.",
+    kpi: {
+      lead: "Lead time",
+      active: "Active time",
+      wait: "Wait time",
+      throughput: "Throughput",
+    },
+    unit: {
+      min: "min",
+      stepsPerHour: "steps/hour",
+    },
+  },
   // analysis-page-redesign — no-scroll dashboard read-model UI.
   processAnalysis: {
     title: "Process analysis",
