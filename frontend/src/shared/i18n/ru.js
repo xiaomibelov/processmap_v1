@@ -829,6 +829,42 @@ export const ru = {
     selectAllVisibleAria: "Выбрать все видимые",
     noPropertiesByFilter: "Нет свойств по выбранным фильтрам.",
   },
+  // analysis-page-redesign — unified analysis tabs (PR-2).
+  // Парный словарь: shared/i18n/en.js.
+  analysis: {
+    tabs: {
+      boundaries: "Границы",
+      steps: "Действия",
+      branches: "Ветки",
+      summary: "Итоги",
+      exceptions: "Исключения",
+      ai: "AI",
+    },
+    empty: {
+      title: "Нет данных",
+      description: "Добавьте шаги процесса, чтобы увидеть аналитику.",
+    },
+    error: {
+      title: "Не удалось загрузить аналитику",
+      retry: "Повторить",
+    },
+    loading: "Загружаем аналитику…",
+    searchPlaceholder: "Поиск…",
+    filterPlaceholder: "Фильтр",
+    branchesEmpty: "Нет переходов по текущему фильтру.",
+    exceptionsEmpty: "Добавьте исключения процесса.",
+    aiEmpty: "AI-анализ ещё не запускался.",
+    kpi: {
+      lead: "Lead time",
+      active: "Активное время",
+      wait: "Ожидания",
+      throughput: "Throughput",
+    },
+    unit: {
+      min: "мин",
+      stepsPerHour: "шаг/час",
+    },
+  },
   // analysis-page-redesign — no-scroll dashboard read-model UI.
   processAnalysis: {
     title: "Анализ процессов",

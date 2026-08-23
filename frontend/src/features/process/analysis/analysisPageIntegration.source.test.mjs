@@ -48,7 +48,8 @@ test("InterviewStage constructs six original-section tabs for redesign", () => {
   assert.match(source, /key:\s*"exceptions"/);
   assert.match(source, /key:\s*"ai"/);
   assert.match(source, /defaultTabKey="steps"/);
-  assert.match(source, /buildSummaryPropsFromProcessMetrics/);
+  assert.match(source, /ProcessAnalysisSummaryTab/);
+  assert.match(source, /analysis\.tabs\./);
 });
 
 test("apiGetSessionAnalysisViewModel exposes process_metrics", () => {

@@ -1,0 +1,107 @@
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--pm-tobe-muted, #f1f3f5) 25%,
+    var(--pm-tobe-surface, #ffffff) 50%,
+    var(--pm-tobe-muted, #f1f3f5) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background: var(--pm-tobe-muted, #f1f3f5);
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 96px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--pm-tobe-border, #e4e7eb);
+  background: var(--pm-tobe-surface, #ffffff);
+  box-shadow: var(--pm-tobe-shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.08));
+}
+
+.cardHeader {
+  height: 14px;
+  width: 55%;
+}
+
+.cardLine {
+  height: 10px;
+  width: 80%;
+}
+
+.cardLineShort {
+  height: 10px;
+  width: 45%;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.tableHeader {
+  display: grid;
+  grid-template-columns: repeat(var(--analysis-skeleton-columns, 4), 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pm-tobe-border, #e4e7eb);
+  background: var(--pm-tobe-surface, #ffffff);
+  border-radius: 12px 12px 0 0;
+}
+
+.tableHeaderCell {
+  height: 12px;
+}
+
+.tableBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--pm-tobe-surface, #ffffff);
+  border-radius: 0 0 12px 12px;
+}
+
+.tableRow {
+  display: grid;
+  grid-template-columns: repeat(var(--analysis-skeleton-columns, 4), 1fr);
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--pm-tobe-border, #e4e7eb);
+}
+
+.tableCell {
+  height: 10px;
+}
