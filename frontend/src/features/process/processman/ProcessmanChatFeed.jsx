@@ -10,21 +10,12 @@ import {
   typewriterDone,
   typewriterProgress,
 } from "./chat/processmanChatStore";
-import { splitTextByMentions } from "./chat/nodeMentions";
+import AgentMarkdown from "./AgentMarkdown";
 
 // PROCESSMAN-REDESIGN (PR-2) — лента диалога.
 // user-сообщения — вправо без label; agent — full-width карточка без
 // повторной шапки, только avatar rail + content + message actions.
 const t = ru.processman;
-
-function IconPin() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z" />
-      <circle cx="12" cy="10" r="2" />
-    </svg>
-  );
-}
 
 function IconThumbUp() {
   return (
@@ -85,32 +76,6 @@ function useTypewriter(fullText, active) {
     done,
     skip: () => setSkipped(true),
   };
-}
-
-function MentionedText({ text, nodes, onNodeClick }) {
-  const segments = splitTextByMentions(text, nodes);
-  return (
-    <>
-      {segments.map((seg, i) => (seg.kind === "mention" ? (
-        <button
-          key={`m-${i}-${seg.id}`}
-          type="button"
-          className="pm-processman-nodechip"
-          data-testid={`processman-node-chip-${seg.id}`}
-          title={seg.id}
-          onClick={(e) => {
-            e.stopPropagation();
-            onNodeClick?.(seg.id);
-          }}
-        >
-          <IconPin />
-          {seg.name}
-        </button>
-      ) : (
-        <span key={`t-${i}`}>{seg.text}</span>
-      )))}
-    </>
-  );
 }
 
 function PendingStages() {
@@ -311,7 +276,7 @@ function AgentCard({
               className="pm-processman-msg__text"
               data-testid={isLast && done && !stopped ? "processman-answer-text" : undefined}
             >
-              <MentionedText text={displayText} nodes={nodes} onNodeClick={onNodeClick} />
+              <AgentMarkdown text={displayText} nodes={nodes} onNodeClick={onNodeClick} />
               {streaming && !done ? <span className="pm-processman-caret" aria-hidden="true">▍</span> : null}
             </div>
             {candidates.length ? (
