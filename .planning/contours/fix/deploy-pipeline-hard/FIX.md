@@ -59,8 +59,9 @@ docker build ./backend/services/agent -t processmap/agent:local-test
 ## Git
 
 - Ветка: `fix/deploy-pipeline-hard`
-- HEAD: `9c8b1d7e` (fix commit; planning artifacts in branch)
+- HEAD: актуальный HEAD ветки `fix/deploy-pipeline-hard`
 - Base: `origin/main` (`9bd344d9`)
+- Fix-коммит: `9c8b1d7e`
 - PR: https://github.com/xiaomibelov/processmap_v1/pull/new/fix/deploy-pipeline-hard
 
 ## Статус
