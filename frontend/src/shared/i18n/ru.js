@@ -889,8 +889,6 @@ export const ru = {
     laterTitle: "Скрыть на 30 минут",
     iconAria: "Доступно обновление",
   },
-
-  },
 };
 
 export function trStatusInvite(status) {

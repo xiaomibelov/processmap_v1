@@ -5,6 +5,7 @@ schema_assistant, LLM gateway).
 
 ## Перед деплоем
 
+- [ ] Образы собираются в CI на каждый PR; деплой на хост только переносит/перезапускает уже доказанное.
 - [ ] Миграции накатаны (`alembic upgrade head` или через docker compose).
 - [ ] Промпты активированы в `/admin/llm`:
   - [ ] `agent_router` v2 (с `edit_canvas`) → `active`;
