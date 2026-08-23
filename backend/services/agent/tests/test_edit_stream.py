@@ -207,3 +207,38 @@ def test_stream_edit_confirm_applies_plan(
 
     pending = get_pending_edit(pending_id, org_id="org_default")
     assert pending["status"] == "applied"
+
+
+def test_stream_edit_captures_base_diagram_state_version(
+    admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk, valid_edit_plan
+):
+    """Streaming edit_canvas must store the session's diagram_state_version in pending_edit."""
+    import db
+
+    expected_version = 7
+    with db.get_conn() as conn:
+        conn.execute(
+            db.adapt_sql("UPDATE sessions SET diagram_state_version = ? WHERE id = ?"),
+            [expected_version, session_with_steps],
+        )
+
+    mock_route_intent_smalltalk.return_value = "edit_canvas"
+    with mock.patch("memory.chat.propose_edit_plan") as fake_propose, \
+         mock.patch("memory.chat.validate_edit_plan", return_value=[]):
+        fake_propose.return_value = (valid_edit_plan, {"status": "ok", "iterations": 1, "validation_errors": []})
+        c = TestClient(app)
+        with c.stream(
+            "POST",
+            f"/sessions/{session_with_steps}/agent/stream",
+            headers={**_auth(admin_token), "Accept": "text/event-stream"},
+            json={"message": "переименуй шаг", "selected_step_id": "step_1"},
+        ) as r:
+            r.read()
+            text = r.text
+    assert r.status_code == 200, text
+    events = _parse_sse(text)
+    confirm = _find_event(events, "confirm_required")
+    assert confirm is not None
+    pending_id = json.loads(confirm["data"])["pending_edit_id"]
+    pending = get_pending_edit(pending_id, org_id="org_default")
+    assert pending["base_diagram_state_version"] == expected_version

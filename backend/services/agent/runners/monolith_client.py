@@ -319,12 +319,17 @@ def create_bpmn_version_snapshot(
 ) -> Dict[str, Any]:
     """POST /api/sessions/{id}/bpmn/versions — create snapshot before applying edits.
 
-    Монолитный endpoint create_bpmn_version_snapshot требует bpmn_xml;
-    публичный /bpmn/versions принимает xml. Если публичный endpoint недоступен,
-    fallback: возвращаем пустой dict и продолжаем (audit остаётся, откат через history).
+    Snapshot требует непустой bpmn_xml; если XML пустой, snapshot пропускается.
     """
-    url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/bpmn/versions"
-    body = {"xml": "", "source_action": str(source_action or "agent_edit")}
+    sid = str(session_id or "").strip()
+    xml = get_session_bpmn(sid, token, org_id=org_id, timeout_sec=timeout_sec).strip()
+    if not xml:
+        return {"_http_status": 204}
+    url = f"{_base_url()}/api/sessions/{sid}/bpmn/versions"
+    body = {
+        "xml": xml,
+        "source_action": str(source_action or "agent_edit"),
+    }
     try:
         resp = httpx.post(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
     except Exception as exc:
@@ -335,5 +340,85 @@ def create_bpmn_version_snapshot(
         data = {}
     if not isinstance(data, dict):
         data = {}
+    data["_http_status"] = resp.status_code
+    return data
+
+
+def get_session_bpmn(
+    session_id: str,
+    token: str,
+    *,
+    org_id: str = "",
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> str:
+    """GET /api/sessions/{id}/bpmn?raw=1 → raw bpmn_xml string."""
+    url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/bpmn"
+    try:
+        resp = httpx.get(
+            url,
+            headers=_headers(token, org_id),
+            params={"raw": 1},
+            timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)),
+        )
+    except Exception as exc:
+        raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
+    if resp.status_code != 200:
+        raise MonolithError(f"monolith get_session_bpmn HTTP {resp.status_code}")
+    return str(resp.text or "")
+
+
+def bpmn_save(
+    session_id: str,
+    token: str,
+    xml: str,
+    *,
+    org_id: str = "",
+    base_diagram_state_version: Optional[int] = None,
+    source_action: str = "agent_edit",
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Dict[str, Any]:
+    """PUT /api/sessions/{id}/bpmn — save BPMN XML with CAS."""
+    url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/bpmn"
+    body: Dict[str, Any] = {
+        "xml": str(xml or ""),
+        "source_action": str(source_action or "agent_edit"),
+    }
+    if base_diagram_state_version is not None:
+        body["base_diagram_state_version"] = int(base_diagram_state_version)
+    try:
+        resp = httpx.put(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+    except Exception as exc:
+        raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise MonolithError(f"monolith bpmn_save invalid json: {exc.__class__.__name__}") from exc
+    if not isinstance(data, dict):
+        raise MonolithError("monolith bpmn_save invalid root")
+    data["_http_status"] = resp.status_code
+    return data
+
+
+def write_agent_edit_audit(
+    session_id: str,
+    token: str,
+    *,
+    org_id: str = "",
+    meta: Optional[Dict[str, Any]] = None,
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Dict[str, Any]:
+    """POST /api/sessions/{id}/agent/audit — write audit_log agent_edit_applied."""
+    url = f"{_base_url()}/api/sessions/{str(session_id).strip()}/agent/audit"
+    body = {"meta": meta if isinstance(meta, dict) else {}}
+    try:
+        resp = httpx.post(url, headers=_json_headers(token, org_id), json=body, timeout=max(1, int(timeout_sec or DEFAULT_TIMEOUT_SEC)))
+    except Exception as exc:
+        raise MonolithError(f"monolith unreachable: {exc.__class__.__name__}: {exc}") from exc
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise MonolithError(f"monolith write_agent_edit_audit invalid json: {exc.__class__.__name__}") from exc
+    if not isinstance(data, dict):
+        raise MonolithError("monolith write_agent_edit_audit invalid root")
     data["_http_status"] = resp.status_code
     return data
