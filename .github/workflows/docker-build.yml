@@ -1,0 +1,104 @@
+name: Docker Build
+
+# Собирает все production-образы в CI на каждый PR и push в main.
+# Падение сборки = красный PR. Деплой на хост только переносит уже
+# доказанно собирающиеся образы.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+# Build jobs can run in parallel but share the GitHub Actions cache backend.
+# Each service uses its own cache scope to avoid collisions.
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-config:
+    name: Validate compose config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ensure the compose files are syntactically valid. We do not need
+          # real env values for this check; defaults in docker-compose.yml
+          # are sufficient.
+          docker compose -f docker-compose.yml -f docker-compose.stage.yml config --quiet
+
+  build:
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: compose-config
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api
+          - frontend
+          - notifications
+          - agent
+        include:
+          - service: api
+            context: .
+            dockerfile: Dockerfile
+            build_args: |
+              BUILD_ID=${{ github.sha }}
+              BUILD_TIME=${{ github.event.head_commit.timestamp || 'unknown' }}
+              BUILD_BRANCH=${{ github.ref_name }}
+              BUILD_ENV=ci
+          - service: frontend
+            context: ./frontend
+            dockerfile: Dockerfile
+            build_args: |
+              VITE_BUILD_ID=${{ github.sha }}
+              VITE_BUILD_TIME=${{ github.event.head_commit.timestamp || 'unknown' }}
+              VITE_BUILD_BRANCH=${{ github.ref_name }}
+              VITE_BUILD_ENV=ci
+          - service: notifications
+            context: ./backend/services/notifications
+            dockerfile: Dockerfile
+            build_args: ""
+          - service: agent
+            context: ./backend/services/agent
+            dockerfile: Dockerfile
+            build_args: ""
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # Enable the GitHub Actions cache backend for BuildKit.
+          driver-opts: |
+            image=moby/buildkit:buildx-stable-1
+
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
+          push: false
+          load: true
+          build-args: ${{ matrix.build_args }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          tags: processmap/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Image size summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "[docker-build] ${{ matrix.service }} image built successfully"
+          docker images "processmap/${{ matrix.service }}:${{ github.sha }}" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
