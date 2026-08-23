@@ -28,11 +28,16 @@ jobs:
 
       - name: Validate docker-compose files
         shell: bash
+        env:
+          # docker-compose.stage.yml references an external edge network.
+          # Validation only needs a non-empty value; the real name lives in .env.stage.
+          EDGE_NETWORK_NAME: processmap_edge_shared_ci
         run: |
           set -euo pipefail
-          # Ensure the compose files are syntactically valid. We do not need
-          # real env values for this check; defaults in docker-compose.yml
-          # are sufficient.
+          # Ensure the compose files are syntactically valid. The real .env
+          # and .env.stage files are server-local and gitignored, so we create
+          # empty stubs for validation only.
+          touch .env .env.stage
           docker compose -f docker-compose.yml -f docker-compose.stage.yml config --quiet
 
   build:
