@@ -13826,3 +13826,329 @@ def run_workspace_folder_backfill(*, force: bool = False) -> Dict[str, Any]:
         "remaining_orphan_projects": remaining_count,
         "backfill_folder_name": _BACKFILL_FOLDER_NAME,
     }
+
+
+# ── Agent conversation observability (admin/agent-runs) ──────────────────────
+
+_AGENT_TABLES_READY: bool = False
+_AGENT_TABLES_DB_FILE: str = ""
+
+
+def _ensure_agent_tables() -> None:
+    """Idempotent DDL for agent memory tables used by admin observability."""
+    global _AGENT_TABLES_READY, _AGENT_TABLES_DB_FILE
+    current_path = str(os.environ.get("PROCESS_DB_PATH", "") or "").strip()
+    if _AGENT_TABLES_READY and _AGENT_TABLES_DB_FILE == current_path:
+        return
+
+    with _connect() as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_conversations (
+                id TEXT PRIMARY KEY,
+                org_id TEXT NOT NULL DEFAULT 'org_default',
+                session_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT NOT NULL,
+                summary TEXT
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_conversations_session_user
+            ON agent_conversations(org_id, session_id, user_id)
+            """
+        )
+        con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated_at
+            ON agent_conversations(updated_at)
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_turns (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES agent_conversations(id) ON DELETE CASCADE,
+                client_turn_id TEXT,
+                org_id TEXT NOT NULL DEFAULT 'org_default',
+                session_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+                content_json TEXT NOT NULL DEFAULT '{}',
+                action TEXT,
+                action_payload_json TEXT NOT NULL DEFAULT '{}',
+                projection_digest TEXT,
+                usage_json TEXT NOT NULL DEFAULT '{}',
+                created_at BIGINT NOT NULL,
+                UNIQUE(conversation_id, client_turn_id, role)
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_turns_conversation_created
+            ON agent_turns(conversation_id, created_at)
+            """
+        )
+        con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_turns_session_created
+            ON agent_turns(org_id, session_id, created_at)
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_pending_edits (
+                id TEXT PRIMARY KEY,
+                org_id TEXT NOT NULL DEFAULT 'org_default',
+                session_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL REFERENCES agent_turns(id) ON DELETE CASCADE,
+                edit_plan_json TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'rejected', 'expired', 'conflict_rev')),
+                expires_at BIGINT NOT NULL,
+                created_at BIGINT NOT NULL,
+                resumed_by_user_id TEXT,
+                resumed_at BIGINT,
+                base_diagram_state_version INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_pending_edits_session_status
+            ON agent_pending_edits(org_id, session_id, status)
+            """
+        )
+        # Агрегация токенов диалога опирается на llm_usage. В окружениях без
+        # alembic (тесты/contract) создаём SQLite-совместимую версию таблицы.
+        cfg = get_db_runtime_config()
+        if cfg.backend != "postgres":
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS llm_usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    org_id TEXT,
+                    feature TEXT NOT NULL,
+                    model TEXT,
+                    provider_id TEXT,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    cached INTEGER NOT NULL DEFAULT 0,
+                    user_id TEXT,
+                    project_id TEXT,
+                    session_id TEXT,
+                    latency_ms INTEGER,
+                    status TEXT NOT NULL DEFAULT 'ok',
+                    ts BIGINT NOT NULL
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_llm_usage_session_id ON llm_usage(session_id)"
+            )
+        con.commit()
+
+    _AGENT_TABLES_READY = True
+    _AGENT_TABLES_DB_FILE = current_path
+
+
+def _conversation_status(updated_at: int, now_ts: int) -> str:
+    return "closed" if (now_ts - int(updated_at or 0)) > 24 * 3600 else "active"
+
+
+def _conversation_row_to_dict(row: Any, now_ts: int) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "org_id": str(row["org_id"]),
+        "session_id": str(row["session_id"]),
+        "user_id": str(row["user_id"]),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "first_activity_at": int(row["first_activity_at"] or row["created_at"] or 0),
+        "last_activity_at": int(row["updated_at"] or 0),
+        "turn_count": int(row["turn_count"] or 0),
+        "total_tokens": int(row["total_tokens"] or 0),
+        "applied_count": int(row["applied_count"] or 0),
+        "rejected_count": int(row["rejected_count"] or 0),
+        "summary": row["summary"] if row["summary"] else None,
+        "status": _conversation_status(int(row["updated_at"] or 0), now_ts),
+    }
+
+
+def list_agent_conversations(
+    org_id: str,
+    *,
+    user_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """List agent conversations for admin observability.
+
+    Returns (items, total_count). Each item includes aggregated turn count,
+    first/last activity, token usage from llm_usage, applied/rejected edit
+    counts, and computed active/closed status.
+    """
+    _ensure_agent_tables()
+    oid = str(org_id or "").strip()
+    uid = str(user_id or "").strip()
+    lim = max(1, min(int(limit or 50), 200))
+    off = max(0, int(offset or 0))
+    now_ts = _now_ts()
+
+    params: List[Any] = [oid]
+    user_clause = ""
+    if uid:
+        user_clause = " AND c.user_id = ? "
+        params.append(uid)
+
+    with _connect() as con:
+        total_row = con.execute(
+            f"""
+            SELECT COUNT(*) AS cnt
+            FROM agent_conversations c
+            WHERE c.org_id = ? {user_clause}
+            """,
+            params,
+        ).fetchone()
+        total = int(total_row["cnt"] or 0) if total_row else 0
+
+        rows = con.execute(
+            f"""
+            SELECT
+                c.*,
+                COUNT(t.id) AS turn_count,
+                COALESCE(MIN(t.created_at), c.created_at) AS first_activity_at,
+                COALESCE((
+                    SELECT SUM(prompt_tokens + completion_tokens)
+                    FROM llm_usage
+                    WHERE session_id = c.session_id
+                ), 0) AS total_tokens,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM agent_pending_edits
+                    WHERE session_id = c.session_id AND status = 'applied'
+                ), 0) AS applied_count,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM agent_pending_edits
+                    WHERE session_id = c.session_id AND status = 'rejected'
+                ), 0) AS rejected_count
+            FROM agent_conversations c
+            LEFT JOIN agent_turns t ON t.conversation_id = c.id
+            WHERE c.org_id = ? {user_clause}
+            GROUP BY c.id
+            ORDER BY c.updated_at DESC, c.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [lim, off],
+        ).fetchall()
+
+    return [_conversation_row_to_dict(row, now_ts) for row in rows], total
+
+
+def get_agent_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a single conversation with aggregations for admin detail."""
+    _ensure_agent_tables()
+    cid = str(conversation_id or "").strip()
+    if not cid:
+        return None
+    now_ts = _now_ts()
+
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT
+                c.*,
+                COUNT(t.id) AS turn_count,
+                COALESCE(MIN(t.created_at), c.created_at) AS first_activity_at,
+                COALESCE((
+                    SELECT SUM(prompt_tokens + completion_tokens)
+                    FROM llm_usage
+                    WHERE session_id = c.session_id
+                ), 0) AS total_tokens,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM agent_pending_edits
+                    WHERE session_id = c.session_id AND status = 'applied'
+                ), 0) AS applied_count,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM agent_pending_edits
+                    WHERE session_id = c.session_id AND status = 'rejected'
+                ), 0) AS rejected_count
+            FROM agent_conversations c
+            LEFT JOIN agent_turns t ON t.conversation_id = c.id
+            WHERE c.id = ?
+            GROUP BY c.id
+            LIMIT 1
+            """,
+            [cid],
+        ).fetchone()
+    return _conversation_row_to_dict(row, now_ts) if row else None
+
+
+def list_agent_conversation_turns(
+    conversation_id: str,
+    *,
+    limit: int = 200,
+) -> List[Dict[str, Any]]:
+    """Return turns for a conversation, newest last."""
+    _ensure_agent_tables()
+    cid = str(conversation_id or "").strip()
+    lim = max(1, min(int(limit or 200), 1000))
+    if not cid:
+        return []
+
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT
+                id,
+                role,
+                content_json,
+                action,
+                action_payload_json,
+                usage_json,
+                created_at
+            FROM agent_turns
+            WHERE conversation_id = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            [cid, lim],
+        ).fetchall()
+
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        content = _json_loads(row["content_json"], {})
+        action_payload = _json_loads(row["action_payload_json"], {})
+        usage = _json_loads(row["usage_json"], {})
+        text = str(content.get("text") or "").strip()
+        out.append({
+            "id": str(row["id"]),
+            "role": str(row["role"]),
+            "text": text,
+            "action": str(row["action"]) if row["action"] else None,
+            "action_payload": action_payload,
+            "usage": usage,
+            "created_at": int(row["created_at"] or 0),
+            "truncated": len(text) > 500,
+        })
+    return out
+
+
+def update_agent_conversation_summary(conversation_id: str, summary: str) -> None:
+    """Persist generated summary for a closed conversation."""
+    _ensure_agent_tables()
+    cid = str(conversation_id or "").strip()
+    if not cid:
+        return
+    with _connect() as con:
+        con.execute(
+            "UPDATE agent_conversations SET summary = ? WHERE id = ?",
+            [str(summary or "").strip() or None, cid],
+        )
+        con.commit()
