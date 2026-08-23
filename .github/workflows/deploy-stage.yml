@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (branch, tag, or commit SHA). Empty = deploy latest origin/main."
+        required: false
+        default: ""
+
+# Deploys to stage must never race: they queue per environment.
+concurrency:
+  group: deploy-stage
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -24,6 +35,31 @@ jobs:
         with:
           # полная история нужна шагу "Detect agent service changes" (git diff before..sha)
           fetch-depth: 0
+
+      # Guard against SHA race: main may advance between trigger and deploy.
+      # Resolve the ref we actually want to deploy *after* checkout/fetch and
+      # pass that resolved SHA to the server. Freshness proof verifies against
+      # DEPLOY_SHA, not the workflow trigger SHA.
+      - name: Resolve deploy ref and SHA
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUESTED_REF="${{ github.event.inputs.ref || 'main' }}"
+          echo "requested_ref=${REQUESTED_REF}" >> "${GITHUB_OUTPUT}"
+
+          if git show-ref --verify --quiet "refs/remotes/origin/${REQUESTED_REF}" 2>/dev/null; then
+            git fetch origin "${REQUESTED_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify "origin/${REQUESTED_REF}")"
+          else
+            # Input is likely an explicit SHA or tag. Ensure all refs are current,
+            # then resolve it directly (tags require ^{commit} dereferencing).
+            git fetch origin || true
+            DEPLOY_SHA="$(git rev-parse --verify "${REQUESTED_REF}^{commit}" 2>/dev/null || git rev-parse --verify "${REQUESTED_REF}")"
+          fi
+
+          echo "deploy_sha=${DEPLOY_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "[resolve] requested_ref=${REQUESTED_REF} deploy_sha=${DEPLOY_SHA}"
 
       - name: Compute build metadata
         id: meta
@@ -67,8 +103,8 @@ jobs:
             set -euo pipefail
             cd /opt/processmap/app
 
-            REQUESTED_REF="main"
-            EXPECTED_SHA="${{ github.sha }}"
+            REQUESTED_REF="${{ steps.resolve.outputs.requested_ref }}"
+            EXPECTED_SHA="${{ steps.resolve.outputs.deploy_sha }}"
             AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
             BUILD_TIME="${{ steps.meta.outputs.build_time }}"
 
@@ -93,11 +129,18 @@ jobs:
             echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
 
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
-            git fetch origin "${REQUESTED_REF}"
-            DEPLOY_SHA="$(git rev-parse --verify origin/${REQUESTED_REF})"
+            git fetch origin
+
+            # Resolve the requested ref on the server the same way the runner did.
+            if git show-ref --verify --quiet "refs/remotes/origin/${REQUESTED_REF}" 2>/dev/null; then
+              DEPLOY_SHA="$(git rev-parse --verify "origin/${REQUESTED_REF}")"
+            else
+              DEPLOY_SHA="$(git rev-parse --verify "${REQUESTED_REF}^{commit}" 2>/dev/null || git rev-parse --verify "${REQUESTED_REF}")"
+            fi
+
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
             [ "${DEPLOY_SHA}" = "${EXPECTED_SHA}" ] || {
-              echo "[deploy-stage] ERROR: origin/main ${DEPLOY_SHA} != workflow sha ${EXPECTED_SHA}" >&2
+              echo "[deploy-stage] ERROR: resolved ${DEPLOY_SHA} != expected ${EXPECTED_SHA}" >&2
               exit 1
             }
 

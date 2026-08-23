@@ -1,0 +1,30 @@
+{
+  "contour": "fix/deploy-pipeline-hard",
+  "type": "fix",
+  "status": "READY_FOR_REVIEW",
+  "base_sha": "9bd344d9",
+  "head_sha": "see branch fix/deploy-pipeline-hard",
+  "branch": "fix/deploy-pipeline-hard",
+  "remote_url": "https://github.com/xiaomibelov/processmap_v1",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/new/fix/deploy-pipeline-hard",
+  "issues_closed": [
+    "deploy-stage SHA race (false negative when main advances)",
+    "frontend Docker build fails on RUN npm run build due to invalid JS syntax in i18n files"
+  ],
+  "tests": {
+    "local_docker_build_api": "pass",
+    "local_docker_build_frontend": "pass",
+    "local_docker_build_notifications": "pass",
+    "local_docker_build_agent": "pass",
+    "yaml_workflow_syntax": "pass"
+  },
+  "pending": [
+    "Create PR manually (gh CLI token insufficient)",
+    "Owner merge",
+    "Verify GitHub Actions green on branch"
+  ],
+  "notes": [
+    "Хосты/SSH/deploy агентом не выполнялись.",
+    "Merge/deploy только после явного approve владельца."
+  ]
+}
