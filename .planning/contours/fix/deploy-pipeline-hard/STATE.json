@@ -3,7 +3,7 @@
   "type": "fix",
   "status": "READY_FOR_REVIEW",
   "base_sha": "9bd344d9",
-  "head_sha": "9c8b1d7e",
+  "head_sha": "see branch fix/deploy-pipeline-hard",
   "branch": "fix/deploy-pipeline-hard",
   "remote_url": "https://github.com/xiaomibelov/processmap_v1",
   "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/new/fix/deploy-pipeline-hard",
