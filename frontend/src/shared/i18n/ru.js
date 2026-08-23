@@ -889,6 +889,16 @@ export const ru = {
     laterTitle: "Скрыть на 30 минут",
     iconAria: "Доступно обновление",
   },
+  // Diagram overflow menu actions (BPMN canvas).
+  // Парный словарь: shared/i18n/en.js.
+  diagram: {
+    editingSectionTitle: "Редактирование",
+    alignDiagram: "Выровнять схему",
+    resetCanvas: "Сбросить канвас",
+    alignFailed: "Не удалось выровнять схему",
+    resetCanvasConfirm: "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.",
+    resetFailed: "Не удалось сбросить схему",
+  },
 };
 
 export function trStatusInvite(status) {

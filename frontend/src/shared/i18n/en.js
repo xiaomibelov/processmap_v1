@@ -121,6 +121,16 @@ export const en = {
     laterTitle: "Hide for 30 minutes",
     iconAria: "Update available",
   },
+  // Diagram overflow menu actions (BPMN canvas).
+  // Paired dictionary: shared/i18n/ru.js.
+  diagram: {
+    editingSectionTitle: "Editing",
+    alignDiagram: "Align diagram",
+    resetCanvas: "Reset canvas",
+    alignFailed: "Failed to align diagram",
+    resetCanvasConfirm: "Are you sure? All diagram elements will be removed. This action is irreversible.",
+    resetFailed: "Failed to reset canvas",
+  },
   analytics: {
     title: "Analytics",
     scopeSession: "Session",

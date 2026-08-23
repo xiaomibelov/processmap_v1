@@ -1,0 +1,27 @@
+{
+  "contour": "fix/i18n-diagram-section",
+  "type": "fix",
+  "status": "READY_FOR_REVIEW",
+  "base_sha": "5e4c555c",
+  "head_sha": "7635ea87",
+  "branch": "fix/i18n-diagram-section",
+  "remote_url": "https://github.com/xiaomibelov/processmap_v1",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/809",
+  "issues_closed": [
+    "TypeError при открытии overflow-меню Diagram из-за отсутствующей секции diagram в i18n"
+  ],
+  "tests": {
+    "i18n_invariant_test_without_fix": "fail (diagram keys missing)",
+    "i18n_invariant_test_with_fix": "pass",
+    "npm_run_build": "pass",
+    "npm_run_test_smoke": "pass (4/4)",
+    "npm_test_full": "87 pre-existing failures unrelated to change"
+  },
+  "pending": [
+    "Owner review and merge of PR #809"
+  ],
+  "notes": [
+    "Хосты/SSH/deploy не использовались.",
+    "Merge только после явного approve владельца."
+  ]
+}
