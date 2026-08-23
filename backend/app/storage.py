@@ -1478,7 +1478,10 @@ def _ensure_schema() -> None:
                   parent_session_id TEXT,
                   element_id_in_parent TEXT,
                   activity_count INTEGER NOT NULL DEFAULT 0,
-                  deleted_at INTEGER NOT NULL DEFAULT 0
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  rag_readiness_status TEXT NOT NULL DEFAULT 'not_ready',
+                  rag_queued_at INTEGER,
+                  rag_indexed_at INTEGER
                 )
                 """
             )
@@ -1611,6 +1614,27 @@ def _ensure_schema() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_product_action_suggestions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  source TEXT NOT NULL DEFAULT 'llm',
+                  original_llm_output TEXT NOT NULL DEFAULT '{}',
+                  action TEXT NOT NULL DEFAULT '{}',
+                  binding TEXT NOT NULL DEFAULT '{}',
+                  edited_by_user INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  CONSTRAINT chk_session_product_action_suggestions_status
+                    CHECK (status IN ('pending', 'approved', 'rejected'))
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_product_action_suggestions_session_status ON session_product_action_suggestions(session_id, status)"
             )
             con.execute(
                 """
@@ -2394,6 +2418,12 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_at INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "sessions", "diagram_last_write_changed_keys_json"):
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]'")
+            if not _column_exists(con, "sessions", "rag_readiness_status"):
+                con.execute("ALTER TABLE sessions ADD COLUMN rag_readiness_status TEXT NOT NULL DEFAULT 'not_ready'")
+            if not _column_exists(con, "sessions", "rag_queued_at"):
+                con.execute("ALTER TABLE sessions ADD COLUMN rag_queued_at INTEGER")
+            if not _column_exists(con, "sessions", "rag_indexed_at"):
+                con.execute("ALTER TABLE sessions ADD COLUMN rag_indexed_at INTEGER")
             if not _column_exists(con, "bpmn_versions", "diagram_state_version"):
                 con.execute("ALTER TABLE bpmn_versions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "bpmn_versions", "session_payload_hash"):
@@ -2426,6 +2456,27 @@ def _ensure_schema() -> None:
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_product_action_suggestions (
+                  id TEXT PRIMARY KEY,
+                  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  source TEXT NOT NULL DEFAULT 'llm',
+                  original_llm_output TEXT NOT NULL DEFAULT '{}',
+                  action TEXT NOT NULL DEFAULT '{}',
+                  binding TEXT NOT NULL DEFAULT '{}',
+                  edited_by_user INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  CONSTRAINT chk_session_product_action_suggestions_status
+                    CHECK (status IN ('pending', 'approved', 'rejected'))
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_product_action_suggestions_session_status ON session_product_action_suggestions(session_id, status)"
             )
             con.execute(
                 """
@@ -3931,8 +3982,29 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "derived_from_session_id": str((row["derived_from_session_id"] if "derived_from_session_id" in keys else "") or ""),
         "activity_count": int((row["activity_count"] if "activity_count" in keys else 0) or 0),
         "deleted_at": int((row["deleted_at"] if "deleted_at" in keys else 0) or 0),
+        "rag_readiness_status": str((row["rag_readiness_status"] if "rag_readiness_status" in keys else "not_ready") or "not_ready"),
+        "rag_queued_at": int(row["rag_queued_at"]) if ("rag_queued_at" in keys and row["rag_queued_at"] is not None) else None,
+        "rag_indexed_at": int(row["rag_indexed_at"]) if ("rag_indexed_at" in keys and row["rag_indexed_at"] is not None) else None,
     }
     return Session.model_validate(payload)
+
+
+def _suggestion_row_to_dict(row: Any) -> Dict[str, Any]:
+    keys = set(row.keys())
+    return {
+        "id": str(row["id"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "status": str(row["status"] or "pending"),
+        "source": str(row["source"] or "llm"),
+        "original_llm_output": _json_loads(
+            (row["original_llm_output"] if "original_llm_output" in keys else "{}") or "{}", {}
+        ),
+        "action": _json_loads((row["action"] if "action" in keys else "{}") or "{}", {}),
+        "binding": _json_loads((row["binding"] if "binding" in keys else "{}") or "{}", {}),
+        "edited_by_user": int((row["edited_by_user"] if "edited_by_user" in keys else 0) or 0),
+        "created_at": int((row["created_at"] if "created_at" in keys else 0) or 0),
+        "updated_at": int((row["updated_at"] if "updated_at" in keys else 0) or 0),
+    }
 
 
 def _project_row_to_model(row: Any) -> "Project":
@@ -4075,6 +4147,159 @@ class Storage:
                 return sess
             return None
         return None
+
+    def list_product_action_suggestions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return []
+        _ensure_schema()
+        params: List[Any] = [sid]
+        status_filter = ""
+        if status:
+            status_filter = " AND status = ?"
+            params.append(status)
+        with _connect() as con:
+            rows = con.execute(
+                f"""
+                SELECT * FROM session_product_action_suggestions
+                 WHERE session_id = ? {status_filter}
+                 ORDER BY created_at DESC, id DESC
+                """,
+                params,
+            ).fetchall()
+        return [_suggestion_row_to_dict(row) for row in rows]
+
+    def upsert_product_action_suggestion(
+        self,
+        session_id: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            raise ValueError("session_id is required")
+        _ensure_schema()
+        suggestion_id = str(payload.get("id") or "").strip() or uuid.uuid4().hex
+        now = _now_ts()
+        status = str(payload.get("status") or "pending").strip()
+        if status not in {"pending", "approved", "rejected"}:
+            status = "pending"
+        values = {
+            "id": suggestion_id,
+            "session_id": sid,
+            "status": status,
+            "source": str(payload.get("source") or "llm").strip() or "llm",
+            "original_llm_output": _json_dumps(payload.get("original_llm_output") or {}, {}),
+            "action": _json_dumps(payload.get("action") or {}, {}),
+            "binding": _json_dumps(payload.get("binding") or {}, {}),
+            "edited_by_user": int(payload.get("edited_by_user") or 0),
+            "created_at": now,
+            "updated_at": now,
+        }
+        with _connect() as con:
+            existing = con.execute(
+                "SELECT 1 FROM session_product_action_suggestions WHERE id = ? AND session_id = ? LIMIT 1",
+                [suggestion_id, sid],
+            ).fetchone()
+            if existing:
+                con.execute(
+                    """
+                    UPDATE session_product_action_suggestions
+                       SET status = :status,
+                           source = :source,
+                           original_llm_output = :original_llm_output,
+                           action = :action,
+                           binding = :binding,
+                           edited_by_user = :edited_by_user,
+                           updated_at = :updated_at
+                     WHERE id = :id
+                       AND session_id = :session_id
+                    """,
+                    values,
+                )
+            else:
+                con.execute(
+                    """
+                    INSERT INTO session_product_action_suggestions (
+                      id, session_id, status, source, original_llm_output, action, binding,
+                      edited_by_user, created_at, updated_at
+                    ) VALUES (
+                      :id, :session_id, :status, :source, :original_llm_output, :action, :binding,
+                      :edited_by_user, :created_at, :updated_at
+                    )
+                    """,
+                    values,
+                )
+        return {
+            **values,
+            "original_llm_output": _json_loads(values["original_llm_output"], {}),
+            "action": _json_loads(values["action"], {}),
+            "binding": _json_loads(values["binding"], {}),
+        }
+
+    def delete_product_action_suggestions(
+        self,
+        session_id: str,
+        *,
+        suggestion_ids: Optional[List[str]] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return 0
+        _ensure_schema()
+        clauses: List[str] = ["session_id = ?"]
+        params: List[Any] = [sid]
+        if suggestion_ids:
+            placeholders = ",".join(["?"] * len(suggestion_ids))
+            clauses.append(f"id IN ({placeholders})")
+            params.extend(suggestion_ids)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        with _connect() as con:
+            cur = con.execute(
+                f"DELETE FROM session_product_action_suggestions WHERE {' AND '.join(clauses)}",
+                params,
+            )
+            return int(cur.rowcount or 0)
+
+    def get_rag_readiness(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        session = self.load(session_id, org_id=org_id, is_admin=True)
+        if session is None:
+            return None
+        return {
+            "session_id": session.id,
+            "rag_readiness_status": session.rag_readiness_status,
+            "rag_queued_at": session.rag_queued_at,
+            "rag_indexed_at": session.rag_indexed_at,
+        }
+
+    def set_rag_readiness(
+        self,
+        session_id: str,
+        new_status: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        session = self.load(session_id, org_id=org_id, is_admin=True)
+        if session is None:
+            return None
+        session.rag_readiness_status = str(new_status or "not_ready").strip() or "not_ready"
+        if session.rag_readiness_status == "queued":
+            session.rag_queued_at = _now_ts()
+        self.save(session, org_id=org_id, is_admin=True)
+        return self.get_rag_readiness(session_id, org_id=org_id)
 
     def load_session_projection(
         self,
@@ -4559,6 +4784,9 @@ class Storage:
                 "derived_from_session_id": str(getattr(s, "derived_from_session_id", "") or ""),
                 "activity_count": int(getattr(s, "activity_count", 0) or 0),
                 "deleted_at": int(getattr(s, "deleted_at", 0) or 0),
+                "rag_readiness_status": str(getattr(s, "rag_readiness_status", "not_ready") or "not_ready"),
+                "rag_queued_at": int(getattr(s, "rag_queued_at", 0) or 0) if getattr(s, "rag_queued_at", None) is not None else None,
+                "rag_indexed_at": int(getattr(s, "rag_indexed_at", 0) or 0) if getattr(s, "rag_indexed_at", None) is not None else None,
             }
             cas_base = (
                 int(expected_diagram_state_version)
@@ -4617,7 +4845,10 @@ class Storage:
                          process_layer=:process_layer,
                          derived_from_session_id=:derived_from_session_id,
                          activity_count=:activity_count,
-                         deleted_at=:deleted_at
+                         deleted_at=:deleted_at,
+                         rag_readiness_status=:rag_readiness_status,
+                         rag_queued_at=:rag_queued_at,
+                         rag_indexed_at=:rag_indexed_at
                      WHERE id = :id
                        AND diagram_state_version = :__cas_base
                     """,
@@ -4648,7 +4879,8 @@ class Storage:
                       diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                       owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
                       navigation_stack, parent_session_id, element_id_in_parent, process_layer,
-                      derived_from_session_id, activity_count
+                      derived_from_session_id, activity_count, rag_readiness_status, rag_queued_at,
+                      rag_indexed_at
                     ) VALUES (
                       :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                       :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
@@ -4658,7 +4890,8 @@ class Storage:
                       :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                       :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
                       :navigation_stack, :parent_session_id, :element_id_in_parent, :process_layer,
-                      :derived_from_session_id, :activity_count
+                      :derived_from_session_id, :activity_count, :rag_readiness_status, :rag_queued_at,
+                      :rag_indexed_at
                     )
                     ON CONFLICT(id) DO UPDATE SET
                       title=excluded.title,
@@ -4701,7 +4934,10 @@ class Storage:
                       process_layer=excluded.process_layer,
                       derived_from_session_id=excluded.derived_from_session_id,
                       activity_count=excluded.activity_count,
-                      deleted_at=excluded.deleted_at
+                      deleted_at=excluded.deleted_at,
+                      rag_readiness_status=excluded.rag_readiness_status,
+                      rag_queued_at=excluded.rag_queued_at,
+                      rag_indexed_at=excluded.rag_indexed_at
                     """,
                     values,
                 )
