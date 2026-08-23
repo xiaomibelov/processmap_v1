@@ -11,6 +11,7 @@ from ..schemas.legacy_api import (
     AnswerIn,
     BpmnMetaPatchIn,
     BpmnRestoreIn,
+    BpmnVersionCreateIn,
     BpmnXmlIn,
     CreateEdgeIn,
     CreateNodeIn,
@@ -250,6 +251,11 @@ def session_bpmn_versions_list(
         include_xml=include_xml,
         include_technical=include_technical,
     )
+
+@router.post('/api/sessions/{session_id}/bpmn/versions')
+def session_bpmn_version_create(session_id: str, inp: BpmnVersionCreateIn, request: Request = None):
+    return _svc.bpmn_version_create(session_id, inp, request)
+
 
 @router.get('/api/sessions/{session_id}/bpmn/versions/{version_id}')
 def session_bpmn_version_detail(session_id: str, version_id: str, request: Request = None):
