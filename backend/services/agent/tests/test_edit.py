@@ -10,6 +10,7 @@ from unittest import mock
 import pytest
 
 from edit import (
+    apply_edit_plan,
     build_human_diff,
     create_pending_edit,
     get_pending_edit,
@@ -17,6 +18,7 @@ from edit import (
     update_pending_edit_status,
     validate_edit_plan,
 )
+from edit.applier import EditApplyError
 from edit.state import _now_ts
 
 
@@ -216,3 +218,63 @@ def test_propose_edit_plan_disabled_without_feature_flag(projection):
     )
     assert meta["status"] == "disabled"
     assert plan is None
+
+
+def test_apply_edit_plan_conflict_rev_on_version_mismatch():
+    with mock.patch("edit.applier.monolith_client") as m:
+        m.get_session_graph.return_value = {"diagram_state_version": 5, "nodes": [], "edges": []}
+        m.get_session_bpmn.return_value = ""
+        with pytest.raises(EditApplyError) as exc_info:
+            apply_edit_plan("s1", "tok", {"operations": []}, base_diagram_state_version=4)
+    assert exc_info.value.status == "conflict_rev"
+
+
+def test_apply_edit_plan_updates_bpmn_xml_for_rename():
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="Process_1"><bpmn:task id="Task_1" name="Old name"/></bpmn:process>'
+        '</bpmn:definitions>'
+    )
+    with mock.patch("edit.applier.monolith_client") as m:
+        m.get_session_graph.return_value = {"diagram_state_version": 2, "nodes": [], "edges": []}
+        m.get_session_bpmn.return_value = xml
+        m.bpmn_save.return_value = {
+            "_http_status": 200,
+            "bpmn_version_snapshot": {"id": "snap_1", "version_number": 7},
+        }
+        m.write_agent_edit_audit.return_value = {"_http_status": 200}
+        result = apply_edit_plan(
+            "s1", "tok",
+            {"operations": [{"op": "update_node", "node_id": "Task_1", "fields": {"title": "New name"}}]},
+            base_diagram_state_version=2,
+        )
+    assert result["status"] == "applied"
+    assert result["operations_applied"] == 1
+    assert result["snapshot_version_id"] == "snap_1"
+    saved_xml = m.bpmn_save.call_args[0][2]
+    assert 'name="New name"' in saved_xml
+    assert saved_xml != xml
+
+
+def test_apply_edit_plan_uses_granular_endpoints_when_no_bpmn_xml():
+    with mock.patch("edit.applier.monolith_client") as m:
+        m.get_session_graph.return_value = {
+            "diagram_state_version": 3,
+            "nodes": [{"id": "n_1", "title": "Old"}],
+            "edges": [],
+        }
+        m.get_session_bpmn.return_value = ""
+        m.patch_node.return_value = {"_http_status": 200, "diagram_state_version": 4}
+        m.write_agent_edit_audit.return_value = {"_http_status": 200}
+        result = apply_edit_plan(
+            "s1", "tok",
+            {"operations": [{"op": "update_node", "node_id": "n_1", "fields": {"title": "New"}}]},
+            base_diagram_state_version=3,
+        )
+    assert result["status"] == "applied"
+    assert result["operations_applied"] == 1
+    assert m.patch_node.called
+    _, node_id, token, fields = m.patch_node.call_args[0]
+    assert node_id == "n_1"
+    assert fields["title"] == "New"

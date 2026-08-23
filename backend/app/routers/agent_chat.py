@@ -4,12 +4,14 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 from ..agent.chat import run_turn
 from ..agent.memory_store import list_turns
 from ..ai.process_projection import build_process_projection, projection_digest
 from ..repositories import session_repo
 from ..schemas.agent_chat import AgentChatIn, AgentChatOut, AgentHistoryOut, AgentTurnOut
+from ..services.audit import _audit_log_safe
 from ..sessions_graph import _request_context
 from ..utils.session_helpers import raise_session_not_found
 
@@ -90,3 +92,35 @@ def agent_projection(session_id: str, request: Request) -> Dict[str, Any]:
         "projection_digest": projection_digest(projection),
         "rev": int(getattr(sess, "version", 0) or 0),
     }
+
+
+class AgentEditAuditIn(BaseModel):
+    action: str = Field(default="agent_edit_applied")
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/api/sessions/{session_id}/agent/audit")
+def agent_edit_audit(session_id: str, body: AgentEditAuditIn, request: Request) -> Dict[str, Any]:
+    """Write an audit log entry for an agent edit (best-effort, never fails the apply)."""
+    ctx = _request_context(request)
+    sess = session_repo.load(
+        session_id,
+        user_id=ctx.get("user_id"),
+        org_id=ctx.get("org_id"),
+        is_admin=ctx.get("is_admin"),
+    )
+    if not sess:
+        raise_session_not_found(session_id)
+
+    org_id = str(getattr(sess, "org_id", "") or ctx.get("org_id") or "org_default").strip()
+    _audit_log_safe(
+        request,
+        org_id=org_id,
+        action=body.action,
+        entity_type="session",
+        entity_id=session_id,
+        project_id=str(getattr(sess, "project_id", "") or "").strip(),
+        session_id=session_id,
+        meta=body.meta,
+    )
+    return {"ok": True}
