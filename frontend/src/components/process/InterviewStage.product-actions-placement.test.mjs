@@ -7,18 +7,24 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(__dirname, "InterviewStage.jsx"), "utf8");
 
-test("InterviewStage renders ProductActionsPanel in the normal Analysis section before mode-specific views", () => {
+test("InterviewStage renders ProductActionsPanel inside the steps tab companion", () => {
   const panelIndex = source.indexOf("<ProductActionsPanel");
-  const diagramModeIndex = source.indexOf('{timelineViewMode === "diagram"');
-  const pathsModeIndex = source.indexOf('{timelineViewMode === "paths"');
-  const matrixModeIndex = source.indexOf('{timelineViewMode === "matrix"');
-  const transitionsIndex = source.indexOf("<TransitionsBlock");
-
   assert.notEqual(panelIndex, -1, "ProductActionsPanel must be rendered by InterviewStage");
-  assert.ok(panelIndex < diagramModeIndex, "ProductActionsPanel must appear before diagram subview");
-  assert.ok(panelIndex < pathsModeIndex, "ProductActionsPanel must appear before routes/scenarios subview");
-  assert.ok(panelIndex < transitionsIndex, "ProductActionsPanel must appear above B2/routes/summary blocks");
-  assert.equal(/timelineViewMode === "matrix"[\s\S]{0,160}<ProductActionsPanel/.test(source), false);
+
+  const companionStart = source.indexOf("const stepsTabCompanion =");
+  const companionEnd = source.indexOf("const stepsTabSecondaryPanel");
+  assert.notEqual(companionStart, -1, "stepsTabCompanion must be defined");
+  assert.ok(
+    panelIndex > companionStart && (companionEnd === -1 || panelIndex < companionEnd),
+    "ProductActionsPanel must be rendered inside stepsTabCompanion"
+  );
+
+  const stepsTabIndex = source.indexOf('key: "steps"');
+  assert.notEqual(stepsTabIndex, -1, "steps tab must be defined");
+  assert.ok(
+    stepsTabIndex < source.indexOf("{stepsTabCompanion}", stepsTabIndex),
+    "stepsTabCompanion must be rendered inside the steps tab"
+  );
 });
 
 test("InterviewStage loads session analysis view model and uses step_action_counts", () => {
