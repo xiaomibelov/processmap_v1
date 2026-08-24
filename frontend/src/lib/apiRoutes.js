@@ -309,7 +309,7 @@ export const apiRoutes = {
     endpointCheckStatus: () => "/api/admin/endpoint-check/status",
     endpointCheckRuns: (params = {}) => withQuery("/api/admin/endpoint-check/runs", params),
     endpointCheckRunDetail: (runId) => `/api/admin/endpoint-check/runs/${encode(runId)}`,
-    agentRuns: () => "/api/admin/agent-runs",
+    agentRuns: (params = {}) => withQuery("/api/admin/agent-runs", params),
     agentRun: (runId) => `/api/admin/agent-runs/${encodeURIComponent(String(runId || ""))}`,
     permissions: (params = {}) => withQuery("/api/admin/permissions", params),
     permissionEntities: (params = {}) => withQuery("/api/admin/permissions/entities", params),

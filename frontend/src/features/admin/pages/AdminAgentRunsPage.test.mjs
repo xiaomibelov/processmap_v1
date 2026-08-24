@@ -14,7 +14,7 @@ const FRONTEND_ROOT = path.resolve(__dirname, "../../../..");
 
 let viteServer = null;
 
-async function loadPage() {
+async function loadPage(modulePath) {
   if (!viteServer) {
     viteServer = await createServer({
       root: FRONTEND_ROOT,
@@ -23,7 +23,7 @@ async function loadPage() {
       appType: "custom",
     });
   }
-  return viteServer.ssrLoadModule("/src/features/admin/pages/AdminAgentRunsPage.jsx");
+  return viteServer.ssrLoadModule(modulePath);
 }
 
 after(async () => {
@@ -86,39 +86,41 @@ async function flush(ms = 30) {
   });
 }
 
-test("AdminAgentRunsPage: renders empty state when no runs", async () => {
-  const mod = await loadPage();
+test("AdminAgentRunsPage: renders empty state when no conversations", async () => {
+  const mod = await loadPage("/src/features/admin/pages/AdminAgentRunsPage.jsx");
   const Page = mod.default;
   const env = setupDom();
   await act(async () => {
-    env.root.render(React.createElement(Page, { payload: { runs: [], count: 0 }, loading: false }));
+    env.root.render(React.createElement(Page, { payload: { items: [], count: 0 }, loading: false }));
   });
   await flush(50);
   try {
     const text = env.container.textContent || "";
-    assert.ok(text.includes("Нет активных запусков агентов"));
+    assert.ok(text.includes("Нет диалогов агентов"));
   } finally {
     await env.cleanup();
   }
 });
 
-test("AdminAgentRunsPage: renders table with runs", async () => {
-  const mod = await loadPage();
+test("AdminAgentRunsPage: renders table with conversations", async () => {
+  const mod = await loadPage("/src/features/admin/pages/AdminAgentRunsPage.jsx");
   const Page = mod.default;
   const env = setupDom();
   const payload = {
-    runs: [
+    items: [
       {
-        run_id: "20260522T160309Z-89364",
-        contour_id: "feat/active-runs-monitor-v1",
+        conversation_id: "conv:s1:u1",
+        session_id: "sess_abc",
+        user_id: "user_1",
+        user_email: "user@local",
+        user_name: "Test User",
         status: "active",
-        stop_requested: false,
-        started_at: 1779465789,
+        turn_count: 4,
+        total_tokens: 1200,
+        first_activity_at: 1779465789,
         last_activity_at: 1779465856,
-        agents: [
-          { agent: "1", pid: "904", highlight: true },
-          { agent: "2", pid: "1987", highlight: false },
-        ],
+        applied_count: 1,
+        rejected_count: 0,
       },
     ],
     count: 1,
@@ -129,10 +131,54 @@ test("AdminAgentRunsPage: renders table with runs", async () => {
   await flush(50);
   try {
     const text = env.container.textContent || "";
-    assert.ok(text.includes("20260522T160309Z-89364"));
-    assert.ok(text.includes("feat/active-runs-monitor-v1"));
-    assert.ok(text.includes("active") || text.includes("Активен"));
-    assert.ok(text.includes("1") && text.includes("2"));
+    assert.ok(text.includes("conv:s1:u1"));
+    assert.ok(text.includes("Test User"));
+    assert.ok(text.includes("user@local"));
+    assert.ok(text.includes("sess_abc"));
+    assert.ok(text.includes("4"));
+    assert.ok(text.includes("1200"));
+    assert.ok(text.includes("Применено: 1"));
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("AdminAgentRunDetailPage: renders conversation details and timeline", async () => {
+  const mod = await loadPage("/src/features/admin/pages/AdminAgentRunDetailPage.jsx");
+  const Page = mod.default;
+  const env = setupDom();
+  const payload = {
+    item: {
+      conversation_id: "conv:s1:u1",
+      session_id: "sess_abc",
+      project_id: "proj_1",
+      user_id: "user_1",
+      user_email: "user@local",
+      user_name: "Test User",
+      status: "closed",
+      turn_count: 2,
+      total_tokens: 800,
+      summary: "Пользователь спрашивал о схеме и применил правку.",
+      summary_missing: false,
+      actions: { applied: 1, rejected: 0 },
+      turns: [
+        { id: "t1", role: "user", text: "переименуй шаг", created_at: 1779465789, truncated: false },
+        { id: "t2", role: "assistant", text: "Готово", action: "edit_canvas", created_at: 1779465790, truncated: false },
+      ],
+    },
+  };
+  await act(async () => {
+    env.root.render(React.createElement(Page, { payload, loading: false, error: "", onBack: () => {} }));
+  });
+  await flush(50);
+  try {
+    const text = env.container.textContent || "";
+    assert.ok(text.includes("conv:s1:u1"));
+    assert.ok(text.includes("Test User"));
+    assert.ok(text.includes("Пользователь спрашивал о схеме"));
+    assert.ok(text.includes("переименуй шаг"));
+    assert.ok(text.includes("edit_canvas"));
+    assert.ok(text.includes("Открыть сессию"));
   } finally {
     await env.cleanup();
   }
