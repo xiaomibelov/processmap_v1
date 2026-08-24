@@ -3,10 +3,62 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="processmap-build-id" content="%VITE_BUILD_ID%" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>ProcessMap</title>
+    <script>
+      // UX-UPDATE boot guard: убиваем устаревший service worker / кеши и,
+      // если раздаваемая версия новее этого index.html, перезагружаемся один раз.
+      (function () {
+        function clearCaches() {
+          if (typeof caches === "undefined") return Promise.resolve();
+          return caches.keys().then(function (keys) {
+            return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+          }).catch(function () {});
+        }
+        // 1. Service worker kill-switch: если страницей управляет старый SW — unregister + reload.
+        try {
+          var swKey = "processmap:sw-kill:v1";
+          var swDone = sessionStorage.getItem(swKey);
+          if (!swDone && typeof navigator !== "undefined" && navigator.serviceWorker) {
+            sessionStorage.setItem(swKey, "1");
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              var jobs = regs.map(function (r) { return r.unregister(); });
+              jobs.push(clearCaches());
+              return Promise.all(jobs);
+            }).then(function () {
+              if (navigator.serviceWorker.controller) {
+                window.location.reload();
+              }
+            }).catch(function () {});
+          }
+        } catch (e) {}
+
+        // 2. Version boot guard: сверяемся с /version.json и перезагружаемся,
+        // только если этот index.html устарел (один раз за сессию).
+        try {
+          var meta = document.querySelector('meta[name="processmap-build-id"]');
+          var buildId = meta ? String(meta.getAttribute("content") || "").trim() : "";
+          if (!buildId || buildId.indexOf("%") === 0 || buildId === "dev" || buildId === "unknown") return;
+          var reloadKey = "processmap:version-boot-reload:" + buildId;
+          if (sessionStorage.getItem(reloadKey)) return;
+          fetch("/version.json?cb=" + Date.now(), { cache: "no-store" })
+            .then(function (r) { return r.json().catch(function () { return null; }); })
+            .then(function (data) {
+              var remoteSha = String(data && data.sha || "").trim();
+              if (!remoteSha || remoteSha === buildId) return;
+              sessionStorage.setItem(reloadKey, "1");
+              clearCaches().then(function () {
+                window.location.reload();
+              }).catch(function () {
+                window.location.reload();
+              });
+            }).catch(function () {});
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

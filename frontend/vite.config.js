@@ -83,6 +83,10 @@ export default defineConfig({
       // UX-UPDATE: static/version.json {sha, builtAt} в dist — источник правды
       // для тоста «Вышло обновление» (поллинг с cache:'no-store', без кэша CDN).
       name: "app-version-json",
+      transformIndexHtml(html) {
+        const buildId = String(process.env.VITE_BUILD_ID || "dev").trim() || "dev";
+        return html.replace(/%VITE_BUILD_ID%/g, buildId);
+      },
       generateBundle() {
         const sha = String(process.env.VITE_BUILD_ID || "dev").trim() || "dev";
         const builtAt = String(process.env.VITE_BUILD_TIME || new Date().toISOString()).trim();
