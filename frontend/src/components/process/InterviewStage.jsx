@@ -138,6 +138,9 @@ function recordReactProfile(id, phase, actualDuration, baseDuration) {
   }
 }
 
+const IS_DEV_BUILD = !!import.meta.env.DEV;
+const LazyInterviewPathsView = lazy(() => import("./interview/InterviewPathsView"));
+
 export default function InterviewStage({
   sessionId,
   sessionTitle,
@@ -716,7 +719,7 @@ export default function InterviewStage({
       branchViewMode={branchViewMode}
       onSetBranchViewMode={handleSetBranchViewMode}
       onToggleCollapse={() => toggleBlock("timeline")}
-      devDebugEnabled={false}
+      devDebugEnabled={IS_DEV_BUILD}
       onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
     />
   );
@@ -998,108 +1001,108 @@ export default function InterviewStage({
 
   return (
     <ProcessAnalysisDashboard
-        sessionId={sid}
-        externalViewModel={sessionAnalysisViewModel}
-        processTitle={processTitle}
-        defaultTabKey="steps"
-        tabs={[
-          {
-            key: "boundaries",
-            label: analysisT("analysis.tabs.boundaries"),
-            content: (
-              <ProcessAnalysisBoundariesTab>
-                <BoundariesBlock
-                  boundariesComplete={boundariesComplete}
-                  uiPrefsDirty={uiPrefsDirty}
-                  uiPrefsSavedAt={uiPrefsSavedAt}
-                  saveUiPrefs={saveUiPrefs}
-                  collapsed={false}
-                  toggleBlock={() => {}}
-                  boundaries={data.boundaries}
-                  patchBoundary={patchBoundary}
-                  boundaryLaneOptions={boundaryLaneOptions}
-                  boundaryLaneOptionsFiltered={boundaryLaneOptionsFiltered}
-                  boundariesLaneFilter={boundariesLaneFilter}
-                  setBoundariesLaneFilter={setBoundariesLaneFilter}
-                  setUiPrefsDirty={setUiPrefsDirty}
-                  intermediateRolesAuto={intermediateRolesAuto}
-                  resetBoundaries={resetBoundaries}
-                />
-              </ProcessAnalysisBoundariesTab>
-            ),
-          },
-          {
-            key: "steps",
-            label: analysisT("analysis.tabs.steps"),
-            content: (
-              <ProcessAnalysisStepsTab
-                steps={filteredTimelineView}
-                totalSteps={timelineView.length}
-                selectedStepIds={selectedTimelineStepIds}
-                activeStepId={analysisContextStepIds[0] || ""}
-                onToggleStepSelection={handleToggleStepSelection}
-                onToggleAllStepSelection={handleToggleAllStepSelection}
-                onActivateStep={handleActivateAnalysisStep}
-                patchStep={patchStep}
-                productActionCountByStepId={productActionCountByStepId}
-                toolbar={stepsTabToolbar}
-              >
-                <>
-                  {stepsTabCompanion}
-                  {stepsTabSecondaryPanel}
-                </>
-              </ProcessAnalysisStepsTab>
-            ),
-          },
-          {
-            key: "branches",
-            label: analysisT("analysis.tabs.branches"),
-            content: (
-              <ProcessAnalysisBranchesTab
-                transitions={transitionView}
-                onPatchTransitionWhen={patchTransitionWhen}
+      sessionId={sid}
+      externalViewModel={sessionAnalysisViewModel}
+      processTitle={processTitle}
+      defaultTabKey="steps"
+      tabs={[
+        {
+          key: "boundaries",
+          label: analysisT("analysis.tabs.boundaries"),
+          content: (
+            <ProcessAnalysisBoundariesTab>
+              <BoundariesBlock
+                boundariesComplete={boundariesComplete}
+                uiPrefsDirty={uiPrefsDirty}
+                uiPrefsSavedAt={uiPrefsSavedAt}
+                saveUiPrefs={saveUiPrefs}
+                collapsed={false}
+                toggleBlock={() => {}}
+                boundaries={data.boundaries}
+                patchBoundary={patchBoundary}
+                boundaryLaneOptions={boundaryLaneOptions}
+                boundaryLaneOptionsFiltered={boundaryLaneOptionsFiltered}
+                boundariesLaneFilter={boundariesLaneFilter}
+                setBoundariesLaneFilter={setBoundariesLaneFilter}
+                setUiPrefsDirty={setUiPrefsDirty}
+                intermediateRolesAuto={intermediateRolesAuto}
+                resetBoundaries={resetBoundaries}
               />
-            ),
-          },
-          {
-            key: "summary",
-            label: analysisT("analysis.tabs.summary"),
-            content: <ProcessAnalysisSummaryTab />,
-          },
-          {
-            key: "exceptions",
-            label: analysisT("analysis.tabs.exceptions"),
-            content: (
-              <ProcessAnalysisExceptionsTab>
-                <ExceptionsBlock
+            </ProcessAnalysisBoundariesTab>
+          ),
+        },
+        {
+          key: "steps",
+          label: analysisT("analysis.tabs.steps"),
+          content: (
+            <ProcessAnalysisStepsTab
+              steps={filteredTimelineView}
+              totalSteps={timelineView.length}
+              selectedStepIds={selectedTimelineStepIds}
+              activeStepId={analysisContextStepIds[0] || ""}
+              onToggleStepSelection={handleToggleStepSelection}
+              onToggleAllStepSelection={handleToggleAllStepSelection}
+              onActivateStep={handleActivateAnalysisStep}
+              patchStep={patchStep}
+              productActionCountByStepId={productActionCountByStepId}
+              toolbar={stepsTabToolbar}
+            >
+              <>
+                {stepsTabCompanion}
+                {stepsTabSecondaryPanel}
+              </>
+            </ProcessAnalysisStepsTab>
+          ),
+        },
+        {
+          key: "branches",
+          label: analysisT("analysis.tabs.branches"),
+          content: (
+            <ProcessAnalysisBranchesTab
+              transitions={transitionView}
+              onPatchTransitionWhen={patchTransitionWhen}
+            />
+          ),
+        },
+        {
+          key: "summary",
+          label: analysisT("analysis.tabs.summary"),
+          content: <ProcessAnalysisSummaryTab />,
+        },
+        {
+          key: "exceptions",
+          label: analysisT("analysis.tabs.exceptions"),
+          content: (
+            <ProcessAnalysisExceptionsTab>
+              <ExceptionsBlock
+                collapsed={false}
+                toggleBlock={() => {}}
+                exceptions={data.exceptions}
+                addException={addException}
+                patchException={patchException}
+                deleteException={deleteException}
+              />
+            </ProcessAnalysisExceptionsTab>
+          ),
+        },
+        {
+          key: "ai",
+          label: analysisT("analysis.tabs.ai"),
+          content: (
+            <ProcessAnalysisAiTab>
+              {SHOW_AI_QUESTIONS_BLOCK ? (
+                <AiQuestionsBlock
                   collapsed={false}
                   toggleBlock={() => {}}
-                  exceptions={data.exceptions}
-                  addException={addException}
-                  patchException={patchException}
-                  deleteException={deleteException}
+                  aiRows={aiRows}
+                  patchQuestionStatus={patchQuestionStatus}
                 />
-              </ProcessAnalysisExceptionsTab>
-            ),
-          },
-          {
-            key: "ai",
-            label: analysisT("analysis.tabs.ai"),
-            content: (
-              <ProcessAnalysisAiTab>
-                {SHOW_AI_QUESTIONS_BLOCK ? (
-                  <AiQuestionsBlock
-                    collapsed={false}
-                    toggleBlock={() => {}}
-                    aiRows={aiRows}
-                    patchQuestionStatus={patchQuestionStatus}
-                  />
-                ) : null}
-                <LlmAnalysisBlock sessionId={sid} steps={Array.isArray(timelineView) ? timelineView : []} />
-              </ProcessAnalysisAiTab>
-            ),
-          },
-        ]}
-      />
+              ) : null}
+              <LlmAnalysisBlock sessionId={sid} steps={Array.isArray(timelineView) ? timelineView : []} />
+            </ProcessAnalysisAiTab>
+          ),
+        },
+      ]}
+    />
   );
 }
