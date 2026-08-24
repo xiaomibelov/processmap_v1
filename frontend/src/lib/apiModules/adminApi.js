@@ -430,8 +430,9 @@ export async function apiAdminLlmPutFeatureModel(feature, modelId) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
-export async function apiAdminListAgentRuns() {
-  const r = okOrError(await request(apiRoutes.admin.agentRuns(), { method: "GET" }));
+export async function apiAdminListAgentRuns(params = {}) {
+  const endpoint = apiRoutes.admin.agentRuns(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
