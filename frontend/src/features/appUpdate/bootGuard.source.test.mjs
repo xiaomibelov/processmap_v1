@@ -14,10 +14,10 @@ describe("index.html boot guard source checks", () => {
     assert.match(html, /data\.sha\s*\|\|\s*data\.commit/);
   });
 
-  test("boot guard performs hard reload to bypass disk cache", () => {
-    const reloadCalls = (html.match(/\.reload\s*\(/g) || []).length;
-    assert.ok(reloadCalls >= 2, `expected at least 2 location.reload calls, found ${reloadCalls}`);
-    assert.match(html, /\.reload\s*\(\s*true\s*\)/);
+  test("boot guard uses URL cache-busting reload instead of plain reload", () => {
+    assert.match(html, /function hardReload\s*\(/);
+    assert.match(html, /__pm_cb=/);
+    assert.match(html, /location\.href\s*=\s*url\s*\+\s*sep\s*\+\s*["']__pm_cb=["']\s*\+\s*Date\.now\(\)/);
   });
 
   test("boot guard marks single reload per build id via sessionStorage", () => {
@@ -25,4 +25,5 @@ describe("index.html boot guard source checks", () => {
     assert.match(html, /sessionStorage\.setItem\s*\(/);
     assert.match(html, /processmap:version-boot-reload/);
   });
+
 });

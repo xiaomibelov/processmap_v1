@@ -18,6 +18,17 @@
             return Promise.all(keys.map(function (key) { return caches.delete(key); }));
           }).catch(function () {});
         }
+        function hardReload() {
+          try {
+            // Изменяем URL, чтобы гарантированно обойти любой disk cache / SW / прокси.
+            var url = String(location.href || "").replace(/([?&])__pm_cb=\d+&?/g, "$1").replace(/[?&]$/, "");
+            var sep = url.indexOf("?") === -1 ? "?" : "&";
+            location.href = url + sep + "__pm_cb=" + Date.now();
+          } catch (e) {
+            window.location.reload(true);
+          }
+        }
+
         // 1. Service worker kill-switch: если страницей управляет старый SW — unregister + reload.
         try {
           var swKey = "processmap:sw-kill:v1";
@@ -30,7 +41,7 @@
               return Promise.all(jobs);
             }).then(function () {
               if (navigator.serviceWorker.controller) {
-                window.location.reload();
+                hardReload();
               }
             }).catch(function () {});
           }
@@ -51,9 +62,9 @@
               if (!remoteSha || remoteSha === buildId) return;
               sessionStorage.setItem(reloadKey, "1");
               clearCaches().then(function () {
-                window.location.reload(true);
+                hardReload();
               }).catch(function () {
-                window.location.reload(true);
+                hardReload();
               });
             }).catch(function () {});
         } catch (e) {}
