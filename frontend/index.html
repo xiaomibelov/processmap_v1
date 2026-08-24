@@ -51,9 +51,9 @@
               if (!remoteSha || remoteSha === buildId) return;
               sessionStorage.setItem(reloadKey, "1");
               clearCaches().then(function () {
-                window.location.reload();
+                window.location.reload(true);
               }).catch(function () {
-                window.location.reload();
+                window.location.reload(true);
               });
             }).catch(function () {});
         } catch (e) {}
