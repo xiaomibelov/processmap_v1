@@ -24,11 +24,11 @@ function readFile(...parts) {
   return fs.readFileSync(path.join(repoRoot, ...parts), "utf-8");
 }
 
-test("InterviewStage imports ProcessAnalysisDashboard behind feature flag", () => {
+test("InterviewStage renders ProcessAnalysisDashboard without feature flag", () => {
   const source = readFile("frontend/src/components/process/InterviewStage.jsx");
   assert.match(source, /ProcessAnalysisDashboard/);
-  assert.match(source, /isAnalysisRedesignEnabled/);
-  assert.match(source, /fpc_analysis_redesign/);
+  assert.doesNotMatch(source, /isAnalysisRedesignEnabled/);
+  assert.doesNotMatch(source, /fpc_analysis_redesign/);
 });
 
 test("ProcessAnalysisDashboard uses backend read-model and renders tabs via ProcessAnalysisPage", () => {
