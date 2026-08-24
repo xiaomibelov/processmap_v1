@@ -29,12 +29,14 @@ function getDefaultSessionStorage() {
   }
 }
 
-/** Ответ GET /version.json → {sha, builtAt} | null (мусор → null, молча). */
+/** Ответ GET /version.json → {sha, builtAt} | null (мусор → null, молча).
+ *  Сервер stage отдаёт {commit, buildTime}; dev/CI — {sha, builtAt}.
+ */
 export function normalizeVersionJson(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
-  const sha = toText(source.sha);
+  const sha = toText(source.sha || source.commit);
   if (!sha) return null;
-  return { sha, builtAt: toText(source.builtAt) };
+  return { sha, builtAt: toText(source.builtAt || source.buildTime) };
 }
 
 /** SHA, вшитый в бандл на build (VITE_BUILD_ID = короткий git sha в CI). */
