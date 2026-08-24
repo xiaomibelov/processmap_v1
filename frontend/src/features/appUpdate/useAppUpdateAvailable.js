@@ -7,9 +7,12 @@ import {
   subscribeAppSafeRefresh,
 } from "./appSafeRefreshController.js";
 import {
+  APP_UPDATE_AUTO_RELOAD_DELAY_MS,
   APP_UPDATE_POLL_INTERVAL_MS,
   APP_UPDATE_VERSION_URL,
   getCurrentBuildSha,
+  hasAutoReloadedForSha,
+  markAutoReloadedForSha,
   normalizeVersionJson,
   reloadPage,
   setUpdateSnooze,
@@ -87,6 +90,20 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [checkForUpdate]);
+
+  // Авто-reload в «чистом» состоянии: один раз за сессию на remote SHA.
+  // Если есть несохранённые изменения — оставляем ручной [Обновить] с guard.
+  useEffect(() => {
+    if (!availableRuntime?.sha) return undefined;
+    if (refreshRisk?.status !== "clean") return undefined;
+    const remoteSha = availableRuntime.sha;
+    if (hasAutoReloadedForSha(remoteSha)) return undefined;
+    const timer = window.setTimeout(() => {
+      markAutoReloadedForSha(remoteSha);
+      reloadPage(window);
+    }, APP_UPDATE_AUTO_RELOAD_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [availableRuntime, refreshRisk]);
 
   // [Позже] = snooze 30 мин для текущего sha (новая семантика, не постоянный dismiss)
   const dismiss = useCallback(() => {

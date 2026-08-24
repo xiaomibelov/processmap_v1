@@ -1,11 +1,14 @@
 // UX-UPDATE — модель тоста «Вышло обновление ProcessMap» (документ владельца):
 // источник правды — static/version.json {sha, builtAt} из dist; тост один раз
 // на SHA за сессию; [Позже] = snooze 30 мин (НОВАЯ семантика, заменяет
-// постоянный dismiss-per-runtimeId). Принудительный reload запрещён —
-// reloadPage вызывается только по клику [Обновить] после guard+flush.
+// постоянный dismiss-per-runtimeId). Авто-reload разрешён ТОЛЬКО в «чистом»
+// состоянии (нет несохранённых изменений) и один раз на SHA за сессию;
+// ручной [Обновить] остаётся fallback для грязного/опасного состояния.
 export const APP_UPDATE_POLL_INTERVAL_MS = 300000; // 5 минут
 export const APP_UPDATE_SNOOZE_MS = 30 * 60 * 1000; // 30 минут
 export const APP_UPDATE_SNOOZE_STORAGE_KEY = "processmap:app-update:snooze-until";
+export const APP_UPDATE_AUTO_RELOAD_DELAY_MS = 5000; // 5 сек — время увидеть тост
+export const APP_UPDATE_AUTO_RELOADED_STORAGE_KEY = "processmap:app-update:auto-reloaded";
 export const APP_UPDATE_VERSION_URL = "/version.json";
 
 function toText(value) {
@@ -93,7 +96,37 @@ export function shouldShowUpdateToast({
   return toTs(now) >= getUpdateSnoozeUntil(remote, storage);
 }
 
-/** reload — ТОЛЬКО по клику [Обновить] (принудительный запрещён). */
+function getDefaultAutoReloadStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Один раз за сессию авто-reload для конкретного remote SHA уже выполнен? */
+export function hasAutoReloadedForSha(sha, storage = getDefaultAutoReloadStorage()) {
+  if (!storage) return false;
+  try {
+    return storage.getItem(APP_UPDATE_AUTO_RELOADED_STORAGE_KEY) === toText(sha);
+  } catch {
+    return false;
+  }
+}
+
+/** Пометить, что авто-reload для remote SHA уже выполнен. */
+export function markAutoReloadedForSha(sha, storage = getDefaultAutoReloadStorage()) {
+  if (!storage) return false;
+  try {
+    storage.setItem(APP_UPDATE_AUTO_RELOADED_STORAGE_KEY, toText(sha));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** reload — по клику [Обновить] или авто-reload в безопасном состоянии. */
 export function reloadPage(win = typeof window === "undefined" ? null : window) {
   win?.location?.reload?.();
 }

@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  APP_UPDATE_AUTO_RELOAD_DELAY_MS,
+  APP_UPDATE_AUTO_RELOADED_STORAGE_KEY,
   APP_UPDATE_POLL_INTERVAL_MS,
   APP_UPDATE_SNOOZE_MS,
   APP_UPDATE_SNOOZE_STORAGE_KEY,
   APP_UPDATE_VERSION_URL,
   getCurrentBuildSha,
   getUpdateSnoozeUntil,
+  hasAutoReloadedForSha,
+  markAutoReloadedForSha,
   normalizeVersionJson,
   reloadPage,
   setUpdateSnooze,
@@ -95,12 +99,33 @@ test("snooze-мапа устойчива к битому JSON в storage", () =>
   assert.ok(getUpdateSnoozeUntil("x", storage) > 1000);
 });
 
-test("reloadPage — только явный вызов (по клику [Обновить])", () => {
+test("reloadPage — только явный вызов (по клику [Обновить] или авто-reload)", () => {
   let called = 0;
   reloadPage({ location: { reload: () => { called += 1; } } });
   assert.equal(called, 1);
   reloadPage(null); // без window — no-op, не бросает
   assert.equal(called, 1);
+});
+
+// ---------------------------------------------------------------- auto-reload
+test("авто-reload: один раз за сессию на remote SHA", () => {
+  const storage = createStorage();
+  assert.equal(hasAutoReloadedForSha("bbb2222", storage), false);
+  assert.equal(markAutoReloadedForSha("bbb2222", storage), true);
+  assert.equal(hasAutoReloadedForSha("bbb2222", storage), true);
+  assert.equal(hasAutoReloadedForSha("ccc3333", storage), false);
+});
+
+test("авто-reload: плохой storage не ломает логику", () => {
+  assert.equal(hasAutoReloadedForSha("bbb2222", null), false);
+  assert.equal(markAutoReloadedForSha("bbb2222", null), false);
+});
+
+test("константы авто-reload присутствуют", () => {
+  assert.equal(typeof APP_UPDATE_AUTO_RELOAD_DELAY_MS, "number");
+  assert.ok(APP_UPDATE_AUTO_RELOAD_DELAY_MS >= 0);
+  assert.equal(typeof APP_UPDATE_AUTO_RELOADED_STORAGE_KEY, "string");
+  assert.ok(APP_UPDATE_AUTO_RELOADED_STORAGE_KEY.length > 0);
 });
 
 // ---------------------------------------------------------------- i18n
