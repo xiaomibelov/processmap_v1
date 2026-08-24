@@ -44,6 +44,18 @@ test("version.json: валидный payload → {sha, builtAt}; мусор → 
   assert.equal(normalizeVersionJson("abc"), null);
 });
 
+test("version.json: поле commit используется как fallback для sha", () => {
+  assert.deepEqual(normalizeVersionJson({ commit: "def5678", buildTime: "2026-08-08T11:00:00Z" }), {
+    sha: "def5678",
+    builtAt: "2026-08-08T11:00:00Z",
+  });
+  assert.deepEqual(normalizeVersionJson({ sha: "abc1234", commit: "def5678", builtAt: "2026-08-08T10:00:00Z" }), {
+    sha: "abc1234",
+    builtAt: "2026-08-08T10:00:00Z",
+  });
+  assert.equal(normalizeVersionJson({ commit: "  " }), null);
+});
+
 test("поллинг: 5 минут, url /version.json", () => {
   assert.equal(APP_UPDATE_POLL_INTERVAL_MS, 300000);
   assert.equal(APP_UPDATE_VERSION_URL, "/version.json");
