@@ -47,7 +47,7 @@
           fetch("/version.json?cb=" + Date.now(), { cache: "no-store" })
             .then(function (r) { return r.json().catch(function () { return null; }); })
             .then(function (data) {
-              var remoteSha = String(data && data.sha || "").trim();
+              var remoteSha = String(data && (data.sha || data.commit) || "").trim();
               if (!remoteSha || remoteSha === buildId) return;
               sessionStorage.setItem(reloadKey, "1");
               clearCaches().then(function () {
