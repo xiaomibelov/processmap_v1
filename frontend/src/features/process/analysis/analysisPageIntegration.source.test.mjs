@@ -67,3 +67,40 @@ test("no arithmetic on frontend for metrics in analysis model", () => {
   const source = readFile("frontend/src/features/process/analysis/processAnalysisModel.js");
   assert.doesNotMatch(source, /\+\s*60|\*\s*60|\/\s*60/);
 });
+
+test("no legacy analysis feature flag or old UI references remain in frontend source", () => {
+  const srcDir = path.join(repoRoot, "frontend/src");
+  const legacyMarkers = [
+    "isAnalysisRedesignEnabled",
+    "fpc_analysis_redesign",
+    "ProcessAnalysisOverview",
+    "ProcessAnalysisSkeleton",
+  ];
+  const hits = [];
+
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === "dist") continue;
+        walk(full);
+        continue;
+      }
+      if (!/\.(js|jsx|mjs|ts|tsx)$/.test(entry.name)) continue;
+      if (entry.name.includes(".test.") || entry.name.includes(".spec.")) continue;
+      const content = fs.readFileSync(full, "utf-8");
+      for (const marker of legacyMarkers) {
+        if (content.includes(marker)) {
+          hits.push(`${path.relative(repoRoot, full)}: ${marker}`);
+        }
+      }
+    }
+  }
+
+  walk(srcDir);
+  assert.deepEqual(
+    hits,
+    [],
+    `Legacy analysis markers found in source files: ${JSON.stringify(hits, null, 2)}`,
+  );
+});
