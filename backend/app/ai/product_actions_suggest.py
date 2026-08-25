@@ -172,6 +172,28 @@ def normalize_product_action_suggestions_response(raw: Any, *, max_suggestions: 
     return {"suggestions": suggestions, "warnings": warnings}
 
 
+def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Dict[str, Any]:
+    """Parse gateway/agent-service response text into normalized suggestions dict.
+
+    Raises ProductActionsAiResponseParseError with raw_content set on failure.
+    """
+    content = str(text or "")
+    cand = _dq._extract_json_candidate(content)
+    if not cand:
+        parse_exc = ProductActionsAiResponseParseError("no valid json object in response")
+        parse_exc.raw_content = content[:500]
+        raise parse_exc
+    try:
+        raw = json.loads(cand)
+    except json.JSONDecodeError as exc:
+        parse_exc = ProductActionsAiResponseParseError(
+            f"invalid json response: {exc.msg} at line {exc.lineno} column {exc.colno}"
+        )
+        parse_exc.raw_content = str(cand or "")[:500]
+        raise parse_exc from exc
+    return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)
+
+
 def suggest_product_actions_with_deepseek(
     *,
     context: Dict[str, Any],
@@ -195,17 +217,4 @@ def suggest_product_actions_with_deepseek(
         max_tokens=4000,
     )
     content = data["choices"][0]["message"]["content"]
-    cand = _dq._extract_json_candidate(content)
-    if not cand:
-        parse_exc = ProductActionsAiResponseParseError("no valid json object in response")
-        parse_exc.raw_content = str(content or "")[:500]
-        raise parse_exc
-    try:
-        raw = json.loads(cand)
-    except json.JSONDecodeError as exc:
-        parse_exc = ProductActionsAiResponseParseError(
-            f"invalid json response: {exc.msg} at line {exc.lineno} column {exc.colno}"
-        )
-        parse_exc.raw_content = str(cand or "")[:500]
-        raise parse_exc from exc
-    return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)
+    return parse_product_actions_suggestions(content, max_suggestions=max_suggestions)

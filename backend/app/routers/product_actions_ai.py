@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Set
@@ -7,18 +8,20 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ..ai import llm_internal_client
 from ..ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
-from ..ai.product_actions_suggest import ProductActionsAiResponseParseError, suggest_product_actions_with_deepseek
+from ..ai.gateway import complete as gateway_complete
+from ..ai.product_actions_suggest import ProductActionsAiResponseParseError, parse_product_actions_suggestions
 from ..ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from ..legacy.request_context import require_authenticated_user, request_active_org_id
 from ..models import Edge, Node, Session
 from ..services.org_workspace import project_access_allowed, require_org_member_for_enterprise
-from ..settings import load_llm_settings
 from ..storage import get_project_storage, get_storage
 
 router = APIRouter(tags=["product-actions-ai"])
 
 _MODULE_ID = "ai.product_actions.suggest"
+FEATURE = "product_actions_suggest"
 _ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/suggest"
 _BATCH_ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/batch-suggest"
 _BULK_ENDPOINT = "POST /api/analysis/product-actions/suggest-bulk"
@@ -28,6 +31,61 @@ _BATCH_DEFAULT_STEPS_PER_CHUNK = 10
 _BATCH_MAX_STEPS_PER_CHUNK = 20
 _BATCH_MAX_INPUT_CHARS = 18000
 _BATCH_IN_FLIGHT: Set[str] = set()
+class _ProductActionsLLMNoProviderError(Exception):
+    """Gateway/agent-service has no enabled LLM provider."""
+
+
+class _ProductActionsLLMRateLimitError(Exception):
+    """Gateway feature daily token limit reached."""
+
+
+class _ProductActionsLLMProviderError(Exception):
+    """Gateway provider call failed."""
+
+
+def _llm_complete(feature: str, payload: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Route LLM call through agent-service when LLM_VIA_AGENT_SVC is enabled."""
+    if llm_internal_client.enabled():
+        return llm_internal_client.complete(feature, payload, **kwargs)
+    return gateway_complete(feature, payload, **kwargs)
+
+
+def _call_product_actions_llm(
+    context: Dict[str, Any],
+    max_suggestions: int,
+    org_id: str,
+    actor_user_id: str,
+    project_id: str,
+    session_id: str,
+) -> Any:
+    """Call gateway for product_actions_suggest and parse the response.
+
+    Returns (normalized_suggestions_dict, gateway_result).
+    Raises typed exceptions for gateway-level statuses.
+    """
+    result = _llm_complete(
+        FEATURE,
+        context,
+        user_id=actor_user_id,
+        project_id=project_id,
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=4000,
+        timeout_sec=45,
+    )
+    status = result.get("status")
+    if status == "ok":
+        parsed = parse_product_actions_suggestions(
+            str(result.get("text") or ""), max_suggestions=max_suggestions
+        )
+        return parsed, result
+    if status == "no_provider":
+        raise _ProductActionsLLMNoProviderError(str(result.get("error") or "no enabled LLM providers"))
+    if status == "rate_limited":
+        raise _ProductActionsLLMRateLimitError(str(result.get("error") or "rate limited"))
+    raise _ProductActionsLLMProviderError(str(result.get("error") or "provider error"))
+
+
 _CONTROLLED_ERROR_MESSAGES = {
     "AI_PROVIDER_NOT_CONFIGURED": "AI_PROVIDER_NOT_CONFIGURED",
     "AI_PROMPT_NOT_CONFIGURED": "AI_PROMPT_NOT_CONFIGURED",
@@ -538,8 +596,13 @@ def _save_batch_draft_to_session(session: Session, draft: Dict[str, Any], *, req
 
 def _safe_error_message(exc: Any, *, api_key: str = "", base_url: str = "") -> str:
     text = str(exc or "").strip() or "ai_suggestion_failed"
-    for secret in (api_key, base_url):
-        secret_text = _text(secret)
+    secrets = [
+        _text(api_key),
+        _text(base_url),
+        _text(os.environ.get("DEEPSEEK_API_KEY")),
+        _text(os.environ.get("DEEPSEEK_BASE_URL")),
+    ]
+    for secret_text in secrets:
         if secret_text:
             text = text.replace(secret_text, "[redacted]")
     return text[:300]
@@ -599,19 +662,10 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     started_at = time.time()
     created_at = int(started_at)
     execution_id = f"exec_{uuid.uuid4().hex[:16]}"
-    prompt_template = ""
     prompt_id = ""
     prompt_version = ""
-    try:
-        llm = load_llm_settings()
-    except Exception as exc:
-        llm = {"api_key": "", "base_url": ""}
-        settings_error = _safe_error_message(exc)
-    else:
-        settings_error = ""
-    api_key = _text(llm.get("api_key"))
-    base_url = _text(llm.get("base_url"))
-    model_name = _text(llm.get("model")) or "deepseek-chat"
+    provider_id = ""
+    model_name = ""
 
     def _finish(
         response: Dict[str, Any],
@@ -629,7 +683,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 module_id=_MODULE_ID,
                 actor_user_id=actor_user_id,
                 scope=scope,
-                provider="deepseek",
+                provider=provider_id or "gateway",
                 model=model_name,
                 prompt_id=prompt_id,
                 prompt_version=prompt_version,
@@ -640,7 +694,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 usage=usage if isinstance(usage, dict) else {},
                 latency_ms=latency_ms,
                 error_code=error_code,
-                error_message=_safe_error_message(error_message, api_key=api_key, base_url=base_url),
+                error_message=_safe_error_message(error_message),
                 created_at=created_at,
                 finished_at=finished_at,
             )
@@ -678,15 +732,6 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             usage={"suggestions_count": 0, "steps_count": 0},
         )
 
-    if settings_error:
-        return _finish(
-            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message="Не удалось прочитать настройки AI provider."),
-            status="error",
-            output_summary="provider settings read failed",
-            error_code="AI_PROVIDER_ERROR",
-            error_message=settings_error,
-        )
-
     try:
         rate = check_ai_rate_limit(module_id=_MODULE_ID, actor_user_id=actor_user_id, scope=scope)
     except Exception:
@@ -711,48 +756,29 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             error_message="ai_rate_limit_exceeded",
         )
 
-    if not api_key:
-        return _finish(
-            _controlled_error("AI_PROVIDER_NOT_CONFIGURED", input_hash=input_hash),
-            status="error",
-            output_summary="missing provider api key",
-            error_code="AI_PROVIDER_NOT_CONFIGURED",
-            error_message="AI_PROVIDER_NOT_CONFIGURED",
-        )
-
     try:
         seed_existing_ai_prompts(actor_user_id="code_seeded")
         active_prompt = get_active_prompt(module_id=_MODULE_ID)
-        prompt_template = _text((active_prompt or {}).get("template"))
         prompt_id = _text((active_prompt or {}).get("prompt_id"))
         prompt_version = _text((active_prompt or {}).get("version"))
-    except Exception as exc:
-        message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
-        return _finish(
-            _controlled_error("AI_PROMPT_NOT_CONFIGURED", input_hash=input_hash),
-            status="error",
-            output_summary="prompt lookup failed",
-            error_code="AI_PROMPT_NOT_CONFIGURED",
-            error_message=message or "AI_PROMPT_NOT_CONFIGURED",
-        )
-
-    if not prompt_template:
-        return _finish(
-            _controlled_error("AI_PROMPT_NOT_CONFIGURED", input_hash=input_hash),
-            status="error",
-            output_summary="missing active prompt",
-            error_code="AI_PROMPT_NOT_CONFIGURED",
-            error_message="AI_PROMPT_NOT_CONFIGURED",
-        )
+    except Exception:
+        # Legacy prompt catalog is optional metadata; gateway supplies the active prompt.
+        pass
 
     try:
-        raw = suggest_product_actions_with_deepseek(
+        raw, result = _call_product_actions_llm(
             context=context,
-            api_key=api_key,
-            base_url=base_url,
-            prompt_template=prompt_template,
             max_suggestions=max_suggestions,
+            org_id=org_id,
+            actor_user_id=actor_user_id,
+            project_id=project_id,
+            session_id=_text(session_id),
         )
+        provider_id = _text(result.get("provider_id"))
+        model_name = _text(result.get("model"))
+        gateway_prompt_version = result.get("prompt_version")
+        if gateway_prompt_version is not None:
+            prompt_version = str(gateway_prompt_version)
         existing_actions = list(context.get("existing_product_actions") or [])
         raw_suggestions = list(raw.get("suggestions") or [])
         selected_suggestions = _filter_suggestions_to_selected_step(raw_suggestions, selected_binding)
@@ -795,14 +821,14 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             },
         )
     except ProductActionsAiResponseParseError as exc:
-        message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+        message = _safe_error_message(exc)
         raw_content = getattr(exc, "raw_content", "")
-        safe_excerpt = _safe_error_message(raw_content, api_key=api_key, base_url=base_url)[:300]
+        safe_excerpt = _safe_error_message(raw_content)[:300]
         diagnostics = {
             "module_id": _MODULE_ID,
             "execution_id": execution_id,
-            "provider": "deepseek",
-            "model": model_name,
+            "provider": provider_id or "deepseek",
+            "model": model_name or "deepseek-chat",
             "parse_error": message,
             "response_excerpt": safe_excerpt,
             "request_payload": {
@@ -818,8 +844,33 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             error_code="AI_RESPONSE_PARSE_ERROR",
             error_message=message or "AI_RESPONSE_PARSE_ERROR",
         )
+    except _ProductActionsLLMNoProviderError as exc:
+        return _finish(
+            _controlled_error("AI_PROVIDER_NOT_CONFIGURED", input_hash=input_hash),
+            status="error",
+            output_summary="no enabled LLM provider",
+            error_code="AI_PROVIDER_NOT_CONFIGURED",
+            error_message=str(exc) or "AI_PROVIDER_NOT_CONFIGURED",
+        )
+    except _ProductActionsLLMRateLimitError as exc:
+        return _finish(
+            _controlled_error("AI_RATE_LIMIT_EXCEEDED", input_hash=input_hash),
+            status="error",
+            output_summary="gateway rate limit exceeded",
+            error_code="AI_RATE_LIMIT_EXCEEDED",
+            error_message=str(exc) or "AI_RATE_LIMIT_EXCEEDED",
+        )
+    except _ProductActionsLLMProviderError as exc:
+        message = str(exc) or "AI_PROVIDER_ERROR"
+        return _finish(
+            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message=message),
+            status="error",
+            output_summary="product actions suggestion failed",
+            error_code="AI_PROVIDER_ERROR",
+            error_message=message,
+        )
     except Exception as exc:
-        message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+        message = _safe_error_message(exc)
         return _finish(
             _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message=message),
             status="error",
@@ -910,19 +961,10 @@ def batch_suggest_product_actions(session_id: str, inp: ProductActionsBatchSugge
     _BATCH_IN_FLIGHT.add(in_flight_key)
     prompt_id = ""
     prompt_version = ""
-    model_name = "deepseek-chat"
+    provider_id = ""
+    model_name = ""
     processed_count = 0
     try:
-        try:
-            llm = load_llm_settings()
-        except Exception as exc:
-            llm = {"api_key": "", "base_url": ""}
-            settings_error = _safe_error_message(exc)
-        else:
-            settings_error = ""
-        api_key = _text(llm.get("api_key"))
-        base_url = _text(llm.get("base_url"))
-        model_name = _text(llm.get("model")) or model_name
 
         def finish(status: str, error_code: str = "", error_message: str = "") -> Dict[str, Any]:
             summary = _batch_summary(draft, total=len(all_steps), candidates=len(candidates), processed=processed_count)
@@ -944,7 +986,7 @@ def batch_suggest_product_actions(session_id: str, inp: ProductActionsBatchSugge
                     module_id=_MODULE_ID,
                     actor_user_id=actor_user_id,
                     scope=scope,
-                    provider="deepseek",
+                    provider=provider_id or "gateway",
                     model=model_name,
                     prompt_id=prompt_id,
                     prompt_version=prompt_version,
@@ -961,39 +1003,13 @@ def batch_suggest_product_actions(session_id: str, inp: ProductActionsBatchSugge
                     usage={"steps_count": len(all_steps), "processed": processed_count},
                     latency_ms=int(max(0.0, time.time() - started_at) * 1000),
                     error_code=error_code,
-                    error_message=_safe_error_message(error_message, api_key=api_key, base_url=base_url),
+                    error_message=_safe_error_message(error_message),
                     created_at=created_at,
                     finished_at=int(time.time()),
                 )
             except Exception:
                 response.setdefault("warnings", []).append({"code": "ai_execution_log_failed", "message": "AI execution log write failed."})
             return response
-
-        if settings_error or not api_key:
-            code = "AI_PROVIDER_ERROR" if settings_error else "AI_PROVIDER_NOT_CONFIGURED"
-            message = settings_error or code
-            for step in candidates:
-                draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=code)
-            _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
-            return finish("error", code, message)
-
-        try:
-            seed_existing_ai_prompts(actor_user_id="code_seeded")
-            active_prompt = get_active_prompt(module_id=_MODULE_ID)
-            prompt_template = _text((active_prompt or {}).get("template"))
-            prompt_id = _text((active_prompt or {}).get("prompt_id"))
-            prompt_version = _text((active_prompt or {}).get("version"))
-        except Exception as exc:
-            prompt_template = ""
-            prompt_error = _safe_error_message(exc, api_key=api_key, base_url=base_url)
-        else:
-            prompt_error = ""
-        if not prompt_template:
-            code = "AI_PROMPT_NOT_CONFIGURED"
-            for step in candidates:
-                draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=code)
-            _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
-            return finish("error", code, prompt_error or code)
 
         chunks = _chunk_steps(candidates, max_steps_per_chunk)
         for chunk_index, chunk in enumerate(chunks):
@@ -1035,21 +1051,47 @@ def batch_suggest_product_actions(session_id: str, inp: ProductActionsBatchSugge
                 },
             }
             try:
-                raw = suggest_product_actions_with_deepseek(
+                raw, result = _call_product_actions_llm(
                     context=chunk_context,
-                    api_key=api_key,
-                    base_url=base_url,
-                    prompt_template=prompt_template,
                     max_suggestions=max(1, min(40, len(chunk) * 3)),
+                    org_id=org_id,
+                    actor_user_id=actor_user_id,
+                    project_id=project_id,
+                    session_id=_text(session_id),
                 )
+                provider_id = _text(result.get("provider_id")) or provider_id
+                model_name = _text(result.get("model")) or model_name
+                gateway_prompt_version = result.get("prompt_version")
+                if gateway_prompt_version is not None:
+                    prompt_version = str(gateway_prompt_version)
                 suggestions = _decorate_duplicates(list(raw.get("suggestions") or []), existing_actions)
             except ProductActionsAiResponseParseError:
                 for step in chunk:
                     draft[_step_key(step)] = _batch_entry(step, status="failed", error_code="AI_RESPONSE_PARSE_ERROR")
                 processed_count += len(chunk)
                 continue
+            except _ProductActionsLLMNoProviderError as exc:
+                code = "AI_PROVIDER_NOT_CONFIGURED"
+                message = str(exc) or code
+                for step in [item for rest in chunks[chunk_index:] for item in rest]:
+                    draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=code)
+                _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
+                return finish("error", code, message)
+            except _ProductActionsLLMRateLimitError as exc:
+                code = "AI_RATE_LIMIT_EXCEEDED"
+                message = str(exc) or code
+                for step in [item for rest in chunks[chunk_index:] for item in rest]:
+                    draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=code)
+                _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
+                return finish("rate_limited", code, message)
+            except _ProductActionsLLMProviderError as exc:
+                message = str(exc) or "AI_PROVIDER_ERROR"
+                for step in chunk:
+                    draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=message or "AI_PROVIDER_ERROR")
+                processed_count += len(chunk)
+                continue
             except Exception as exc:
-                message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+                message = _safe_error_message(exc)
                 for step in chunk:
                     draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=message or "AI_PROVIDER_ERROR")
                 processed_count += len(chunk)
