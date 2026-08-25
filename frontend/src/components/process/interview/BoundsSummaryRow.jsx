@@ -1,3 +1,5 @@
+import styles from "../../../features/process/analysis/ProcessAnalysis.module.css";
+
 export default function BoundsSummaryRow({
   startLabel,
   intermediateCount,
@@ -8,20 +10,22 @@ export default function BoundsSummaryRow({
   onEdit,
 }) {
   return (
-    <div className="interviewBoundsSummaryRow">
-      <button type="button" className="interviewBoundsSummaryItem" onClick={onFocusStart}>
-        <span className="interviewBoundsSummaryKey">START</span>
-        <span className="interviewBoundsSummaryValue">{startLabel || "не выбрано"}</span>
+    <div className={styles.analysisStepperSummary} data-testid="boundaries-summary-row">
+      <button type="button" className={styles.analysisStepperSummaryItem} onClick={onFocusStart}>
+        <span className={styles.analysisStepperSummaryKey}>START</span>
+        <span className={styles.analysisStepperSummaryValue}>{startLabel || "не выбрано"}</span>
       </button>
-      <button type="button" className="interviewBoundsSummaryItem" onClick={onFocusIntermediate}>
-        <span className="interviewBoundsSummaryKey">INTERMEDIATE</span>
-        <span className="interviewBoundsSummaryValue">{intermediateCount > 0 ? `${intermediateCount} lanes` : "не выбрано"}</span>
+      <button type="button" className={styles.analysisStepperSummaryItem} onClick={onFocusIntermediate}>
+        <span className={styles.analysisStepperSummaryKey}>INTERMEDIATE</span>
+        <span className={styles.analysisStepperSummaryValue}>
+          {intermediateCount > 0 ? `${intermediateCount} lanes` : "не выбрано"}
+        </span>
       </button>
-      <button type="button" className="interviewBoundsSummaryItem" onClick={onFocusFinish}>
-        <span className="interviewBoundsSummaryKey">FINISH</span>
-        <span className="interviewBoundsSummaryValue">{finishLabel || "не выбрано"}</span>
+      <button type="button" className={styles.analysisStepperSummaryItem} onClick={onFocusFinish}>
+        <span className={styles.analysisStepperSummaryKey}>FINISH</span>
+        <span className={styles.analysisStepperSummaryValue}>{finishLabel || "не выбрано"}</span>
       </button>
-      <button type="button" className="secondaryBtn smallBtn ml-auto interviewBoundsSummaryEditBtn" onClick={onEdit}>
+      <button type="button" className="secondaryBtn smallBtn ml-auto" onClick={onEdit}>
         Изменить
       </button>
     </div>

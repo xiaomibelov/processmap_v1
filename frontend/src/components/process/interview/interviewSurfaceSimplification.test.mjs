@@ -28,14 +28,15 @@ test("interview primary blocks open by default without changing saved model", ()
 
 test("timeline keeps matrix primary and moves graph paths diagnostics under advanced controls", () => {
   const source = read("src/components/process/interview/TimelineControls.jsx");
-  assert.match(source, /data-testid="interview-advanced-toggle"/);
-  assert.match(source, /Дополнительно · \{activeViewLabel\}/);
+  assert.match(source, /data-testid="steps-tab-toolbar"/);
+  assert.match(source, /data-testid="interview-filters-toggle"/);
+  assert.match(source, /data-testid="interview-step-more-btn"/);
   assert.match(source, /data-testid="interview-advanced-controls"/);
-  assert.match(source, />\s*Таблица шагов\s*</);
-  assert.match(source, />\s*Сценарии и отчёты\s*</);
-  assert.match(source, />\s*Граф анализа\s*</);
-  assert.match(source, />\s*Проверка привязок/);
-  assert.match(source, />\s*Диагностика\s*</);
+  assert.match(source, /label="Таблица"/);
+  assert.match(source, /label="Сценарии"/);
+  assert.match(source, /label="Граф"/);
+  assert.match(source, />\s*Привязки\s*\(/);
+  assert.match(source, /data-testid="interview-debug-toggle"/);
 });
 
 test("summary and reports frame output and hide diagnostics behind details", () => {
@@ -55,18 +56,11 @@ test("analysis step block is structured as primary workspace plus secondary scen
   const timeline = read("src/components/process/interview/TimelineTable.jsx")
     + read("src/components/process/interview/TimelineRow.jsx");
   const styles = read("src/styles/tailwind.css");
-  assert.match(source, /data-testid="analysis-step-actions-section"/);
-  assert.match(source, /data-testid="analysis-step-workspace"/);
-  assert.match(source, /data-testid="analysis-b-steps-section"/);
   assert.match(source, /data-testid="analysis-b-context-section"/);
-  assert.match(source, /data-testid="analysis-step-table-card"/);
   assert.match(source, /data-testid="analysis-step-companion"/);
   assert.match(source, /data-testid="analysis-selected-step-card"/);
   assert.match(source, /data-testid="analysis-secondary-panel"/);
-  assert.match(source, /B\. Действия процесса/);
-  assert.doesNotMatch(source, /Основная рабочая зона анализа/);
-  assert.doesNotMatch(source, /Сценарии и отчёты открыты ниже/);
-  assert.doesNotMatch(source, /Таблица шагов остаётся основой анализа/);
+  assert.match(source, /analysisCompanionCard/);
   assert.match(source, /compact/);
   assert.match(source, /showStepContext=\{false\}/);
   assert.match(source, /Дополнительно · Сценарии и отчёты/);
@@ -90,12 +84,12 @@ test("analysis step block is structured as primary workspace plus secondary scen
   assert.doesNotMatch(styles, /\.analysisStepBlock\s*\{[\s\S]*background: rgba\(15, 23, 42, 0\.62\);/);
 });
 
-test("app version changelog records the UI surface simplification", () => {
+test("app version changelog records the analysis tabs UX overhaul", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1.0.141"/);
-  assert.match(source, /Таблица шагов анализа стала строгой/);
-  assert.match(source, /Добавлен реестр действий с продуктом для предпросмотра данных\./);
-  assert.match(source, /Улучшен блок действий процесса: шаги, выбранный шаг и действия с продуктом\./);
+  assert.match(source, /currentVersion: "v1.0.143"/);
+  assert.match(source, /Перерисованы сабтабы анализа: границы процесса, действия, исключения и AI-анализ\./);
+  assert.match(source, /Добавлен единый компонент AnalysisSection для заголовков и тел разделов анализа\./);
+  assert.match(source, /Улучшены фильтры, empty-states и скелетоны в интерфейсе анализа процессов\./);
   assert.doesNotMatch(source, /version: "v1\.0\.113"/);
   assert.doesNotMatch(source, /version: "v1\.0\.106"/);
 });
