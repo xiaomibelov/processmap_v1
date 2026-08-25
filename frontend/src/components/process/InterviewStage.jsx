@@ -20,6 +20,7 @@ import { apiGetSessionAnalysisViewModel } from "../../lib/api.js";
 import { buildBindingAssistantModel } from "./interview/bindingAssistant";
 import { markInterviewPerf, measureInterviewSpan } from "./interview/perf";
 import { ProcessAnalysisDashboard } from "../../features/process/analysis/ProcessAnalysisDashboard.jsx";
+import { AnalysisSection } from "../../features/process/analysis/ui/index.js";
 import { createT } from "../../features/process/analysis/useProcessAnalysisI18n.js";
 
 import { ProcessAnalysisBoundariesTab } from "../../features/process/analysis/ProcessAnalysisBoundariesTab.jsx";
@@ -676,6 +677,82 @@ export default function InterviewStage({
     };
   }, [dodSnapshot]);
 
+  const timelineTableProps = useMemo(() => ({
+    sessionId: sid,
+    hiddenTimelineCols,
+    timelineLaneFilter: timelineFilters?.lane || "all",
+    filteredTimelineView,
+    timelineView,
+    laneLinksByNode,
+    addTextAnnotation: handleAddTextAnnotation,
+    annotationSyncByStepId,
+    xmlTextAnnotationsByStepId,
+    nodeBindOptionsByStepId,
+    addStepAfter,
+    aiCue,
+    setAiCue,
+    aiBusyStepId,
+    setAiBusyStepId,
+    aiQuestionMetaByStepId,
+    addAiQuestions,
+    toggleAiQuestionDiagram,
+    deleteAiQuestion,
+    addAiQuestionsNote: handleAddAiQuestionsNote,
+    aiQuestionsDiagramSyncByStepId,
+    aiNoteStatus,
+    moveStep,
+    orderMode,
+    graphOrderLocked,
+    bpmnOrderFallback,
+    bpmnOrderHint,
+    isTimelineFiltering,
+    deleteStep,
+    subprocessCatalog,
+    stepTimeUnit,
+    dodSnapshot,
+    tierFilters: timelineFilters?.tiers,
+    branchViewMode,
+    branchExpandByGateway,
+    onPatchBranchExpand: handlePatchBranchExpand,
+    onSetTimelineViewMode: handleSetTimelineViewMode,
+  }), [
+    sid,
+    hiddenTimelineCols,
+    timelineFilters,
+    filteredTimelineView,
+    timelineView,
+    laneLinksByNode,
+    annotationSyncByStepId,
+    xmlTextAnnotationsByStepId,
+    nodeBindOptionsByStepId,
+    addStepAfter,
+    aiCue,
+    setAiCue,
+    aiBusyStepId,
+    setAiBusyStepId,
+    aiQuestionMetaByStepId,
+    addAiQuestions,
+    toggleAiQuestionDiagram,
+    deleteAiQuestion,
+    handleAddAiQuestionsNote,
+    aiQuestionsDiagramSyncByStepId,
+    aiNoteStatus,
+    moveStep,
+    orderMode,
+    graphOrderLocked,
+    bpmnOrderFallback,
+    bpmnOrderHint,
+    isTimelineFiltering,
+    deleteStep,
+    subprocessCatalog,
+    stepTimeUnit,
+    dodSnapshot,
+    branchViewMode,
+    branchExpandByGateway,
+    handlePatchBranchExpand,
+    handleSetTimelineViewMode,
+  ]);
+
   const stepsTabToolbar = (
     <TimelineControls
       quickStepDraft={quickStepDraft}
@@ -727,11 +804,14 @@ export default function InterviewStage({
 
   const stepsTabCompanion = (
     <aside className={`analysisStepCompanion ${analysisStyles.analysisCompanion}`} data-testid="analysis-step-companion">
-      <div className={analysisStyles.analysisCompanionCard} data-testid="analysis-b-context-section">
-        <div className={analysisStyles.analysisCompanionCardHead}>
-          <span>Шаг и продукт</span>
-          <span>{selectedStepProductActionCount} действий</span>
-        </div>
+      <AnalysisSection
+        title="Шаг и продукт"
+        badge={`${selectedStepProductActionCount} действий`}
+        collapsible
+        collapsed={!!collapsed.stepContext}
+        onToggleCollapse={() => toggleBlock("stepContext")}
+        data-testid="analysis-b-context-section"
+      >
         <section className="analysisSelectedStepCard" data-testid="analysis-selected-step-card">
           <div className="analysisSelectedStepEyebrow">{selectedStep ? "Выбранный шаг" : "Текущий шаг"}</div>
           {analysisContextStep ? (
@@ -803,13 +883,16 @@ export default function InterviewStage({
           onSessionSync={onSessionSync}
           onOpenProductActionsRegistry={onOpenProductActionsRegistry}
         />
-      </div>
-      <div className={analysisStyles.analysisCompanionCard} data-testid="rag-search-section">
-        <div className={analysisStyles.analysisCompanionCardHead}>
-          <span>RAG-агент</span>
-        </div>
+      </AnalysisSection>
+      <AnalysisSection
+        title="RAG-агент"
+        collapsible
+        collapsed={!!collapsed.ragSearch}
+        onToggleCollapse={() => toggleBlock("ragSearch")}
+        data-testid="rag-search-section"
+      >
         <RagSearchPanel sessionId={sid} />
-      </div>
+      </AnalysisSection>
     </aside>
   );
 
@@ -1047,6 +1130,7 @@ export default function InterviewStage({
               patchStep={patchStep}
               productActionCountByStepId={productActionCountByStepId}
               toolbar={stepsTabToolbar}
+              timelineTableProps={timelineTableProps}
             >
               <>
                 {stepsTabCompanion}
@@ -1062,6 +1146,8 @@ export default function InterviewStage({
             <ProcessAnalysisBranchesTab
               transitions={transitionView}
               onPatchTransitionWhen={patchTransitionWhen}
+              timelineView={timelineView}
+              addTransition={addTransition}
             />
           ),
         },
@@ -1090,7 +1176,11 @@ export default function InterviewStage({
           key: "ai",
           label: analysisT("analysis.tabs.ai"),
           content: (
-            <ProcessAnalysisAiTab>
+            <ProcessAnalysisAiTab
+              sessionId={sid}
+              baseDiagramStateVersion={typeof getBaseDiagramStateVersion === "function" ? getBaseDiagramStateVersion() : null}
+              steps={Array.isArray(timelineView) ? timelineView : []}
+            >
               {SHOW_AI_QUESTIONS_BLOCK ? (
                 <AiQuestionsBlock
                   collapsed={false}
