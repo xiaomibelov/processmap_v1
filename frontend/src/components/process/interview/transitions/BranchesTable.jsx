@@ -58,10 +58,10 @@ export default function BranchesTable({
           <table className="interviewTable interviewBranchesTable">
             <thead>
               <tr>
-                <th>From</th>
-                <th>To</th>
-                <th>Condition</th>
-                <th>Actions</th>
+                <th>Откуда</th>
+                <th>Куда</th>
+                <th>Условие</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -96,15 +96,15 @@ export default function BranchesTable({
             ) : grouped.map((group) => (
               <details className="interviewBranchesGroup" key={group.key} open>
                 <summary>
-                  From: <b>{group.title}</b>{group.lane ? ` (${group.lane})` : ""} — {group.rows.length}
+                  Откуда: <b>{group.title}</b>{group.lane ? ` (${group.lane})` : ""} — {group.rows.length}
                 </summary>
                 <table className="interviewTable interviewBranchesTable">
                   <thead>
                     <tr>
-                      <th>From</th>
-                      <th>To</th>
-                      <th>Condition</th>
-                      <th>Actions</th>
+                      <th>Откуда</th>
+                      <th>Куда</th>
+                      <th>Условие</th>
+                      <th>Действия</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -138,7 +138,7 @@ export default function BranchesTable({
           disabled={currentPage <= 1}
           onClick={() => setPage((prev) => Math.max(1, prev - 1))}
         >
-          ← Prev
+          ← Назад
         </button>
         <span className="muted small">
           Стр. {currentPage} / {totalPages}
@@ -149,7 +149,7 @@ export default function BranchesTable({
           disabled={currentPage >= totalPages}
           onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
         >
-          Next →
+          Вперёд →
         </button>
       </div>
     </>

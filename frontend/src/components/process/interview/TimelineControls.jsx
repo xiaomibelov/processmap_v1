@@ -59,7 +59,7 @@ export default function TimelineControls({
 }) {
   const FILTER_QUERY_DEBOUNCE_MS = 180;
   const [showMoreActions, setShowMoreActions] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [lanePickerOpen, setLanePickerOpen] = useState(false);
   const [quickInputOpen, setQuickInputOpen] = useState(() => !!toText(quickStepDraft));
   const [laneSearch, setLaneSearch] = useState("");
@@ -108,10 +108,10 @@ export default function TimelineControls({
   }, [quickStepDraft, quickInputOpen]);
 
   useEffect(() => {
-    if (filtersOpen) return;
+    if (advancedOpen) return;
     setLanePickerOpen(false);
     setLaneSearch("");
-  }, [filtersOpen]);
+  }, [advancedOpen]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -274,12 +274,13 @@ export default function TimelineControls({
 
         <button
           type="button"
-          className={`${styles.analysisChip} ${filtersOpen ? styles.analysisChipActive : ""}`}
-          data-testid="interview-filters-toggle"
-          onClick={() => setFiltersOpen((prev) => !prev)}
-          aria-expanded={filtersOpen}
+          className={`${styles.analysisChip} ${quickInputOpen ? styles.analysisChipActive : ""}`}
+          data-testid="interview-quick-input-toggle"
+          onClick={() => setQuickInputOpen((prev) => !prev)}
+          aria-expanded={quickInputOpen}
+          title="Быстрый ввод шага"
         >
-          Фильтры{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ""}
+          Быстрый ввод {quickInputOpen ? "▴" : "▾"}
         </button>
 
         <div className={styles.analysisToolbarGroup} role="group" aria-label="Режим отображения">
@@ -297,18 +298,20 @@ export default function TimelineControls({
           Привязки ({Number(bindingIssueCount || 0)})
         </button>
 
-        <select
-          className="select"
-          style={{ minWidth: 170 }}
-          value={orderMode === "bpmn" ? "bpmn" : "interview"}
-          onChange={(e) => onSetOrderMode?.(e.target.value)}
-          aria-label="Сортировка шагов"
-          data-testid="interview-order-select"
-        >
-          <option value="bpmn">Порядок: BPMN</option>
-          <option value="interview">Порядок: по созданию</option>
-          <option value="manual" disabled>Ручной порядок (скоро)</option>
-        </select>
+        {Number(selectedStepCount || 0) > 0 ? (
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            data-testid="interview-group-subprocess-btn"
+            disabled={Number(selectedStepCount || 0) < 2}
+            onClick={() => {
+              onGroupSelectedSteps?.(subprocessDraft);
+            }}
+            title={Number(selectedStepCount || 0) < 2 ? "Выберите минимум 2 шага" : "Сгруппировать выбранные шаги в подпроцесс"}
+          >
+            Выделено: {Number(selectedStepCount || 0)}
+          </button>
+        ) : null}
 
         <div className={styles.analysisToolbarGroup} ref={moreMenuRef} style={{ position: "relative" }}>
           <button
@@ -442,10 +445,39 @@ export default function TimelineControls({
             </div>
           ) : null}
         </div>
+
+        <button
+          type="button"
+          className={`${styles.analysisChip} ${advancedOpen ? styles.analysisChipActive : ""}`}
+          data-testid="interview-advanced-toggle"
+          onClick={() => setAdvancedOpen((prev) => !prev)}
+          aria-expanded={advancedOpen}
+          title={filterSummary}
+        >
+          Дополнительно{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ""} {advancedOpen ? "▴" : "▾"}
+        </button>
       </div>
 
-      {filtersOpen ? (
+      {advancedOpen ? (
         <div className={styles.analysisFilterPanel} data-testid="interview-advanced-controls">
+          <div className={styles.analysisToolbarGroup} style={{ width: "100%", flexWrap: "wrap" }}>
+            <select
+              className="select"
+              style={{ minWidth: 170, flex: "0 1 200px" }}
+              value={orderMode === "bpmn" ? "bpmn" : "interview"}
+              onChange={(e) => onSetOrderMode?.(e.target.value)}
+              aria-label="Сортировка шагов"
+              data-testid="interview-order-select"
+            >
+              <option value="bpmn">Порядок: BPMN</option>
+              <option value="interview">Порядок: по созданию</option>
+              <option value="manual" disabled>Ручной порядок (скоро)</option>
+            </select>
+            <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`} title={orderHintText}>
+              {orderMode === "bpmn" ? "Порядок вычислен по графу диаграммы." : "Creation order: порядок шага = order_index."}
+            </span>
+          </div>
+
           <div className={styles.analysisToolbarGroup} style={{ width: "100%", flexWrap: "wrap" }}>
             <input
               className={`input ${styles.analysisTableInput}`}
@@ -562,17 +594,6 @@ export default function TimelineControls({
         </div>
       ) : null}
 
-      <button
-        type="button"
-        className={`${styles.analysisChip} ${quickInputOpen ? styles.analysisChipActive : ""}`}
-        style={{ alignSelf: "flex-start" }}
-        data-testid="interview-quick-input-toggle"
-        onClick={() => setQuickInputOpen((prev) => !prev)}
-        aria-expanded={quickInputOpen}
-      >
-        Быстрый ввод {quickInputOpen ? "▴" : "▾"}
-      </button>
-
       {quickInputOpen ? (
         <div className={styles.analysisFilterPanel} style={{ gridTemplateColumns: "1fr auto auto" }}>
           <input
@@ -602,13 +623,6 @@ export default function TimelineControls({
           </button>
         </div>
       ) : null}
-
-      <div className={styles.analysisToolbarGroup}>
-        <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`} title={orderHintText}>
-          {orderMode === "bpmn" ? "Порядок: BPMN" : "Порядок: по созданию"}
-        </span>
-        <span className="muted small">{viewLabel}</span>
-      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React from "react";
 import { AnalysisEmptyState, AnalysisErrorState, AnalysisSkeleton, VirtualStepsTable } from "./ui/index.js";
-import { useDebouncedValue } from "./ui/useDebouncedValue.js";
+import TimelineTable from "../../../components/process/interview/TimelineTable.jsx";
 import styles from "./ProcessAnalysis.module.css";
 
 function toText(value) {
@@ -56,14 +56,14 @@ export const ProcessAnalysisStepsTab = React.memo(function ProcessAnalysisStepsT
   patchStep,
   productActionCountByStepId,
   toolbar,
+  timelineTableProps,
   children,
 }) {
   const [searchQuery, setSearchQuery] = React.useState("");
-  const debouncedQuery = useDebouncedValue(searchQuery, 200);
 
   const filteredSteps = React.useMemo(() => {
     const rows = toArray(steps);
-    const query = normalize(debouncedQuery);
+    const query = normalize(searchQuery);
     if (!query) return rows;
     return rows.filter((step) => {
       const hay = [
@@ -80,7 +80,47 @@ export const ProcessAnalysisStepsTab = React.memo(function ProcessAnalysisStepsT
         .join(" ");
       return hay.includes(query);
     });
-  }, [steps, debouncedQuery]);
+  }, [steps, searchQuery]);
+
+  const renderTable = () => {
+    if (timelineTableProps) {
+      return (
+        <TimelineTable
+          {...timelineTableProps}
+          selectedStepIds={selectedStepIds}
+          activeAnalysisStepId={activeStepId}
+          onActivateStep={onActivateStep}
+          onToggleStepSelection={onToggleStepSelection}
+          onToggleAllStepSelection={onToggleAllStepSelection}
+          patchStep={patchStep}
+          productActionCountByStepId={productActionCountByStepId}
+          data-testid="steps-timeline-table"
+        />
+      );
+    }
+
+    return (
+      <VirtualStepsTable
+        steps={filteredSteps}
+        selectedStepIds={selectedStepIds}
+        activeStepId={activeStepId}
+        onToggleStepSelection={onToggleStepSelection}
+        onToggleAllStepSelection={onToggleAllStepSelection}
+        onActivateStep={onActivateStep}
+        patchStep={patchStep}
+        productActionCountByStepId={productActionCountByStepId}
+        tableHeight={420}
+        emptyState={
+          <AnalysisEmptyState
+            title={t ? t("processAnalysis.empty.title") : undefined}
+            description={t ? t("processAnalysis.empty.description") : undefined}
+            data-testid="steps-table-empty"
+          />
+        }
+        data-testid="steps-virtual-table"
+      />
+    );
+  };
 
   return (
     <div className={styles.tabFill} data-testid="process-analysis-steps-tab">
@@ -105,25 +145,7 @@ export const ProcessAnalysisStepsTab = React.memo(function ProcessAnalysisStepsT
             </div>
           )}
 
-          <VirtualStepsTable
-            steps={filteredSteps}
-            selectedStepIds={selectedStepIds}
-            activeStepId={activeStepId}
-            onToggleStepSelection={onToggleStepSelection}
-            onToggleAllStepSelection={onToggleAllStepSelection}
-            onActivateStep={onActivateStep}
-            patchStep={patchStep}
-            productActionCountByStepId={productActionCountByStepId}
-            tableHeight={420}
-            emptyState={
-              <AnalysisEmptyState
-                title={t ? t("processAnalysis.empty.title") : undefined}
-                description={t ? t("processAnalysis.empty.description") : undefined}
-                data-testid="steps-table-empty"
-              />
-            }
-            data-testid="steps-virtual-table"
-          />
+          {renderTable()}
 
           {children}
         </div>

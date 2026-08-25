@@ -64,6 +64,8 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
     exceptions: true,
     ai: true,
     markdown: false,
+    stepContext: false,
+    ragSearch: false,
   });
 
   const applyingExternalRef = useRef(false);

@@ -174,6 +174,22 @@ export default function BoundariesBlock({
         </div>
       ) : (
         <>
+          <BoundsSummaryRow
+            startLabel={startMeta?.label || startShop || "не выбрано"}
+            intermediateCount={intermediateList.length}
+            finishLabel={finishMeta?.label || finishShop || "не выбрано"}
+            onFocusStart={() => scrollToCard("start")}
+            onFocusIntermediate={() => scrollToCard("intermediate")}
+            onFocusFinish={() => scrollToCard("finish")}
+            onEdit={() => scrollToCard("intermediate")}
+          />
+
+          {saveNotice ? (
+            <div className="interviewBoundsSaveNotice" data-testid="boundaries-save-notice">
+              {saveNotice}
+            </div>
+          ) : null}
+
           <div
             className={styles.analysisStepper}
             role="group"
@@ -224,18 +240,6 @@ export default function BoundariesBlock({
               />
             </div>
           </div>
-
-          <BoundsSummaryRow
-            startLabel={startMeta?.label || startShop || "не выбрано"}
-            intermediateCount={intermediateList.length}
-            finishLabel={finishMeta?.label || finishShop || "не выбрано"}
-            onFocusStart={() => scrollToCard("start")}
-            onFocusIntermediate={() => scrollToCard("intermediate")}
-            onFocusFinish={() => scrollToCard("finish")}
-            onEdit={() => scrollToCard("intermediate")}
-          />
-
-          {saveNotice ? <div className="interviewBoundsSaveNotice">{saveNotice}</div> : null}
         </>
       )}
     </AnalysisSection>

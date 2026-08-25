@@ -281,6 +281,58 @@ class ProductActionSuggestionsTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
         self.assertEqual(ctx.exception.detail.get("code"), "not_found")
 
+    def test_list_sessions_by_rag_status(self):
+        storage = self.get_storage()
+        sessions = storage.list_sessions_by_rag_status("queued")
+        self.assertEqual(len(sessions), 0)
+
+        session = storage.load(self.session_id, org_id=self.org_id, is_admin=True)
+        session.rag_readiness_status = "queued"
+        storage.save(session, org_id=self.org_id, is_admin=True)
+
+        sessions = storage.list_sessions_by_rag_status("queued")
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(str(sessions[0].get("id") or ""), self.session_id)
+
+    def test_nightly_index_task_processes_queued_sessions(self):
+        from app.rag_tasks import index_queued_sessions_bpmn_xml
+        from unittest.mock import patch
+
+        storage = self.get_storage()
+        session = storage.load(self.session_id, org_id=self.org_id, is_admin=True)
+        session.rag_readiness_status = "queued"
+        session.bpmn_xml = "<definitions><process id=\"p1\" /></definitions>"
+        storage.save(session, org_id=self.org_id, is_admin=True)
+
+        with patch("app.rag_tasks._do_index_session_bpmn_xml") as mock_index:
+            mock_index.return_value = {
+                "status": "indexed",
+                "session_id": self.session_id,
+                "doc_id": "doc_1",
+                "chunks_created": 3,
+                "was_updated": True,
+            }
+            result = index_queued_sessions_bpmn_xml.run()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["session_id"], self.session_id)
+        mock_index.assert_called_once()
+
+        # After successful indexing readiness transitions to indexed.
+        readiness = storage.get_rag_readiness(self.session_id, org_id=self.org_id)
+        self.assertEqual(readiness["rag_readiness_status"], "indexed")
+
+    def test_celery_beat_schedule_includes_rag_nightly_refresh(self):
+        from app import celery_app
+        beat_schedule = celery_app.app.conf.beat_schedule
+        self.assertIn("rag-index-nightly-refresh", beat_schedule)
+        self.assertEqual(
+            beat_schedule["rag-index-nightly-refresh"]["task"],
+            "app.rag_tasks.index_queued_sessions_bpmn_xml",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
