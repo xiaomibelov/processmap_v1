@@ -1,5 +1,6 @@
 import React from "react";
 import { AnalysisEmptyState, AnalysisErrorState, AnalysisSkeleton } from "./ui/index.js";
+import { ProductActionSuggestionsPanel } from "./ProductActionSuggestionsPanel.jsx";
 import styles from "./ProcessAnalysis.module.css";
 
 function TabState({ loading, error, retry, model, t, children }) {
@@ -33,12 +34,22 @@ export const ProcessAnalysisAiTab = React.memo(function ProcessAnalysisAiTab({
   error,
   retry,
   t,
+  sessionId,
+  baseDiagramStateVersion,
+  steps,
   children,
 }) {
   return (
     <div className={styles.tabScroll} data-testid="process-analysis-ai-tab">
       <TabState loading={loading} error={error} retry={retry} model={model} t={t}>
-        <div className={styles.tabContent}>{children}</div>
+        <div className={styles.tabContent}>
+          {children}
+          <ProductActionSuggestionsPanel
+            sessionId={sessionId}
+            baseDiagramStateVersion={baseDiagramStateVersion}
+            steps={steps}
+          />
+        </div>
       </TabState>
     </div>
   );

@@ -9,6 +9,11 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=30),
         "options": {"queue": "celery"},
     },
+    "rag-index-nightly-refresh": {
+        "task": "app.rag_tasks.index_queued_sessions_bpmn_xml",
+        "schedule": crontab(hour=4, minute=30),
+        "options": {"queue": "celery"},
+    },
 }
 app.conf.timezone = "Europe/Moscow"
 

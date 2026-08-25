@@ -70,13 +70,13 @@ describe("TimelineControls smoke", () => {
     const html = renderToString(<TimelineControls {...defaultProps} />);
     expect(html).toContain('data-testid="steps-tab-toolbar"');
     expect(html).toContain('data-testid="interview-add-step-primary"');
-    expect(html).toContain('data-testid="interview-filters-toggle"');
+    expect(html).toContain('data-testid="interview-advanced-toggle"');
     expect(html).toContain('data-testid="interview-view-mode-matrix-btn"');
     expect(html).toContain('data-testid="interview-view-mode-paths-btn"');
     expect(html).toContain('data-testid="interview-view-mode-diagram-btn"');
     expect(html).toContain('data-testid="binding-assistant-open"');
-    expect(html).toContain('data-testid="interview-order-select"');
     expect(html).toContain('data-testid="interview-step-more-btn"');
+    expect(html).toContain('data-testid="interview-quick-input-toggle"');
   });
 
   it("opens filters panel and switches view mode", async () => {
@@ -88,13 +88,14 @@ describe("TimelineControls smoke", () => {
       root.render(<TimelineControls {...defaultProps} onSetTimelineViewMode={onSetViewMode} />);
     });
 
-    const filtersToggle = container.querySelector('[data-testid="interview-filters-toggle"]');
-    expect(filtersToggle).not.toBeNull();
+    const advancedToggle = container.querySelector('[data-testid="interview-advanced-toggle"]');
+    expect(advancedToggle).not.toBeNull();
 
     await act(async () => {
-      filtersToggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      advancedToggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(container.querySelector('[data-testid="interview-advanced-controls"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="interview-order-select"]')).not.toBeNull();
 
     const pathsBtn = container.querySelector('[data-testid="interview-view-mode-paths-btn"]');
     await act(async () => {

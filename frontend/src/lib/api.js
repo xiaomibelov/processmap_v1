@@ -2402,3 +2402,53 @@ export async function apiCreateIngredient(payload) {
   const r = okOrError(await request(apiRoutes.ingredients.create(), { method: "POST", body: payload || {} }));
   return r.ok ? { ok: true, status: r.status, ingredient: r.data } : r;
 }
+
+// ------- Product-action suggestions (AI analysis tab) -------
+export async function apiListProductActionSuggestions(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.productActionsSuggestions(sid)));
+  if (!r.ok) return r;
+  const suggestions = Array.isArray(r.data?.data) ? r.data.data : [];
+  return {
+    ok: true,
+    status: r.status,
+    suggestions,
+    items: suggestions,
+    counts: r.data?.meta?.counts || { pending: 0, approved: 0, rejected: 0, total: 0 },
+  };
+}
+
+export async function apiUpdateProductActionSuggestion(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.sessions.productActionsSuggestions(sid), { method: "POST", body }));
+  return r.ok
+    ? { ok: true, status: r.status, suggestion: r.data?.data || null, data: r.data?.data || null }
+    : r;
+}
+
+export async function apiApplyProductActionSuggestions(sessionId, baseDiagramStateVersion) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = { base_diagram_state_version: Number.isFinite(baseDiagramStateVersion) ? baseDiagramStateVersion : null };
+  const r = okOrError(await request(apiRoutes.sessions.productActionsSuggestionsApply(sid), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, result: r.data?.data || null, data: r.data?.data || null } : r;
+}
+
+export async function apiGetRagReadiness(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.ragReadiness(sid)));
+  return r.ok ? { ok: true, status: r.status, readiness: r.data?.data || null, data: r.data?.data || null } : r;
+}
+
+export async function apiTransitionRagReadiness(sessionId, status) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const normalized = String(status || "").trim();
+  if (!normalized) return { ok: false, status: 0, error: "missing rag_readiness_status" };
+  const r = okOrError(await request(apiRoutes.sessions.ragReadiness(sid), { method: "PATCH", body: { rag_readiness_status: normalized } }));
+  return r.ok ? { ok: true, status: r.status, readiness: r.data?.data || null, data: r.data?.data || null } : r;
+}

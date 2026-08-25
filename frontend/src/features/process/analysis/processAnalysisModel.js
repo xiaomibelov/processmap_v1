@@ -30,11 +30,16 @@ export function getProcessMetrics(viewModel) {
 
 export function getKpiCards(metrics, t) {
   const time = asObject(metrics?.time);
+  const counts = asObject(metrics?.counts);
+  const coverage = asObject(metrics?.coverage);
+  const stepsTotal = Number(counts?.steps_total || 0);
+  const leadMin = Number(time.lead_min || 0);
+  const bindPercent = Number(coverage?.bind_percent || 0);
   return [
     {
       key: "lead",
       label: t("processAnalysis.kpi.lead"),
-      value: Number(time.lead_min || 0),
+      value: leadMin,
       unit: t("processAnalysis.unit.min"),
       tone: "neutral",
     },
@@ -51,6 +56,27 @@ export function getKpiCards(metrics, t) {
       value: Number(time.wait_min || 0),
       unit: t("processAnalysis.unit.min"),
       tone: "warning",
+    },
+    {
+      key: "mainline",
+      label: t("processAnalysis.kpi.mainline") || "Mainline время",
+      value: Number(time.mainline_min || 0),
+      unit: t("processAnalysis.unit.min"),
+      tone: "info",
+    },
+    {
+      key: "avg_step",
+      label: t("processAnalysis.kpi.avgStep") || "Средняя длительность шага",
+      value: stepsTotal > 0 ? Math.round(leadMin / stepsTotal) : 0,
+      unit: t("processAnalysis.unit.min"),
+      tone: "neutral",
+    },
+    {
+      key: "bpmn_binding",
+      label: t("processAnalysis.kpi.bpmnBinding") || "Привязка к BPMN",
+      value: bindPercent,
+      unit: "%",
+      tone: bindPercent >= 80 ? "success" : bindPercent >= 50 ? "warning" : "danger",
     },
     {
       key: "throughput",
