@@ -53,7 +53,25 @@
 - `npm run build` — production-сборка успешна.
 - Локальный скриншот вкладки «Границы» (dev-сервер + seeded-сессия) — см. `evidence/local-after-tab-boundaries.png`.
 
+### Скриншоты локального прогона
+
+**Границы:**
 ![local-after-tab-boundaries](https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/analysis-tabs-ux-overhaul/.planning/contours/feature/analysis-tabs-ux-overhaul/local-after-tab-boundaries.jpg)
+
+**Действия:**
+![local-after-tab-actions](https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/analysis-tabs-ux-overhaul/.planning/contours/feature/analysis-tabs-ux-overhaul/local-after-tab-actions.jpg)
+
+**Исключения:**
+![local-after-tab-exceptions](https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/analysis-tabs-ux-overhaul/.planning/contours/feature/analysis-tabs-ux-overhaul/local-after-tab-exceptions.jpg)
+
+**AI:**
+![local-after-tab-ai](https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/analysis-tabs-ux-overhaul/.planning/contours/feature/analysis-tabs-ux-overhaul/local-after-tab-ai.jpg)
+
+**Ветки (не изменялись):**
+![local-after-tab-branches](https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/analysis-tabs-ux-overhaul/.planning/contours/feature/analysis-tabs-ux-overhaul/local-after-tab-branches.jpg)
+
+**Итоги (не изменялись):**
+![local-after-tab-summary](https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/analysis-tabs-ux-overhaul/.planning/contours/feature/analysis-tabs-ux-overhaul/local-after-tab-summary.jpg)
 
 ---
 
