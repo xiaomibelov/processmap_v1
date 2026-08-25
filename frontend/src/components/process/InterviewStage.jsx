@@ -28,6 +28,7 @@ import { ProcessAnalysisBranchesTab } from "../../features/process/analysis/Proc
 import { ProcessAnalysisSummaryTab } from "../../features/process/analysis/ProcessAnalysisSummaryTab.jsx";
 import { ProcessAnalysisExceptionsTab } from "../../features/process/analysis/ProcessAnalysisExceptionsTab.jsx";
 import { ProcessAnalysisAiTab } from "../../features/process/analysis/ProcessAnalysisAiTab.jsx";
+import analysisStyles from "../../features/process/analysis/ProcessAnalysis.module.css";
 
 const analysisT = createT("ru");
 
@@ -722,12 +723,12 @@ export default function InterviewStage({
   );
 
   const stepsTabCompanion = (
-    <aside className="analysisStepCompanion" data-testid="analysis-step-companion">
-      <details className="analysisBSection analysisBContextSection" open data-testid="analysis-b-context-section">
-        <summary>
+    <aside className={`analysisStepCompanion ${analysisStyles.analysisCompanion}`} data-testid="analysis-step-companion">
+      <div className={analysisStyles.analysisCompanionCard} data-testid="analysis-b-context-section">
+        <div className={analysisStyles.analysisCompanionCardHead}>
           <span>Шаг и продукт</span>
           <span>{selectedStepProductActionCount} действий</span>
-        </summary>
+        </div>
         <section className="analysisSelectedStepCard" data-testid="analysis-selected-step-card">
           <div className="analysisSelectedStepEyebrow">{selectedStep ? "Выбранный шаг" : "Текущий шаг"}</div>
           {analysisContextStep ? (
@@ -799,13 +800,13 @@ export default function InterviewStage({
           onSessionSync={onSessionSync}
           onOpenProductActionsRegistry={onOpenProductActionsRegistry}
         />
-      </details>
-      <details className="analysisBSection ragSearchSection" data-testid="rag-search-section">
-        <summary>
+      </div>
+      <div className={analysisStyles.analysisCompanionCard} data-testid="rag-search-section">
+        <div className={analysisStyles.analysisCompanionCardHead}>
           <span>RAG-агент</span>
-        </summary>
+        </div>
         <RagSearchPanel sessionId={sid} />
-      </details>
+      </div>
     </aside>
   );
 

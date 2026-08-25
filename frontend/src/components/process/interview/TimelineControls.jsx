@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import styles from "../../../features/process/analysis/ProcessAnalysis.module.css";
 import { STEP_TYPES, TIMELINE_OPTIONAL_COLUMNS, toArray, toText } from "./utils";
 
 function dedupList(values) {
@@ -59,13 +60,13 @@ export default function TimelineControls({
   const FILTER_QUERY_DEBOUNCE_MS = 180;
   const [showMoreActions, setShowMoreActions] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [lanePickerOpen, setLanePickerOpen] = useState(false);
   const [quickInputOpen, setQuickInputOpen] = useState(() => !!toText(quickStepDraft));
   const [laneSearch, setLaneSearch] = useState("");
   const [queryDraft, setQueryDraft] = useState(() => toText(timelineFilters?.query));
   const patchTimelineFilterRef = useRef(patchTimelineFilter);
   const quickInputRef = useRef(null);
+  const moreMenuRef = useRef(null);
 
   const laneByKey = useMemo(() => {
     const out = {};
@@ -112,6 +113,18 @@ export default function TimelineControls({
     setLaneSearch("");
   }, [filtersOpen]);
 
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (!moreMenuRef.current) return;
+      if (!moreMenuRef.current.contains(event.target)) {
+        setShowMoreActions(false);
+      }
+    }
+    if (!showMoreActions) return undefined;
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showMoreActions]);
+
   const selectedLanes = useMemo(() => {
     const fromMulti = dedupList(toArray(timelineFilters?.lanes));
     if (fromMulti.length) return fromMulti;
@@ -135,21 +148,6 @@ export default function TimelineControls({
     if (labels.length <= 3) return labels.join(" · ");
     return `${labels.slice(0, 3).join(" · ")} +${labels.length - 3}`;
   }, [selectedLanes, laneByKey]);
-
-  const filterSummary = useMemo(() => {
-    const parts = [];
-    const query = toText(timelineFilters?.query);
-    if (query) parts.push(`поиск="${query}"`);
-    if (selectedLanes.length) parts.push(`лайны=${selectedLanes.length}`);
-    if (toText(timelineFilters?.type) && timelineFilters.type !== "all") parts.push(`тип=${timelineFilters.type}`);
-    if (toText(timelineFilters?.subprocess) && timelineFilters.subprocess !== "all") parts.push(`подпроцесс=${timelineFilters.subprocess}`);
-    if (toText(timelineFilters?.bind) && timelineFilters.bind !== "all") parts.push(`привязки=${timelineFilters.bind}`);
-    if (toText(timelineFilters?.annotation) && timelineFilters.annotation !== "all") parts.push(`аннотации=${timelineFilters.annotation}`);
-    if (toText(timelineFilters?.ai) && timelineFilters.ai !== "all") parts.push(`AI=${timelineFilters.ai}`);
-    const tiers = dedupList(toArray(timelineFilters?.tiers));
-    if (tiers.length && tiers.length < 4) parts.push(`tiers=${tiers.join("/")}`);
-    return parts.length ? parts.join(" · ") : "Фильтры не заданы";
-  }, [timelineFilters, selectedLanes.length]);
 
   const selectedTiers = useMemo(() => {
     const raw = dedupList(toArray(timelineFilters?.tiers).map((x) => String(x || "").toUpperCase()));
@@ -191,9 +189,6 @@ export default function TimelineControls({
   const orderHintText = orderMode === "bpmn"
     ? (toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы.")
     : "Creation order: порядок шага = order_index.";
-  const activeViewLabel = timelineViewMode === "paths"
-    ? "Сценарии и отчёты"
-    : (timelineViewMode === "diagram" ? "Граф анализа" : "Таблица шагов");
 
   function applyLaneSelection(nextList) {
     const cleaned = dedupList(nextList);
@@ -210,6 +205,19 @@ export default function TimelineControls({
     applyLaneSelection(Array.from(set));
   }
 
+  function toggleTierValue(tierRaw) {
+    const tier = String(tierRaw || "");
+    if (!(tier === "P0" || tier === "P1" || tier === "P2" || tier === "None")) return;
+    const set = new Set(selectedTiers);
+    if (set.has(tier)) {
+      if (set.size === 1) return;
+      set.delete(tier);
+    } else {
+      set.add(tier);
+    }
+    patchTimelineFilter("tiers", Array.from(set));
+  }
+
   function setQuickPreset(kind) {
     if (kind === "missing_bind") {
       patchTimelineFilter("bind", timelineFilters.bind === "missing" ? "all" : "missing");
@@ -224,106 +232,74 @@ export default function TimelineControls({
     }
   }
 
-  function toggleTierValue(tierRaw) {
-    const tier = String(tierRaw || "");
-    if (!(tier === "P0" || tier === "P1" || tier === "P2" || tier === "None")) return;
-    const set = new Set(selectedTiers);
-    if (set.has(tier)) {
-      if (set.size === 1) return;
-      set.delete(tier);
-    } else {
-      set.add(tier);
-    }
-    patchTimelineFilter("tiers", Array.from(set));
-  }
+  const viewLabel = {
+    matrix: "Таблица",
+    paths: "Сценарии",
+    diagram: "Граф",
+  }[timelineViewMode] || "Таблица";
+
+  const ViewBtn = ({ mode, label, testId }) => (
+    <button
+      type="button"
+      className={`${styles.analysisChip} ${timelineViewMode === mode ? styles.analysisChipActive : ""}`}
+      data-testid={testId}
+      onClick={() => onSetTimelineViewMode?.(mode)}
+      aria-pressed={timelineViewMode === mode}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="interviewTimelineToolbar rounded-xl border border-border bg-panel2/55 p-2.5">
-      <div className="interviewTimelinePrimaryRow">
-        <button type="button" className="primaryBtn smallBtn" onClick={() => addStep("operation")} data-testid="interview-add-step-primary">
+    <div className={styles.analysisToolbar} data-testid="steps-tab-toolbar">
+      <div className={styles.analysisToolbarRow}>
+        <button
+          type="button"
+          className="primaryBtn smallBtn"
+          onClick={() => addStep("operation")}
+          data-testid="interview-add-step-primary"
+        >
           + Добавить шаг
         </button>
 
         <input
-          className="input interviewTimelinePrimarySearch"
+          className={`input ${styles.analysisTableInput}`}
+          style={{ flex: "1 1 260px", minWidth: 200 }}
           value={queryDraft}
           onChange={(e) => setQueryDraft(e.target.value)}
           placeholder="Поиск: шаг, аннотация, узел, роль..."
           aria-label="Поиск шагов"
+          data-testid="interview-step-search"
         />
 
         <button
           type="button"
-          className={`secondaryBtn smallBtn ${quickInputOpen ? "isActive" : ""}`}
-          data-testid="interview-quick-input-toggle"
-          onClick={() => setQuickInputOpen((prev) => !prev)}
-          aria-expanded={quickInputOpen}
-          title="Быстрый ввод шага"
+          className={`${styles.analysisChip} ${filtersOpen ? styles.analysisChipActive : ""}`}
+          data-testid="interview-filters-toggle"
+          onClick={() => setFiltersOpen((prev) => !prev)}
+          aria-expanded={filtersOpen}
         >
-          Быстрый ввод {quickInputOpen ? "▴" : "▾"}
+          Фильтры{activeFiltersCount > 0 ? ` (${activeFiltersCount})` : ""}
         </button>
 
-        <button
-          type="button"
-          className={`secondaryBtn smallBtn ${advancedOpen ? "isActive" : ""}`}
-          data-testid="interview-advanced-toggle"
-          onClick={() => setAdvancedOpen((prev) => !prev)}
-          aria-expanded={advancedOpen}
-          title={`Текущий вид: ${activeViewLabel}`}
-        >
-          Дополнительно · {activeViewLabel} {advancedOpen ? "▴" : "▾"}
-        </button>
-      </div>
-
-      {advancedOpen ? (
-      <div className="interviewTimelineUtilityRow" data-testid="interview-advanced-controls">
-        <div className="interviewBranchViewToggle" role="group" aria-label="Режим отображения анализа">
-          <button
-            type="button"
-            className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "matrix" ? "isActive" : ""}`}
-            data-testid="interview-view-mode-matrix-btn"
-            onClick={() => onSetTimelineViewMode?.("matrix")}
-          >
-            Таблица шагов
-          </button>
-          <button
-            type="button"
-            className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "paths" ? "isActive" : ""}`}
-            data-testid="interview-view-mode-paths-btn"
-            onClick={() => onSetTimelineViewMode?.("paths")}
-          >
-            Сценарии и отчёты
-          </button>
-          <button
-            type="button"
-            className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "diagram" ? "isActive" : ""}`}
-            data-testid="interview-view-mode-diagram-btn"
-            onClick={() => onSetTimelineViewMode?.("diagram")}
-          >
-            Граф анализа
-          </button>
+        <div className={styles.analysisToolbarGroup} role="group" aria-label="Режим отображения">
+          <ViewBtn mode="matrix" label="Таблица" testId="interview-view-mode-matrix-btn" />
+          <ViewBtn mode="paths" label="Сценарии" testId="interview-view-mode-paths-btn" />
+          <ViewBtn mode="diagram" label="Граф" testId="interview-view-mode-diagram-btn" />
         </div>
 
         <button
           type="button"
-          className="secondaryBtn smallBtn"
-          onClick={() => setFiltersOpen((prev) => !prev)}
-          title={filterSummary}
-        >
-          Фильтры ({activeFiltersCount})
-        </button>
-
-        <button
-          type="button"
-          className="secondaryBtn smallBtn"
+          className={styles.analysisChip}
           data-testid="binding-assistant-open"
           onClick={() => onOpenBindingAssistant?.()}
         >
-          Проверка привязок ({Number(bindingIssueCount || 0)})
+          Привязки ({Number(bindingIssueCount || 0)})
         </button>
 
         <select
-          className="select interviewSortSelect"
+          className="select"
+          style={{ minWidth: 170 }}
           value={orderMode === "bpmn" ? "bpmn" : "interview"}
           onChange={(e) => onSetOrderMode?.(e.target.value)}
           aria-label="Сортировка шагов"
@@ -334,195 +310,157 @@ export default function TimelineControls({
           <option value="manual" disabled>Ручной порядок (скоро)</option>
         </select>
 
-        {Number(selectedStepCount || 0) > 0 ? (
+        <div className={styles.analysisToolbarGroup} ref={moreMenuRef} style={{ position: "relative" }}>
           <button
             type="button"
-            className="secondaryBtn smallBtn"
-            data-testid="interview-group-subprocess-btn"
-            disabled={Number(selectedStepCount || 0) < 2}
-            onClick={() => {
-              onGroupSelectedSteps?.(subprocessDraft);
-            }}
-            title={Number(selectedStepCount || 0) < 2 ? "Выберите минимум 2 шага" : "Сгруппировать выбранные шаги в подпроцесс"}
-          >
-            Выделено: {Number(selectedStepCount || 0)}
-          </button>
-        ) : null}
-
-        {isTimelineFiltering ? (
-          <button type="button" className="secondaryBtn tinyBtn" onClick={resetTimelineFilters}>
-            Сбросить фильтры
-          </button>
-        ) : null}
-
-        <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`} title={orderHintText}>
-          {orderMode === "bpmn" ? "Порядок: BPMN" : "Порядок: по созданию"}
-        </span>
-
-        <div className="interviewColsMenuWrap">
-          <button
-            type="button"
-            className="secondaryBtn smallBtn"
+            className={`${styles.analysisChip} ${showMoreActions ? styles.analysisChipActive : ""}`}
             data-testid="interview-step-more-btn"
             onClick={() => setShowMoreActions((v) => !v)}
+            aria-expanded={showMoreActions}
           >
             Ещё ▾
           </button>
           {showMoreActions ? (
-            <div className="interviewColsMenu" style={{ minWidth: 300 }}>
-              <div className="interviewColsMenuHead">
-                <span>Дополнительные действия</span>
-                <button type="button" className="secondaryBtn smallBtn" onClick={() => setShowMoreActions(false)}>
-                  Закрыть
-                </button>
-              </div>
-              <div className="interviewColsMenuList">
+            <div
+              className={styles.analysisFilterPanel}
+              style={{
+                position: "absolute",
+                right: 0,
+                top: "calc(100% + 8px)",
+                zIndex: 30,
+                width: 340,
+                maxWidth: "80vw",
+                gridTemplateColumns: "1fr",
+              }}
+              data-testid="interview-more-menu"
+            >
+              <div className={styles.analysisToolbarGroup}>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("movement")}>+ Перемещение</button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("waiting")}>+ Ожидание</button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => addStep("qc")}>+ QC</button>
-                <div className="col-span-2 flex flex-wrap items-center gap-2">
-                  <span className="muted small">Ветки:</span>
-                  <button
-                    type="button"
-                    className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "tree" ? "isActive" : ""}`}
-                    data-testid="interview-branch-view-tree-btn"
-                    onClick={() => onSetBranchViewMode?.("tree")}
-                  >
-                    Дерево
-                  </button>
-                  <button
-                    type="button"
-                    className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "cards" ? "isActive" : ""}`}
-                    data-testid="interview-branch-view-cards-btn"
-                    onClick={() => onSetBranchViewMode?.("cards")}
-                  >
-                    Карточки
-                  </button>
-                </div>
-                <div className="inputRow col-span-2" style={{ alignItems: "center", gap: 8 }}>
-                  <input
-                    className="input interviewSubprocessInput"
-                    value={subprocessDraft}
-                    onChange={(e) => setSubprocessDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addSubprocessLabel();
-                      }
-                    }}
-                    placeholder="Название подпроцесса"
-                  />
-                  <button type="button" className="secondaryBtn smallBtn" onClick={addSubprocessLabel}>+ Подпроцесс</button>
-                </div>
-                <div className="interviewMoreSection" data-testid="interview-group-selection-section">
-                  <span className="muted small">Выделено шагов: {Number(selectedStepCount || 0)}</span>
-                  <button
-                    type="button"
-                    className="secondaryBtn smallBtn"
-                    data-testid="interview-group-subprocess-btn"
-                    disabled={Number(selectedStepCount || 0) < 2}
-                    onClick={() => {
-                      onGroupSelectedSteps?.(subprocessDraft);
-                      setShowMoreActions(false);
-                    }}
-                    title={Number(selectedStepCount || 0) < 2 ? "Выберите минимум 2 шага" : "Сгруппировать выбранные шаги в подпроцесс"}
-                  >
-                    Сгруппировать в подпроцесс
-                  </button>
-                </div>
-                <div className="interviewMoreSection" style={{ alignItems: "flex-start" }}>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="muted small">Видимость колонок</span>
-                    <div className="interviewColsMenuList !grid-cols-1">
-                      {TIMELINE_OPTIONAL_COLUMNS.map((col) => (
-                        <label key={col.key} className="interviewColsItem">
-                          <input
-                            type="checkbox"
-                            checked={!hiddenTimelineCols[col.key]}
-                            onChange={() => toggleTimelineColumn(col.key)}
-                          />
-                          <span>{col.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <button type="button" className="secondaryBtn smallBtn" onClick={resetTimelineColumns}>Сброс</button>
-                </div>
+              </div>
+
+              <div className={styles.analysisToolbarGroup} role="group" aria-label="Вид веток">
+                <span className="muted small">Ветки:</span>
+                <button
+                  type="button"
+                  className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "tree" ? "isActive" : ""}`}
+                  data-testid="interview-branch-view-tree-btn"
+                  onClick={() => onSetBranchViewMode?.("tree")}
+                >
+                  Дерево
+                </button>
+                <button
+                  type="button"
+                  className={`secondaryBtn smallBtn interviewBranchViewBtn ${branchViewMode === "cards" ? "isActive" : ""}`}
+                  data-testid="interview-branch-view-cards-btn"
+                  onClick={() => onSetBranchViewMode?.("cards")}
+                >
+                  Карточки
+                </button>
+              </div>
+
+              <div className="inputRow" style={{ alignItems: "center", gap: 8 }}>
+                <input
+                  className="input interviewSubprocessInput"
+                  value={subprocessDraft}
+                  onChange={(e) => setSubprocessDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addSubprocessLabel();
+                    }
+                  }}
+                  placeholder="Название подпроцесса"
+                />
+                <button type="button" className="secondaryBtn smallBtn" onClick={addSubprocessLabel}>+ Подпроцесс</button>
+              </div>
+
+              <div data-testid="interview-group-selection-section">
+                <span className="muted small">Выделено шагов: {Number(selectedStepCount || 0)}</span>
                 <button
                   type="button"
                   className="secondaryBtn smallBtn"
-                  onClick={saveUiPrefs}
-                  title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
+                  data-testid="interview-group-subprocess-btn"
+                  disabled={Number(selectedStepCount || 0) < 2}
+                  onClick={() => {
+                    onGroupSelectedSteps?.(subprocessDraft);
+                    setShowMoreActions(false);
+                  }}
+                  title={Number(selectedStepCount || 0) < 2 ? "Выберите минимум 2 шага" : "Сгруппировать выбранные шаги в подпроцесс"}
                 >
-                  {uiPrefsDirty ? "Сохранить фильтры*" : "Сохранить фильтры"}
+                  Сгруппировать в подпроцесс
                 </button>
-                <div className="col-span-2 mt-1 flex flex-wrap items-center gap-2">
-                  <span className={"badge " + (graphOrderLocked ? "ok" : "warn")} title={graphOrderLocked ? "Reorder заблокирован (порядок из BPMN)" : "Reorder доступен"}>
-                    {graphOrderLocked ? "Порядок BPMN зафиксирован" : "Порядок можно менять"}
-                  </span>
-                  <span className="badge">Шаги: {filteredTimelineCount}/{timelineCount}</span>
-                  <span className="badge">AI: {Number(statusCounts?.withAi || 0)}</span>
-                  <button type="button" className="secondaryBtn smallBtn" onClick={() => onToggleCollapse?.()}>
-                    Скрыть блок
-                  </button>
-                  {devDebugEnabled ? (
-                    <button
-                      type="button"
-                      className="secondaryBtn smallBtn"
-                      data-testid="interview-debug-toggle"
-                      onClick={() => onToggleDebug?.()}
-                    >
-                      Диагностика
-                    </button>
-                  ) : null}
+              </div>
+
+              <div>
+                <span className="muted small">Видимость колонок</span>
+                <div className="interviewColsMenuList !grid-cols-1">
+                  {TIMELINE_OPTIONAL_COLUMNS.map((col) => (
+                    <label key={col.key} className="interviewColsItem">
+                      <input
+                        type="checkbox"
+                        checked={!hiddenTimelineCols[col.key]}
+                        onChange={() => toggleTimelineColumn(col.key)}
+                      />
+                      <span>{col.label}</span>
+                    </label>
+                  ))}
                 </div>
+                <button type="button" className="secondaryBtn smallBtn" onClick={resetTimelineColumns}>Сброс</button>
+              </div>
+
+              <button
+                type="button"
+                className="secondaryBtn smallBtn"
+                onClick={saveUiPrefs}
+                title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
+              >
+                {uiPrefsDirty ? "Сохранить фильтры*" : "Сохранить фильтры"}
+              </button>
+
+              <div className={styles.analysisToolbarGroup}>
+                <span className={"badge " + (graphOrderLocked ? "ok" : "warn")} title={graphOrderLocked ? "Reorder заблокирован (порядок из BPMN)" : "Reorder доступен"}>
+                  {graphOrderLocked ? "Порядок BPMN зафиксирован" : "Порядок можно менять"}
+                </span>
+                <span className="badge">Шаги: {filteredTimelineCount}/{timelineCount}</span>
+                <span className="badge">AI: {Number(statusCounts?.withAi || 0)}</span>
+                <button type="button" className="secondaryBtn smallBtn" onClick={() => onToggleCollapse?.()}>
+                  Скрыть блок
+                </button>
+                {devDebugEnabled ? (
+                  <button
+                    type="button"
+                    className="secondaryBtn smallBtn"
+                    data-testid="interview-debug-toggle"
+                    onClick={() => onToggleDebug?.()}
+                  >
+                    Диагностика
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
         </div>
       </div>
-      ) : null}
-
-      {quickInputOpen ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-2">
-          <input
-            ref={quickInputRef}
-            className="input interviewQuickStepInput"
-            value={quickStepDraft}
-            onChange={(e) => setQuickStepDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addQuickStepFromInput(e.currentTarget.value);
-              }
-            }}
-            placeholder="Быстрый ввод шага: введите действие и нажмите Enter"
-          />
-          <button
-            type="button"
-            className="secondaryBtn smallBtn"
-            onClick={() => addQuickStepFromInput(quickStepDraft)}
-            disabled={!toText(quickStepDraft)}
-          >
-            Добавить
-          </button>
-          <button type="button" className="secondaryBtn smallBtn" onClick={() => setQuickInputOpen(false)}>
-            Скрыть
-          </button>
-        </div>
-      ) : null}
 
       {filtersOpen ? (
-        <div className="interviewTimelineFilters mt-2 grid gap-2 rounded-lg border border-border/70 bg-panel/60 p-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className={styles.analysisFilterPanel} data-testid="interview-advanced-controls">
+          <div className={styles.analysisToolbarGroup} style={{ width: "100%", flexWrap: "wrap" }}>
             <input
-              className="input interviewFilterControl min-w-[260px] flex-[1_1_260px]"
+              className={`input ${styles.analysisTableInput}`}
+              style={{ flex: "1 1 260px", minWidth: 200 }}
               value={queryDraft}
               onChange={(e) => setQueryDraft(e.target.value)}
               placeholder="Поиск: шаг, аннотация, узел, роль..."
             />
-            <div className="relative min-w-[230px] flex-[1_1_230px]">
-              <button type="button" className="select w-full text-left" onClick={() => setLanePickerOpen((prev) => !prev)}>
+            <div style={{ position: "relative", minWidth: 200, flex: "1 1 230px" }}>
+              <button
+                type="button"
+                className="select w-full text-left"
+                onClick={() => setLanePickerOpen((prev) => !prev)}
+                aria-expanded={lanePickerOpen}
+              >
                 Лайны: {laneSummary}
               </button>
               {lanePickerOpen ? (
@@ -557,36 +495,36 @@ export default function TimelineControls({
                 </div>
               ) : null}
             </div>
-            <select className="select interviewFilterControl min-w-[150px] flex-[0_1_180px]" value={timelineFilters.type} onChange={(e) => patchTimelineFilter("type", e.target.value)}>
+            <select className="select" style={{ minWidth: 150, flex: "0 1 180px" }} value={timelineFilters.type} onChange={(e) => patchTimelineFilter("type", e.target.value)}>
               <option value="all">Все типы</option>
               {STEP_TYPES.map((x) => (
                 <option key={x.value} value={x.value}>{x.label}</option>
               ))}
             </select>
-            <select className="select interviewFilterControl min-w-[150px] flex-[0_1_190px]" value={timelineFilters.subprocess} onChange={(e) => patchTimelineFilter("subprocess", e.target.value)}>
+            <select className="select" style={{ minWidth: 150, flex: "0 1 190px" }} value={timelineFilters.subprocess} onChange={(e) => patchTimelineFilter("subprocess", e.target.value)}>
               <option value="all">Все подпроцессы</option>
               {timelineSubprocessOptions.map((sp) => (
                 <option key={sp} value={sp}>{sp}</option>
               ))}
             </select>
-            <select className="select interviewFilterControl min-w-[170px] flex-[0_1_190px]" value={timelineFilters.bind} onChange={(e) => patchTimelineFilter("bind", e.target.value)}>
+            <select className="select" style={{ minWidth: 170, flex: "0 1 190px" }} value={timelineFilters.bind} onChange={(e) => patchTimelineFilter("bind", e.target.value)}>
               <option value="all">Все привязки</option>
               <option value="bound">Только привязанные</option>
               <option value="missing">Только без привязки</option>
             </select>
-            <select className="select interviewFilterControl min-w-[170px] flex-[0_1_200px]" value={timelineFilters.annotation} onChange={(e) => patchTimelineFilter("annotation", e.target.value)}>
+            <select className="select" style={{ minWidth: 170, flex: "0 1 200px" }} value={timelineFilters.annotation} onChange={(e) => patchTimelineFilter("annotation", e.target.value)}>
               <option value="all">Аннотации: все</option>
               <option value="with">Аннотации: есть</option>
               <option value="without">Аннотации: нет</option>
             </select>
-            <select className="select interviewFilterControl min-w-[170px] flex-[0_1_200px]" value={timelineFilters.ai} onChange={(e) => patchTimelineFilter("ai", e.target.value)}>
+            <select className="select" style={{ minWidth: 170, flex: "0 1 200px" }} value={timelineFilters.ai} onChange={(e) => patchTimelineFilter("ai", e.target.value)}>
               <option value="all">AI: все</option>
               <option value="with">AI: есть</option>
               <option value="without">AI: нет</option>
             </select>
           </div>
 
-          <div className="interviewFilterChips">
+          <div className={styles.analysisToolbarGroup} style={{ width: "100%", flexWrap: "wrap" }}>
             <span className="muted small">Tier:</span>
             {["P0", "P1", "P2", "None"].map((tier) => {
               const active = selectedTiers.includes(tier);
@@ -603,24 +541,74 @@ export default function TimelineControls({
                 </button>
               );
             })}
-            <button type="button" className={"interviewFilterChip " + (timelineFilters.bind === "bound" ? "on" : "")} onClick={() => patchTimelineFilter("bind", timelineFilters.bind === "bound" ? "all" : "bound")}>
+            <button type="button" className={`${styles.analysisChip} ${timelineFilters.bind === "bound" ? styles.analysisChipActive : ""}`} onClick={() => patchTimelineFilter("bind", timelineFilters.bind === "bound" ? "all" : "bound")}>
               Привязки: да
             </button>
-            <button type="button" className={"interviewFilterChip " + (timelineFilters.bind === "missing" ? "on" : "")} onClick={() => setQuickPreset("missing_bind")}>
+            <button type="button" className={`${styles.analysisChip} ${timelineFilters.bind === "missing" ? styles.analysisChipActive : ""}`} onClick={() => setQuickPreset("missing_bind")}>
               Привязки: нет
             </button>
-            <button type="button" className={"interviewFilterChip " + (timelineFilters.ai === "with" ? "on" : "")} data-testid="interview-filter-ai-with" onClick={() => setQuickPreset("with_ai")}>
+            <button type="button" className={`${styles.analysisChip} ${timelineFilters.ai === "with" ? styles.analysisChipActive : ""}`} data-testid="interview-filter-ai-with" onClick={() => setQuickPreset("with_ai")}>
               AI: да
             </button>
             {activeFilterChips.map((chip, idx) => (
-              <span key={`active_filter_chip_${idx + 1}`} className="interviewFilterChip on">{chip}</span>
+              <span key={`active_filter_chip_${idx + 1}`} className={`${styles.analysisChip} ${styles.analysisChipActive}`}>{chip}</span>
             ))}
-            <button type="button" className="interviewFilterChip" onClick={() => setFiltersOpen(false)}>
-              Свернуть фильтры
-            </button>
+            {isTimelineFiltering ? (
+              <button type="button" className="secondaryBtn tinyBtn" onClick={resetTimelineFilters}>
+                Сбросить фильтры
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        className={`${styles.analysisChip} ${quickInputOpen ? styles.analysisChipActive : ""}`}
+        style={{ alignSelf: "flex-start" }}
+        data-testid="interview-quick-input-toggle"
+        onClick={() => setQuickInputOpen((prev) => !prev)}
+        aria-expanded={quickInputOpen}
+      >
+        Быстрый ввод {quickInputOpen ? "▴" : "▾"}
+      </button>
+
+      {quickInputOpen ? (
+        <div className={styles.analysisFilterPanel} style={{ gridTemplateColumns: "1fr auto auto" }}>
+          <input
+            ref={quickInputRef}
+            className={`input ${styles.analysisTableInput}`}
+            value={quickStepDraft}
+            onChange={(e) => setQuickStepDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addQuickStepFromInput(e.currentTarget.value);
+              }
+            }}
+            placeholder="Быстрый ввод шага: введите действие и нажмите Enter"
+            data-testid="interview-quick-step-input"
+          />
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            onClick={() => addQuickStepFromInput(quickStepDraft)}
+            disabled={!toText(quickStepDraft)}
+          >
+            Добавить
+          </button>
+          <button type="button" className="secondaryBtn smallBtn" onClick={() => setQuickInputOpen(false)}>
+            Скрыть
+          </button>
+        </div>
+      ) : null}
+
+      <div className={styles.analysisToolbarGroup}>
+        <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`} title={orderHintText}>
+          {orderMode === "bpmn" ? "Порядок: BPMN" : "Порядок: по созданию"}
+        </span>
+        <span className="muted small">{viewLabel}</span>
+      </div>
     </div>
   );
 }
