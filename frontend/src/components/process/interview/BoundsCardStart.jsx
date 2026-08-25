@@ -13,6 +13,9 @@ export default function BoundsCardStart({
   laneOptions,
   onStartShopChange,
   onTriggerChange,
+  statusMissingLabel = "не заполнено",
+  statusFilledLabel = "заполнено",
+  triggerFilledLabel = "Триггер заполнен",
 }) {
   return (
     <section
@@ -27,7 +30,9 @@ export default function BoundsCardStart({
     >
       <div className={styles.analysisStepperIcon} aria-hidden="true">●</div>
       <div className={styles.analysisStepperTitle}>START</div>
-      <div className={styles.analysisStepperStatus}>{missing ? "не заполнено" : "ok"}</div>
+      <div className={styles.analysisStepperStatus}>
+        {missing ? statusMissingLabel : trigger && !startShop ? triggerFilledLabel : statusFilledLabel}
+      </div>
 
       <div className={styles.analysisStepperContent}>
         <label className="interviewField">
