@@ -8,7 +8,56 @@ import {
   apiUpdateProductActionSuggestion,
 } from "../../../lib/api.js";
 import { AnalysisEmptyState, AnalysisErrorState, AnalysisSection, AnalysisSkeleton } from "./ui/index.js";
+import { createT } from "./useProcessAnalysisI18n.js";
 import styles from "./ProcessAnalysis.module.css";
+
+const defaultT = createT("ru");
+
+const KNOWN_ERROR_CODES = [
+  "AI_PROVIDER_NOT_CONFIGURED",
+  "missing_api_key",
+  "provider_error",
+  "ai_rate_limit_exceeded",
+];
+
+function getErrorCode(error) {
+  const s = String(error || "");
+  for (const code of KNOWN_ERROR_CODES) {
+    if (s.includes(code)) return code;
+  }
+  return null;
+}
+
+function formatErrorMessage(error, t) {
+  const code = getErrorCode(error);
+  if (!code) return error;
+  const map = {
+    AI_PROVIDER_NOT_CONFIGURED: t("processAnalysis.ai.providerNotConfigured"),
+    missing_api_key: t("processAnalysis.ai.missingApiKey"),
+    provider_error: t("processAnalysis.ai.providerError"),
+    ai_rate_limit_exceeded: t("processAnalysis.ai.rateLimit"),
+  };
+  return map[code] || error;
+}
+
+function statusLabel(status, t) {
+  const labels = {
+    pending: t("processAnalysis.ai.statusPending") || "На рассмотрении",
+    approved: t("processAnalysis.ai.statusApproved") || "Утверждено",
+    rejected: t("processAnalysis.ai.statusRejected") || "Отклонено",
+  };
+  return labels[status] || status;
+}
+
+function ragStatusLabel(status, t) {
+  const labels = {
+    not_ready: t("processAnalysis.ai.ragStatus.notReady") || "Не готова",
+    ready: t("processAnalysis.ai.ragStatus.ready") || "Готова к индексации",
+    queued: t("processAnalysis.ai.ragStatus.queued") || "В очереди на индексацию",
+    indexed: t("processAnalysis.ai.ragStatus.indexed") || "Проиндексирована",
+  };
+  return labels[status] || status || "неизвестен";
+}
 
 const STATUS_LABELS = {
   pending: "На рассмотрении",
@@ -20,13 +69,6 @@ const STATUS_BADGE_CLASS = {
   pending: styles.suggestionBadgePending,
   approved: styles.suggestionBadgeApproved,
   rejected: styles.suggestionBadgeRejected,
-};
-
-const RAG_STATUS_LABELS = {
-  not_ready: "Не готова",
-  ready: "Готова к индексации",
-  queued: "В очереди на индексацию",
-  indexed: "Проиндексирована",
 };
 
 function isPlainObject(value) {
@@ -234,7 +276,9 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
   sessionId,
   baseDiagramStateVersion,
   steps = [],
+  t: tProp,
 }) {
+  const t = tProp || defaultT;
   const [suggestions, setSuggestions] = useState([]);
   const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0, total: 0 });
   const [loading, setLoading] = useState(false);
@@ -300,7 +344,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
       }
       const generated = Array.isArray(r.suggestions) ? r.suggestions : [];
       if (!generated.length) {
-        setError("LLM не предложил действий. Проверьте, что в сессии есть шаги и настроен AI-провайдер.");
+        setError(t("processAnalysis.ai.suggestionListEmpty"));
         return;
       }
       for (const raw of generated) {
@@ -497,22 +541,29 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
       data-testid="product-action-suggestions-panel"
     >
       {error ? (
-        <AnalysisErrorState
-          title="Ошибка"
-          message={error}
-          onRetry={() => {
-            setError(null);
-            void loadSuggestions();
-          }}
-          retryLabel="Повторить"
-          data-testid="product-actions-error"
-        />
+        <>
+          <AnalysisErrorState
+            title={t("processAnalysis.ai.errorTitle")}
+            message={formatErrorMessage(error, t)}
+            onRetry={() => {
+              setError(null);
+              void loadSuggestions();
+            }}
+            retryLabel={t("processAnalysis.ai.retry")}
+            data-testid="product-actions-error"
+          />
+          {getErrorCode(error) ? (
+            <div className={styles.analysisHint} data-testid="product-actions-error-code">
+              Код ошибки: {getErrorCode(error)}
+            </div>
+          ) : null}
+        </>
       ) : null}
 
-      {!hasSuggestions && !generating ? (
+      {!error && !hasSuggestions && !generating ? (
         <AnalysisEmptyState
-          title="Нет предложений"
-          description="Нажмите «Сгенерировать действия», чтобы LLM предложил действия с продуктом на основе шагов процесса."
+          title={t("processAnalysis.ai.emptyTitle")}
+          description={t("processAnalysis.ai.emptyDescription")}
           data-testid="product-actions-empty"
         />
       ) : null}
@@ -571,7 +622,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
           <div className={styles.suggestionRagStatus}>
             <span className={styles.suggestionRagLabel}>RAG-статус:</span>
             <span className={styles.suggestionRagValue}>
-              {RAG_STATUS_LABELS[text(ragReadiness.rag_readiness_status)] || ragReadiness.rag_readiness_status || "неизвестен"}
+              {ragStatusLabel(text(ragReadiness.rag_readiness_status), t)}
             </span>
           </div>
           {text(ragReadiness.rag_readiness_status) === "ready" ? (
@@ -582,16 +633,16 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
               disabled={ragLoading}
               data-testid="product-actions-send-rag"
             >
-              {ragLoading ? "Отправка…" : "Отправить на RAG-индексацию"}
+              {ragLoading ? "Отправка…" : t("processAnalysis.ai.ragStatus.cta")}
             </button>
           ) : null}
           {text(ragReadiness.rag_readiness_status) === "queued" ? (
-            <span className={styles.analysisHint}>Сессия в очереди на ночное индексирование (~04:30).</span>
+            <span className={styles.analysisHint}>{t("processAnalysis.ai.ragStatus.queueHint")}</span>
           ) : null}
           {text(ragReadiness.rag_readiness_status) === "indexed" ? (
             <span className={styles.analysisHint}>
               Последняя индексация: {ragReadiness.indexed_at ? new Date(ragReadiness.indexed_at).toLocaleString("ru-RU") : "—"}
-              {ragReadiness.has_unindexed_changes ? " (есть неиндексированные изменения)" : ""}
+              {ragReadiness.has_unindexed_changes ? ` (${t("processAnalysis.ai.ragStatus.dirty")})` : ""}
             </span>
           ) : null}
         </div>

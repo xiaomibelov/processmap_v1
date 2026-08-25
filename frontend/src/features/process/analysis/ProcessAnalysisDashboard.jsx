@@ -62,7 +62,7 @@ export function ProcessAnalysisDashboard({
       if (!React.isValidElement(tab.content)) return tab;
       return {
         ...tab,
-        content: React.cloneElement(tab.content, { model, loading, error, retry }),
+        content: React.cloneElement(tab.content, { model, loading, error, retry, t }),
       };
     });
   }, [loading, error, model, tabs, t, retry]);

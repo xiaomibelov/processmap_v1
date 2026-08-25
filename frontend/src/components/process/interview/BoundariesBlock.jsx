@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnalysisSection } from "../../../features/process/analysis/ui/index.js";
 import styles from "../../../features/process/analysis/ProcessAnalysis.module.css";
 import { laneColor, laneLabel, normalizeLoose, toText } from "./utils";
+import { createT } from "../../../features/process/analysis/useProcessAnalysisI18n.js";
 import BoundsSummaryRow from "./BoundsSummaryRow";
 import BoundsCardStart from "./BoundsCardStart";
 import BoundsCardIntermediateMultiSelect from "./BoundsCardIntermediateMultiSelect";
 import BoundsCardFinish from "./BoundsCardFinish";
+
+const t = createT("ru");
 
 function parseCsvList(raw) {
   const out = [];
@@ -84,9 +87,13 @@ export default function BoundariesBlock({
 
   const startMeta = laneByName[normalizeLoose(startShop)] || null;
   const finishMeta = laneByName[normalizeLoose(finishShop)] || null;
-  const startFilled = !!trigger && !!startShop;
-  const finishFilled = !!finishState && !!finishShop;
+  const startFilled = !!trigger || !!startShop;
+  const finishFilled = !!finishState || !!finishShop;
   const intermediateFilled = intermediateList.length > 0;
+
+  const statusMissingLabel = t("processAnalysis.boundaries.statusMissing");
+  const statusFilledLabel = t("processAnalysis.boundaries.statusFilled");
+  const triggerFilledLabel = t("processAnalysis.boundaries.triggerFilled");
 
   function setIntermediateList(nextList) {
     patchBoundary("intermediate_roles", parseCsvList(nextList.join(", ")).join(", "));
@@ -175,9 +182,10 @@ export default function BoundariesBlock({
       ) : (
         <>
           <BoundsSummaryRow
-            startLabel={startMeta?.label || startShop || "не выбрано"}
+            startLabel={startMeta?.label || startShop || statusMissingLabel}
             intermediateCount={intermediateList.length}
-            finishLabel={finishMeta?.label || finishShop || "не выбрано"}
+            finishLabel={finishMeta?.label || finishShop || statusMissingLabel}
+            missingLabel={statusMissingLabel}
             onFocusStart={() => scrollToCard("start")}
             onFocusIntermediate={() => scrollToCard("intermediate")}
             onFocusFinish={() => scrollToCard("finish")}
@@ -206,6 +214,9 @@ export default function BoundariesBlock({
                 laneOptions={boundaryLaneOptionsFiltered}
                 onStartShopChange={(value) => patchBoundary("start_shop", value)}
                 onTriggerChange={(value) => patchBoundary("trigger", value)}
+                statusMissingLabel={statusMissingLabel}
+                statusFilledLabel={statusFilledLabel}
+                triggerFilledLabel={triggerFilledLabel}
               />
 
               <BoundsCardIntermediateMultiSelect
@@ -226,6 +237,8 @@ export default function BoundariesBlock({
                 onRawValueChange={(value) => patchBoundary("intermediate_roles", value)}
                 showAllOptions={showAllOptions}
                 onToggleShowAllOptions={setShowAllOptions}
+                statusMissingLabel={statusMissingLabel}
+                statusFilledLabel={statusFilledLabel}
               />
 
               <BoundsCardFinish
@@ -237,9 +250,19 @@ export default function BoundariesBlock({
                 laneOptions={boundaryLaneOptionsFiltered}
                 onFinishShopChange={(value) => patchBoundary("finish_shop", value)}
                 onFinishStateChange={(value) => patchBoundary("finish_state", value)}
+                statusMissingLabel={statusMissingLabel}
+                statusFilledLabel={statusFilledLabel}
               />
             </div>
           </div>
+          <div className={styles.analysisHint} data-testid="boundaries-info">
+            {t("processAnalysis.boundaries.info")}
+          </div>
+          {!boundariesComplete ? (
+            <div className={styles.analysisHint} data-testid="boundaries-next-step">
+              {t("processAnalysis.boundaries.nextStep")}
+            </div>
+          ) : null}
         </>
       )}
     </AnalysisSection>
