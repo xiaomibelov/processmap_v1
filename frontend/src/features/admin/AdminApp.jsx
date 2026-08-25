@@ -391,7 +391,7 @@ function AdminAppInner({
         <AdminAgentRunsPage
           payload={agentRunsQ.data || {}}
           loading={agentRunsQ.loading}
-          onOpenRun={(rid) => onNavigate?.(`/admin/agent-runs/${encodeURIComponent(toText(rid))}`)}
+          onOpenRun={(rid) => onNavigate?.(`/admin/agent-runs/${toText(rid)}`)}
         />
       );
     }
