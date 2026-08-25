@@ -126,4 +126,22 @@ describe("TimelineControls smoke", () => {
     root.unmount();
     cleanup();
   });
+
+  it("renders with active filters without ReferenceError", () => {
+    const html = renderToString(
+      <TimelineControls
+        {...defaultProps}
+        timelineFilters={{
+          ...defaultProps.timelineFilters,
+          query: "нарезка",
+          lanes: ["цех_1"],
+          type: "operation",
+          bind: "missing",
+          ai: "with",
+        }}
+      />,
+    );
+    expect(html).toContain('data-testid="interview-advanced-toggle"');
+    expect(html).toContain("Дополнительно");
+  });
 });
