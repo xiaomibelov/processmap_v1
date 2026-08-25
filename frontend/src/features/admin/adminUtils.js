@@ -22,6 +22,14 @@ export function toLower(value) {
   return toText(value).toLowerCase();
 }
 
+export function safeDecodeURIComponent(value) {
+  try {
+    return decodeURIComponent(toText(value));
+  } catch {
+    return toText(value);
+  }
+}
+
 export function formatTs(tsRaw) {
   const ts = Number(tsRaw || 0);
   if (!Number.isFinite(ts) || ts <= 0) return "—";
@@ -55,7 +63,7 @@ export function parseAdminRoute(pathnameRaw) {
   const parts = tail.split("/").filter(Boolean);
   const section = toLower(parts[0]) || "dashboard";
   const sessionId = section === "sessions" ? toText(parts[1]) : "";
-  const runId = section === "agent-runs" ? toText(parts[1]) : "";
+  const runId = section === "agent-runs" ? safeDecodeURIComponent(toText(parts[1])) : "";
   const labels = {
     dashboard: ru.admin.sections.dashboard,
     orgs: ru.admin.sections.orgs,
