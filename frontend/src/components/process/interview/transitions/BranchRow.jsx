@@ -62,18 +62,18 @@ export default function BranchRow({
                 }}
               />
               <div className="interviewBranchEditActions">
-                {dirty ? <span className="badge warn">unsaved</span> : null}
+                {dirty ? <span className="badge warn">не сохранено</span> : null}
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => onSaveEdit?.(tr, draft)}>
-                  Save
+                  Сохранить
                 </button>
                 <button type="button" className="secondaryBtn smallBtn" onClick={onCancelEdit}>
-                  Cancel
+                  Отмена
                 </button>
               </div>
             </div>
           ) : (
             <div className="interviewBranchWhenCell">
-              <span className={`badge ${hasWhen ? "ok" : ""}`}>{hasWhen ? "conditional" : "default"}</span>
+              <span className={`badge ${hasWhen ? "ok" : ""}`}>{hasWhen ? "условный" : "по умолчанию"}</span>
               <span className={`interviewBranchWhenText ${hasWhen ? "hasWhen" : ""}`}>
                 {hasWhen ? tr.when : "—"}
               </span>

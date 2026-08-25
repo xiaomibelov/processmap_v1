@@ -4301,6 +4301,44 @@ class Storage:
         self.save(session, org_id=org_id, is_admin=True)
         return self.get_rag_readiness(session_id, org_id=org_id)
 
+    def list_sessions_by_rag_status(
+        self,
+        status: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return lightweight session rows with the requested rag_readiness_status."""
+        target = str(status or "").strip() or "queued"
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        with _connect() as con:
+            rows = con.execute(
+                f"""
+                SELECT id, title, project_id, org_id, rag_readiness_status,
+                       rag_queued_at, rag_indexed_at, diagram_state_version
+                  FROM sessions
+                 WHERE rag_readiness_status = ?
+                   AND deleted_at = 0
+                   {org_clause}
+                 ORDER BY rag_queued_at ASC, updated_at ASC
+                """,
+                [target, *org_params],
+            ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "title": str(row["title"] or ""),
+                "project_id": str(row["project_id"] or ""),
+                "org_id": str(row["org_id"] or ""),
+                "rag_readiness_status": str(row["rag_readiness_status"] or "not_ready"),
+                "rag_queued_at": int(row["rag_queued_at"]) if row["rag_queued_at"] is not None else None,
+                "rag_indexed_at": int(row["rag_indexed_at"]) if row["rag_indexed_at"] is not None else None,
+                "diagram_state_version": int(row["diagram_state_version"] or 0),
+            }
+            for row in rows
+        ]
+
     def load_session_projection(
         self,
         session_id: str,

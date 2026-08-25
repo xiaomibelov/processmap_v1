@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import BranchesToolbar from "./BranchesToolbar";
 import AddBranchModal from "./AddBranchModal";
 import BranchesFilters from "./BranchesFilters";
 import BranchesTable from "./BranchesTable";
+import { AnalysisSection } from "../../../../features/process/analysis/ui/index.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -233,15 +233,24 @@ export default function BpmnBranchesPanel({
   }
 
   return (
-    <div className="interviewBlock interviewBranchesPanel">
-      <BranchesToolbar
-        collapsed={collapsed}
-        transitionCount={transitionStats.total}
-        conditionalCount={transitionStats.withCondition}
-        onOpenAdd={() => setAddOpen(true)}
-        onToggleCollapsed={() => toggleBlock?.("transitions")}
-      />
-
+    <AnalysisSection
+      title="Ветки BPMN"
+      subtitle={`Условия переходов (sequenceFlow) · Всего: ${transitionStats.total} · С условием: ${transitionStats.withCondition}`}
+      actions={
+        <button
+          type="button"
+          className="primaryBtn smallBtn"
+          onClick={() => setAddOpen(true)}
+          data-testid="interview-transition-open-modal"
+        >
+          + Добавить переход
+        </button>
+      }
+      collapsible
+      collapsed={!!collapsed}
+      onToggleCollapse={() => toggleBlock?.("transitions")}
+      data-testid="branches-panel-section"
+    >
       <AddBranchModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -255,57 +264,53 @@ export default function BpmnBranchesPanel({
         onConfirm={onAddTransition}
       />
 
-      {!collapsed ? (
-        <>
-          <div className="interviewTransitionSourceHint">
-            Связи построены по BPMN sequenceFlow (from → to).
-          </div>
-          <BranchesFilters
-            search={search}
-            filterFrom={filterFrom}
-            filterTo={filterTo}
-            conditionMode={conditionMode}
-            problematicOnly={problematicOnly}
-            groupByFrom={groupByFrom}
-            fromOptions={fromOptions}
-            toOptions={toOptions}
-            onSearchChange={setSearch}
-            onFilterFromChange={setFilterFrom}
-            onFilterToChange={setFilterTo}
-            onConditionModeChange={setConditionMode}
-            onProblematicOnlyChange={setProblematicOnly}
-            onGroupByFromChange={setGroupByFrom}
-            onReset={resetFilters}
-            totalFilteredCount={filteredTransitions.length}
-          />
+      <div className="interviewTransitionSourceHint">
+        Связи построены по BPMN sequenceFlow (from → to).
+      </div>
+      <BranchesFilters
+        search={search}
+        filterFrom={filterFrom}
+        filterTo={filterTo}
+        conditionMode={conditionMode}
+        problematicOnly={problematicOnly}
+        groupByFrom={groupByFrom}
+        fromOptions={fromOptions}
+        toOptions={toOptions}
+        onSearchChange={setSearch}
+        onFilterFromChange={setFilterFrom}
+        onFilterToChange={setFilterTo}
+        onConditionModeChange={setConditionMode}
+        onProblematicOnlyChange={setProblematicOnly}
+        onGroupByFromChange={setGroupByFrom}
+        onReset={resetFilters}
+        totalFilteredCount={filteredTransitions.length}
+      />
 
-          {notice ? (
-            <div className={`interviewAnnotationNotice ${notice.type || "pending"}`}>
-              {notice.text}
-            </div>
-          ) : null}
-
-          <BranchesTable
-            transitions={filteredTransitions}
-            laneOptions={laneOptions}
-            groupByFrom={groupByFrom}
-            editingKey={editingKey}
-            onStartEdit={onStartEdit}
-            onCancelEdit={onCancelEdit}
-            onSaveEdit={onSaveEdit}
-            insertTargetKey={insertTargetKey}
-            insertState={{
-              title: insertStepTitle,
-              setTitle: setInsertStepTitle,
-              lane: insertLaneDraft,
-              setLane: setInsertLaneDraft,
-            }}
-            onOpenInsertBetween={onOpenInsertBetween}
-            onCancelInsertBetween={onCancelInsertBetween}
-            onConfirmInsertBetween={onConfirmInsertBetween}
-          />
-        </>
+      {notice ? (
+        <div className={`interviewAnnotationNotice ${notice.type || "pending"}`}>
+          {notice.text}
+        </div>
       ) : null}
-    </div>
+
+      <BranchesTable
+        transitions={filteredTransitions}
+        laneOptions={laneOptions}
+        groupByFrom={groupByFrom}
+        editingKey={editingKey}
+        onStartEdit={onStartEdit}
+        onCancelEdit={onCancelEdit}
+        onSaveEdit={onSaveEdit}
+        insertTargetKey={insertTargetKey}
+        insertState={{
+          title: insertStepTitle,
+          setTitle: setInsertStepTitle,
+          lane: insertLaneDraft,
+          setLane: setInsertLaneDraft,
+        }}
+        onOpenInsertBetween={onOpenInsertBetween}
+        onCancelInsertBetween={onCancelInsertBetween}
+        onConfirmInsertBetween={onConfirmInsertBetween}
+      />
+    </AnalysisSection>
   );
 }

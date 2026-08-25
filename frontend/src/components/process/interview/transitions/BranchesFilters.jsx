@@ -29,7 +29,7 @@ export default function BranchesFilters({
         />
       </label>
       <label className="interviewField">
-        <span>From</span>
+        <span>Откуда</span>
         <select
           className="select"
           value={filterFrom}
@@ -45,7 +45,7 @@ export default function BranchesFilters({
         </select>
       </label>
       <label className="interviewField">
-        <span>To</span>
+        <span>Куда</span>
         <select
           className="select"
           value={filterTo}
