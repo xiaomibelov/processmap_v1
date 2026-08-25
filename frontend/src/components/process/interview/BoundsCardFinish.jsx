@@ -13,6 +13,8 @@ export default function BoundsCardFinish({
   laneOptions,
   onFinishShopChange,
   onFinishStateChange,
+  statusMissingLabel = "не заполнено",
+  statusFilledLabel = "заполнено",
 }) {
   return (
     <section
@@ -27,7 +29,7 @@ export default function BoundsCardFinish({
     >
       <div className={styles.analysisStepperIcon} aria-hidden="true">■</div>
       <div className={styles.analysisStepperTitle}>FINISH</div>
-      <div className={styles.analysisStepperStatus}>{missing ? "не заполнено" : "ok"}</div>
+      <div className={styles.analysisStepperStatus}>{missing ? statusMissingLabel : statusFilledLabel}</div>
 
       <div className={styles.analysisStepperContent}>
         <label className="interviewField">

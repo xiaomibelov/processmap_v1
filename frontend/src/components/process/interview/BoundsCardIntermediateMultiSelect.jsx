@@ -23,6 +23,8 @@ export default function BoundsCardIntermediateMultiSelect({
   onRawValueChange,
   showAllOptions,
   onToggleShowAllOptions,
+  statusMissingLabel = "не выбрано",
+  statusFilledLabel = "заполнено",
 }) {
   const selected = Array.isArray(selectedList) ? selectedList : [];
   const visibleSelected = selected.slice(0, CHIP_VISIBLE_LIMIT);
@@ -44,7 +46,7 @@ export default function BoundsCardIntermediateMultiSelect({
       <div className={styles.analysisStepperIcon} aria-hidden="true">◆</div>
       <div className={styles.analysisStepperTitle}>INTERMEDIATE</div>
       <div className={styles.analysisStepperStatus}>
-        {missing ? "не выбрано" : `${selected.length} lanes`}
+        {missing ? statusMissingLabel : `${selected.length} lanes`}
       </div>
 
       <div className={styles.analysisStepperContent}>
@@ -79,7 +81,7 @@ export default function BoundsCardIntermediateMultiSelect({
                 </span>
               ))
             ) : (
-              <span className="interviewBoundaryStatusChip">не выбрано</span>
+              <span className="interviewBoundaryStatusChip">{statusMissingLabel}</span>
             )}
             {selectedHiddenCount > 0 ? (
               <button type="button" className="interviewBoundaryStatusChip on" onClick={() => onToggleShowAllOptions?.(true)}>
