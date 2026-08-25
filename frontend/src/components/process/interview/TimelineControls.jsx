@@ -185,6 +185,11 @@ export default function TimelineControls({
     return chips;
   }, [timelineFilters, selectedLanes.length, selectedTiers]);
 
+  const filterSummary = useMemo(() => {
+    if (!activeFilterChips.length) return "Дополнительные фильтры";
+    return activeFilterChips.join("; ");
+  }, [activeFilterChips]);
+
   const activeFiltersCount = activeFilterChips.length;
   const orderHintText = orderMode === "bpmn"
     ? (toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы.")
