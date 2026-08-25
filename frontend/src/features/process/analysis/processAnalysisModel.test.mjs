@@ -78,10 +78,12 @@ test("getProcessMetrics returns fallback for missing metrics", () => {
 
 test("getKpiCards builds cards with labels", () => {
   const cards = getKpiCards(FULL_VIEW_MODEL.analysis.derived.process_metrics, t);
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 7);
   assert.equal(cards[0].key, "lead");
   assert.equal(cards[0].label, "Lead time");
   assert.equal(cards[0].value, 40);
+  const labels = cards.map((c) => c.label);
+  assert.ok(!labels.some((l) => l.includes("processAnalysis.")), "KPI labels must not contain raw i18n keys");
 });
 
 test("getDistributionLists returns lists", () => {
@@ -118,7 +120,7 @@ test("formatters", () => {
 test("mapProcessAnalysisViewModel builds full model", () => {
   const model = mapProcessAnalysisViewModel(FULL_VIEW_MODEL, t);
   assert.equal(model.session_id, "s1");
-  assert.equal(model.kpi_cards.length, 4);
+  assert.equal(model.kpi_cards.length, 7);
   assert.equal(model.distributions.by_lane.length, 1);
   assert.equal(model.coverage.length, 3);
   assert.equal(model.top_waits.length, 1);
@@ -126,6 +128,7 @@ test("mapProcessAnalysisViewModel builds full model", () => {
   assert.equal(model.quality.warnings_total, 1);
   assert.equal(model.path_metrics.steps_count, 3);
   assert.equal(model.source_state.diagram_state_version, 7);
+  assert.ok(!model.kpi_cards.some((c) => c.label.includes("processAnalysis.")), "KPI labels must not contain raw i18n keys");
 });
 
 test("buildSummaryPropsFromProcessMetrics adapts read-model to SummaryBlock props", () => {

@@ -53,6 +53,16 @@ export const ProcessAnalysisSummaryTab = React.memo(function ProcessAnalysisSumm
     return model.kpi_cards || [];
   }, [model]);
 
+  const kpiTooltipKey = useMemo(() => ({
+    avg_step: "avgStep",
+    bpmn_binding: "bpmnBinding",
+  }), []);
+
+  const allKpiZero = useMemo(() => {
+    if (!kpiCards.length) return false;
+    return kpiCards.every((card) => Number(card.value || 0) === 0);
+  }, [kpiCards]);
+
   const topWaits = useMemo(() => {
     if (!model) return [];
     return model.top_waits || [];
@@ -97,20 +107,27 @@ export const ProcessAnalysisSummaryTab = React.memo(function ProcessAnalysisSumm
                 value={formatValue(card.value)}
                 label={card.label}
                 unit={card.unit}
+                tooltip={t ? t(`processAnalysis.kpi.tooltip.${kpiTooltipKey[card.key] || card.key}`) : undefined}
                 data-testid={`summary-kpi-${card.key}`}
               />
             ))}
           </div>
+          {allKpiZero ? (
+            <div className={styles.analysisHint} data-testid="summary-kpi-zero-hint">
+              {t ? t("processAnalysis.summary.zeroKpiHint") : "Метрики равны 0, потому что границы не заданы или нет данных о длительностях."}
+            </div>
+          ) : null}
 
           <AnalysisSection
             title={t ? t("processAnalysis.topWaits.title") : "Топ-3 ожидания"}
-            subtitle={topWaits.length ? `${topWaits.length} шагов с ожиданием` : "Пока нет шагов с ожиданием"}
+            subtitle={topWaits.length ? `${topWaits.length} шагов с ожиданием` : undefined}
             data-testid="summary-top-waits-section"
           >
             {!topWaits.length ? (
-              <div className="muted small" data-testid="summary-top-waits-empty">
-                Пока нет шагов с ожиданием.
-              </div>
+              <AnalysisEmptyState
+                title={t ? t("processAnalysis.topWaits.empty") : "Пока нет шагов с ожиданием"}
+                data-testid="summary-top-waits-empty"
+              />
             ) : (
               <ul className={styles.summaryList} data-testid="summary-top-waits-list">
                 {topWaits.slice(0, 3).map((x) => (
@@ -122,19 +139,21 @@ export const ProcessAnalysisSummaryTab = React.memo(function ProcessAnalysisSumm
                 ))}
               </ul>
             )}
-            <div className="muted small" style={{ marginTop: 8 }}>
-              {extremes.max_duration_step
-                ? `Самый долгий активный шаг: #${extremes.max_duration_step.seq} (${formatValue(extremes.max_duration_step.duration_min)} мин).`
-                : "Самый долгий активный шаг пока не определён."}
-              {" "}
-              {extremes.max_wait_step
-                ? `Самое длинное ожидание: #${extremes.max_wait_step.seq} (${formatValue(extremes.max_wait_step.wait_min)} мин).`
-                : "Самое длинное ожидание пока не определено."}
-            </div>
+            {extremes.max_duration_step || extremes.max_wait_step ? (
+              <div className="muted small" style={{ marginTop: 8 }}>
+                {extremes.max_duration_step
+                  ? `Самый долгий активный шаг: #${extremes.max_duration_step.seq} (${formatValue(extremes.max_duration_step.duration_min)} мин).`
+                  : null}
+                {" "}
+                {extremes.max_wait_step
+                  ? `Самое длинное ожидание: #${extremes.max_wait_step.seq} (${formatValue(extremes.max_wait_step.wait_min)} мин).`
+                  : null}
+              </div>
+            ) : null}
           </AnalysisSection>
 
           <AnalysisSection
-            title={t ? t("processAnalysis.advanced.title") : "Дополнительно: распределения, AI и диагностика покрытия"}
+            title={t ? t("processAnalysis.advanced.title") : "Распределения, AI и диагностика"}
             collapsible
             collapsed={!advancedOpen}
             onToggleCollapse={() => setAdvancedOpen((prev) => !prev)}

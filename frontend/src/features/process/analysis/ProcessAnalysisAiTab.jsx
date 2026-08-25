@@ -48,6 +48,7 @@ export const ProcessAnalysisAiTab = React.memo(function ProcessAnalysisAiTab({
             sessionId={sessionId}
             baseDiagramStateVersion={baseDiagramStateVersion}
             steps={steps}
+            t={t}
           />
         </div>
       </TabState>
