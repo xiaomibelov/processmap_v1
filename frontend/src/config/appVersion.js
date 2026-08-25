@@ -1,8 +1,16 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.142",
+  currentVersion: "v1.0.143",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.143",
+      changes: [
+        "Перерисованы сабтабы анализа: границы процесса, действия, исключения и AI-анализ.",
+        "Добавлен единый компонент AnalysisSection для заголовков и тел разделов анализа.",
+        "Улучшены фильтры, empty-states и скелетоны в интерфейсе анализа процессов.",
+      ],
+    },
     {
       version: "v1.0.142",
       changes: [
