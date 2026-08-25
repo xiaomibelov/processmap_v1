@@ -1,0 +1,119 @@
+.analysisSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--pm-tobe-border, #e4e7eb);
+  border-radius: 12px;
+  background: var(--pm-tobe-surface, #ffffff);
+  box-shadow: var(--pm-tobe-shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.08));
+  padding: 12px;
+}
+
+.analysisSectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.analysisSectionTitleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.analysisSectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--pm-tobe-font-body, 'Fira Sans', system-ui, sans-serif);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--pm-tobe-fg, #0f172a);
+}
+
+.analysisSectionSubtitle {
+  font-family: var(--pm-tobe-font-body, 'Fira Sans', system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pm-tobe-muted-fg, #64748b);
+}
+
+.analysisSectionActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.analysisSectionBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  border: 1px solid var(--pm-tobe-border, #e4e7eb);
+  background: var(--pm-tobe-muted, #f1f3f5);
+  color: var(--pm-tobe-muted-fg, #64748b);
+}
+
+.analysisSectionCollapseBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--pm-tobe-border, #e4e7eb);
+  border-radius: 8px;
+  background: var(--pm-tobe-surface, #ffffff);
+  color: var(--pm-tobe-fg, #0f172a);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.analysisSectionCollapseBtn:hover {
+  background: var(--pm-tobe-muted, #f1f3f5);
+}
+
+.analysisSectionCollapseBtn:focus-visible {
+  outline: 2px solid var(--pm-tobe-primary, #1e3a5f);
+  outline-offset: 2px;
+}
+
+.analysisSectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analysisSectionCollapseBtn {
+    transition: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .analysisSection {
+    padding: 10px;
+  }
+
+  .analysisSectionHead {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .analysisSectionActions {
+    width: 100%;
+  }
+}

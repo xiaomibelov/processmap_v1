@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnalysisSection } from "../../../features/process/analysis/ui/index.js";
+import styles from "../../../features/process/analysis/ProcessAnalysis.module.css";
 import { laneColor, laneLabel, normalizeLoose, toText } from "./utils";
 import BoundsSummaryRow from "./BoundsSummaryRow";
 import BoundsCardStart from "./BoundsCardStart";
@@ -138,105 +140,104 @@ export default function BoundariesBlock({
     setSaveNotice("Границы сброшены");
   }
 
+  const actions = (
+    <>
+      <button
+        type="button"
+        className="primaryBtn smallBtn"
+        onClick={handleSaveBoundaries}
+        title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
+      >
+        {uiPrefsDirty ? "Сохранить границы*" : "Сохранить границы"}
+      </button>
+      <button type="button" className="secondaryBtn smallBtn" onClick={handleResetBoundaries}>
+        Сбросить
+      </button>
+    </>
+  );
+
   return (
-    <div className="interviewBlock interviewBoundsPanel">
-      <div className="interviewBoundsHead sticky top-0 z-20">
-        <div>
-          <div className="interviewBlockTitle">A. Границы процесса</div>
-          <div className="interviewBoundsSubTitle">
-            START · INTERMEDIATE · FINISH
-          </div>
-        </div>
-        <div className="interviewBlockTools interviewBoundsActions">
-          <button
-            type="button"
-            className="primaryBtn smallBtn interviewBoundsAction interviewBoundsAction--primary"
-            onClick={handleSaveBoundaries}
-            title={uiPrefsSavedAt ? `Сохранено: ${new Date(uiPrefsSavedAt).toLocaleTimeString()}` : ""}
-          >
-            {uiPrefsDirty ? "Сохранить границы*" : "Сохранить границы"}
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn smallBtn interviewBoundsAction interviewBoundsAction--secondary"
-            onClick={handleResetBoundaries}
-          >
-            Сбросить
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn smallBtn interviewBoundsAction interviewBoundsAction--tertiary interviewCollapseBtn"
-            onClick={() => toggleBlock("boundaries")}
-          >
-            {collapsed ? "Показать" : "Скрыть"}
-          </button>
-          <span className={`badge interviewBoundsStatusBadge ${boundariesComplete ? "ok" : "warn"}`}>
-            {boundariesComplete ? "Границы заполнены" : "Не заполнено"}
-          </span>
-        </div>
-      </div>
-
-      <BoundsSummaryRow
-        startLabel={startMeta?.label || startShop || "не выбрано"}
-        intermediateCount={intermediateList.length}
-        finishLabel={finishMeta?.label || finishShop || "не выбрано"}
-        onFocusStart={() => scrollToCard("start")}
-        onFocusIntermediate={() => scrollToCard("intermediate")}
-        onFocusFinish={() => scrollToCard("finish")}
-        onEdit={() => scrollToCard("intermediate")}
-      />
-
-      {saveNotice ? <div className="interviewBoundsSaveNotice">{saveNotice}</div> : null}
-
+    <AnalysisSection
+      title="A. Границы процесса"
+      subtitle="START · INTERMEDIATE · FINISH"
+      actions={actions}
+      badge={boundariesComplete ? "Границы заполнены" : "Не заполнено"}
+      collapsible
+      collapsed={collapsed}
+      onToggleCollapse={() => toggleBlock("boundaries")}
+      data-testid="boundaries-block"
+    >
       {collapsed ? (
         <div className="interviewBoundsCollapsedLine">
-          Start: {startMeta?.label || startShop || "—"} • Intermediate: {intermediateList.length || 0} • Finish: {finishMeta?.label || finishShop || "—"}
+          Start: {startMeta?.label || startShop || "—"} • Intermediate: {intermediateList.length || 0} • Finish:{" "}
+          {finishMeta?.label || finishShop || "—"}
         </div>
       ) : (
-        <div className="interviewBoundsGrid">
-          <BoundsCardStart
-            cardRef={startRef}
-            missing={!startFilled}
-            focused={focusCard === "start"}
-            startShop={startShop}
-            trigger={trigger}
-            laneOptions={boundaryLaneOptionsFiltered}
-            onStartShopChange={(value) => patchBoundary("start_shop", value)}
-            onTriggerChange={(value) => patchBoundary("trigger", value)}
+        <>
+          <div
+            className={styles.analysisStepper}
+            role="group"
+            aria-label="Границы процесса"
+            data-testid="boundaries-stepper"
+          >
+            <div className={styles.analysisStepperTrack}>
+              <BoundsCardStart
+                cardRef={startRef}
+                missing={!startFilled}
+                focused={focusCard === "start"}
+                startShop={startShop}
+                trigger={trigger}
+                laneOptions={boundaryLaneOptionsFiltered}
+                onStartShopChange={(value) => patchBoundary("start_shop", value)}
+                onTriggerChange={(value) => patchBoundary("trigger", value)}
+              />
+
+              <BoundsCardIntermediateMultiSelect
+                cardRef={intermediateRef}
+                missing={!intermediateFilled}
+                focused={focusCard === "intermediate"}
+                laneFilter={boundariesLaneFilter}
+                onLaneFilterChange={(value) => {
+                  setBoundariesLaneFilter(value);
+                  setUiPrefsDirty(true);
+                }}
+                laneOptions={boundaryLaneOptionsFiltered}
+                selectedList={intermediateList}
+                onToggleLane={toggleIntermediateLane}
+                onSelectAll={selectAllIntermediate}
+                onClear={clearIntermediate}
+                rawValue={toText(boundaries?.intermediate_roles) || intermediateRolesAuto}
+                onRawValueChange={(value) => patchBoundary("intermediate_roles", value)}
+                showAllOptions={showAllOptions}
+                onToggleShowAllOptions={setShowAllOptions}
+              />
+
+              <BoundsCardFinish
+                cardRef={finishRef}
+                missing={!finishFilled}
+                focused={focusCard === "finish"}
+                finishShop={finishShop}
+                finishState={finishState}
+                laneOptions={boundaryLaneOptionsFiltered}
+                onFinishShopChange={(value) => patchBoundary("finish_shop", value)}
+                onFinishStateChange={(value) => patchBoundary("finish_state", value)}
+              />
+            </div>
+          </div>
+
+          <BoundsSummaryRow
+            startLabel={startMeta?.label || startShop || "не выбрано"}
+            intermediateCount={intermediateList.length}
+            finishLabel={finishMeta?.label || finishShop || "не выбрано"}
+            onFocusStart={() => scrollToCard("start")}
+            onFocusIntermediate={() => scrollToCard("intermediate")}
+            onFocusFinish={() => scrollToCard("finish")}
+            onEdit={() => scrollToCard("intermediate")}
           />
 
-          <BoundsCardIntermediateMultiSelect
-            cardRef={intermediateRef}
-            missing={!intermediateFilled}
-            focused={focusCard === "intermediate"}
-            laneFilter={boundariesLaneFilter}
-            onLaneFilterChange={(value) => {
-              setBoundariesLaneFilter(value);
-              setUiPrefsDirty(true);
-            }}
-            laneOptions={boundaryLaneOptionsFiltered}
-            selectedList={intermediateList}
-            onToggleLane={toggleIntermediateLane}
-            onSelectAll={selectAllIntermediate}
-            onClear={clearIntermediate}
-            rawValue={toText(boundaries?.intermediate_roles) || intermediateRolesAuto}
-            onRawValueChange={(value) => patchBoundary("intermediate_roles", value)}
-            showAllOptions={showAllOptions}
-            onToggleShowAllOptions={setShowAllOptions}
-          />
-
-          <BoundsCardFinish
-            cardRef={finishRef}
-            missing={!finishFilled}
-            focused={focusCard === "finish"}
-            finishShop={finishShop}
-            finishState={finishState}
-            laneOptions={boundaryLaneOptionsFiltered}
-            onFinishShopChange={(value) => patchBoundary("finish_shop", value)}
-            onFinishStateChange={(value) => patchBoundary("finish_state", value)}
-          />
-        </div>
+          {saveNotice ? <div className="interviewBoundsSaveNotice">{saveNotice}</div> : null}
+        </>
       )}
-    </div>
+    </AnalysisSection>
   );
 }
