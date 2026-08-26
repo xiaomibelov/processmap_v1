@@ -1,0 +1,5 @@
+{"type":"ai-title","title":"Workflow test session"}
+{"type":"mode","mode":"agent"}
+{"type":"permission-mode","permissionMode":"prompt"}
+{"type":"assistant","uuid":"w1","parentUuid":null,"timestamp":"2026-08-26T11:00:00.000Z","sessionId":"workflow-session","message":{"role":"assistant","model":"claude-opus-4-8","content":[{"type":"text","text":"Starting workflow."},{"type":"tool_use","id":"tu-wf-001","name":"Workflow","input":{"workflow_id":"wf-001","description":"Run a workflow"}}]}}
+{"type":"user","uuid":"w2","parentUuid":"w1","timestamp":"2026-08-26T11:00:01.000Z","sessionId":"workflow-session","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-wf-001","content":"Workflow launched in background"}]}}

@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import path from "node:path";
 import fs from "node:fs";
+import { claudeApiMiddleware } from "./src/server/api.ts";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 
@@ -69,6 +70,15 @@ export default defineConfig({
         server.middlewares.stack.unshift({
           route: "",
           handle: agentsEventLogMiddleware(),
+        });
+      },
+    },
+    {
+      name: "claude-api",
+      configureServer(server) {
+        server.middlewares.stack.unshift({
+          route: "",
+          handle: claudeApiMiddleware(),
         });
       },
     },

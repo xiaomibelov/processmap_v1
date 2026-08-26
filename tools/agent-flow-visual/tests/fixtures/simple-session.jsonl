@@ -1,0 +1,7 @@
+{"type":"ai-title","title":"Simple test session"}
+{"type":"mode","mode":"code"}
+{"type":"permission-mode","permissionMode":"yolo"}
+{"type":"assistant","uuid":"a1","parentUuid":null,"timestamp":"2026-08-26T10:00:00.000Z","sessionId":"simple-session","message":{"role":"assistant","model":"claude-opus-4-8","content":[{"type":"text","text":"I'll help."},{"type":"tool_use","id":"tu-bash-1","name":"Bash","input":{"command":"ls -la"}}]}}
+{"type":"user","uuid":"u2","parentUuid":"a1","timestamp":"2026-08-26T10:00:02.000Z","sessionId":"simple-session","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-bash-1","content":"total 0"}]}}
+{"type":"assistant","uuid":"a3","parentUuid":"u2","timestamp":"2026-08-26T10:00:03.000Z","sessionId":"simple-session","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-agent-1","name":"Agent","input":{"description":"Explore repo","subagent_type":"claude-code-guide","prompt":"Look around"}}]}}
+{"type":"user","uuid":"u4","parentUuid":"a3","timestamp":"2026-08-26T10:00:04.000Z","sessionId":"simple-session","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-agent-1","content":"Async agent launched successfully"}]}}
