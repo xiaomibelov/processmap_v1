@@ -163,6 +163,24 @@ def test_timeout_fails_fast_to_backup_provider(sandbox):
     assert rows[-1]["status"] == "ok" and rows[-1]["provider_id"] == p2["id"]
 
 
+def test_json_mode_passes_response_format(sandbox):
+    """json_mode=True → _deepseek_chat_request получает response_format=json_object."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="m1",
+                              api_key="key-a", priority=10)
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.update(kwargs)
+        return _llm_response()
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org, json_mode=True)
+
+    assert result["ok"] is True
+    assert captured.get("response_format") == {"type": "json_object"}
+
+
 # ------------------------------------------------------- реестр моделей (016)
 
 def test_registry_default_model_wins_over_provider_model(sandbox):

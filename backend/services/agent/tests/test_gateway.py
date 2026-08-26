@@ -9,6 +9,7 @@ import sys
 from unittest import mock
 
 import pytest
+import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -93,3 +94,60 @@ def test_own_provider_wins_over_org_default(isolate_service_db):
         result = gateway.complete(feature, {"x": 1}, org_id=org)
     assert result["provider_id"] == own_p["id"]
     assert result["fallback"] is False
+
+
+def test_timeout_fails_fast_to_backup_provider(isolate_service_db):
+    """Таймаут у первого провайдера → сразу failover на backup без retry."""
+    feature = "test_svc_timeout_failover"
+    org = "org_timeout_1"
+    primary = _provider_dict(id="llmprov_timeout", org_id=org, name="p-timeout", api_key="key-a", priority=5)
+    backup = _provider_dict(id="llmprov_backup", org_id=org, name="p-backup", api_key="key-b", priority=10, model="m2")
+    calls = []
+
+    def _fake(**kwargs):
+        calls.append(kwargs["api_key"])
+        if kwargs["api_key"] == "key-a":
+            raise requests.exceptions.Timeout("primary timed out")
+        return _llm_response(model="m2")
+
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[primary, backup]), \
+         mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+
+    assert result["ok"] is True and result["status"] == "ok"
+    assert calls == ["key-a", "key-b"], "timeout primary → один вызов, затем backup"
+    assert result["provider_id"] == backup["id"]
+    assert result["fallback"] is True
+
+
+def test_stream_timeout_fails_fast_to_backup_provider(isolate_service_db):
+    """Таймаут у streaming-провайдера → сразу failover на backup без retry."""
+    feature = "test_svc_stream_timeout_failover"
+    org = "org_stream_timeout_1"
+    primary = _provider_dict(id="llmprov_stream_timeout", org_id=org, name="p-stream-timeout", api_key="key-a", priority=5)
+    backup = _provider_dict(id="llmprov_stream_backup", org_id=org, name="p-stream-backup", api_key="key-b", priority=10)
+    calls = []
+
+    def _fake_stream(**kwargs):
+        calls.append(kwargs["api_key"])
+        if kwargs["api_key"] == "key-a":
+            raise requests.exceptions.Timeout("primary stream timed out")
+        # Yield one token and usage to finish cleanly.
+        yield {"choices": [{"delta": {"content": "ok"}}]}
+        yield {
+            "choices": [],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "model": "m2",
+        }
+
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[primary, backup]), \
+         mock.patch.object(gateway, "_deepseek_chat_request_stream", side_effect=_fake_stream):
+        events = list(gateway.complete_stream(feature, {"x": 1}, org_id=org))
+
+    token_events = [e for e in events if e[0] == "token"]
+    usage_events = [e for e in events if e[0] == "usage"]
+    error_events = [e for e in events if e[0] == "error"]
+    assert calls == ["key-a", "key-b"], "timeout primary stream → один вызов, затем backup"
+    assert token_events and token_events[-1][1].get("delta") == "ok"
+    assert usage_events and usage_events[-1][1].get("provider_id") == backup["id"]
+    assert not error_events

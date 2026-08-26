@@ -45,7 +45,9 @@ def _deepseek_chat_request(
     max_tokens: Optional[int] = None,
     max_attempts: int = 3,
     retry_backoff_sec: float = 0.8,
+    retry_on_timeout: bool = True,
     model: str = "deepseek-chat",
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload = {
         "model": str(model or "deepseek-chat"),
@@ -55,6 +57,8 @@ def _deepseek_chat_request(
     mt = int(max_tokens or 0)
     if mt > 0:
         payload["max_tokens"] = mt
+    if response_format:
+        payload["response_format"] = response_format
     url = f"{base_url}/v1/chat/completions"
     attempts = max(1, int(max_attempts or 1))
     backoff = max(0.0, float(retry_backoff_sec or 0.0))
@@ -82,6 +86,9 @@ def _deepseek_chat_request(
             raise ValueError("invalid_json_root")
         except Exception as exc:
             last_exc = exc
+            is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
+            if is_timeout and not retry_on_timeout:
+                raise
             if attempt >= attempts or not _is_retryable_deepseek_error(exc):
                 raise
             sleep_for = backoff * attempt
@@ -102,7 +109,9 @@ def _deepseek_chat_request_stream(
     max_tokens: Optional[int] = None,
     max_attempts: int = 3,
     retry_backoff_sec: float = 0.8,
+    retry_on_timeout: bool = True,
     model: str = "deepseek-chat",
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     """Streaming chat/completions request.
 
@@ -120,6 +129,8 @@ def _deepseek_chat_request_stream(
     mt = int(max_tokens or 0)
     if mt > 0:
         payload["max_tokens"] = mt
+    if response_format:
+        payload["response_format"] = response_format
     url = f"{base_url}/v1/chat/completions"
     attempts = max(1, int(max_attempts or 1))
     backoff = max(0.0, float(retry_backoff_sec or 0.0))
@@ -171,6 +182,9 @@ def _deepseek_chat_request_stream(
                 return
         except Exception as exc:
             last_exc = exc
+            is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
+            if is_timeout and not retry_on_timeout:
+                raise
             if attempt >= attempts or not _is_retryable_deepseek_error(exc):
                 raise
             sleep_for = backoff * attempt

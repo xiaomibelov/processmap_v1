@@ -65,3 +65,85 @@
 - processman отвечает.
 - Execution log показывает, через какого провайдера прошли вызовы.
 - Время отклика suggest ≤ разумного (с failover — секунды, а не минуты).
+
+---
+
+# ROOT_CAUSE — итерация 2: fix/stage-ai-parse-stream-failover
+
+## Состояние после PR #835 (факты со stage, 26.08 ~16:14)
+
+- «Анализ LLM» работает (ответ из кэша, 0 токенов).
+- **suggest** → `AI_RESPONSE_PARSE_ERROR` («Ответ AI не удалось разобрать»), HTTP 200, ~1,5 мин.
+- **processman** (`POST /api/sessions/{id}/agent/stream`, SSE) → внутри потока `Не удалось получить ответ. Ошибка при обращении к LLM`.
+- Провайдер по кнопке «Проверить» в `/admin/llm` — жив.
+
+## Дефекты
+
+### D1. suggest: `AI_RESPONSE_PARSE_ERROR`
+
+**Кодовый путь:**
+- `backend/app/routers/product_actions_ai.py::_call_product_actions_llm` → `gateway.complete(...)` → `backend/app/ai/product_actions_suggest.py::parse_product_actions_suggestions`.
+- Парсер использует `deepseek_questions._extract_json_candidate`, который:
+  1. Снимает только одинарные code-fences (` ```json ... ``` `).
+  2. Ищет первую пару `{...}` / `[...]` регуляркой без валидации JSON.
+  3. Не чинит обрезанный JSON (например, обрыв по `max_tokens` посередине объекта).
+  4. Не извлекает JSON из ответа, обёрнутого в пояснительный текст до/после.
+
+**Почему ломается именно сейчас:**
+- После #835 промпт v4 требует `action_text` и большего объёма текста; VVPROXY `claude-opus-4-6` таймаутится, срабатывает failover на `deepseek-main`.
+- DeepSeek может возвращать markdown-обёртку, текст вокруг JSON или обрезать ответ, если `max_tokens` недостаточно.
+- Текущий парсер не восстанавливает такие ответы, поэтому вместо предложений получаем `AI_RESPONSE_PARSE_ERROR`.
+
+**Root cause:** парсер недостаточно толерантен к реальным ответам LLM; отсутствует structured output и repair-retry.
+
+### D2. processman: ошибка в `/agent/stream` (SSE)
+
+**Кодовый путь:**
+- `backend/services/agent/routers/agent_stream.py::agent_stream` → `memory.chat.run_turn_stream` → `gateway.complete_stream` (агентский `backend/services/agent/gateway/gateway.py`).
+- Агентский gateway — копия монолитного gateway, но **не получил фикс #835**:
+  - `_GATEWAY_MAX_ATTEMPTS = 2` retry внутри `_deepseek_chat_request_stream` при `Timeout`/`ConnectionError`.
+  - `complete_stream` ловит Exception и переходит к следующему провайдеру, но к этому моменту уже потрачено ~90 с на retry первого провайдера.
+  - Отсутствует `retry_on_timeout=False` в `services/agent/gateway/llm_http_client.py`.
+
+**Root cause:** streaming-путь processman не покрыт быстрым failover'ом #835; тот же retry-цикл на таймаутящем VVPROXY приводит к ошибке/обрыву SSE.
+
+### D3. Латентность suggest ~1,5 мин
+
+**Кодовый путь:**
+- `product_actions_ai.py::_call_product_actions_llm` передаёт `timeout_sec=45`.
+- После #835 retry на timeout убран, но первичный таймаут VVPROXY всё ещё 45 с.
+- Fallback-генерация deepseek на том же контексте занимает ещё десятки секунд.
+- Итого: ~45 с (VVPROXY timeout) + ~45 с (deepseek generate) ≈ 90 с, что совпадает с наблюдаемым ~1,5 мин.
+
+**Root cause:** слишком долгий пер-аттемпт таймаут на провайдере, который заведомо не справляется с длинным контекстом; отсутствует feature-specific приоритет провайдеров для product-actions/processman.
+
+## Фикс (итерация 2)
+
+### D1
+- Толерантный парсер JSON в `backend/app/ai/product_actions_suggest.py` (strip fences, первый валидный блок, repair truncated).
+- Structured output: `json_mode=True` для `product_actions_suggest` → `response_format: json_object`.
+- Диагностика parse error расширена (больше `raw_content`).
+
+### D2
+- `retry_on_timeout=False` в агентском `llm_http_client.py` для `_deepseek_chat_request` и `_deepseek_chat_request_stream`.
+- Быстрый failover по `Timeout`/`ConnectionError` в `services/agent/gateway/gateway.py::complete()` и `::complete_stream()`.
+- `json_mode` прокинут через `llm_internal_client.py` → `services/agent/routers/internal_llm.py`.
+
+### D3
+- `timeout_sec` для suggest снижен с 45 до 30 с.
+- В PR.md задокументирована рекомендация переставить приоритеты провайдеров в `/admin/llm` для org 8b89c83ea810 (deepseek-main выше VVPROXY для product-actions/processman).
+
+## Проверка (локальные тесты)
+
+- `backend/tests/test_product_actions_suggest_v2.py`: 9 passed.
+- `backend/tests/test_llm_gateway.py`: 18 passed + 1 pre-existing (загрязнение org_default).
+- `backend/services/agent/tests/test_gateway.py`: 4 passed.
+- `backend/services/agent/tests/test_internal_llm.py`: 6 passed.
+- `backend/services/agent/tests/test_streaming.py`: 3 passed.
+
+## Что остаётся проверить на stage (после мержа)
+
+- suggest генерирует без `AI_RESPONSE_PARSE_ERROR`.
+- processman отвечает содержательно.
+- Execution log показывает provider/model и fallback.
+- Время suggest ≤ разумного (≤ 60 с после патча; ещё лучше — после перестановки приоритетов).

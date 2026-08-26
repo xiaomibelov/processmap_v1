@@ -32,6 +32,7 @@ class InternalCompleteIn(BaseModel):
     org_id: str = "org_default"
     max_tokens: Optional[int] = None
     timeout_sec: int = 30
+    json_mode: bool = False
 
 
 class InternalCompleteCachedIn(BaseModel):
@@ -67,6 +68,7 @@ def internal_complete(
         org_id=body.org_id,
         max_tokens=body.max_tokens,
         timeout_sec=body.timeout_sec,
+        json_mode=body.json_mode,
     )
 
 

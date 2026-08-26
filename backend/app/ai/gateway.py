@@ -96,6 +96,7 @@ def complete(
     org_id: str = "org_default",
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    json_mode: bool = False,
 ) -> Dict[str, Any]:
     """Вызов LLM через фолбэк-цепочку провайдеров. Никогда не бросает исключений."""
     started = time.monotonic()
@@ -160,6 +161,7 @@ def complete(
                 max_attempts=_GATEWAY_MAX_ATTEMPTS,
                 retry_on_timeout=False,
                 model=resolved_model,
+                response_format={"type": "json_object"} if json_mode else None,
             )
         except Exception as exc:  # фолбэк на следующего провайдера
             is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))

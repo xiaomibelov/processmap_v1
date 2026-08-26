@@ -76,6 +76,7 @@ def complete(
     org_id: str = "org_default",
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    json_mode: bool = False,
 ) -> Dict[str, Any]:
     """POST /internal/llm/complete — сигнатура и контракт как у gateway.complete()."""
     body = {
@@ -87,6 +88,7 @@ def complete(
         "org_id": org_id,
         "max_tokens": max_tokens,
         "timeout_sec": timeout_sec,
+        "json_mode": json_mode,
     }
     return _post("/internal/llm/complete", body, timeout_sec)
 
