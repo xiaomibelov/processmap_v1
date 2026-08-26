@@ -4,6 +4,9 @@
   "private": true,
   "description": "Zoetrope-style canvas visualizer for processmap-agent contours.",
   "type": "module",
+  "bin": {
+    "agent-flow-visual": "./bin/agent-flow-visual.mjs"
+  },
   "scripts": {
     "dev": "vite",
     "serve": "vite",

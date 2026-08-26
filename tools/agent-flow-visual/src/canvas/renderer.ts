@@ -85,6 +85,10 @@ export class Renderer {
       siblingGap: 32,
       contourGap: 120,
     });
+    return this.setLayout(layout);
+  }
+
+  setLayout(layout: { nodes: LayoutNode[]; edges: LayoutEdge[]; viewport: LayoutViewport }): LayoutViewport {
     this.nodes = layout.nodes;
     this.edges = layout.edges;
     this.viewport = layout.viewport;
@@ -314,10 +318,10 @@ export class Renderer {
   }
 
   private reconcileChips(): void {
-    // Build aggregated chip state from running step nodes.
+    // Build aggregated chip state from active/running nodes.
     const next = new Map<string, ToolChip>();
     for (const node of this.nodes) {
-      if (node.status !== "running" || !node.parentId) continue;
+      if (node.status !== "running" && node.status !== "active") continue;
       if (node.toolCount === 0 && !node.lastTool) continue;
 
       const key = `${node.id}:${node.lastTool ?? "tool"}`;
@@ -400,6 +404,10 @@ export class Renderer {
       case "fail":
       case "blocked":
         return PALETTE.error;
+      case "stopped":
+        return PALETTE.dim;
+      case "idle":
+        return PALETTE.subtle;
       case "skipped":
         return PALETTE.dim;
       default:
@@ -418,6 +426,10 @@ export class Renderer {
       case "fail":
       case "blocked":
         return "✗";
+      case "stopped":
+        return "■";
+      case "idle":
+        return "◌";
       default:
         return "◌";
     }
@@ -434,6 +446,10 @@ export class Renderer {
       case "fail":
       case "blocked":
         return "Failed";
+      case "stopped":
+        return "Stopped";
+      case "idle":
+        return "Idle";
       case "skipped":
         return "Skipped";
       default:
