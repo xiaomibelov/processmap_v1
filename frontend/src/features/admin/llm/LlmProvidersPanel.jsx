@@ -25,6 +25,7 @@ const EMPTY_FORM = {
   enabled: true,
   api_key: "",
   org_id: "",
+  capabilities: "{}",
 };
 
 function errorMessage(res, fallback) {
@@ -93,6 +94,14 @@ export default function LlmProvidersPanel() {
     void load();
   }, [load]);
 
+  function formatCapabilities(value) {
+    try {
+      return JSON.stringify(asObject(value), null, 2);
+    } catch {
+      return "{}";
+    }
+  }
+
   function startEdit(provider) {
     const item = asObject(provider);
     setEditingId(toText(item.id));
@@ -104,6 +113,7 @@ export default function LlmProvidersPanel() {
       enabled: item.enabled !== false,
       api_key: "",
       org_id: toText(item.org_id) || activeOrgId || "",
+      capabilities: formatCapabilities(item.capabilities),
     });
     setActionError("");
   }
@@ -131,7 +141,21 @@ export default function LlmProvidersPanel() {
       enabled: enabledNode ? enabledNode.checked === true : form.enabled === true,
       api_key: String(fieldValue("api_key", form.api_key) || ""),
       org_id: toText(fieldValue("org_id", form.org_id)),
+      capabilities: toText(fieldValue("capabilities", form.capabilities)),
     };
+    let parsedCapabilities = null;
+    if (toText(values.capabilities)) {
+      try {
+        parsedCapabilities = JSON.parse(values.capabilities);
+        if (typeof parsedCapabilities !== "object" || parsedCapabilities === null) {
+          throw new Error("capabilities must be an object");
+        }
+      } catch (err) {
+        setActionError(t("providers.form.capabilitiesInvalid") + ": " + (err?.message || err));
+        setSaving(false);
+        return;
+      }
+    }
     setSaving(true);
     setActionError("");
     const payload = {
@@ -143,6 +167,7 @@ export default function LlmProvidersPanel() {
     };
     if (toText(values.api_key)) payload.api_key = values.api_key;
     if (toText(values.org_id)) payload.org_id = values.org_id;
+    if (parsedCapabilities) payload.capabilities = parsedCapabilities;
     const res = editingId
       ? await apiAdminLlmPatchProvider(editingId, payload)
       : await apiAdminLlmCreateProvider(payload);
@@ -221,6 +246,7 @@ export default function LlmProvidersPanel() {
                 <th className="px-3 py-2">{t("providers.col.model")}</th>
                 <th className="px-3 py-2">{t("providers.col.priority")}</th>
                 <th className="px-3 py-2">{t("providers.col.enabled")}</th>
+                <th className="px-3 py-2">{t("providers.col.jsonMode")}</th>
                 <th className="px-3 py-2">Org</th>
                 <th className="px-3 py-2">{t("providers.col.key")}</th>
                 <th className="px-3 py-2">{t("providers.col.updated")}</th>
@@ -245,6 +271,9 @@ export default function LlmProvidersPanel() {
                         status={enabled ? t("common.enabled") : t("common.disabled")}
                         tone={enabled ? "ok" : "default"}
                       />
+                    </td>
+                    <td className="px-3 py-3 align-top text-xs text-slate-700">
+                      {asObject(provider?.capabilities).supports_json_mode !== false ? t("common.enabled") : t("common.disabled")}
                     </td>
                     <td className="px-3 py-3 align-top">
                       <span
@@ -309,7 +338,7 @@ export default function LlmProvidersPanel() {
                 );
               }) : (
                 <tr>
-                  <td className="px-3 py-4 text-sm text-slate-500" colSpan={8}>{t("providers.empty")}</td>
+                  <td className="px-3 py-4 text-sm text-slate-500" colSpan={9}>{t("providers.empty")}</td>
                 </tr>
               )}
             </tbody>
@@ -409,6 +438,17 @@ export default function LlmProvidersPanel() {
             {t("providers.form.enabled")}
           </label>
         </div>
+        <label className="block text-xs font-semibold text-slate-700">
+          {t("providers.form.capabilities")}
+          <textarea
+            className="mt-1 h-24 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs"
+            name="capabilities"
+            value={form.capabilities}
+            onChange={(event) => setForm((current) => ({ ...current, capabilities: event.target.value }))}
+            placeholder='{"supports_json_mode": false}'
+            data-testid="llm-provider-form-capabilities"
+          />
+        </label>
         <div className="flex flex-wrap gap-2">
           <button
             type="submit"
