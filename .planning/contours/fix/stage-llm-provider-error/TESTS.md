@@ -1,11 +1,11 @@
-# TESTS — fix/stage-ai-parse-stream-failover
+# TESTS — fix/stage-suggest-empty-agent-stream (итерация 3)
 
 ## Запуск
 
 ### Backend (монолит)
 
 ```bash
-cd server-backup/opt/processmap-test-worktrees/fix-stage-ai-parse-stream-failover
+cd server-backup/opt/processmap-test-worktrees/fix-stage-suggest-empty-agent-stream
 docker run --rm \
   -v "$PWD/backend:/app/backend" \
   -w /app \
@@ -14,54 +14,55 @@ docker run --rm \
   -e DATABASE_URL=postgresql://fpc:fpc@postgres:5432/processmap \
   -e FPC_DB_BACKEND=postgres \
   processmap_v1-api:latest bash -c \
-  "pip install --quiet pytest fakeredis httpx psycopg && python -m pytest backend/tests/test_product_actions_suggest_v2.py backend/tests/test_llm_gateway.py -q"
+  "pip install --quiet pytest fakeredis httpx psycopg && python -m pytest backend/tests/test_product_actions_suggest_v2.py backend/tests/test_product_actions_ai_suggest.py -q"
 ```
 
-Результат:
-- `test_product_actions_suggest_v2.py`: 9 passed
-- `test_llm_gateway.py`: 18 passed, 1 pre-existing failure
+Ожидаемый результат:
+- `test_product_actions_suggest_v2.py`: все тесты passed.
+- `test_product_actions_ai_suggest.py`: все тесты passed.
 
 ### Agent service
 
 ```bash
-cd server-backup/opt/processmap-test-worktrees/fix-stage-ai-parse-stream-failover/backend/services/agent
+cd server-backup/opt/processmap-test-worktrees/fix-stage-suggest-empty-agent-stream/backend/services/agent
 docker run --rm \
   -v "$PWD:/app" \
   -w /app \
   processmap_v1-agent:latest bash -c \
-  "pip install --quiet pytest && python -m pytest tests/test_gateway.py tests/test_internal_llm.py tests/test_streaming.py -q"
+  "pip install --quiet pytest && python -m pytest tests/test_health.py tests/test_streaming.py -q"
 ```
 
-Результат:
-- `test_gateway.py`: 4 passed
-- `test_internal_llm.py`: 6 passed
-- `test_streaming.py`: 3 passed
+Ожидаемый результат:
+- `test_health.py`: все тесты passed.
+- `test_streaming.py`: все тесты passed.
 
 ## Покрытие
 
-### D1 — парсер suggest
+### D4 — парсер обёрток и пустой результат
 
 | Тест | Что проверяет |
 |------|---------------|
-| `test_parse_markdown_fenced_response` | Ответ внутри ` ```json ... ``` ` + текст вокруг извлекается корректно. |
-| `test_parse_text_around_json_response` | JSON посередине explanatory текста находится. |
-| `test_parse_truncated_response_repairs_valid_prefix` | Обрезанный ответ чинится до валидного JSON-префикса. |
-| `test_parse_invalid_json_raises_with_raw_content` | При полном отсутствии JSON бросается `ProductActionsAiResponseParseError` с `raw_content`. |
-| `test_json_mode_passes_response_format` | `gateway.complete(..., json_mode=True)` передаёт `response_format: json_object` в HTTP-клиент. |
+| `test_parse_actions_wrapper_response` | Массив в ключе `actions` извлекается как предложения. |
+| `test_parse_items_wrapper_response` | Массив в ключе `items` извлекается как предложения. |
+| `test_parse_empty_array_response` | Пустой массив не ломает парсер. |
+| `test_success_response_includes_diagnostics_block` | Успешный ответ содержит `diagnostics` с `steps_sent`, `provider_id`, `model`, `raw_len`, `parsed_count`, `kept_count`. |
+| `test_empty_suggestions_no_steps_returns_distinct_error` | Если в сессии нет шагов — `AI_SUGGEST_NO_STEPS`, provider не вызывается. |
+| `test_empty_suggestions_llm_empty_returns_distinct_error` | Если LLM вернул пустой список — `AI_SUGGEST_LLM_EMPTY` с диагностикой. |
+| `test_llm_response_wrapped_in_actions_key_is_parsed` | End-to-end: gateway-ответ обёрнут в `actions` → suggest возвращает валидное предложение. |
 
-### D2 — failover в agent gateway
+### D2 — диагностика agent-сервиса
 
 | Тест | Что проверяет |
 |------|---------------|
-| `test_timeout_fails_fast_to_backup_provider` (agent) | Таймаут primary → один вызов, затем backup; `fallback=True`. |
-| `test_stream_timeout_fails_fast_to_backup_provider` | Тот же паттерн для `complete_stream`. |
+| `test_version_returns_build_metadata` | `/version` возвращает `build_id`, `build_branch`, `build_time`, `build_env`, `git_commit`. |
+| `test_stream_gateway_error_includes_provider_and_model` | SSE error-событие содержит `provider_id` и `model`. |
 
-### D3 — таймаут
+### Регрессионное покрытие
 
-| Код | Что проверяет |
-|-----|---------------|
-| `_PRODUCT_ACTIONS_LLM_KWARGS = {"json_mode": True, "timeout_sec": 30}` | suggest использует 30 с вместо 45 с. |
+- `test_product_actions_ai_suggest.py` сохраняет существующие проверки: endpoint, batch, draft, rate limit, provider error, parse error, selected step filter, duplicate detection, execution log sanitization.
+- `test_product_actions_suggest_v2.py` сохраняет проверки v4 prompt, normalization, markdown fences, truncated JSON repair.
 
 ## Pre-existing failures
 
 - `backend/tests/test_llm_gateway.py::test_effective_providers_with_key_prefers_org_then_org_default` — падает с `UniqueViolation` на `(org_default, default-p)` из-за загрязнения dev-БД предыдущими прогонами. Вне скоупа этого контура.
+- `frontend/src/features/process/analysis/...NotesPanel.advanced-badge-semantics.test.mjs` — pre-existing, не трогаем.

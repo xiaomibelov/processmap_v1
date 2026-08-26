@@ -312,11 +312,27 @@ def normalize_product_action_suggestion(raw: Any, *, index: int = 0) -> Dict[str
     return out
 
 
+# Known wrapper keys for suggestion arrays. LLMs sometimes use "actions",
+# "items", "results", or "data" instead of "suggestions".
+_SUGGESTION_WRAPPER_KEYS = ("suggestions", "actions", "items", "results", "data")
+
+
+def _extract_suggestions_array(payload: Any) -> Optional[List[Any]]:
+    """Extract the suggestions array from common LLM response wrappers."""
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return None
+    for key in _SUGGESTION_WRAPPER_KEYS:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return None
+
+
 def normalize_product_action_suggestions_response(raw: Any, *, max_suggestions: int = 3) -> Dict[str, Any]:
     payload = raw if isinstance(raw, dict) else {}
-    raw_suggestions = payload.get("suggestions")
-    if raw_suggestions is None and isinstance(raw, list):
-        raw_suggestions = raw
+    raw_suggestions = _extract_suggestions_array(raw)
     cap = max(1, int(max_suggestions or 3))
     suggestions = [
         normalize_product_action_suggestion(item, index=index)
@@ -328,6 +344,17 @@ def normalize_product_action_suggestions_response(raw: Any, *, max_suggestions: 
         if text:
             warnings.append({"code": _text(warning.get("code")) if isinstance(warning, dict) else "warning", "message": text})
     return {"suggestions": suggestions, "warnings": warnings}
+
+
+def _looks_like_suggestions_payload(raw: Any) -> bool:
+    """Return True if the parsed JSON is a list or a dict with a known wrapper key."""
+    if isinstance(raw, list):
+        return True
+    if not isinstance(raw, dict):
+        return False
+    if not raw:
+        return True
+    return any(key in raw for key in _SUGGESTION_WRAPPER_KEYS)
 
 
 def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Dict[str, Any]:
@@ -349,6 +376,12 @@ def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Di
         )
         parse_exc.raw_content = str(cand or "")[:1000]
         raise parse_exc from exc
+    if not _looks_like_suggestions_payload(raw):
+        parse_exc = ProductActionsAiResponseParseError(
+            "response json does not contain a suggestions array"
+        )
+        parse_exc.raw_content = str(cand or "")[:1000]
+        raise parse_exc
     return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)
 
 

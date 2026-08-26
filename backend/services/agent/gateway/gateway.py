@@ -398,9 +398,11 @@ def complete_stream(
         except Exception as exc:
             is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
             last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
+            last_provider_id = str(provider.get("id") or "")
+            last_model = resolved_model or str(provider.get("model") or "")
             llm_store.record_usage(
-                org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
-                provider_id=str(provider.get("id") or ""), cached=False,
+                org_id=org_id, feature=feature, model=last_model,
+                provider_id=last_provider_id, cached=False,
                 user_id=user_id, project_id=project_id, session_id=session_id,
                 latency_ms=int((time.monotonic() - started) * 1000), status="error",
             )
@@ -409,4 +411,12 @@ def complete_stream(
                 continue
             continue
 
-    yield ("error", _record("error", error=last_error or "all providers failed"))
+    yield (
+        "error",
+        _record(
+            "error",
+            error=last_error or "all providers failed",
+            provider_id=last_provider_id,
+            model=last_model,
+        ),
+    )
