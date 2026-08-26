@@ -8,6 +8,7 @@ import {
   buildProductActionForStep,
   deleteProductAction,
   deriveProductActionBindingFromStep,
+  isProductActionValid,
   listProductActionsForStep,
   normalizeProductActionRow,
   normalizeProductActionsList,
@@ -142,4 +143,53 @@ test("normalizeProductActionRow preserves unknown safe fields", () => {
   });
 
   assert.equal(row.evidence_text, "из комментария");
+});
+
+test("normalizeProductActionRow maps action_text from camelCase and snake_case", () => {
+  const row = normalizeProductActionRow({
+    id: "pa_1",
+    action_text: "Перелить суп",
+    actionType: "перетаривание",
+  });
+
+  assert.equal(row.action_text, "Перелить суп");
+  assert.equal(row.action_type, "перетаривание");
+});
+
+test("isProductActionValid requires action_text, 4 tags and binding", () => {
+  assert.equal(isProductActionValid({
+    action_text: "Перелить суп",
+    action_type: "перетаривание",
+    action_stage: "до разогрева",
+    action_object: "суп",
+    action_method: "перелить",
+    step_id: "step-1",
+  }), true);
+
+  assert.equal(isProductActionValid({
+    action_text: "",
+    action_type: "перетаривание",
+    action_stage: "до разогрева",
+    action_object: "суп",
+    action_method: "перелить",
+    step_id: "step-1",
+  }), false);
+
+  assert.equal(isProductActionValid({
+    action_text: "Перелить суп",
+    action_type: "перетаривание",
+    action_stage: "",
+    action_object: "суп",
+    action_method: "перелить",
+    node_id: "node-1",
+  }), false);
+
+  assert.equal(isProductActionValid({
+    action_text: "Перелить суп",
+    action_type: "перетаривание",
+    action_stage: "до разогрева",
+    action_object: "суп",
+    action_method: "перелить",
+    binding: {},
+  }), false);
 });
