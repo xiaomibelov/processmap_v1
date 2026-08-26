@@ -1,6 +1,5 @@
 import type {
   ApprovalGate,
-  ArtifactChip,
   ContourModel,
   RawEvent,
   RegulationStep,

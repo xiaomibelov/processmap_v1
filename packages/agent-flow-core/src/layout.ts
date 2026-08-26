@@ -93,7 +93,6 @@ export function buildLayout(
     }
 
     for (let i = 0; i < stepIds.length - 1; i++) {
-      const step = contour.steps[i];
       const nextStep = contour.steps[i + 1];
       edges.push({
         from: stepIds[i],
@@ -149,7 +148,7 @@ function edgeStatusForStep(
 ): LayoutEdge["status"] {
   if (step.status === "running") return "active";
   if (step.status === "ok") return "completed";
-  if (step.status === "fail" || step.status === "blocked") return "blocked";
+  if (step.status === "fail") return "blocked";
   return "pending";
 }
 
