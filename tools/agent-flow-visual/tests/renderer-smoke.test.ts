@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { foldEvents } from "agent-flow-core";
 import { Camera } from "../src/canvas/camera.js";
 import { Renderer } from "../src/canvas/renderer.js";
 import {
   allStepsOk,
   contourStarted,
 } from "../../../packages/agent-flow-core/tests/fixtures/builders.js";
-import { foldEvents } from "agent-flow-core";
 
 function createMockCanvas(): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
