@@ -121,6 +121,7 @@ export function buildLayout(
       interactive: contour.status === "running",
       parentId: null,
       chips: [],
+      files: contour.files,
     });
 
     // Place children below the root.
