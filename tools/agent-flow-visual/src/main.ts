@@ -1,19 +1,27 @@
 import { App } from "./app.js";
 import { createFileLogLoader } from "./io/log-loader.js";
+import { createScannerClient } from "./io/scanner.js";
+import type { RawEvent, ContourModel } from "agent-flow-core";
 
 function resolveLogPath(): string {
   const params = new URLSearchParams(window.location.search);
   const fromUrl = params.get("log");
   if (fromUrl) return fromUrl;
 
-  // Vite exposes env vars prefixed with AGENT_ to the client.
   const fromEnv = import.meta.env.AGENT_EVENTS_LOG;
   if (fromEnv) return fromEnv;
 
-  // Default log path. In dev mode the Vite middleware maps this to the
-  // repo-root .agents/events/ directory; in production/headless it resolves
-  // relative to the served page.
   return ".agents/events/agent-events.ndjson";
+}
+
+async function loadDemoEvents(): Promise<RawEvent[]> {
+  const scanner = createScannerClient();
+  return scanner.loadDemoEvents();
+}
+
+async function loadSnapshot(): Promise<ContourModel[]> {
+  const scanner = createScannerClient();
+  return scanner.loadContours();
 }
 
 async function main() {
@@ -22,24 +30,51 @@ async function main() {
     throw new Error("#app element not found");
   }
 
-  const logPath = resolveLogPath();
-  const loader = createFileLogLoader(logPath);
+  const params = new URLSearchParams(window.location.search);
+  const demoRequested = params.get("demo") === "1";
 
-  let events: import("agent-flow-core").RawEvent[] = [];
-  let mode: "live" | "replay" = "live";
-
-  try {
-    events = await loader.load();
-    mode = events.length > 0 ? "replay" : "live";
-  } catch (err) {
-    // File does not exist yet — start live and wait for events.
-    mode = "live";
-    events = [];
-    // eslint-disable-next-line no-console
-    console.info("Log file not found; starting in live mode.", err);
+  if (demoRequested) {
+    const events = await loadDemoEvents();
+    new App({
+      root,
+      events,
+      mode: "demo",
+      title: "feature/contour-flow-visual (demo)",
+    });
+    return;
   }
 
-  new App({ root, events, title: "feature/contour-flow-visual", mode, tailPath: logPath });
+  const logPath = resolveLogPath();
+  let events: RawEvent[] = [];
+  let hasEvents = false;
+
+  try {
+    events = await createFileLogLoader(logPath).load();
+    hasEvents = events.length > 0;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info("Event log not available; switching to snapshot mode.", err);
+  }
+
+  if (hasEvents) {
+    new App({
+      root,
+      events,
+      mode: events.length > 0 ? "replay" : "live",
+      title: "feature/contour-flow-visual",
+      tailPath: logPath,
+    });
+    return;
+  }
+
+  const contours = await loadSnapshot();
+  new App({
+    root,
+    events: [],
+    initialContours: contours,
+    mode: "snapshot",
+    title: "ProcessMap contours",
+  });
 }
 
 main().catch((err) => {

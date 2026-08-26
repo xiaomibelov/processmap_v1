@@ -8,6 +8,7 @@ export type {
   LayoutViewport,
   RawEvent,
   RegulationStep,
+  ScannedFile,
 } from "./types.js";
 
 export { parseEventLine, parseEventLog, isKnownEventType } from "./parser.js";
@@ -30,3 +31,13 @@ export {
   selectBlockedApprovals,
   selectArtifactsForStep,
 } from "./selectors.js";
+
+export {
+  buildContourFromScan,
+  buildContoursFromScan,
+  determineStatus,
+  mapArtifactKind,
+  artifactStepKind,
+} from "./scanner-model.js";
+
+export type { ScannedFileInfo, ScannedContourInput } from "./scanner-model.js";
