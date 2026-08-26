@@ -8,6 +8,7 @@
 |------|---------------|--------|
 | `backend/tests/test_product_actions_suggest_v2.py` | `action_text` в нормализации; `missing_fields` для `action_text`/тегов; `product_name`/`product_group` не обязательны | ✅ 4 passed |
 | `backend/tests/test_product_actions_session_export.py` | endpoint `/api/sessions/{id}/analysis/product-actions/export` отдаёт CSV (BOM + колонки) и XLSX (валидный ZIP) | ✅ 4 passed |
+| `backend/tests/contract/test_contract_fuzz.py -k "product-actions_export"` | экспорт-эндпоинт не ломает OpenAPI-фаззинг (content-type spec-gap задокументирован в исключениях) | ✅ passed |
 
 ### Регрессионные backend-тесты
 
@@ -70,4 +71,7 @@ cd frontend && npm run build
 # Backend tests
 cd backend
 .venv/bin/pytest tests/test_product_actions_suggest_v2.py tests/test_product_actions_session_export.py tests/test_ai_prompt_registry_foundation.py tests/test_ai_prompt_registry_seeds.py -v
+
+# Contract fuzz (focus on new export endpoint)
+.venv/bin/python -m pytest -m contract tests/contract/test_contract_fuzz.py -k "product-actions_export" -q
 ```

@@ -3,6 +3,7 @@
 **Ветка:** `feature/product-actions-output-v2`  
 **База:** `main` (`d8f60ca9`)  
 **Тип:** feature  
+**PR:** https://github.com/xiaomibelov/processmap_v1/pull/834  
 **Заголовок PR:** `feat(analysis): компактный список действий с продуктом, action_text, 4 тега, выгрузка CSV/XLSX`
 
 ## Что изменено
@@ -44,6 +45,7 @@
 
 - `backend/tests/test_product_actions_suggest_v2.py` — 4 passed
 - `backend/tests/test_product_actions_session_export.py` — 4 passed
+- `backend/tests/contract/test_contract_fuzz.py -k "product-actions_export"` — passed (content-type spec-gap для CSV/XLSX)
 - `frontend/src/features/process/analysis/productActionSuggestionsPanel.table.test.mjs` — passed
 - `frontend/src/features/process/analysis/productActionSuggestionsPanel.validation.test.mjs` — passed
 - `frontend/src/features/process/analysis/productActionsModel.test.mjs` — passed
@@ -67,6 +69,12 @@
 - `export`, `exportCsv`, `exportXlsx`, `exportReady`
 - `stepPlaceholder`, `errorCodeLabel`, `indexedAt`, `ragStatusLabel`
 - `total`, `pending`, `approved`, `rejected`
+
+## Исправление contract-чека
+
+- **Проблема:** `backend-contract / contract` падал на `GET /api/sessions/{id}/analysis/product-actions/export` из-за `Undocumented Content-Type` (`text/csv; charset=utf-8` / `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` не описаны в OpenAPI, где задокументирован только `application/json`).
+- **Фикс:** добавлен `export_product_actions_api_sessions__session_id__analysis_product_actions_export_get` в `backend/tests/contract/exclusions.yaml` → `spec_gap_content_type_operations` с reason «text/csv и xlsx не задокументированы — spec-gap», в едином стиле с остальными export-эндпоинтами (`export_zip`, `export_property_registry`, `export_*_xlsx`/`export_*_csv`).
+- **Проверка:** `pytest -m contract tests/contract/test_contract_fuzz.py -k "product-actions_export"` — passed.
 
 ## Scope C2
 
