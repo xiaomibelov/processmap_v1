@@ -195,6 +195,35 @@ PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE = """Ты помогаешь запол�
 - Return only valid JSON object matching schema. No markdown, no comments, no trailing commas.
 """
 
+PRODUCT_ACTIONS_SUGGEST_REPAIR_PROMPT_TEMPLATE = """Ты исправляешь свой предыдущий ответ, который не удалось разобрать как валидный JSON.
+
+Требование: верни ТОЛЬКО валидный JSON без markdown, без пояснений, без комментариев.
+
+Формат:
+{
+  "suggestions": [
+    {
+      "action_text": "",
+      "tags": { "action_type": "", "action_stage": "", "action_object": "", "action_method": "" },
+      "product_name": "",
+      "product_group": "",
+      "step_id": "",
+      "bpmn_element_id": "",
+      "step_label": "",
+      "role": "",
+      "confidence": 0.0,
+      "reason": ""
+    }
+  ],
+  "warnings": []
+}
+
+Предыдущий ответ (ошибка разбора: {parse_error}):
+{input}
+
+Исправь предыдущий ответ и верни только JSON."""
+
+
 PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4 = """Ты помогаешь заполнить реестр действий с продуктом для пищевого процесса.
 
 Верни не более 3 предложений. Все строковые поля — не более 120 символов.

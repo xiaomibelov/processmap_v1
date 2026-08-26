@@ -34,6 +34,7 @@ class LlmProviderBody(BaseModel):
     priority: Optional[int] = None
     enabled: Optional[bool] = None
     org_id: Optional[str] = None  # platform-admin может явно задать org; иначе текущая
+    capabilities: Optional[dict] = None  # e.g. {"supports_json_mode": false}
 
 
 class LlmProviderPatchBody(BaseModel):
@@ -44,6 +45,7 @@ class LlmProviderPatchBody(BaseModel):
     priority: Optional[int] = None
     enabled: Optional[bool] = None
     org_id: Optional[str] = None  # platform-admin может сменить скоуп; audit_log пишется
+    capabilities: Optional[dict] = None  # полная замена capability-конфига
 
 
 class LlmPromptBody(BaseModel):
@@ -109,7 +111,8 @@ def admin_llm_create_provider(request: Request, body: LlmProviderBody) -> Any:
     row = llm_store.create_provider(
         org_id=target_org, name=name, base_url=base_url, model=model,
         api_key=body.api_key or "", priority=100 if body.priority is None else int(body.priority),
-        enabled=True if body.enabled is None else bool(body.enabled), actor=uid or "",
+        enabled=True if body.enabled is None else bool(body.enabled),
+        capabilities=body.capabilities, actor=uid or "",
     )
     try:
         append_audit_log(
