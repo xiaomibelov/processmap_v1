@@ -15,4 +15,5 @@ export default defineConfig({
   server: {
     port: 5717,
   },
+  envPrefix: "AGENT_",
 });

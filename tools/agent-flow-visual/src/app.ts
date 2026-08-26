@@ -1,15 +1,23 @@
-import { foldEvents, type ContourModel, type RawEvent } from "agent-flow-core";
+import { foldEvents, type ContourModel, type LayoutNode, type RawEvent } from "agent-flow-core";
 import { Camera } from "./canvas/camera.js";
 import { Interaction } from "./canvas/interaction.js";
 import { PALETTE, Renderer } from "./canvas/renderer.js";
 import { InspectorPanel } from "./inspector/panel.js";
+
+import { LogTailer } from "./io/log-tailer.js";
 import { TimelineController } from "./timeline/controller.js";
 import { TimelineUI } from "./timeline/ui.js";
+
+export type AppMode = "live" | "replay";
+export type CameraMode = "follow" | "overview";
 
 export interface AppOptions {
   root: HTMLElement;
   events: RawEvent[];
   title?: string;
+  mode?: AppMode;
+  /** If provided, live-tail this path for new events. */
+  tailPath?: string;
 }
 
 export class App {
@@ -24,12 +32,18 @@ export class App {
   private readonly infoOverlay: HTMLElement;
   private readonly canvasContainer: HTMLElement;
   private readonly title: string;
+  private readonly mode: AppMode;
+  private cameraMode: CameraMode = "follow";
   private showHelp = false;
   private showInfo = false;
+  private tailer: LogTailer | null = null;
+  private destroyed = false;
+  private lastModel: ContourModel[] = [];
 
   constructor(options: AppOptions) {
     this.root = options.root;
     this.title = options.title ?? "session";
+    this.mode = options.mode ?? (options.events.length > 0 ? "replay" : "live");
     this.root.style.cssText = "display:flex;flex-direction:column;width:100%;height:100%;background:" + PALETTE.canvasBg;
 
     this.canvasContainer = document.createElement("div");
@@ -59,6 +73,7 @@ export class App {
     this.renderer = new Renderer(canvas, this.camera, { showMinimap: true });
 
     const model = foldEvents(options.events);
+    this.lastModel = model;
     const viewport = this.renderer.setModel(model);
     this.camera.fit(viewport, canvas.clientWidth, canvas.clientHeight);
 
@@ -67,7 +82,7 @@ export class App {
     });
 
     this.timelineUI = new TimelineUI(timelineContainer, this.timelineController);
-    this.timelineController.seek(0);
+    this.timelineController.seek(this.mode === "live" && options.events.length === 0 ? 0 : this.timelineController.liveIndex);
 
     this.inspector = new InspectorPanel(inspectorContainer);
 
@@ -81,8 +96,8 @@ export class App {
           else this.inspector.hide();
           this.renderer.render();
         },
-        onPan: () => this.renderer.render(),
-        onZoom: () => this.renderer.render(),
+        onPan: () => this.onManualCamera(),
+        onZoom: () => this.onManualCamera(),
       }
     );
 
@@ -97,13 +112,61 @@ export class App {
     this.setupKeyboard(canvas);
     canvas.focus();
     this.renderer.start();
+
+    if (options.tailPath) {
+      this.tailer = new LogTailer({
+        path: options.tailPath,
+        onEvents: (events) => this.handleNewEvents(events),
+      });
+      this.tailer.start();
+    }
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.tailer?.stop();
+    this.renderer.stop();
+  }
+
+  private handleNewEvents(events: RawEvent[]): void {
+    if (this.destroyed) return;
+    const wasLive = this.timelineController.appendEvents(events);
+    this.timelineUI.refresh();
+
+    if (wasLive) {
+      this.timelineController.live();
+      this.followActiveNode();
+    } else {
+      // User is scrubbing history; just refresh the current view so the
+      // timeline grows at the live edge.
+      this.timelineController.seek(this.timelineController.currentIndex);
+    }
   }
 
   private handleTimelineUpdate(model: ContourModel[]): void {
+    this.lastModel = model;
     this.renderer.setModel(model);
     this.renderer.render();
     this.timelineUI.setIndex(this.timelineController.currentIndex);
     this.renderStatusBar(model);
+
+    if (this.cameraMode === "follow") {
+      this.followActiveNode();
+    }
+  }
+
+  private onManualCamera(): void {
+    this.cameraMode = "overview";
+    this.renderer.render();
+    this.renderStatusBar(this.lastModel);
+  }
+
+  private followActiveNode(): void {
+    const node = findActiveNode(this.renderer.getNodes());
+    if (!node) return;
+    const width = this.canvasContainer.clientWidth;
+    const height = this.canvasContainer.clientHeight;
+    this.camera.smoothCenterOn(node, width, height);
   }
 
   private setupOverlays(): void {
@@ -142,38 +205,52 @@ export class App {
         case "G":
           this.timelineController.live();
           break;
+        case "f":
+        case "F":
+          this.cameraMode = "follow";
+          this.followActiveNode();
+          break;
+        case "o":
+        case "O":
+          this.cameraMode = "overview";
+          this.camera.fit(
+            this.renderer.getViewport(),
+            this.canvasContainer.clientWidth,
+            this.canvasContainer.clientHeight
+          );
+          break;
         case "h":
         case "ArrowLeft":
           this.camera.pan(panStep, 0);
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "j":
         case "ArrowDown":
           this.camera.pan(0, -panStep);
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "k":
         case "ArrowUp":
           this.camera.pan(0, panStep);
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "l":
         case "ArrowRight":
           this.camera.pan(-panStep, 0);
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "+":
         case "=":
           this.camera.zoomBy(1.1, this.canvasContainer.clientWidth / 2, this.canvasContainer.clientHeight / 2);
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "-":
           this.camera.zoomBy(0.9, this.canvasContainer.clientWidth / 2, this.canvasContainer.clientHeight / 2);
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "0":
           this.camera.reset();
-          this.renderer.render();
+          this.onManualCamera();
           break;
         case "i":
         case "I":
@@ -233,6 +310,8 @@ export class App {
         <span style="color:${PALETTE.subtle}">space</span><span>play / pause</span>
         <span style="color:${PALETTE.subtle}">[ ]</span><span>prev / next step</span>
         <span style="color:${PALETTE.subtle}">End / g</span><span>jump to live</span>
+        <span style="color:${PALETTE.subtle}">f</span><span>follow active node</span>
+        <span style="color:${PALETTE.subtle}">o</span><span>overview (fit all)</span>
         <span style="color:${PALETTE.subtle}">h j k l</span><span>pan camera</span>
         <span style="color:${PALETTE.subtle}">+ / -</span><span>zoom in / out</span>
         <span style="color:${PALETTE.subtle}">0</span><span>reset zoom</span>
@@ -269,6 +348,7 @@ export class App {
       <div style="display:grid;grid-template-columns:100px 1fr;gap:6px 12px;">
         <span style="color:${PALETTE.subtle}">title</span><span>${this.escapeHtml(this.title)}</span>
         <span style="color:${PALETTE.subtle}">mode</span><span>${state}</span>
+        <span style="color:${PALETTE.subtle}">camera</span><span>${this.cameraMode}</span>
         <span style="color:${PALETTE.subtle}">agents</span><span>${counts.agents}</span>
         <span style="color:${PALETTE.subtle}">tools</span><span>${counts.tools}</span>
         <span style="color:${PALETTE.subtle}">queued</span><span>${counts.queued} ops</span>
@@ -282,6 +362,7 @@ export class App {
     if (this.timelineController.stateValue === "playing") return "replay";
     const idx = this.timelineController.currentIndex;
     const len = this.timelineController.length;
+    if (len === 0) return this.mode;
     return idx >= len - 1 ? "live" : "paused";
   }
 
@@ -299,7 +380,8 @@ export class App {
       0
     );
     const state = this.controllerStateText();
-    const badgeColor = state === "live" ? PALETTE.green : state === "replay" ? PALETTE.gold : PALETTE.dim;
+    const isLive = state === "live";
+    const badgeColor = isLive ? PALETTE.green : state === "replay" ? PALETTE.gold : PALETTE.dim;
 
     this.statusBar.style.cssText = `
       display:flex;
@@ -313,14 +395,19 @@ export class App {
       font-size:12px;
     `;
 
+    const waiting = this.mode === "live" && this.timelineController.length === 0
+      ? `<span style="color:${PALETTE.subtle};margin-left:12px;">Waiting for events…</span>`
+      : "";
+
     this.statusBar.innerHTML = `
       <div>
         <span style="background:${PALETTE.gold};color:${PALETTE.ink};padding:2px 8px;border-radius:4px;font-weight:bold;">zoetrope</span>
-        <span style="background:${badgeColor};color:${PALETTE.ink};padding:2px 8px;border-radius:4px;font-weight:bold;margin-left:8px;">${state}</span>
+        <span style="background:${badgeColor};color:${PALETTE.ink};padding:2px 8px;border-radius:4px;font-weight:bold;margin-left:8px;">${isLive ? "● LIVE" : "⏮ REPLAY"}</span>
         <span style="margin-left:12px;font-weight:bold;">${this.escapeHtml(this.title)}</span>
         <span style="color:${PALETTE.subtle};margin-left:12px;">${agents} agents · ${tools} tools</span>
+        ${waiting}
       </div>
-      <div style="color:${PALETTE.dim}">? help · i info · space pause</div>
+      <div style="color:${PALETTE.dim}">${this.cameraMode === "follow" ? "follow" : "overview"} · ? help · i info · space pause</div>
     `;
   }
 
@@ -329,4 +416,13 @@ export class App {
     div.textContent = text;
     return div.innerHTML;
   }
+}
+
+function findActiveNode(nodes: LayoutNode[]): LayoutNode | undefined {
+  if (nodes.length === 0) return undefined;
+  const running = nodes.filter((n) => n.status === "running");
+  if (running.length > 0) return running[running.length - 1];
+  const active = nodes.filter((n) => n.status !== "pending");
+  if (active.length > 0) return active[active.length - 1];
+  return nodes[nodes.length - 1];
 }

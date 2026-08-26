@@ -1,4 +1,4 @@
-import type { LayoutViewport } from "agent-flow-core";
+import type { LayoutNode, LayoutViewport } from "agent-flow-core";
 
 export interface CameraTransform {
   x: number;
@@ -13,6 +13,7 @@ export class Camera {
 
   private readonly minScale = 0.1;
   private readonly maxScale = 5;
+  private target: CameraTransform | null = null;
 
   pan(dx: number, dy: number): void {
     this.x += dx;
@@ -50,6 +51,44 @@ export class Camera {
     this.scale = Math.min(scaleX, scaleY, this.maxScale);
     this.x = width / 2 - (viewport.minX + contentWidth / 2) * this.scale;
     this.y = height / 2 - (viewport.minY + contentHeight / 2) * this.scale;
+    this.target = null;
+  }
+
+  /**
+   * Center the camera on a node while preserving the current zoom level.
+   */
+  centerOn(node: LayoutNode, width: number, height: number): void {
+    this.x = width / 2 - (node.x + node.width / 2) * this.scale;
+    this.y = height / 2 - (node.y + node.height / 2) * this.scale;
+    this.target = null;
+  }
+
+  /**
+   * Start a smooth interpolation to center on a node.
+   */
+  smoothCenterOn(node: LayoutNode, width: number, height: number): void {
+    const targetX = width / 2 - (node.x + node.width / 2) * this.scale;
+    const targetY = height / 2 - (node.y + node.height / 2) * this.scale;
+    this.target = { x: targetX, y: targetY, scale: this.scale };
+  }
+
+  /**
+   * Advance the camera towards its target. Call once per frame.
+   */
+  update(dt = 16): void {
+    if (!this.target) return;
+    const t = 1 - Math.exp(-dt / 120);
+    this.x += (this.target.x - this.x) * t;
+    this.y += (this.target.y - this.y) * t;
+    this.scale += (this.target.scale - this.scale) * t;
+    const dx = this.target.x - this.x;
+    const dy = this.target.y - this.y;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+      this.x = this.target.x;
+      this.y = this.target.y;
+      this.scale = this.target.scale;
+      this.target = null;
+    }
   }
 
   worldToScreen(wx: number, wy: number): { x: number; y: number } {
