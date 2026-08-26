@@ -18,6 +18,7 @@ import uuid
 from unittest import mock
 
 import pytest
+import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -133,6 +134,33 @@ def test_fallback_chain_by_priority(sandbox):
     rows = _usage_rows(feature)
     assert [r["status"] for r in rows].count("error") == 1, "ошибка p1 записана"
     assert rows[-1]["status"] == "ok" and rows[-1]["prompt_tokens"] == 11
+
+
+def test_timeout_fails_fast_to_backup_provider(sandbox):
+    """Таймаут/обрыв соединения у первого провайдера → сразу failover на backup без retry."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    p1 = llm_store.create_provider(org_id=org, name="p-timeout", base_url="https://a", model="m1",
+                                   api_key="key-a", priority=10)
+    p2 = llm_store.create_provider(org_id=org, name="p-backup", base_url="https://b", model="m2",
+                                   api_key="key-b", priority=20)
+    calls = []
+
+    def _fake(**kwargs):
+        calls.append(kwargs["api_key"])
+        if kwargs["api_key"] == "key-a":
+            raise requests.exceptions.Timeout("primary timed out")
+        return _llm_response(model="m2")
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+
+    assert result["ok"] is True and result["status"] == "ok"
+    assert calls == ["key-a", "key-b"], "timeout primary → один вызов, затем backup"
+    assert result["provider_id"] == p2["id"] and result["model"] == "m2"
+    assert result["fallback"] is True
+    rows = _usage_rows(feature)
+    assert [r["status"] for r in rows].count("error") == 1, "ошибка p-timeout записана"
+    assert rows[-1]["status"] == "ok" and rows[-1]["provider_id"] == p2["id"]
 
 
 # ------------------------------------------------------- реестр моделей (016)

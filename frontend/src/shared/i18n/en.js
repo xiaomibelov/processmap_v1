@@ -394,6 +394,7 @@ export const en = {
       providerNotConfigured: "AI provider is not configured in this environment. Contact your administrator.",
       providerNotConfiguredAction: "Check LLM settings in the admin panel.",
       providerError: "Could not get a response from the AI provider. Please try again later.",
+      parseError: "The AI response could not be parsed. Please try again.",
       rateLimit: "AI request limit exceeded. Please try again later.",
       missingApiKey: "AI provider key is not set. Check environment variables.",
       suggestionListEmpty: "The LLM suggested no actions. Make sure the session has steps and an AI provider is configured.",
