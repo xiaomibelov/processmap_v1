@@ -203,6 +203,17 @@ test("All 6 analysis tabs render without raw i18n keys", async () => {
     ["Lead time", "Активное время", "Ожидания", "Mainline время", "Средняя длительность шага", "Привязка к BPMN", "Throughput"].forEach((label) => {
       assert.ok(text.includes(label), `Expected KPI label "${label}" in rendered output`);
     });
+
+    // Switch to the AI tab and verify no raw i18n keys leak from the product-actions panel.
+    const aiTabButton = container.querySelector('[id="process-analysis-tab-btn-ai"]');
+    assert.ok(aiTabButton, "AI tab button must be rendered");
+    await act(async () => {
+      aiTabButton.click();
+    });
+    await flush(200);
+
+    const aiText = container.textContent;
+    assert.doesNotMatch(aiText, /processAnalysis\.ai\./, `AI panel rendered text contains raw i18n key: ${aiText.slice(0, 400)}`);
   } finally {
     await cleanup();
   }

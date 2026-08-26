@@ -143,6 +143,7 @@ export const apiRoutes = {
     productActionsBatchDraft: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/batch-draft`,
     productActionsSuggestions: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/suggestions`,
     productActionsSuggestionsApply: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/suggestions/apply`,
+    productActionsExport: (sessionId, format) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/export?format=${encode(format)}`,
     ragReadiness: (sessionId) => `/api/sessions/${encode(sessionId)}/rag-readiness`,
     analysisViewModel: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/view-model`,
     noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,

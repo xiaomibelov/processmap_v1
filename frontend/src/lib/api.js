@@ -2437,6 +2437,21 @@ export async function apiApplyProductActionSuggestions(sessionId, baseDiagramSta
   return r.ok ? { ok: true, status: r.status, result: r.data?.data || null, data: r.data?.data || null } : r;
 }
 
+export async function apiExportProductActions(sessionId, format) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const fmt = String(format || "").trim();
+  if (!fmt) return { ok: false, status: 0, error: "missing format" };
+  const r = await request(apiRoutes.sessions.productActionsExport(sid, fmt), { method: "POST", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  const filename = filenameFromContentDisposition(
+    r.response_headers?.get?.("content-disposition"),
+    `product-actions-export.${fmt}`,
+  );
+  return { ok: true, status: r.status, blob, filename };
+}
+
 export async function apiGetRagReadiness(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

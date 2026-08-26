@@ -51,6 +51,7 @@ def _build_product_action_row(session_id: str, suggestion: Dict[str, Any]) -> Di
         "node_id": node_id,
         "bpmn_element_id": bpmn_element_id,
         "step_label": _text(action.get("step_label") or binding.get("step_label")),
+        "action_text": _text(action.get("action_text")),
         "product_name": _text(action.get("product_name")),
         "product_group": _text(action.get("product_group")),
         "action_type": _text(action.get("action_type")),
@@ -80,9 +81,9 @@ def _raise_not_found(session_id: str) -> None:
     )
 
 
-def list_suggestions(session_id: str) -> List[Dict[str, Any]]:
+def list_suggestions(session_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
     storage = get_storage()
-    return storage.list_product_action_suggestions(session_id, status=None)
+    return storage.list_product_action_suggestions(session_id, status=status)
 
 
 def create_or_update_suggestion(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
