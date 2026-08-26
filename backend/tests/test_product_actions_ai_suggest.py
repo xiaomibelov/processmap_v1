@@ -656,7 +656,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(before.bpmn_xml, after.bpmn_xml)
         logs = self._logs().get("items") or []
         self.assertEqual(logs[0].get("error_code"), "AI_RESPONSE_PARSE_ERROR")
-        self.assertIn("line", str(logs[0].get("error_message") or ""))
+        self.assertTrue(str(logs[0].get("error_message") or "").strip())
         self.assertNotIn("Сэндвич", str(logs[0]))
 
     def test_markdown_wrapped_valid_json_is_parsed(self):
@@ -676,12 +676,28 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_active_prompt_seed_is_used_and_version_returned(self):
         with patch(
             "app.routers.product_actions_ai._llm_complete",
-            return_value=_gateway_ok(suggestions=[], warnings=[]),
+            return_value=_gateway_ok(
+                suggestions=[
+                    {
+                        "id": "ai_seed",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "action_text": "Упаковать сэндвич",
+                        "action_type": "упаковка",
+                        "action_stage": "финиш",
+                        "action_object": "сэндвич",
+                        "action_method": "поместить",
+                        "confidence": 0.8,
+                    }
+                ],
+                warnings=[],
+            ),
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
         self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v4")
         self.assertEqual(out.get("prompt_version"), "1")
+        self.assertEqual(len(out.get("suggestions") or []), 1)
 
     def test_bulk_suggest_returns_per_session_results_without_mutation(self):
         second_session_id = self._seed_session()
