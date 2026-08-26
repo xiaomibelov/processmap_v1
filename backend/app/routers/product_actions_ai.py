@@ -364,6 +364,43 @@ def _decorate_duplicates(suggestions: List[Dict[str, Any]], existing_actions: Li
     return out
 
 
+def _drop_reasons_for_suggestions(
+    raw_suggestions: List[Dict[str, Any]],
+    selected_binding: Dict[str, str],
+    final_suggestions: List[Dict[str, Any]],
+    max_suggestions: int,
+) -> List[Dict[str, Any]]:
+    """Build a concise, sample list of why raw suggestions did not reach the user.
+
+    Used for instrumentation only; never exposes secrets or raw LLM text.
+    """
+    selected_step_requested = bool(
+        _text(selected_binding.get("step_id") or selected_binding.get("bpmn_element_id") or selected_binding.get("label"))
+    )
+    selected_indices = [
+        index
+        for index, raw in enumerate(raw_suggestions)
+        if (not selected_step_requested) or _row_matches_binding(_as_dict(raw), selected_binding)
+    ]
+    reasons: List[Dict[str, Any]] = []
+    for pos, index in enumerate(selected_indices):
+        if pos >= max_suggestions:
+            reasons.append({"index": index, "reason": "max_suggestions_cap"})
+            continue
+        final_row = _as_dict(final_suggestions[pos] if pos < len(final_suggestions) else {})
+        missing = list(final_row.get("missing_fields") or [])
+        if _text(final_row.get("duplicate_of")):
+            reasons.append({"index": index, "reason": "duplicate", "duplicate_of": final_row.get("duplicate_of")})
+        elif missing:
+            reasons.append({"index": index, "reason": "missing_required_fields", "missing_fields": missing})
+    # Include items removed by selected-step filter.
+    if selected_step_requested:
+        for index, raw in enumerate(raw_suggestions):
+            if index not in selected_indices:
+                reasons.append({"index": index, "reason": "selected_step_filter"})
+    return reasons[:10]
+
+
 def _build_context(session: Session, *, org_id: str, workspace_id: str) -> Dict[str, Any]:
     interview = _as_dict(getattr(session, "interview", {}))
     steps = _interview_steps(interview)
@@ -716,7 +753,12 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
 
     if context_error:
         return _finish(
-            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message="Не удалось собрать контекст сессии для AI."),
+            _controlled_error(
+                "AI_PROVIDER_ERROR",
+                input_hash=input_hash,
+                message="Не удалось собрать контекст сессии для AI.",
+                diagnostics={"steps_sent": 0, "context_error": context_error},
+            ),
             status="error",
             output_summary="context assembly failed",
             error_code="AI_PROVIDER_ERROR",
@@ -766,6 +808,38 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             error_message="ai_rate_limit_exceeded",
         )
 
+    steps_sent = len(context.get("steps") or [])
+    if steps_sent == 0 and not selected_step_requested:
+        no_steps_diagnostics = {
+            "steps_sent": 0,
+            "provider_id": "gateway",
+            "provider": "gateway",
+            "model": "",
+            "raw_len": 0,
+            "parsed_count": 0,
+            "selected_count": 0,
+            "kept_count": 0,
+            "drop_reasons": [],
+        }
+        return _finish(
+            _controlled_error(
+                "AI_SUGGEST_NO_STEPS",
+                input_hash=input_hash,
+                message="В сессии не найдены шаги процесса для генерации действий.",
+                diagnostics=no_steps_diagnostics,
+            ),
+            status="error",
+            output_summary="empty reason=AI_SUGGEST_NO_STEPS steps_sent=0",
+            usage={
+                "suggestions_count": 0,
+                "duplicate_count": 0,
+                "incomplete_count": 0,
+                **no_steps_diagnostics,
+            },
+            error_code="AI_SUGGEST_NO_STEPS",
+            error_message="В сессии не найдены шаги процесса для генерации действий.",
+        )
+
     try:
         seed_existing_ai_prompts(actor_user_id="code_seeded")
         active_prompt = get_active_prompt(module_id=_MODULE_ID)
@@ -803,6 +877,48 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             )
         duplicate_count = sum(1 for row in suggestions if _text(row.get("duplicate_of")))
         incomplete_count = sum(1 for row in suggestions if row.get("missing_fields"))
+        steps_sent = len(context.get("steps") or [])
+        parsed_count = len(raw_suggestions)
+        selected_count = len(selected_suggestions)
+        kept_count = len(suggestions)
+        raw_len = len(str(result.get("text") or ""))
+        drop_reasons = _drop_reasons_for_suggestions(
+            raw_suggestions, selected_binding, suggestions, max_suggestions
+        )
+        diagnostics = {
+            "steps_sent": steps_sent,
+            "provider_id": provider_id or "gateway",
+            "provider": provider_id or "gateway",
+            "model": model_name,
+            "raw_len": raw_len,
+            "parsed_count": parsed_count,
+            "selected_count": selected_count,
+            "kept_count": kept_count,
+            "drop_reasons": drop_reasons,
+        }
+        if kept_count == 0:
+            if steps_sent == 0:
+                empty_code = "AI_SUGGEST_NO_STEPS"
+                empty_message = "В сессии не найдены шаги процесса для генерации действий."
+            elif parsed_count == 0:
+                empty_code = "AI_SUGGEST_LLM_EMPTY"
+                empty_message = "LLM вернул пустой список предложений."
+            else:
+                empty_code = "AI_SUGGEST_ALL_INVALID"
+                empty_message = "Все предложения отбракованы: не заполнены обязательные поля, дублируют уже сохранённые действия или не относятся к выбранному шагу."
+            return _finish(
+                _controlled_error(empty_code, input_hash=input_hash, message=empty_message, diagnostics=diagnostics),
+                status="error",
+                output_summary=f"empty reason={empty_code} steps_sent={steps_sent} parsed={parsed_count} kept={kept_count}",
+                usage={
+                    "suggestions_count": 0,
+                    "duplicate_count": 0,
+                    "incomplete_count": 0,
+                    **diagnostics,
+                },
+                error_code=empty_code,
+                error_message=empty_message,
+            )
         response = {
             "ok": True,
             "module_id": _MODULE_ID,
@@ -818,6 +934,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 "duplicate_count": duplicate_count,
                 "incomplete_count": incomplete_count,
             },
+            "diagnostics": diagnostics,
         }
         return _finish(
             response,
@@ -827,7 +944,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 "suggestions_count": len(suggestions),
                 "duplicate_count": duplicate_count,
                 "incomplete_count": incomplete_count,
-                "steps_count": len(context.get("steps") or []),
+                **diagnostics,
             },
         )
     except ProductActionsAiResponseParseError as exc:

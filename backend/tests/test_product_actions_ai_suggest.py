@@ -541,11 +541,27 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             return_value=None,
         ), patch(
             "app.routers.product_actions_ai._llm_complete",
-            return_value=_gateway_ok(suggestions=[], warnings=[]),
+            return_value=_gateway_ok(
+                suggestions=[
+                    {
+                        "id": "ai_prompt_fallback",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "action_text": "Упаковать сэндвич",
+                        "action_type": "упаковка",
+                        "action_stage": "финиш",
+                        "action_object": "сэндвич",
+                        "action_method": "поместить",
+                        "confidence": 0.8,
+                    }
+                ],
+                warnings=[],
+            ),
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 1)
         provider.assert_called_once()
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.bpmn_xml, after.bpmn_xml)
@@ -556,10 +572,26 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             side_effect=RuntimeError("prompt table unavailable"),
         ), patch(
             "app.routers.product_actions_ai._llm_complete",
-            return_value=_gateway_ok(suggestions=[], warnings=[]),
+            return_value=_gateway_ok(
+                suggestions=[
+                    {
+                        "id": "ai_prompt_fallback",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "action_text": "Упаковать сэндвич",
+                        "action_type": "упаковка",
+                        "action_stage": "финиш",
+                        "action_object": "сэндвич",
+                        "action_method": "поместить",
+                        "confidence": 0.8,
+                    }
+                ],
+                warnings=[],
+            ),
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 1)
         provider.assert_called_once()
 
     def test_execution_log_failure_does_not_turn_setup_error_into_500(self):
@@ -754,7 +786,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertNotIn("SECRET_TEST_KEY", str(diagnostics.get("response_excerpt") or ""))
         self.assertNotIn("SECRET_TEST_KEY", str(diagnostics.get("parse_error") or ""))
 
-    def test_success_response_has_no_diagnostics_block(self):
+    def test_success_response_includes_diagnostics_block(self):
         with patch(
             "app.routers.product_actions_ai._llm_complete",
             return_value=_gateway_ok(
@@ -763,10 +795,13 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "id": "ai_ok",
                         "step_id": "step_2",
                         "bpmn_element_id": "Task_2",
+                        "action_text": "Упаковать сэндвич",
                         "product_name": "Сэндвич",
                         "product_group": "Готовые блюда",
                         "action_type": "упаковка",
+                        "action_stage": "финиш",
                         "action_object": "сэндвич",
+                        "action_method": "поместить",
                         "confidence": 0.9,
                     }
                 ]
@@ -774,7 +809,10 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
-        self.assertNotIn("diagnostics", out)
+        diagnostics = out.get("diagnostics") or {}
+        for key in ("steps_sent", "provider_id", "model", "raw_len", "parsed_count", "kept_count"):
+            self.assertIn(key, diagnostics, f"diagnostics missing key: {key}")
+        self.assertGreaterEqual(diagnostics.get("kept_count", 0), 1)
 
     def test_confidence_normalizer_accepts_string_enum(self):
         from app.ai.product_actions_suggest import _confidence
@@ -827,6 +865,68 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertIn("suggestions", result)
         self.assertIsNotNone(result["suggestions"])
         self.assertEqual(result["suggestions"], [])
+
+    def test_empty_suggestions_no_steps_returns_distinct_error(self):
+        storage = self.get_storage()
+        session = storage.load(self.session_id, org_id=self.org_id, is_admin=True)
+        session.interview = {"analysis": {"product_actions": []}}
+        session.nodes = []
+        session.edges = []
+        storage.save(session, org_id=self.org_id, is_admin=True)
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(suggestions=[], warnings=[]),
+        ) as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_SUGGEST_NO_STEPS")
+        diagnostics = out.get("diagnostics") or {}
+        self.assertEqual(diagnostics.get("steps_sent"), 0)
+        self.assertEqual(diagnostics.get("parsed_count"), 0)
+        provider.assert_not_called()
+
+    def test_empty_suggestions_llm_empty_returns_distinct_error(self):
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(suggestions=[], warnings=[]),
+        ) as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_SUGGEST_LLM_EMPTY")
+        diagnostics = out.get("diagnostics") or {}
+        self.assertGreater(diagnostics.get("steps_sent", 0), 0)
+        self.assertEqual(diagnostics.get("parsed_count"), 0)
+        self.assertEqual(diagnostics.get("kept_count"), 0)
+        provider.assert_called_once()
+
+    def test_llm_response_wrapped_in_actions_key_is_parsed(self):
+        text = json.dumps(
+            {
+                "actions": [
+                    {
+                        "id": "ai_wrapped",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "action_text": "Упаковать сэндвич",
+                        "action_type": "упаковка",
+                        "action_stage": "финиш",
+                        "action_object": "сэндвич",
+                        "action_method": "поместить",
+                        "confidence": 0.85,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(text=text),
+        ) as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 1)
+        self.assertEqual(out["suggestions"][0].get("action_text"), "Упаковать сэндвич")
+        provider.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from typing import Any, Dict, Generator, List, Optional, Tuple
+
+logger = logging.getLogger("agent.chat")
 
 from edit import (
     build_human_diff,
@@ -1116,6 +1119,16 @@ def run_turn_stream(
 
     if stream_error is not None:
         text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
+        provider_id = stream_error.get("provider_id") or final_usage.get("provider_id") or ""
+        model_name = stream_error.get("model") or final_usage.get("model") or ""
+        logger.warning(
+            "processman stream error session=%s provider=%s model=%s status=%s error=%s",
+            sid,
+            provider_id,
+            model_name,
+            stream_error.get("status"),
+            stream_error.get("error", ""),
+        )
         _ = _persist_assistant_turn(
             sid,
             uid,
@@ -1128,7 +1141,15 @@ def run_turn_stream(
             action_payload={},
             now_ms=_now_ms(),
         )
-        yield ("error", {"status": stream_error.get("status"), "error": stream_error.get("error", "")})
+        yield (
+            "error",
+            {
+                "status": stream_error.get("status"),
+                "error": stream_error.get("error", ""),
+                "provider_id": provider_id,
+                "model": model_name,
+            },
+        )
         return
 
     # AGENT-0 action-JSON fallback preserved for streaming free-answer.

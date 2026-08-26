@@ -147,3 +147,97 @@
 - processman отвечает содержательно.
 - Execution log показывает provider/model и fallback.
 - Время suggest ≤ разумного (≤ 60 с после патча; ещё лучше — после перестановки приоритетов).
+
+---
+
+# ROOT_CAUSE — итерация 3: fix/stage-suggest-empty-agent-stream
+
+## Состояние после PR #836 (факты со stage, 26.08 ~18:11)
+
+- **suggest** отдаёт пустой результат для сессии `e9dd18bcbe` (проект `5c5c831905`, шаги в сессии есть).
+- **processman** (`/api/sessions/{id}/agent/stream`) всё ещё падает с ошибкой внутри SSE.
+- Пользователь сообщает: фикс #836 в `backend/services/agent/` на stage не наблюдается.
+
+## Дефекты
+
+### D4. suggest → пустой результат
+
+**Кодовый путь:**
+- `backend/app/routers/product_actions_ai.py::_call_product_actions_llm` → `gateway.complete(..., json_mode=True)` → `backend/app/ai/product_actions_suggest.py::parse_product_actions_suggestions`.
+- Парсер после #836 снимает code-fences и ищет первый валидный JSON, но `normalize_product_action_suggestions_response` ожидала ключ `suggestions`.
+- При `response_format: json_object` DeepSeek (и другие провайдеры) могут вернуть объект-обёртку: `{"actions": [...]}`, `{"items": [...]}`, `{"results": [...]}`, `{"data": [...]}`, либо массив напрямую.
+- Если обёртка не распознана — `raw_suggestions` пуст, и endpoint возвращает пустой список с сообщением «LLM не предложил действий», хотя шаги есть.
+- Отсутствовало инструментирование: в логах/ответе не было видно, сколько шагов ушло в LLM, какой провайдер/модель ответил, какой длины был сырой ответ, сколько элементов распарсилось и сколько выжило после валидации.
+
+**Root cause:** парсер не извлекал массив предложений из альтернативных JSON-обёрток; отсутствовала диагностика, позволяющая за один вызов понять, на каком звене пропали предложения.
+
+### D2 (продолжение). processman: фикс #836 не виден на stage
+
+**Кодовый путь:**
+- nginx проксирует `/api/sessions/[^/]+/agent/(chat|history|stream|resume)$` в контейнер `agent:8000`.
+- `backend/services/agent/gateway/gateway.py::complete_stream()` уже содержит failover (`retry_on_timeout=False`) после #836.
+- Однако на stage агент-сервис возвращает ошибку LLM, как и до #836.
+
+**Гипотезы:**
+
+1. **Deploy gap (проверена по коду, требует подтверждения на stage).**
+   - `.github/workflows/deploy-stage.yml` пересобирает и перезапускает `agent` только если в push изменился `backend/services/agent/`.
+   - PR #836 менял файлы в `backend/services/agent/`, поэтому workflow должен был пересобрать сервис.
+   - Но у пользователя фикс не наблюдается — возможно, stage-окружение использует stale-образ, или workflow запущен вручную с другим ref, или docker compose не пересоздал контейнер.
+   - **Действие:** добавлен endpoint `/version` в agent-сервис, чтобы можно было проверить commit/running build без SSH.
+
+2. **Провайдер/модель processman всё ещё таймаутится.**
+   - processman использует `processman_agent` feature и `complete_stream()`.
+   - Если модуль `processman_agent` во вкладке «Модули» /admin/llm прибит к VVPROXY `claude-opus-4-6`, failover на deepseek сработает, но ответ может занимать десятки секунд и обрываться.
+   - **Действие:** в SSE-ошибку и логи добавлены `provider_id` и `model`, чтобы по одному вызову видеть, кто реально отвечал.
+
+**Root cause (предварительный):** либо stale-деплой agent-сервиса, либо провайдер processman не переключён на работающий deepseek-main. Точный вердикт требует проверки `/version` и execution log на stage.
+
+### D3 (продолжение). Латентность suggest
+
+- После #836 таймаут снижен до 30 с; наблюдаемое время ~47,5 с (один таймаут VVPROXY + генерация deepseek).
+- Проблема сохраняется, потому что primary-провайдер для org `8b89c83ea810` — VVPROXY `claude-opus-4-6`, который не справляется с длинным контекстом.
+- **Рекомендация:** в `/admin/llm` поднять приоритет `deepseek-main` для org `8b89c83ea810` выше VVPROXY. Решение конфигурационное, не кодовое.
+
+## Фикс (итерация 3)
+
+### D4
+
+- `backend/app/ai/product_actions_suggest.py`:
+  - `_extract_suggestions_array` извлекает массив из обёрток `suggestions`, `actions`, `items`, `results`, `data`.
+  - `normalize_product_action_suggestions_response` использует этот экстрактор.
+- `backend/app/routers/product_actions_ai.py`:
+  - Инструментирование каждого вызова: `steps_sent`, `provider_id`, `model`, `raw_len`, `parsed_count`, `selected_count`, `kept_count`, `drop_reasons`.
+  - Диагностика пишется в `usage` execution log и возвращается в `diagnostics` успешного ответа.
+  - Различимые коды ошибок для пустого результата:
+    - `AI_SUGGEST_NO_STEPS` — в сессии нет шагов (ранний возврат, без вызова LLM).
+    - `AI_SUGGEST_LLM_EMPTY` — LLM вернул пустой список.
+    - `AI_SUGGEST_ALL_INVALID` — все предложения отбракованы фильтром/валидацией/дубликатами.
+  - Ранний возврат `AI_SUGGEST_NO_STEPS`, если в контексте 0 шагов, чтобы не тратить токены.
+- `frontend/src/features/process/analysis/ProductActionSuggestionsPanel.jsx` + `frontend/src/shared/i18n/ru.js`:
+  - Добавлены коды ошибок и человекочитаемые сообщения для `AI_SUGGEST_NO_STEPS`, `AI_SUGGEST_LLM_EMPTY`, `AI_SUGGEST_ALL_INVALID`.
+
+### D2
+
+- `backend/services/agent/routers/health.py`:
+  - Новый endpoint `/version` с `build_id`, `build_time`, `build_branch`, `build_env`, `git_commit`.
+- `backend/services/agent/gateway/gateway.py`:
+  - В error-событие `complete_stream()` добавлены `provider_id` и `model` последнего attempted-провайдера.
+- `backend/services/agent/memory/chat.py`:
+  - При `stream_error` логируется `session_id`, `provider_id`, `model`, `status`, `error`.
+  - Error-событие передаёт `provider_id`/`model` дальше в SSE.
+- `backend/services/agent/routers/agent_stream.py`:
+  - Логирование error-событий SSE с `provider_id`/`model`.
+  - Логирование необработанных исключений потока.
+
+### D3
+
+- Оставлена рекомендация из #836: поднять приоритет `deepseek-main` для org `8b89c83ea810` в `/admin/llm`. Код не меняет конфигурацию.
+
+## Что остаётся проверить на stage (после мержа)
+
+- [ ] `/api/sessions/{id}/agent/version` (через nginx → agent) возвращает актуальный commit PR #836/итерации 3.
+- [ ] suggest на сессии `e9dd18bcbe` возвращает непустой список валидных предложений.
+- [ ] Execution log /admin/llm для suggest показывает `provider_id`, `model`, `parsed_count`, `kept_count`.
+- [ ] processman отвечает содержательно; SSE-ошибка (если есть) содержит `provider_id`/`model`.
+- [ ] В /admin/llm «Модули» проверить, к какому провайдеру/модели привязаны `product_actions_suggest` и `processman_agent`; при необходимости переставить приоритеты.
