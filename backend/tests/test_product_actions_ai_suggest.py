@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import tempfile
@@ -13,6 +14,22 @@ class _DummyRequest:
     def __init__(self, user: dict, *, active_org_id: str):
         self.state = SimpleNamespace(auth_user=user, active_org_id=active_org_id)
         self.headers = {}
+
+
+def _gateway_ok(suggestions=None, warnings=None, text=None):
+    if text is None:
+        payload = {"suggestions": suggestions or [], "warnings": warnings or []}
+        text = json.dumps(payload, ensure_ascii=False)
+    return {
+        "ok": True,
+        "status": "ok",
+        "text": text,
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        "provider_id": "llmprov_test",
+        "model": "deepseek-chat",
+        "prompt_version": 1,
+        "fallback": False,
+    }
 
 
 class ProductActionsAiSuggestTests(unittest.TestCase):
@@ -155,9 +172,9 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_batch_suggest_skips_existing_actions_and_saves_draft_without_bpmn_mutation(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            side_effect=lambda **kwargs: {
-                "suggestions": [
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(
+                suggestions=[
                     {
                         "id": "ai_batch_1",
                         "step_id": "step_2",
@@ -168,9 +185,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "action_object": "сэндвич",
                         "confidence": 0.8,
                     }
-                ],
-                "warnings": [],
-            },
+                ]
+            ),
         ) as provider:
             out = self.batch_suggest_product_actions(
                 self.session_id,
@@ -204,10 +220,10 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         }
         storage.save(session, org_id=self.org_id, is_admin=True)
 
-        def provider_response(**kwargs):
-            steps = kwargs.get("context", {}).get("steps") or []
-            return {
-                "suggestions": [
+        def provider_response(feature, payload, **kwargs):
+            steps = payload.get("steps") or []
+            return _gateway_ok(
+                suggestions=[
                     {
                         "id": f"ai_{step.get('step_id')}",
                         "step_id": step.get("step_id"),
@@ -219,17 +235,16 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "confidence": 0.7,
                     }
                     for step in steps
-                ],
-                "warnings": [],
-            }
+                ]
+            )
 
-        with patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek", side_effect=provider_response) as provider:
+        with patch("app.routers.product_actions_ai._llm_complete", side_effect=provider_response) as provider:
             first = self.batch_suggest_product_actions(
                 self.session_id,
                 self.ProductActionsBatchSuggestIn(options={"max_steps_per_chunk": 10}),
                 self._req(),
             )
-        with patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek", side_effect=provider_response) as provider_again:
+        with patch("app.routers.product_actions_ai._llm_complete", side_effect=provider_response) as provider_again:
             second = self.batch_suggest_product_actions(
                 self.session_id,
                 self.ProductActionsBatchSuggestIn(options={"max_steps_per_chunk": 10}),
@@ -298,9 +313,9 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_suggest_returns_candidates_without_mutation_and_logs_success(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={
-                "suggestions": [
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(
+                suggestions=[
                     {
                         "id": "ai_1",
                         "step_id": "step_2",
@@ -317,9 +332,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "confidence": 0.82,
                         "evidence_text": "Шаг: Упаковать сэндвич",
                     }
-                ],
-                "warnings": [],
-            },
+                ]
+            ),
         ) as provider:
             out = self.suggest_product_actions(
                 self.session_id,
@@ -355,7 +369,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             self.assertIn(key, suggestion)
         self.assertEqual(suggestion.get("duplicate_of"), "")
         self.assertEqual(suggestion.get("duplicate_reason"), "")
-        self.assertEqual(provider.call_args.kwargs.get("max_suggestions"), 5)
+        self.assertEqual(provider.call_args.kwargs.get("max_tokens"), 4000)
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.nodes, after.nodes)
         self.assertEqual(before.edges, after.edges)
@@ -371,9 +385,9 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_selected_step_suggest_filters_context_and_unrelated_rows_without_mutation(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={
-                "suggestions": [
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(
+                suggestions=[
                     {
                         "id": "ai_wrong",
                         "step_id": "step_1",
@@ -394,9 +408,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "action_object": "сэндвич",
                         "confidence": 0.9,
                     },
-                ],
-                "warnings": [],
-            },
+                ]
+            ),
         ) as provider:
             out = self.suggest_product_actions(
                 self.session_id,
@@ -412,7 +425,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             )
 
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
-        provider_context = provider.call_args.kwargs.get("context")
+        provider_context = provider.call_args.args[1]
         self.assertEqual([step.get("step_id") for step in provider_context.get("steps")], ["step_2"])
         self.assertEqual(provider_context.get("selected_step", {}).get("bpmn_element_id"), "Task_2")
         suggestions = out.get("suggestions") or []
@@ -426,9 +439,9 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
     def test_existing_product_actions_mark_duplicate_candidates(self):
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={
-                "suggestions": [
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(
+                suggestions=[
                     {
                         "id": "ai_dup",
                         "step_id": "step_1",
@@ -439,9 +452,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "action_object": "курица",
                         "confidence": 0.9,
                     }
-                ],
-                "warnings": [],
-            },
+                ]
+            ),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         row = (out.get("suggestions") or [])[0]
@@ -453,7 +465,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         with patch(
             "app.routers.product_actions_ai.check_ai_rate_limit",
             return_value={"allowed": False, "limit": 1, "window_sec": 3600, "reset_at": 123},
-        ), patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+        ), patch("app.routers.product_actions_ai._llm_complete") as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         self.assertFalse(out.get("ok"))
@@ -469,48 +481,93 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_missing_provider_key_returns_controlled_error_without_provider_call(self):
         os.environ.pop("DEEPSEEK_API_KEY", None)
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
-        with patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={"ok": False, "status": "no_provider", "error": "no enabled LLM providers"},
+        ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         self.assertFalse(out.get("ok"))
         self.assertEqual(out.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
-        provider.assert_not_called()
+        provider.assert_called_once()
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.bpmn_xml, after.bpmn_xml)
         logs = self._logs().get("items") or []
         self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_NOT_CONFIGURED")
 
-    def test_missing_active_prompt_returns_controlled_error_without_provider_call(self):
+    def test_gateway_no_provider_returns_ai_provider_not_configured(self):
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={"ok": False, "status": "no_provider", "error": "no enabled LLM providers"},
+        ) as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
+        provider.assert_called_once()
+
+    def test_gateway_ok_json_text_returns_suggestions(self):
+        text = json.dumps(
+            {
+                "suggestions": [
+                    {
+                        "id": "ai_gateway",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "product_name": "Сэндвич",
+                        "product_group": "Готовые блюда",
+                        "action_type": "упаковка",
+                        "action_object": "сэндвич",
+                        "confidence": 0.85,
+                    }
+                ],
+                "warnings": [],
+            },
+            ensure_ascii=False,
+        )
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(text=text),
+        ) as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 1)
+        self.assertEqual(out["suggestions"][0].get("product_name"), "Сэндвич")
+        provider.assert_called_once()
+
+    def test_missing_active_prompt_uses_gateway_prompt_and_succeeds(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         with patch("app.routers.product_actions_ai.seed_existing_ai_prompts", return_value={"ok": True}), patch(
             "app.routers.product_actions_ai.get_active_prompt",
             return_value=None,
-        ), patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+        ), patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(suggestions=[], warnings=[]),
+        ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
-        self.assertFalse(out.get("ok"))
-        self.assertEqual(out.get("error"), "AI_PROMPT_NOT_CONFIGURED")
-        provider.assert_not_called()
+        self.assertTrue(out.get("ok"))
+        provider.assert_called_once()
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.bpmn_xml, after.bpmn_xml)
-        logs = self._logs().get("items") or []
-        self.assertEqual(logs[0].get("error_code"), "AI_PROMPT_NOT_CONFIGURED")
 
-    def test_prompt_lookup_exception_returns_controlled_error_without_provider_call(self):
+    def test_prompt_lookup_exception_uses_gateway_prompt_and_succeeds(self):
         with patch(
             "app.routers.product_actions_ai.seed_existing_ai_prompts",
             side_effect=RuntimeError("prompt table unavailable"),
-        ), patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+        ), patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(suggestions=[], warnings=[]),
+        ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
-        self.assertFalse(out.get("ok"))
-        self.assertEqual(out.get("error"), "AI_PROMPT_NOT_CONFIGURED")
-        provider.assert_not_called()
-        logs = self._logs().get("items") or []
-        self.assertEqual(logs[0].get("error_code"), "AI_PROMPT_NOT_CONFIGURED")
+        self.assertTrue(out.get("ok"))
+        provider.assert_called_once()
 
     def test_execution_log_failure_does_not_turn_setup_error_into_500(self):
         os.environ.pop("DEEPSEEK_API_KEY", None)
-        with patch("app.routers.product_actions_ai.record_ai_execution", side_effect=RuntimeError("log table unavailable")):
+        with patch("app.routers.product_actions_ai.record_ai_execution", side_effect=RuntimeError("log table unavailable")), patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={"ok": False, "status": "no_provider", "error": "no provider"},
+        ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertFalse(out.get("ok"))
         self.assertEqual(out.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
@@ -519,7 +576,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
     def test_provider_failure_returns_controlled_error_without_secret(self):
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
+            "app.routers.product_actions_ai._llm_complete",
             side_effect=RuntimeError("provider denied SECRET_TEST_KEY"),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
@@ -533,8 +590,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_malformed_provider_json_returns_parse_error_without_mutation(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         with patch(
-            "app.ai.deepseek_questions._deepseek_chat_request",
-            return_value={"choices": [{"message": {"content": '{"suggestions":[{"product_name":"Сэндвич"}'}}]},
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(text='{"suggestions":[{"product_name":"Сэндвич"}'),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
@@ -555,8 +612,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 {"suggestions":[{"step_id":"step_2","bpmn_element_id":"Task_2","product_name":"Сэндвич","product_group":"Готовые блюда","action_type":"упаковка","action_object":"сэндвич","confidence":0.8,"evidence_text":"Упаковать сэндвич"}],"warnings":[]}
 ```"""
         with patch(
-            "app.ai.deepseek_questions._deepseek_chat_request",
-            return_value={"choices": [{"message": {"content": content}}]},
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(text=content),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
 
@@ -564,27 +621,24 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(len(out.get("suggestions") or []), 1)
         self.assertEqual((out.get("suggestions") or [{}])[0].get("product_name"), "Сэндвич")
 
-    def test_active_prompt_seed_is_used_and_fallback_kept(self):
+    def test_active_prompt_seed_is_used_and_version_returned(self):
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={"suggestions": [], "warnings": []},
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(suggestions=[], warnings=[]),
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
         self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v4")
-        prompt_template = str(provider.call_args.kwargs.get("prompt_template") or "")
-        self.assertIn("физические действия сотрудников", prompt_template)
-        self.assertIn("product_name", prompt_template)
-        self.assertIn("No markdown, no comments, no trailing commas", prompt_template)
+        self.assertEqual(out.get("prompt_version"), "1")
 
     def test_bulk_suggest_returns_per_session_results_without_mutation(self):
         second_session_id = self._seed_session()
         before_first = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         before_second = self.get_storage().load(second_session_id, org_id=self.org_id, is_admin=True)
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={
-                "suggestions": [
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(
+                suggestions=[
                     {
                         "id": "ai_bulk",
                         "step_id": "step_2",
@@ -595,9 +649,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "action_object": "сэндвич",
                         "confidence": 0.8,
                     }
-                ],
-                "warnings": [],
-            },
+                ]
+            ),
         ) as provider:
             out = self.suggest_product_actions_bulk(
                 self.ProductActionsBulkSuggestIn(
@@ -654,8 +707,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
     def test_parse_error_response_includes_diagnostics_block(self):
         with patch(
-            "app.ai.deepseek_questions._deepseek_chat_request",
-            return_value={"choices": [{"message": {"content": '{"suggestions":[{"product_name":"X"}'}}]},
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(text='{"suggestions":[{"product_name":"X"}'),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertFalse(out.get("ok"))
@@ -672,8 +725,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_parse_error_diagnostics_response_excerpt_sanitized(self):
         poisoned_content = f'{{"suggestions":[{{"product_name":"X"}}, SECRET_TEST_KEY_IN_BODY'
         with patch(
-            "app.ai.deepseek_questions._deepseek_chat_request",
-            return_value={"choices": [{"message": {"content": poisoned_content}}]},
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(text=poisoned_content),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertFalse(out.get("ok"))
@@ -683,9 +736,9 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
     def test_success_response_has_no_diagnostics_block(self):
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={
-                "suggestions": [
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(
+                suggestions=[
                     {
                         "id": "ai_ok",
                         "step_id": "step_2",
@@ -696,9 +749,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
                         "action_object": "сэндвич",
                         "confidence": 0.9,
                     }
-                ],
-                "warnings": [],
-            },
+                ]
+            ),
         ):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
@@ -727,8 +779,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             for i in range(10)
         ]
         with patch(
-            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
-            return_value={"suggestions": ten_suggestions, "warnings": []},
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=_gateway_ok(suggestions=ten_suggestions),
         ):
             out = self.suggest_product_actions(
                 self.session_id,

@@ -386,3 +386,29 @@ def test_prompt_rollback_service(sandbox):
     restored = llm_store.activate_prompt(target["id"])
     assert restored["version"] == 1 and restored["status"] == "active"
     assert llm_store.get_prompt(v2["id"])["status"] == "archive"
+
+
+def test_effective_providers_with_key_prefers_org_then_org_default(sandbox):
+    """llm_store.effective_providers_with_key: org-провайдер > org_default fallback > пусто."""
+    org = sandbox["org_id"]
+    # org_default provider
+    llm_store.create_provider(org_id="org_default", name="default-p", base_url="https://d", model="m-d",
+                              api_key="key-d", priority=10)
+    # org-specific provider
+    llm_store.create_provider(org_id=org, name="own-p", base_url="https://o", model="m-o",
+                              api_key="key-o", priority=20)
+
+    own = llm_store.effective_providers_with_key(org)
+    assert len(own) == 1 and own[0]["name"] == "own-p"
+    assert own[0]["api_key"] == "key-o"
+
+    # org без своих провайдеров получает org_default
+    other_org = f"{org}_other"
+    fallback = llm_store.effective_providers_with_key(other_org)
+    assert len(fallback) == 1 and fallback[0]["name"] == "default-p"
+
+    # org_default без провайдеров — пусто
+    no_provider_org = f"{org}_empty"
+    llm_store.delete_provider(own[0]["id"])
+    llm_store.delete_provider(fallback[0]["id"])
+    assert llm_store.effective_providers_with_key(no_provider_org) == []
