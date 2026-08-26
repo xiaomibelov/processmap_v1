@@ -128,6 +128,12 @@ class ProductActionsSuggestV2Tests(unittest.TestCase):
         self.assertEqual(result.get("product_group"), "")
         self.assertEqual(result.get("missing_fields"), [])
 
+    def test_v4_prompt_requires_action_text(self):
+        from app.ai.product_actions_suggest import PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4
+
+        self.assertIn("action_text", PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4)
+        self.assertIn("глагольная формулировка", PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

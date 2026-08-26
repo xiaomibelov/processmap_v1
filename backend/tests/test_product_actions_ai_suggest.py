@@ -587,6 +587,26 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_ERROR")
         self.assertNotIn("SECRET_TEST_KEY", str(logs[0]))
 
+    def test_gateway_provider_error_includes_provider_diagnostics(self):
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={
+                "ok": False,
+                "status": "error",
+                "error": "all providers failed",
+                "provider_id": "llmprov_vvproxy",
+                "model": "claude-opus-4-6",
+            },
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_ERROR")
+        diagnostics = out.get("diagnostics") or {}
+        self.assertEqual(diagnostics.get("provider_id"), "llmprov_vvproxy")
+        self.assertEqual(diagnostics.get("model"), "claude-opus-4-6")
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_ERROR")
+
     def test_malformed_provider_json_returns_parse_error_without_mutation(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         with patch(
