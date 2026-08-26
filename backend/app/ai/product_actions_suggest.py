@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from . import deepseek_questions as _dq
@@ -8,6 +9,152 @@ from . import deepseek_questions as _dq
 
 class ProductActionsAiResponseParseError(ValueError):
     """Raised when the provider returned text that cannot be parsed as suggestions JSON."""
+
+
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences and optional language tag."""
+    t = str(text or "").strip()
+    # Strip opening fence with optional language
+    t = re.sub(r"^```[a-zA-Z0-9_+-]*\s*\n?", "", t, flags=re.IGNORECASE)
+    # Strip closing fence
+    t = re.sub(r"\n?\s*```\s*$", "", t)
+    return t.strip()
+
+
+def _extract_first_json_block(text: str) -> Optional[str]:
+    """Find the first {...} or [...] block that is valid JSON.
+
+    Handles explanatory text before/after JSON and nested braces.
+    """
+    t = _strip_fences(text)
+    if not t:
+        return None
+
+    # Fast path: whole text is already valid JSON.
+    try:
+        json.loads(t)
+        return t
+    except Exception:
+        pass
+
+    # Scan for the first balanced JSON block.
+    for match in re.finditer(r"(\{|\[)", t):
+        start = match.start()
+        stack = []
+        in_string = False
+        escaped = False
+        for i in range(start, len(t)):
+            ch = t[i]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+                continue
+            if ch in {"{", "["}:
+                stack.append(ch)
+            elif ch == "}" and stack and stack[-1] == "{":
+                stack.pop()
+            elif ch == "]" and stack and stack[-1] == "[":
+                stack.pop()
+            if not stack:
+                candidate = t[start : i + 1]
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except Exception:
+                    break
+        # If we exit with non-empty stack, the block is truncated; try to repair below.
+    return None
+
+
+def _repair_truncated_json(text: str) -> Optional[str]:
+    """Try to extract the largest valid JSON prefix from a truncated object/array.
+
+    Useful when response was cut off by max_tokens mid-object.
+    """
+    t = _strip_fences(text)
+    if not t:
+        return None
+
+    # Find the outermost opening brace/bracket.
+    start = -1
+    for i, ch in enumerate(t):
+        if ch in {"{", "["}:
+            start = i
+            break
+    if start < 0:
+        return None
+
+    open_char = t[start]
+    close_char = "}" if open_char == "{" else "]"
+
+    # Try progressively shorter suffixes to find a valid prefix.
+    for cut in range(len(t), start, -1):
+        candidate = t[start:cut]
+        # Balance check: count unescaped braces/brackets.
+        stack = []
+        in_string = False
+        escaped = False
+        balanced = True
+        for ch in candidate:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+                continue
+            if ch in {"{", "["}:
+                stack.append(ch)
+            elif ch in {"}", "]"}:
+                if not stack:
+                    balanced = False
+                    break
+                top = stack[-1]
+                if (ch == "}" and top != "{") or (ch == "]" and top != "["):
+                    balanced = False
+                    break
+                stack.pop()
+        if not balanced or stack:
+            continue
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            continue
+    return None
+
+
+def _extract_json_candidate_robust(text: str) -> Optional[str]:
+    """Tolerant JSON extraction for LLM responses.
+
+    Order:
+    1. Strip markdown fences and parse whole text.
+    2. Find first valid JSON block inside explanatory text.
+    3. Try to repair a truncated JSON object/array.
+    """
+    # First try the existing shared helper to keep behaviour for clean responses.
+    candidate = _dq._extract_json_candidate(text)
+    if candidate:
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            pass
+    candidate = _extract_first_json_block(text)
+    if candidate:
+        return candidate
+    return _repair_truncated_json(text)
 
 
 PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE = """Ты помогаешь заполнить реестр действий с продуктом для пищевого процесса.
@@ -189,10 +336,10 @@ def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Di
     Raises ProductActionsAiResponseParseError with raw_content set on failure.
     """
     content = str(text or "")
-    cand = _dq._extract_json_candidate(content)
+    cand = _extract_json_candidate_robust(content)
     if not cand:
         parse_exc = ProductActionsAiResponseParseError("no valid json object in response")
-        parse_exc.raw_content = content[:500]
+        parse_exc.raw_content = content[:1000]
         raise parse_exc
     try:
         raw = json.loads(cand)
@@ -200,7 +347,7 @@ def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Di
         parse_exc = ProductActionsAiResponseParseError(
             f"invalid json response: {exc.msg} at line {exc.lineno} column {exc.colno}"
         )
-        parse_exc.raw_content = str(cand or "")[:500]
+        parse_exc.raw_content = str(cand or "")[:1000]
         raise parse_exc from exc
     return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)
 
