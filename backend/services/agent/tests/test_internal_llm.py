@@ -119,3 +119,21 @@ def test_complete_error_status_passthrough(client):
         r = client.post("/internal/llm/complete", headers=_headers(), json={"feature": "f"})
     assert r.status_code == 200, r.text  # честный статус наружу, НЕ 500
     assert r.json() == err
+
+
+def test_complete_propagates_json_mode_and_prompt_override(client):
+    """Монолитный llm_internal_client шлёт json_mode и prompt_override в agent-сервис."""
+    with mock.patch("gateway.gateway.complete", return_value=dict(_GW_RESULT)) as comp:
+        r = client.post(
+            "/internal/llm/complete",
+            headers=_headers(),
+            json={
+                "feature": "product_actions_suggest",
+                "payload": {"steps": []},
+                "json_mode": True,
+                "prompt_override": {"template": "return only json: {input}"},
+            },
+        )
+    assert r.status_code == 200, r.text
+    assert comp.call_args.kwargs["json_mode"] is True
+    assert comp.call_args.kwargs["prompt_override"] == {"template": "return only json: {input}"}

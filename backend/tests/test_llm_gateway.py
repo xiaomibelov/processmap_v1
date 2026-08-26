@@ -181,6 +181,50 @@ def test_json_mode_passes_response_format(sandbox):
     assert captured.get("response_format") == {"type": "json_object"}
 
 
+def test_json_mode_disabled_for_provider_without_capability(sandbox):
+    """Провайдер с capabilities={'supports_json_mode': false} не получает response_format."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(
+        org_id=org, name="p-no-json", base_url="https://a", model="m1",
+        api_key="key-a", priority=10,
+        capabilities={"supports_json_mode": False},
+    )
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.update(kwargs)
+        return _llm_response()
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org, json_mode=True)
+
+    assert result["ok"] is True
+    assert captured.get("response_format") is None
+    assert result.get("json_mode_used") is False
+
+
+def test_json_mode_used_returned_when_supported(sandbox):
+    """Провайдер с явным supports_json_mode=true возвращает json_mode_used=True."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(
+        org_id=org, name="p-json", base_url="https://a", model="m1",
+        api_key="key-a", priority=10,
+        capabilities={"supports_json_mode": True},
+    )
+    captured = {}
+
+    def _fake(**kwargs):
+        captured.update(kwargs)
+        return _llm_response()
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {"x": 1}, org_id=org, json_mode=True)
+
+    assert result["ok"] is True
+    assert captured.get("response_format") == {"type": "json_object"}
+    assert result.get("json_mode_used") is True
+
+
 # ------------------------------------------------------- реестр моделей (016)
 
 def test_registry_default_model_wins_over_provider_model(sandbox):

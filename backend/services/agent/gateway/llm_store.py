@@ -16,6 +16,7 @@ resolve_model: TTL-кэш 60 секунд in-process (решение владе�
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -37,6 +38,33 @@ def _row(cur: Any) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------- providers
+
+_CAPABILITIES_DEFAULT = {"supports_json_mode": True}
+
+
+def _parse_capabilities(raw: Any) -> Dict[str, Any]:
+    """Parse provider capabilities JSON; default enables json_mode for backward compat."""
+    if isinstance(raw, dict):
+        return dict(_CAPABILITIES_DEFAULT, **raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return dict(_CAPABILITIES_DEFAULT, **parsed)
+        except Exception:
+            pass
+    return dict(_CAPABILITIES_DEFAULT)
+
+
+def provider_capabilities(provider: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return parsed capabilities dict for a provider row (defaults to json_mode=True)."""
+    return _parse_capabilities(provider.get("capabilities") if provider else None)
+
+
+def provider_supports_json_mode(provider: Optional[Dict[str, Any]]) -> bool:
+    """Check whether provider supports OpenAI-style response_format=json_object."""
+    return bool(provider_capabilities(provider).get("supports_json_mode"))
+
 
 def list_providers(org_id: str = "org_default") -> List[Dict[str, Any]]:
     with get_conn() as con:

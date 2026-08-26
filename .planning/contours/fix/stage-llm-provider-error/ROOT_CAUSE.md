@@ -242,3 +242,91 @@
 - [ ] Execution log /admin/llm для suggest показывает `provider_id`, `model`, `parsed_count`, `kept_count`.
 - [ ] processman отвечает содержательно; SSE-ошибка (если есть) содержит `provider_id`/`model`.
 - [ ] В /admin/llm «Модули» проверить, к какому провайдеру/модели привязаны `product_actions_suggest` и `processman_agent`; при необходимости переставить приоритеты.
+
+---
+
+# ROOT_CAUSE — итерация 4: fix/stage-json-mode-provider-capability
+
+## Точка старта
+
+- База: `origin/main` `03f50449` (PR #838, включает итерации 1–3: failover, tolerant parser, обёртки, инструментирование, agent-сервис /version).
+- Ветка: `fix/stage-json-mode-provider-capability` от `03f50449`.
+- Симптомы 26.08:
+  - ~19:38, сессия «ВЫВЫВ» (Rev. 97 / V.2, билд stage 16:27:04): `suggest` → `AI_RESPONSE_PARSE_ERROR`.
+  - ~18:11, сессия «еkеkе` (e9dd18bcbe, билд 14:27:07): `suggest` → HTTP 200 за 47,5 с, ответ «LLM не предложил действий» (пустой список, без parse error).
+
+## Рабочая гипотеза (подтверждена unit-тестами; execution log stage недоступен)
+
+| Провайдер | `json_mode` | Режим отказа | Почему |
+|-----------|-------------|--------------|--------|
+| VVPROXY (`claude-opus-4-6`) | не поддерживает | `AI_RESPONSE_PARSE_ERROR` | Модель возвращает prose / markdown / JSON с мусором вопреки инструкции. |
+| deepseek-main | поддерживает | пустой список suggestions | `response_format: json_object` заставляет вернуть валидный JSON, но сам список может быть пустым из-за промпта/контекста. |
+
+**Ограничение:** реальные stage-execution log и `/admin/llm` недоступны локально (нет SSH). Матрица выведена из кода и unit-тестов. Если после мержа данные опровергнут гипотезу — пересмотреть по фактам.
+
+## Дефекты
+
+### D5. Provider-dependent json_mode (главный дефект)
+
+**Кодовый путь:**
+- `backend/app/ai/gateway.py::complete()` передавал `response_format={"type":"json_object"}` всегда, когда caller запрашивал `json_mode=True`.
+- VVPROXY роутер (`vvchat`) и модель `claude-opus-4-6` не поддерживают OpenAI-style `response_format`; ответ приходит в prose/markdown → `AI_RESPONSE_PARSE_ERROR`.
+- Для deepseek-main `json_mode=True` работает, но пустой список не лечится.
+
+**Root cause:** шлюз не учитывал per-provider capability `supports_json_mode`. Провайдерам без поддержки передавался параметр, который они не понимают, и caller не имел запасного механизма recovery.
+
+**Фикс:**
+1. Миграция `backend/alembic/versions/031_llm_provider_capabilities.py` добавляет `llm_providers.capabilities TEXT NOT NULL DEFAULT '{}'`.
+2. `backend/app/ai/llm_store.py`:
+   - `_parse_capabilities`, `provider_capabilities`, `provider_supports_json_mode`.
+   - Default `supports_json_mode: true` для обратной совместимости.
+   - `create_provider` / `update_provider` принимают `capabilities`.
+   - `mask_provider` отдаёт capabilities в API.
+3. `backend/app/ai/gateway.py`:
+   - `json_mode_used = json_mode and provider_supports_json_mode(provider)`.
+   - `response_format` передаётся только при `json_mode_used=True`.
+   - Возвращает `json_mode_used` в результате.
+   - `prompt_override` позволяет caller подменить system/template/max_tokens.
+4. `backend/services/agent/gateway/gateway.py` и `llm_store.py` синхронизированы с монолитом (capability-aware json_mode, prompt_override, json_mode_used).
+5. `backend/app/ai/llm_internal_client.py` и `backend/services/agent/routers/internal_llm.py` пробрасывают `json_mode` и `prompt_override` в agent-сервис.
+
+### D4 (продолжение). Пустой список (deepseek-ветка)
+
+**Статус:** итерация 3 устранила потерю предложений в JSON-обёртках (`actions/items/results/data`) и добавила инструментирование. На stage пустой результат для сессии `еkеkе` мог остаться, если:
+- LLM осмысленно вернул пустой массив (промпт/контекст);
+- или suggestions были отбракованы фильтром/валидацией.
+
+**Действия в итерации 4:**
+- Инструментирование (`steps_sent`, `parsed_count`, `kept_count`) уже позволяет отличить «нет шагов» (`AI_SUGGEST_NO_STEPS`), «LLM вернул пусто» (`AI_SUGGEST_LLM_EMPTY`) и «все отбракованы» (`AI_SUGGEST_ALL_INVALID`).
+- Для non-json_mode провайдеров добавлен repair-retry (см. D5), который устраняет parse error, но не гарантирует непустой список.
+- Если после мержа deepseek-ветка всё ещё пуста — нужен сырой ответ из execution log для правки промпта; кодовых изменений без данных не делаем.
+
+### D2 (контроль). processman
+
+**Статус:** agent-сервис синхронизирован с монолитом по capability-aware json_mode. Если на stage processman всё ещё падает, причины те же:
+- stale-образ (проверить `/agent/version`);
+- провайдер processman_agent прибит к VVPROXY `claude-opus-4-6`;
+- длинный контекст / таймаут.
+
+**Фикс:** передача `json_mode_used` и `prompt_override` через agent-сервис означает, что настройка capability в `/admin/llm` будет работать и для processman.
+
+## Образец сырого ответа при parse-failure
+
+См. `evidence/raw_response_parse_error_sample.md`. Реальный stage-raw недоступен; приложен репрезентативный unit-тестовый образец prose-ответа с повреждённым JSON.
+
+## Фикс (итерация 4)
+
+- Capability-aware `json_mode`:
+  - `llm_providers.capabilities` (миграция + CRUD + admin API).
+  - `supports_json_mode` определяет, передаётся ли `response_format: json_object`.
+- Repair-retry для non-json_mode провайдеров:
+  - `backend/app/routers/product_actions_ai.py::_call_product_actions_llm` при `ProductActionsAiResponseParseError` и `json_mode_used=False` делает один вызов с `prompt_override={"template": PRODUCT_ACTIONS_SUGGEST_REPAIR_PROMPT_TEMPLATE}`.
+  - Если repair-тоже не разобрался — `AI_RESPONSE_PARSE_ERROR` с `raw_content` первого ответа в диагностике.
+- Агент-сервис: `json_mode` и `prompt_override` прокинуты через internal LLM API.
+
+## Что остаётся проверить на stage (после мержа пользователем)
+
+- [ ] Execution log /admin/llm: подтвердить/опровергнуть матрицу «VVPROXY → parse error, deepseek → пусто».
+- [ ] suggest на сессиях «ВЫВЫВ» и «еkеkе» возвращает непустой список с `action_text` и 4 тегами (скрин + provider/model).
+- [ ] processman отвечает содержательно; SSE-ошибка (если есть) содержит `provider_id`/`model`.
+- [ ] В /admin/llm для org `8b89c83ea810` проверить capability `supports_json_mode` для VVPROXY (должен быть `false`) и приоритеты провайдеров.
