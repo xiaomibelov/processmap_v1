@@ -24,6 +24,8 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
+import requests
+
 from ..redis_cache import cache_get_json, cache_set_json
 from . import llm_store
 from .deepseek_questions import _deepseek_chat_request
@@ -156,9 +158,11 @@ def complete(
                 timeout=timeout_sec,
                 max_tokens=effective_max_tokens,
                 max_attempts=_GATEWAY_MAX_ATTEMPTS,
+                retry_on_timeout=False,
                 model=resolved_model,
             )
         except Exception as exc:  # фолбэк на следующего провайдера
+            is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
             last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
             llm_store.record_usage(
                 org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
@@ -166,6 +170,12 @@ def complete(
                 user_id=user_id, project_id=project_id, session_id=session_id,
                 latency_ms=int((time.monotonic() - started) * 1000), status="error",
             )
+            if is_timeout:
+                # Таймаут/обрыв соединения — сразу failover на следующего провайдера,
+                # не тратим время на retry одного и того же медленного/недоступного upstream.
+                continue
+            # Для retryable HTTP-ошибок (5xx, 429) retry уже отработал внутри _deepseek_chat_request;
+            # если и он не помог — переходим к следующему провайдеру.
             continue
         text = ""
         try:
@@ -186,7 +196,12 @@ def complete(
         )
 
 
-    return _finish("error", error=last_error or "all providers failed")
+    return _finish(
+        "error",
+        error=last_error or "all providers failed",
+        provider_id=str((chain[-1] if chain else {}).get("id") or ""),
+        model=str((chain[-1] if chain else {}).get("model") or ""),
+    )
 
 
 def llm_cache_key(feature: str, digest: str) -> str:

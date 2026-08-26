@@ -42,6 +42,10 @@ class _ProductActionsLLMRateLimitError(Exception):
 class _ProductActionsLLMProviderError(Exception):
     """Gateway provider call failed."""
 
+    def __init__(self, message: str, result: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.result = result or {}
+
 
 def _llm_complete(feature: str, payload: Any, **kwargs: Any) -> Dict[str, Any]:
     """Route LLM call through agent-service when LLM_VIA_AGENT_SVC is enabled."""
@@ -83,7 +87,7 @@ def _call_product_actions_llm(
         raise _ProductActionsLLMNoProviderError(str(result.get("error") or "no enabled LLM providers"))
     if status == "rate_limited":
         raise _ProductActionsLLMRateLimitError(str(result.get("error") or "rate limited"))
-    raise _ProductActionsLLMProviderError(str(result.get("error") or "provider error"))
+    raise _ProductActionsLLMProviderError(str(result.get("error") or "provider error"), result=result)
 
 
 _CONTROLLED_ERROR_MESSAGES = {
@@ -862,8 +866,20 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         )
     except _ProductActionsLLMProviderError as exc:
         message = str(exc) or "AI_PROVIDER_ERROR"
+        provider_id = _text(getattr(exc, "result", {}).get("provider_id"))
+        model_name = _text(getattr(exc, "result", {}).get("model"))
+        diagnostics = {}
+        if provider_id:
+            diagnostics["provider_id"] = provider_id
+        if model_name:
+            diagnostics["model"] = model_name
         return _finish(
-            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message=message),
+            _controlled_error(
+                "AI_PROVIDER_ERROR",
+                input_hash=input_hash,
+                message=message,
+                diagnostics=diagnostics if diagnostics else None,
+            ),
             status="error",
             output_summary="product actions suggestion failed",
             error_code="AI_PROVIDER_ERROR",

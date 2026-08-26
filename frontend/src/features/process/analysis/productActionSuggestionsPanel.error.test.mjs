@@ -95,6 +95,15 @@ function mockFetchReturningProviderError() {
   });
 }
 
+function mockFetchReturning(code) {
+  return async () => ({
+    ok: false,
+    status: 503,
+    headers: { get: () => "application/json" },
+    json: async () => ({ ok: false, error: code, message: code }),
+  });
+}
+
 test("ProductActionSuggestionsPanel shows human-readable error and hides empty state when provider is not configured", async () => {
   const { ProductActionSuggestionsPanel } = await loadModules();
   const { root, cleanup, container } = setupDom();
@@ -127,3 +136,34 @@ test("ProductActionSuggestionsPanel shows human-readable error and hides empty s
     await cleanup();
   }
 });
+
+for (const errorCode of ["AI_PROVIDER_ERROR", "AI_RESPONSE_PARSE_ERROR", "AI_RATE_LIMIT_EXCEEDED"]) {
+  test(`ProductActionSuggestionsPanel maps ${errorCode} to human-readable message`, async () => {
+    const { ProductActionSuggestionsPanel } = await loadModules();
+    const { root, cleanup, container } = setupDom();
+    globalThis.fetch = mockFetchReturning(errorCode);
+
+    try {
+      await act(async () => {
+        root.render(
+          React.createElement(ProductActionSuggestionsPanel, {
+            sessionId: "s1",
+            baseDiagramStateVersion: 7,
+            steps: [],
+          })
+        );
+      });
+      await flush(200);
+
+      const errorBlock = container.querySelector('[data-testid="product-actions-error"]');
+      const errorBlockText = errorBlock ? errorBlock.textContent : "";
+      const codeBlock = container.querySelector('[data-testid="product-actions-error-code"]');
+
+      assert.doesNotMatch(errorBlockText, new RegExp(errorCode), `Raw ${errorCode} must not be in main error block: ${errorBlockText.slice(0, 400)}`);
+      assert.ok(codeBlock, "Technical error code block must be rendered");
+      assert.ok(codeBlock.textContent.includes(errorCode), "Technical code block must contain the original code");
+    } finally {
+      await cleanup();
+    }
+  });
+}
