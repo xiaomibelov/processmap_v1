@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -184,6 +185,54 @@ class ProductActionsSuggestV2Tests(unittest.TestCase):
             parse_product_actions_suggestions("Это просто текст без JSON.")
         self.assertTrue(hasattr(ctx.exception, "raw_content"))
         self.assertIn("без JSON", str(ctx.exception.raw_content))
+
+    def test_parse_actions_wrapper_response(self):
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        raw = json.dumps(
+            {
+                "actions": [
+                    {
+                        "action_text": "Перелить суп",
+                        "action_type": "перетаривание",
+                        "action_stage": "до разогрева",
+                        "action_object": "суп",
+                        "action_method": "перелить",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_text"], "Перелить суп")
+
+    def test_parse_items_wrapper_response(self):
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        raw = json.dumps(
+            {
+                "items": [
+                    {
+                        "action_text": "Нарезать курицу",
+                        "action_type": "нарезка",
+                        "action_stage": "подготовка",
+                        "action_object": "курица",
+                        "action_method": "ножом",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_object"], "курица")
+
+    def test_parse_empty_array_response(self):
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        result = parse_product_actions_suggestions('{"suggestions": []}')
+        self.assertEqual(result["suggestions"], [])
 
 
 if __name__ == "__main__":
