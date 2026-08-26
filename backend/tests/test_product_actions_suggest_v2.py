@@ -134,6 +134,57 @@ class ProductActionsSuggestV2Tests(unittest.TestCase):
         self.assertIn("action_text", PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4)
         self.assertIn("глагольная формулировка", PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4.lower())
 
+    def test_parse_markdown_fenced_response(self):
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        raw = (
+            "Вот результат:\n\n"
+            "```json\n"
+            '{"suggestions":[{"action_text":"Перелить суп","action_type":"перетаривание",'
+            '"action_stage":"до разогрева","action_object":"суп","action_method":"перелить"}]}'
+            "\n```\n\nНадеюсь, это поможет."
+        )
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_text"], "Перелить суп")
+
+    def test_parse_text_around_json_response(self):
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        raw = (
+            "Конечно, вот JSON:\n"
+            '{"suggestions":[{"action_text":"Нарезать курицу","action_type":"нарезка",'
+            '"action_stage":"подготовка","action_object":"курица","action_method":"ножом"}]}'
+            "\nЕсли нужно что-то ещё, дайте знать."
+        )
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_object"], "курица")
+
+    def test_parse_truncated_response_repairs_valid_prefix(self):
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        # Simulate max_tokens cut-off mid-object.
+        raw = (
+            '{"suggestions":[{"action_text":"Перелить суп","action_type":"перетаривание",'
+            '"action_stage":"до разогрева","action_object":"суп","action_method":"перелить"}],'
+            '"warnings":[]'
+        )
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_method"], "перелить")
+
+    def test_parse_invalid_json_raises_with_raw_content(self):
+        from app.ai.product_actions_suggest import (
+            ProductActionsAiResponseParseError,
+            parse_product_actions_suggestions,
+        )
+
+        with self.assertRaises(ProductActionsAiResponseParseError) as ctx:
+            parse_product_actions_suggestions("Это просто текст без JSON.")
+        self.assertTrue(hasattr(ctx.exception, "raw_content"))
+        self.assertIn("без JSON", str(ctx.exception.raw_content))
+
 
 if __name__ == "__main__":
     unittest.main()

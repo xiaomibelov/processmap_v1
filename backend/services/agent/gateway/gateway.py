@@ -26,6 +26,8 @@ import os
 import time
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
+import requests
+
 from . import llm_store
 from .llm_http_client import _deepseek_chat_request, _deepseek_chat_request_stream
 from .redis_cache import cache_get_json, cache_set_json
@@ -96,6 +98,7 @@ def complete(
     org_id: str = "org_default",
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    json_mode: bool = False,
 ) -> Dict[str, Any]:
     """Вызов LLM через фолбэк-цепочку провайдеров. Никогда не бросает исключений."""
     started = time.monotonic()
@@ -158,9 +161,12 @@ def complete(
                 timeout=timeout_sec,
                 max_tokens=effective_max_tokens,
                 max_attempts=_GATEWAY_MAX_ATTEMPTS,
+                retry_on_timeout=False,
                 model=resolved_model,
+                response_format={"type": "json_object"} if json_mode else None,
             )
         except Exception as exc:  # фолбэк на следующего провайдера
+            is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
             last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
             llm_store.record_usage(
                 org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
@@ -168,6 +174,12 @@ def complete(
                 user_id=user_id, project_id=project_id, session_id=session_id,
                 latency_ms=int((time.monotonic() - started) * 1000), status="error",
             )
+            if is_timeout:
+                # Fast failover on timeout/connection loss: don't waste time
+                # retrying the same slow/unreachable upstream.
+                continue
+            # For retryable HTTP errors (5xx, 429) retry already happened inside
+            # _deepseek_chat_request; if it still fails, move to next provider.
             continue
         text = ""
         try:
@@ -256,6 +268,7 @@ def complete_stream(
     org_id: str = "org_default",
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+    json_mode: bool = False,
 ) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
     """Streaming LLM call through the fallback chain.
 
@@ -335,7 +348,9 @@ def complete_stream(
                 timeout=timeout_sec,
                 max_tokens=effective_max_tokens,
                 max_attempts=_GATEWAY_MAX_ATTEMPTS,
+                retry_on_timeout=False,
                 model=resolved_model,
+                response_format={"type": "json_object"} if json_mode else None,
             ):
                 if not isinstance(chunk, dict):
                     continue
@@ -381,6 +396,7 @@ def complete_stream(
             )
             return
         except Exception as exc:
+            is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
             last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
             llm_store.record_usage(
                 org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
@@ -388,6 +404,9 @@ def complete_stream(
                 user_id=user_id, project_id=project_id, session_id=session_id,
                 latency_ms=int((time.monotonic() - started) * 1000), status="error",
             )
+            if is_timeout:
+                # Fast failover on timeout/connection loss for streaming too.
+                continue
             continue
 
     yield ("error", _record("error", error=last_error or "all providers failed"))

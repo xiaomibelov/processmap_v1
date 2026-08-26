@@ -46,6 +46,7 @@ def _deepseek_chat_request(
     retry_backoff_sec: float = 0.8,
     retry_on_timeout: bool = True,
     model: str = "deepseek-chat",
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload = {
         "model": str(model or "deepseek-chat"),
@@ -55,6 +56,8 @@ def _deepseek_chat_request(
     mt = int(max_tokens or 0)
     if mt > 0:
         payload["max_tokens"] = mt
+    if response_format:
+        payload["response_format"] = response_format
     url = f"{base_url}/v1/chat/completions"
     attempts = max(1, int(max_attempts or 1))
     backoff = max(0.0, float(retry_backoff_sec or 0.0))
