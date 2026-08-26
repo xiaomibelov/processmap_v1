@@ -44,6 +44,7 @@ def _deepseek_chat_request(
     max_tokens: Optional[int] = None,
     max_attempts: int = 3,
     retry_backoff_sec: float = 0.8,
+    retry_on_timeout: bool = True,
     model: str = "deepseek-chat",
 ) -> Dict[str, Any]:
     payload = {
@@ -81,6 +82,9 @@ def _deepseek_chat_request(
             raise ValueError("invalid_json_root")
         except Exception as exc:
             last_exc = exc
+            is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
+            if is_timeout and not retry_on_timeout:
+                raise
             if attempt >= attempts or not _is_retryable_deepseek_error(exc):
                 raise
             sleep_for = backoff * attempt

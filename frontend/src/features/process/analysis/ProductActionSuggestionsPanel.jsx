@@ -17,6 +17,9 @@ const defaultT = createT("ru");
 
 const KNOWN_ERROR_CODES = [
   "AI_PROVIDER_NOT_CONFIGURED",
+  "AI_PROVIDER_ERROR",
+  "AI_RESPONSE_PARSE_ERROR",
+  "AI_RATE_LIMIT_EXCEEDED",
   "missing_api_key",
   "provider_error",
   "ai_rate_limit_exceeded",
@@ -35,6 +38,9 @@ function formatErrorMessage(error, t) {
   if (!code) return error;
   const map = {
     AI_PROVIDER_NOT_CONFIGURED: t("processAnalysis.ai.providerNotConfigured"),
+    AI_PROVIDER_ERROR: t("processAnalysis.ai.providerError"),
+    AI_RESPONSE_PARSE_ERROR: t("processAnalysis.ai.parseError"),
+    AI_RATE_LIMIT_EXCEEDED: t("processAnalysis.ai.rateLimit"),
     missing_api_key: t("processAnalysis.ai.missingApiKey"),
     provider_error: t("processAnalysis.ai.providerError"),
     ai_rate_limit_exceeded: t("processAnalysis.ai.rateLimit"),
