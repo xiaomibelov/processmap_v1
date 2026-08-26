@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import path from "node:path";
 import fs from "node:fs";
+import { createContourApiMiddleware } from "./src/server/api.mjs";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 
@@ -57,6 +58,7 @@ export default defineConfig({
   },
   server: {
     port: 5717,
+    host: "0.0.0.0",
     middlewareMode: false,
   },
   envPrefix: "AGENT_",
@@ -69,6 +71,16 @@ export default defineConfig({
         server.middlewares.stack.unshift({
           route: "",
           handle: agentsEventLogMiddleware(),
+        });
+      },
+    },
+    {
+      name: "contour-api",
+      configureServer(server) {
+        // API for scanning real contour directories and reading artifacts.
+        server.middlewares.stack.unshift({
+          route: "",
+          handle: createContourApiMiddleware(REPO_ROOT),
         });
       },
     },
