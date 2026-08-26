@@ -25,7 +25,7 @@ FEATURE = "product_actions_suggest"
 _ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/suggest"
 _BATCH_ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/batch-suggest"
 _BULK_ENDPOINT = "POST /api/analysis/product-actions/suggest-bulk"
-_REQUIRED_FIELDS = ("product_name", "product_group", "action_type", "action_object")
+_REQUIRED_FIELDS = ("action_text", "action_type", "action_stage", "action_object", "action_method")
 _BULK_SESSION_CAP = 10
 _BATCH_DEFAULT_STEPS_PER_CHUNK = 10
 _BATCH_MAX_STEPS_PER_CHUNK = 20
@@ -265,6 +265,7 @@ def _existing_product_actions(interview_raw: Any) -> List[Dict[str, Any]]:
                 "step_id": _text(action.get("step_id") or action.get("stepId")),
                 "bpmn_element_id": _text(action.get("bpmn_element_id") or action.get("node_id") or action.get("bpmnElementId")),
                 "step_label": _text(action.get("step_label") or action.get("stepLabel")),
+                "action_text": _text(action.get("action_text") or action.get("actionText")),
                 "product_name": _text(action.get("product_name") or action.get("productName")),
                 "product_group": _text(action.get("product_group") or action.get("productGroup")),
                 "action_type": _text(action.get("action_type") or action.get("actionType")),
@@ -303,8 +304,7 @@ def _fallback_steps_from_nodes(session: Session) -> List[Dict[str, Any]]:
 def _suggestion_key(row: Dict[str, Any]) -> str:
     parts = [
         _text(row.get("step_id") or row.get("bpmn_element_id")).lower(),
-        _text(row.get("product_name")).lower(),
-        _text(row.get("product_group")).lower(),
+        _text(row.get("action_text")).lower(),
         _text(row.get("action_type")).lower(),
         _text(row.get("action_object")).lower(),
     ]
@@ -1111,9 +1111,13 @@ def batch_suggest_product_actions(session_id: str, inp: ProductActionsBatchSugge
                     next_row["source"] = _text(next_row.get("source")) or "ai_suggested"
                     next_row["created_at"] = int(time.time())
                     if not _text(next_row.get("action_title")):
-                        obj = _text(next_row.get("action_object") or next_row.get("product_name"))
-                        action_type = _text(next_row.get("action_type"))
-                        next_row["action_title"] = " ".join(part for part in (action_type, obj) if part) or _text(step.get("label"))
+                        action_text = _text(next_row.get("action_text"))
+                        if action_text:
+                            next_row["action_title"] = action_text
+                        else:
+                            obj = _text(next_row.get("action_object") or next_row.get("product_name"))
+                            action_type = _text(next_row.get("action_type"))
+                            next_row["action_title"] = " ".join(part for part in (action_type, obj) if part) or _text(step.get("label"))
                     rows.append(next_row)
                 draft[step_id] = _batch_entry(step, rows=rows, status="ready")
             processed_count += len(chunk)

@@ -277,3 +277,5 @@ spec_gap_content_type_operations:
     reason: "xlsx (spreadsheetml) не задокументирован — spec-gap."
   - id: export_advanced_calculation_xlsx_api_analytics_export_advanced_calculation_xlsx_get
     reason: "xlsx (spreadsheetml) не задокументирован — spec-gap."
+  - id: export_product_actions_api_sessions__session_id__analysis_product_actions_export_get
+    reason: "text/csv и xlsx (spreadsheetml) не задокументированы — spec-gap (экспорт действий с продуктом)."

@@ -1099,3 +1099,68 @@
     margin-top: 8px;
   }
 }
+
+/* --- Product-action suggestions v2 table enhancements --- */
+
+.suggestionTableRowRejected {
+  opacity: 0.7;
+  background: hsl(from var(--pm-tobe-muted, #f1f3f5) h s l / 0.5);
+}
+
+.suggestionTagLabeled {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  background: hsl(from var(--pm-tobe-primary, #1e3a5f) h s l / 0.08);
+  color: var(--pm-tobe-primary, #1e3a5f);
+  white-space: nowrap;
+}
+
+.suggestionTagLabel {
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.suggestionActionCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 140px;
+}
+
+.suggestionInvalidMarker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pm-tobe-danger, #dc2626);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.suggestionExportDropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.suggestionExportMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  padding: 6px;
+  border: 1px solid var(--pm-tobe-border, #e4e7eb);
+  border-radius: 8px;
+  background: var(--pm-tobe-surface, #ffffff);
+  box-shadow: var(--pm-tobe-shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.08));
+}
