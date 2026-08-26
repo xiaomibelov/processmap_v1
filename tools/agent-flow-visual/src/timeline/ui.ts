@@ -89,6 +89,7 @@ export class TimelineUI {
   }
 
   setIndex(index: number): void {
+    this.refresh();
     this.scrubber.value = String(index);
     this.updateLabel(index);
     this.playBtn.textContent = this.controller.stateValue === "playing" ? "⏸" : "▶";
@@ -97,6 +98,10 @@ export class TimelineUI {
     this.infoLine.innerHTML = `<span>event ${index + 1}</span><span>${
       this.controller.stateValue === "playing" ? "playing" : "paused"
     } · ? keys</span>`;
+  }
+
+  refresh(): void {
+    this.scrubber.max = String(Math.max(0, this.controller.length - 1));
   }
 
   private updateLabel(index: number): void {

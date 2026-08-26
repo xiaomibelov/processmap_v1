@@ -29,6 +29,10 @@ export class TimelineController {
     return this.timeline.length;
   }
 
+  get liveIndex(): number {
+    return this.timeline.liveIndex;
+  }
+
   get stateValue(): TimelineState {
     return this.state;
   }
@@ -89,6 +93,18 @@ export class TimelineController {
 
   destroy(): void {
     this.pause();
+  }
+
+  /**
+   * Append new events to the timeline and keep the playhead position stable.
+   * Returns true if the playhead was at the live edge before the append.
+   */
+  appendEvents(events: RawEvent[]): boolean {
+    const wasLive = this.index >= this.timeline.liveIndex;
+    this.timeline.append(events);
+    // Clamp index to the new live edge; do not auto-seek here — callers decide.
+    this.index = Math.min(this.index, this.timeline.liveIndex);
+    return wasLive;
   }
 
   private update(): void {

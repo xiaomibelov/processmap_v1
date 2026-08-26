@@ -100,9 +100,18 @@ export class Renderer {
     return this.edges;
   }
 
+  getViewport(): LayoutViewport {
+    return this.viewport;
+  }
+
   start(): void {
     if (this.rafId !== null) return;
+    let lastTime = performance.now();
     const loop = () => {
+      const now = performance.now();
+      const dt = now - lastTime;
+      lastTime = now;
+      this.camera.update(dt);
       const start = performance.now();
       this.render();
       this.lastFrameTimeMs = performance.now() - start;
