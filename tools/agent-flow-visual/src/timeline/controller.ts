@@ -19,7 +19,6 @@ export class TimelineController {
     this.timeline = new Timeline(events);
     this.onUpdate = options.onUpdate;
     this.speed = options.speed ?? 1;
-    this.update();
   }
 
   get currentIndex(): number {
