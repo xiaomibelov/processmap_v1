@@ -49,6 +49,7 @@ export class App {
     });
 
     this.timelineUI = new TimelineUI(timelineContainer, this.timelineController);
+    this.timelineController.seek(0);
 
     this.inspector = new InspectorPanel(inspectorContainer);
 
