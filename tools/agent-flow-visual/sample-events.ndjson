@@ -1,0 +1,9 @@
+{"ts":"2026-08-26T13:00:00.000Z","event":"contour.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","type":"feature","name":"contour-flow-visual","branch":"feature/contour-flow-visual"}
+{"ts":"2026-08-26T13:00:01.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight"}
+{"ts":"2026-08-26T13:00:02.000Z","event":"step.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight","result":"ok"}
+{"ts":"2026-08-26T13:00:03.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"plan"}
+{"ts":"2026-08-26T13:00:04.000Z","event":"artifact.written","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","kind":"PLAN","path":".planning/contours/feature/contour-flow-visual/PLAN.md","step":"plan"}
+{"ts":"2026-08-26T13:00:05.000Z","event":"step.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"plan","result":"ok"}
+{"ts":"2026-08-26T13:00:06.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api"}
+{"ts":"2026-08-26T13:00:07.000Z","event":"step.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","result":"ok"}
+{"ts":"2026-08-26T13:00:08.000Z","event":"approval.required","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","action":"merge","reason":"PR reviewed and ready"}
