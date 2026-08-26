@@ -1,6 +1,7 @@
 """AGENT-1: SSE streaming endpoint tests."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 from unittest import mock
@@ -139,3 +140,31 @@ def test_stream_gateway_error_emits_sse_error(admin_token, session_with_steps, m
     assert r.status_code == 200, text
     events = _parse_sse(text)
     assert any(e["event"] == "error" for e in events)
+
+
+def test_stream_gateway_error_includes_provider_and_model(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    mock_route_intent_smalltalk.return_value = "smalltalk"
+    with mock.patch("memory.chat.complete_stream") as fake_stream:
+        fake_stream.return_value = iter([
+            ("error", {
+                "status": "error",
+                "error": "all providers failed",
+                "provider_id": "llmprov_vvproxy",
+                "model": "claude-opus-4-6",
+            }),
+        ])
+        c = TestClient(app)
+        with c.stream(
+            "POST",
+            f"/sessions/{session_with_steps}/agent/stream",
+            headers={**_auth(admin_token), "Accept": "text/event-stream"},
+            json={"message": "привет"},
+        ) as r:
+            r.read()
+            text = r.text
+    assert r.status_code == 200, text
+    events = _parse_sse(text)
+    error_events = [json.loads(e["data"]) for e in events if e["event"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0].get("provider_id") == "llmprov_vvproxy"
+    assert error_events[0].get("model") == "claude-opus-4-6"

@@ -8,10 +8,13 @@ endpoint requires a POST body.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, Generator, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger("agent.stream")
 
 from memory.chat import run_turn_stream
 from runners.monolith_client import MonolithError
@@ -63,8 +66,18 @@ def _stream_response(
             token=token,
             session_row=session_row,
         ):
+            if event_type == "error":
+                logger.warning(
+                    "agent_stream error event session=%s provider=%s model=%s status=%s error=%s",
+                    session_id,
+                    event_data.get("provider_id", ""),
+                    event_data.get("model", ""),
+                    event_data.get("status", ""),
+                    event_data.get("error", ""),
+                )
             yield _sse_event(event_type, event_data)
     except Exception as exc:
+        logger.exception("agent_stream unhandled exception session=%s", session_id)
         yield _sse_event("error", {"status": "error", "error": f"{exc.__class__.__name__}: {exc}"})
 
 
