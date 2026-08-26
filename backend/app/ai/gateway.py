@@ -80,6 +80,21 @@ def _render_messages(prompt: Optional[Dict[str, Any]], payload: Any) -> List[Dic
     return messages
 
 
+def _resolve_prompt(
+    feature: str,
+    prompt_override: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Return effective prompt: prompt_override fields override the DB prompt."""
+    db_prompt = llm_store.get_active_prompt(feature)
+    if not prompt_override:
+        return db_prompt
+    effective: Dict[str, Any] = dict(db_prompt or {})
+    for key in ("system", "template", "max_tokens"):
+        if key in prompt_override and prompt_override[key] is not None:
+            effective[key] = prompt_override[key]
+    return effective
+
+
 def _result(status: str, **extra: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {"ok": status == "ok", "status": status}
     out.update(extra)
@@ -97,6 +112,7 @@ def complete(
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     json_mode: bool = False,
+    prompt_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Вызов LLM через фолбэк-цепочку провайдеров. Никогда не бросает исключений."""
     started = time.monotonic()
@@ -128,8 +144,8 @@ def complete(
                 return _finish("rate_limited", error=f"daily token limit reached ({used}/{limit})",
                                used_tokens_24h=used, daily_token_limit=limit)
 
-    # 3. активный промт
-    prompt = llm_store.get_active_prompt(feature)
+    # 3. активный промт (prompt_override позволяет caller подменить system/template/max_tokens)
+    prompt = _resolve_prompt(feature, prompt_override)
     effective_max_tokens = int(max_tokens or (prompt or {}).get("max_tokens") or DEFAULT_MAX_TOKENS)
     messages = _render_messages(prompt, payload)
 
@@ -150,6 +166,11 @@ def complete(
         # Резолв модели: реестр (override фичи → default) → provider.model (старое
         # поведение при пустом реестре, env-фолбэк несёт свой хардкод).
         resolved_model = llm_store.resolve_model(feature, org_id) or str(provider.get("model") or "")
+        # json_mode передаётся в HTTP payload только если провайдер его поддерживает.
+        # Провайдеры без поддержки должны вернуть валидный JSON по инструкции промпта;
+        # caller (например, product_actions_ai) может добавить repair-retry.
+        supports_json_mode = llm_store.provider_supports_json_mode(provider)
+        json_mode_used = json_mode and supports_json_mode
         try:
             resp = _deepseek_chat_request(
                 api_key=str(provider.get("api_key") or ""),
@@ -161,7 +182,7 @@ def complete(
                 max_attempts=_GATEWAY_MAX_ATTEMPTS,
                 retry_on_timeout=False,
                 model=resolved_model,
-                response_format={"type": "json_object"} if json_mode else None,
+                response_format={"type": "json_object"} if json_mode_used else None,
             )
         except Exception as exc:  # фолбэк на следующего провайдера
             is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
@@ -195,6 +216,7 @@ def complete(
             model=str(resp.get("model") or provider.get("model") or ""),
             prompt_version=int((prompt or {}).get("version") or 0),
             fallback=fallback_used,
+            json_mode_used=json_mode_used,
         )
 
 
@@ -215,6 +237,7 @@ def complete_cached(
     cache_digest: str,
     payload: Any = None,
     *,
+    prompt_override: Optional[Dict[str, Any]] = None,
     cache_client: Any = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
@@ -239,7 +262,7 @@ def complete_cached(
             prompt_version=int(cached_payload.get("prompt_version") or 0),
             fallback=bool(cached_payload.get("fallback")),
         )
-    result = complete(feature, payload, **kwargs)
+    result = complete(feature, payload, prompt_override=prompt_override, **kwargs)
     result["cached"] = False
     if result.get("ok"):
         cache_set_json(
@@ -250,6 +273,7 @@ def complete_cached(
                 "provider_id": result.get("provider_id") or "",
                 "prompt_version": result.get("prompt_version") or 0,
                 "fallback": bool(result.get("fallback")),
+                "json_mode_used": bool(result.get("json_mode_used")),
             },
             ttl_sec=CACHE_TTL_SEC,
             client=cache_client,

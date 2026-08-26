@@ -16,7 +16,7 @@ class _DummyRequest:
         self.headers = {}
 
 
-def _gateway_ok(suggestions=None, warnings=None, text=None):
+def _gateway_ok(suggestions=None, warnings=None, text=None, provider_id="llmprov_test", model="deepseek-chat"):
     if text is None:
         payload = {"suggestions": suggestions or [], "warnings": warnings or []}
         text = json.dumps(payload, ensure_ascii=False)
@@ -25,8 +25,8 @@ def _gateway_ok(suggestions=None, warnings=None, text=None):
         "status": "ok",
         "text": text,
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
-        "provider_id": "llmprov_test",
-        "model": "deepseek-chat",
+        "provider_id": provider_id,
+        "model": model,
         "prompt_version": 1,
         "fallback": False,
     }
@@ -801,6 +801,90 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         diagnostics = out.get("diagnostics") or {}
         self.assertNotIn("SECRET_TEST_KEY", str(diagnostics.get("response_excerpt") or ""))
         self.assertNotIn("SECRET_TEST_KEY", str(diagnostics.get("parse_error") or ""))
+
+    def test_repair_retry_succeeds_for_non_json_mode_provider(self):
+        """Провайдер без json_mode вернул prose → repair-retry возвращает валидный JSON."""
+        first_call = _gateway_ok(
+            text="Конечно, вот результат: {...} oops, не JSON",
+            provider_id="llmprov_vvproxy",
+            model="claude-opus-4-6",
+        )
+        first_call["json_mode_used"] = False
+        repair_text = json.dumps(
+            {
+                "suggestions": [
+                    {
+                        "action_text": "Упаковать сэндвич",
+                        "action_type": "упаковка",
+                        "action_stage": "финиш",
+                        "action_object": "сэндвич",
+                        "action_method": "поместить",
+                        "confidence": 0.8,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        repair_call = _gateway_ok(text=repair_text, provider_id="llmprov_vvproxy", model="claude-opus-4-6")
+        repair_call["json_mode_used"] = False
+
+        calls = []
+
+        def _fake(*args, **kwargs):
+            calls.append(kwargs)
+            return first_call if len(calls) == 1 else repair_call
+
+        with patch("app.routers.product_actions_ai._llm_complete", side_effect=_fake):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 1)
+        self.assertEqual((out.get("suggestions") or [{}])[0].get("action_text"), "Упаковать сэндвич")
+        self.assertEqual(len(calls), 2, "должно быть два вызова: основной + repair")
+        self.assertIn("prompt_override", calls[1], "repair-вызов должен использовать prompt_override")
+
+    def test_repair_retry_failure_returns_parse_error_for_non_json_mode_provider(self):
+        """Провайдер без json_mode вернул prose → repair-retry тоже не разобрался → parse error."""
+        first_call = _gateway_ok(
+            text="Конечно, вот результат: не JSON",
+            provider_id="llmprov_vvproxy",
+            model="claude-opus-4-6",
+        )
+        first_call["json_mode_used"] = False
+        repair_call = _gateway_ok(
+            text="Тоже не JSON, извините",
+            provider_id="llmprov_vvproxy",
+            model="claude-opus-4-6",
+        )
+        repair_call["json_mode_used"] = False
+
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            side_effect=[first_call, repair_call],
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_RESPONSE_PARSE_ERROR")
+
+    def test_no_repair_retry_for_json_mode_provider_parse_error(self):
+        """Провайдер с json_mode вернул невалидный JSON → сразу parse error, без repair-retry."""
+        bad_call = _gateway_ok(
+            text='{"suggestions":[{"action_text":"X"}',
+            provider_id="llmprov_deepseek",
+            model="deepseek-chat",
+        )
+        bad_call["json_mode_used"] = True
+
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value=bad_call,
+        ) as mock_complete:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_RESPONSE_PARSE_ERROR")
+        self.assertEqual(mock_complete.call_count, 1, "при json_mode_used=True repair-retry не делается")
 
     def test_success_response_includes_diagnostics_block(self):
         with patch(

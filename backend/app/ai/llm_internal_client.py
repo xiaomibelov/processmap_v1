@@ -77,6 +77,7 @@ def complete(
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     json_mode: bool = False,
+    prompt_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """POST /internal/llm/complete — сигнатура и контракт как у gateway.complete()."""
     body = {
@@ -90,6 +91,8 @@ def complete(
         "timeout_sec": timeout_sec,
         "json_mode": json_mode,
     }
+    if prompt_override is not None:
+        body["prompt_override"] = prompt_override
     return _post("/internal/llm/complete", body, timeout_sec)
 
 
