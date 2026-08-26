@@ -92,6 +92,7 @@ _SUGGESTION_FIELDS = (
     "step_id",
     "bpmn_element_id",
     "step_label",
+    "action_text",
     "product_name",
     "product_group",
     "action_type",
@@ -132,11 +133,19 @@ def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def normalize_product_action_suggestion(raw: Any, *, index: int = 0) -> Dict[str, Any]:
     item = raw if isinstance(raw, dict) else {}
+    tags = _as_dict(item.get("tags"))
     out: Dict[str, Any] = {"id": _text(item.get("id")) or f"ai_pa_{index + 1}"}
     for key in _SUGGESTION_FIELDS:
-        out[key] = _text(item.get(key))
+        if tags and key in tags:
+            out[key] = _text(tags.get(key))
+        else:
+            out[key] = _text(item.get(key))
     if not out["bpmn_element_id"]:
         out["bpmn_element_id"] = _text(item.get("node_id") or item.get("bpmnElementId"))
     out["node_id"] = _text(item.get("node_id")) or out["bpmn_element_id"]
@@ -147,7 +156,7 @@ def normalize_product_action_suggestion(raw: Any, *, index: int = 0) -> Dict[str
         if text:
             warnings.append({"code": _text(warning.get("code")) if isinstance(warning, dict) else "warning", "message": text})
     out["warnings"] = warnings
-    missing = [key for key in ("product_name", "product_group", "action_type", "action_object") if not out.get(key)]
+    missing = [key for key in ("action_text", "action_type", "action_stage", "action_object", "action_method") if not out.get(key)]
     out["missing_fields"] = missing
     out["source"] = "ai_suggested"
     out["manual_corrected"] = False

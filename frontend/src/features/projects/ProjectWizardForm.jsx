@@ -182,6 +182,24 @@ export default function ProjectWizardForm({ model, setModel }) {
         </div>
 
         <div className="field">
+          <div className="label">Наименование товара</div>
+          <input
+            className="input"
+            value={passport.product_name || ""}
+            onChange={(e) => setPassport(setModel, { product_name: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <div className="label">Группа товара</div>
+          <input
+            className="input"
+            value={passport.product_group || ""}
+            onChange={(e) => setPassport(setModel, { product_group: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
           <div className="label">Продукт или семейство</div>
           <input
             className="input"

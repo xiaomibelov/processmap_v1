@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import csv
-import io
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
-from xml.sax.saxutils import escape as xml_escape
-from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -15,6 +11,7 @@ from ..legacy.request_context import (
     require_authenticated_user,
     request_active_org_id,
 )
+from ._product_action_export_utils import _csv_bytes, _xlsx_bytes
 from ..services.org_workspace import (
     project_access_allowed,
     project_scope_for_request,
@@ -605,90 +602,6 @@ def _export_filename(scope: str, extension: str) -> str:
     return f"product-actions-{safe_scope}-{stamp}.{extension}"
 
 
-def _export_cell(row: Dict[str, Any], column: str) -> str:
-    value = row.get(column)
-    if value is None:
-        return ""
-    if isinstance(value, float):
-        return f"{value:g}"
-    return str(value)
-
-
-def _csv_bytes(rows: List[Dict[str, Any]]) -> bytes:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=";", quotechar='"', lineterminator="\r\n")
-    writer.writerow(_EXPORT_COLUMNS)
-    for row in rows:
-        writer.writerow([_export_cell(row, column) for column in _EXPORT_COLUMNS])
-    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
-
-
-def _column_name(index: int) -> str:
-    name = ""
-    current = index
-    while current > 0:
-        current, remainder = divmod(current - 1, 26)
-        name = chr(65 + remainder) + name
-    return name
-
-
-def _xlsx_inline_cell(value: Any, row_index: int, column_index: int) -> str:
-    ref = f"{_column_name(column_index)}{row_index}"
-    text = xml_escape(str(value if value is not None else ""))
-    return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
-
-
-def _xlsx_bytes(rows: List[Dict[str, Any]]) -> bytes:
-    output = io.BytesIO()
-    sheet_rows = []
-    all_rows = [_EXPORT_COLUMNS] + [[_export_cell(row, column) for column in _EXPORT_COLUMNS] for row in rows]
-    for row_index, values in enumerate(all_rows, start=1):
-        cells = "".join(_xlsx_inline_cell(value, row_index, column_index) for column_index, value in enumerate(values, start=1))
-        sheet_rows.append(f'<row r="{row_index}">{cells}</row>')
-    widths = "".join(
-        f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
-        for index, width in enumerate([18, 22, 18, 24, 18, 18, 22, 18, 18, 22, 22, 18, 18, 24, 18, 18, 16, 16, 14, 12, 14, 22], start=1)
-    )
-    worksheet = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        f"<cols>{widths}</cols>"
-        f"<sheetData>{''.join(sheet_rows)}</sheetData>"
-        "</worksheet>"
-    )
-    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            '<Default Extension="xml" ContentType="application/xml"/>'
-            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
-            "</Types>"
-        ))
-        archive.writestr("_rels/.rels", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
-            "</Relationships>"
-        ))
-        archive.writestr("xl/workbook.xml", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-            '<sheets><sheet name="Product actions" sheetId="1" r:id="rId1"/></sheets>'
-            "</workbook>"
-        ))
-        archive.writestr("xl/_rels/workbook.xml.rels", (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-            "</Relationships>"
-        ))
-        archive.writestr("xl/worksheets/sheet1.xml", worksheet)
-    return output.getvalue()
-
-
 def _session_filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
     options: Dict[str, Set[str]] = {
         "product_groups": set(),
@@ -862,7 +775,7 @@ def export_product_actions_registry_csv(inp: ProductActionsRegistryQueryIn, requ
     payload = _registry_payload(inp, request, paginate=True)
     filename = _export_filename(str(payload.get("scope") or inp.scope), "csv")
     return Response(
-        content=_csv_bytes(payload.get("rows") or []),
+        content=_csv_bytes(payload.get("rows") or [], _EXPORT_COLUMNS),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -873,7 +786,7 @@ def export_product_actions_registry_xlsx(inp: ProductActionsRegistryQueryIn, req
     payload = _registry_payload(inp, request, paginate=True)
     filename = _export_filename(str(payload.get("scope") or inp.scope), "xlsx")
     return Response(
-        content=_xlsx_bytes(payload.get("rows") or []),
+        content=_xlsx_bytes(payload.get("rows") or [], _EXPORT_COLUMNS),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

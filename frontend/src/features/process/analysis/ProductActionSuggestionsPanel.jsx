@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   apiApplyProductActionSuggestions,
+  apiExportProductActions,
   apiGetRagReadiness,
   apiListProductActionSuggestions,
   apiSuggestProductActions,
   apiTransitionRagReadiness,
   apiUpdateProductActionSuggestion,
 } from "../../../lib/api.js";
+import { isProductActionValid } from "./productActionsModel.js";
 import { AnalysisEmptyState, AnalysisErrorState, AnalysisSection, AnalysisSkeleton } from "./ui/index.js";
 import { createT } from "./useProcessAnalysisI18n.js";
 import styles from "./ProcessAnalysis.module.css";
@@ -41,29 +43,23 @@ function formatErrorMessage(error, t) {
 }
 
 function statusLabel(status, t) {
-  const labels = {
-    pending: t("processAnalysis.ai.statusPending") || "На рассмотрении",
-    approved: t("processAnalysis.ai.statusApproved") || "Утверждено",
-    rejected: t("processAnalysis.ai.statusRejected") || "Отклонено",
-  };
-  return labels[status] || status;
+  const key = {
+    pending: "processAnalysis.ai.statusPending",
+    approved: "processAnalysis.ai.statusApproved",
+    rejected: "processAnalysis.ai.statusRejected",
+  }[status];
+  return key ? t(key) : status;
 }
 
 function ragStatusLabel(status, t) {
   const labels = {
-    not_ready: t("processAnalysis.ai.ragStatus.notReady") || "Не готова",
-    ready: t("processAnalysis.ai.ragStatus.ready") || "Готова к индексации",
-    queued: t("processAnalysis.ai.ragStatus.queued") || "В очереди на индексацию",
-    indexed: t("processAnalysis.ai.ragStatus.indexed") || "Проиндексирована",
+    not_ready: t("processAnalysis.ai.ragStatus.notReady"),
+    ready: t("processAnalysis.ai.ragStatus.ready"),
+    queued: t("processAnalysis.ai.ragStatus.queued"),
+    indexed: t("processAnalysis.ai.ragStatus.indexed"),
   };
-  return labels[status] || status || "неизвестен";
+  return labels[status] || status || t("common.unknown");
 }
-
-const STATUS_LABELS = {
-  pending: "На рассмотрении",
-  approved: "Утверждено",
-  rejected: "Отклонено",
-};
 
 const STATUS_BADGE_CLASS = {
   pending: styles.suggestionBadgePending,
@@ -77,6 +73,11 @@ function isPlainObject(value) {
 
 function text(value) {
   return String(value || "").trim();
+}
+
+function fmt(template, values) {
+  if (!template || typeof template !== "string") return "";
+  return Object.entries(values || {}).reduce((s, [key, value]) => s.replace(`{${key}}`, String(value)), template);
 }
 
 function getActionField(suggestion, key) {
@@ -93,7 +94,18 @@ function setActionField(suggestion, key, value) {
 }
 
 function stepLabel(suggestion) {
-  return getActionField(suggestion, "step_label") || getActionField(suggestion, "label") || "Шаг не выбран";
+  return getActionField(suggestion, "step_label") || getActionField(suggestion, "label") || "—";
+}
+
+function cloneSuggestion(suggestion) {
+  return {
+    ...suggestion,
+    action: isPlainObject(suggestion.action) ? { ...suggestion.action } : {},
+    binding: isPlainObject(suggestion.binding) ? { ...suggestion.binding } : {},
+    original_llm_output: isPlainObject(suggestion.original_llm_output)
+      ? { ...suggestion.original_llm_output }
+      : suggestion.original_llm_output,
+  };
 }
 
 function SuggestionWarnings({ warnings }) {
@@ -108,166 +120,288 @@ function SuggestionWarnings({ warnings }) {
   );
 }
 
-function SuggestionRow({
+function TagCell({ labelKey, value, t }) {
+  if (!value) return null;
+  return <span className={styles.suggestionTagLabeled}>{fmt(t(labelKey), { value })}</span>;
+}
+
+function SuggestionDisplayRow({
   suggestion,
   onStatusChange,
-  onFieldChange,
-  editing,
-  onToggleEdit,
-  stepOptions,
+  onStartEdit,
+  t,
 }) {
   const status = text(suggestion.status) || "pending";
   const isRejected = status === "rejected";
-  const productName = getActionField(suggestion, "product_name");
-  const productGroup = getActionField(suggestion, "product_group");
-  const actionType = getActionField(suggestion, "action_type");
-  const actionStage = getActionField(suggestion, "action_stage");
-  const actionObject = getActionField(suggestion, "action_object");
-  const actionObjectCategory = getActionField(suggestion, "action_object_category");
-  const actionMethod = getActionField(suggestion, "action_method");
-  const step = stepLabel(suggestion);
+  const valid = isProductActionValid(suggestion);
+  const actionText = getActionField(suggestion, "action_text");
 
   return (
-    <div
-      className={`${styles.suggestionRow} ${isRejected ? styles.suggestionRowRejected : ""}`}
-      data-testid={`product-action-suggestion-${suggestion.id || "row"}`}
-    >
-      <div className={styles.suggestionRowHead}>
-        <div className={styles.suggestionRowTitle}>
-          <span className={styles.suggestionRowProduct}>{productName || "Продукт не указан"}</span>
-          {productGroup ? <span className={styles.suggestionRowGroup}>{productGroup}</span> : null}
-        </div>
-        <div className={styles.suggestionRowStatus}>
-          <span className={`${styles.suggestionBadge} ${STATUS_BADGE_CLASS[status] || STATUS_BADGE_CLASS.pending}`}>
-            {STATUS_LABELS[status] || status}
+    <>
+      <tr
+        className={`${styles.analysisTableRow} ${isRejected ? styles.suggestionTableRowRejected : ""}`}
+        data-testid={`product-action-suggestion-${suggestion.id || "row"}`}
+      >
+        <td>
+          <div>{actionText || <span className={styles.suggestionInvalidMarker}>{t("processAnalysis.ai.invalidAction")}</span>}</div>
+          {!valid ? (
+            <div
+              className={styles.suggestionInvalidMarker}
+              title={t("processAnalysis.ai.invalidActionHint")}
+            >
+              {t("processAnalysis.ai.invalidAction")}
+            </div>
+          ) : null}
+        </td>
+        <td>
+          <TagCell labelKey="processAnalysis.ai.tagType" value={getActionField(suggestion, "action_type")} t={t} />
+        </td>
+        <td>
+          <TagCell labelKey="processAnalysis.ai.tagStage" value={getActionField(suggestion, "action_stage")} t={t} />
+        </td>
+        <td>
+          <TagCell labelKey="processAnalysis.ai.tagObject" value={getActionField(suggestion, "action_object")} t={t} />
+        </td>
+        <td>
+          <TagCell labelKey="processAnalysis.ai.tagMethod" value={getActionField(suggestion, "action_method")} t={t} />
+        </td>
+        <td>{stepLabel(suggestion)}</td>
+        <td>
+          <span
+            className={`${styles.suggestionBadge} ${STATUS_BADGE_CLASS[status] || STATUS_BADGE_CLASS.pending}`}
+          >
+            {statusLabel(status, t)}
           </span>
-        </div>
-      </div>
-
-      <div className={styles.suggestionRowTags}>
-        {editing ? (
-          <>
-            <label className={styles.suggestionTagEdit}>
-              <span>Тип</span>
-              <input
-                type="text"
-                value={actionType}
-                onChange={(e) => onFieldChange("action_type", e.target.value)}
-                className={styles.analysisTableInput}
-                placeholder="вскрытие, перекладывание..."
-              />
-            </label>
-            <label className={styles.suggestionTagEdit}>
-              <span>Этап</span>
-              <input
-                type="text"
-                value={actionStage}
-                onChange={(e) => onFieldChange("action_stage", e.target.value)}
-                className={styles.analysisTableInput}
-                placeholder="до разогрева, сборка..."
-              />
-            </label>
-            <label className={styles.suggestionTagEdit}>
-              <span>Объект</span>
-              <input
-                type="text"
-                value={actionObject}
-                onChange={(e) => onFieldChange("action_object", e.target.value)}
-                className={styles.analysisTableInput}
-                placeholder="суп, рис, курица..."
-              />
-            </label>
-            <label className={styles.suggestionTagEdit}>
-              <span>Способ</span>
-              <input
-                type="text"
-                value={actionMethod}
-                onChange={(e) => onFieldChange("action_method", e.target.value)}
-                className={styles.analysisTableInput}
-                placeholder="перелить, щипцами..."
-              />
-            </label>
-          </>
-        ) : (
-          <>
-            {actionType ? <span className={styles.suggestionTag}>{actionType}</span> : null}
-            {actionStage ? <span className={styles.suggestionTag}>{actionStage}</span> : null}
-            {actionObject ? <span className={styles.suggestionTag}>{actionObject}</span> : null}
-            {actionObjectCategory ? (
-              <span className={`${styles.suggestionTag} ${styles.suggestionTagMuted}`}>{actionObjectCategory}</span>
-            ) : null}
-            {actionMethod ? <span className={styles.suggestionTag}>{actionMethod}</span> : null}
-          </>
-        )}
-      </div>
-
-      <div className={styles.suggestionRowBinding}>
-        <span className={styles.suggestionRowBindingLabel}>Привязка:</span>
-        {editing ? (
-          <select
-            value={getActionField(suggestion, "step_id") || getActionField(suggestion, "node_id") || ""}
-            onChange={(e) => {
-              const found = stepOptions.find((s) => String(s.id || s.node_id || "") === e.target.value);
-              if (!found) return;
-              let next = { ...suggestion };
-              next.action = { ...(isPlainObject(suggestion.action) ? suggestion.action : {}) };
-              next.binding = { ...(isPlainObject(suggestion.binding) ? suggestion.binding : {}) };
-              next.action.step_id = found.id || found.step_id || found.node_id || "";
-              next.action.step_label = found.label || found.title || found.id || "";
-              next.action.node_id = found.node_id || found.id || "";
-              next.action.bpmn_element_id = found.node_id || found.id || "";
-              next.binding.step_id = found.id || found.step_id || found.node_id || "";
-              next.binding.step_label = found.label || found.title || found.id || "";
-              next.binding.node_id = found.node_id || found.id || "";
-              next.binding.bpmn_element_id = found.node_id || found.id || "";
-              onFieldChange("__replace__", next);
-            }}
-            className={styles.analysisTableInput}
-          >
-            <option value="">— выберите шаг —</option>
-            {stepOptions.map((s) => (
-              <option key={String(s.id || s.node_id || s.step_id || Math.random())} value={String(s.id || s.node_id || s.step_id || "")}>
-                {s.label || s.title || s.id || s.node_id || "Шаг"}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className={styles.suggestionRowBindingValue}>{step}</span>
-        )}
-      </div>
-
-      <SuggestionWarnings warnings={suggestion.warnings} />
-
-      <div className={styles.suggestionRowActions}>
-        {status !== "approved" ? (
-          <button
-            type="button"
-            className="primaryBtn smallBtn"
-            onClick={() => onStatusChange("approved")}
-            data-testid={`suggestion-approve-${suggestion.id || "x"}`}
-          >
-            Утвердить
-          </button>
-        ) : null}
-        {status !== "rejected" ? (
+        </td>
+        <td className={styles.suggestionActionCell}>
+          {status === "pending" ? (
+            <button
+              type="button"
+              className="primaryBtn smallBtn"
+              disabled={!valid}
+              title={!valid ? t("processAnalysis.ai.approveValidOnly") : undefined}
+              onClick={() => onStatusChange(suggestion.id, "approved")}
+              data-testid={`suggestion-approve-${suggestion.id || "x"}`}
+            >
+              {t("processAnalysis.ai.approve")}
+            </button>
+          ) : null}
+          {status === "pending" ? (
+            <button
+              type="button"
+              className="secondaryBtn smallBtn"
+              onClick={() => onStatusChange(suggestion.id, "rejected")}
+              data-testid={`suggestion-reject-${suggestion.id || "x"}`}
+            >
+              {t("processAnalysis.ai.reject")}
+            </button>
+          ) : null}
+          {status === "approved" ? (
+            <button
+              type="button"
+              className="secondaryBtn smallBtn"
+              onClick={() => onStatusChange(suggestion.id, "pending")}
+              data-testid={`suggestion-unapprove-${suggestion.id || "x"}`}
+            >
+              {t("processAnalysis.ai.unapprove")}
+            </button>
+          ) : null}
+          {status === "rejected" ? (
+            <button
+              type="button"
+              className="secondaryBtn smallBtn"
+              onClick={() => onStatusChange(suggestion.id, "pending")}
+              data-testid={`suggestion-unreject-${suggestion.id || "x"}`}
+            >
+              {t("processAnalysis.ai.unreject")}
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondaryBtn smallBtn"
-            onClick={() => onStatusChange("rejected")}
-            data-testid={`suggestion-reject-${suggestion.id || "x"}`}
+            onClick={() => onStartEdit(suggestion.id)}
+            data-testid={`suggestion-edit-${suggestion.id || "x"}`}
           >
-            Отклонить
+            {t("processAnalysis.ai.edit")}
           </button>
-        ) : null}
+        </td>
+      </tr>
+      {Array.isArray(suggestion.warnings) && suggestion.warnings.length ? (
+        <tr className={styles.analysisTableRow}>
+          <td colSpan={8}>
+            <SuggestionWarnings warnings={suggestion.warnings} />
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function SuggestionEditRow({
+  draft,
+  stepOptions,
+  onDraftChange,
+  onDone,
+  onCancel,
+  t,
+}) {
+  const status = text(draft.status) || "pending";
+
+  const setField = (key, value) => {
+    const next = { ...draft, action: { ...draft.action } };
+    next.action[key] = value;
+    onDraftChange(next);
+  };
+
+  const setBinding = (stepId) => {
+    const found = stepOptions.find((s) => String(s.id || s.step_id || s.node_id || "") === stepId);
+    if (!found) return;
+    const next = { ...draft, action: { ...draft.action }, binding: { ...draft.binding } };
+    const sid = text(found.id || found.step_id || found.node_id);
+    const nid = text(found.node_id || found.id);
+    const label = text(found.label || found.title || sid);
+    next.action.step_id = sid;
+    next.action.step_label = label;
+    next.action.node_id = nid;
+    next.action.bpmn_element_id = nid;
+    next.binding.step_id = sid;
+    next.binding.step_label = label;
+    next.binding.node_id = nid;
+    next.binding.bpmn_element_id = nid;
+    onDraftChange(next);
+  };
+
+  return (
+    <tr className={styles.analysisTableRow}>
+      <td>
+        <input
+          type="text"
+          className={styles.analysisTableInput}
+          value={getActionField(draft, "action_text")}
+          onChange={(e) => setField("action_text", e.target.value)}
+        />
+      </td>
+      <td>
+        <input
+          type="text"
+          className={styles.analysisTableInput}
+          value={getActionField(draft, "action_type")}
+          onChange={(e) => setField("action_type", e.target.value)}
+        />
+      </td>
+      <td>
+        <input
+          type="text"
+          className={styles.analysisTableInput}
+          value={getActionField(draft, "action_stage")}
+          onChange={(e) => setField("action_stage", e.target.value)}
+        />
+      </td>
+      <td>
+        <input
+          type="text"
+          className={styles.analysisTableInput}
+          value={getActionField(draft, "action_object")}
+          onChange={(e) => setField("action_object", e.target.value)}
+        />
+      </td>
+      <td>
+        <input
+          type="text"
+          className={styles.analysisTableInput}
+          value={getActionField(draft, "action_method")}
+          onChange={(e) => setField("action_method", e.target.value)}
+        />
+      </td>
+      <td>
+        <select
+          className={styles.analysisTableInput}
+          value={getActionField(draft, "step_id") || getActionField(draft, "node_id") || ""}
+          onChange={(e) => setBinding(e.target.value)}
+        >
+          <option value="">{t("processAnalysis.ai.stepPlaceholder")}</option>
+          {stepOptions.map((s) => (
+            <option key={String(s.id || s.node_id || s.step_id || Math.random())} value={String(s.id || s.node_id || s.step_id || "")}>
+              {s.label || s.title || s.id || s.node_id || "—"}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td>
+        <span className={`${styles.suggestionBadge} ${STATUS_BADGE_CLASS[status] || STATUS_BADGE_CLASS.pending}`}>
+          {statusLabel(status, t)}
+        </span>
+      </td>
+      <td className={styles.suggestionActionCell}>
+        <button
+          type="button"
+          className="primaryBtn smallBtn"
+          onClick={onDone}
+          data-testid={`suggestion-done-${draft.id || "x"}`}
+        >
+          {t("processAnalysis.ai.done")}
+        </button>
         <button
           type="button"
           className="secondaryBtn smallBtn"
-          onClick={onToggleEdit}
-          data-testid={`suggestion-edit-${suggestion.id || "x"}`}
+          onClick={onCancel}
+          data-testid={`suggestion-cancel-${draft.id || "x"}`}
         >
-          {editing ? "Готово" : "Изменить"}
+          {t("processAnalysis.ai.cancel")}
         </button>
-      </div>
+      </td>
+    </tr>
+  );
+}
+
+function ExportDropdown({ sessionId, t }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleExport = async (format) => {
+    setBusy(true);
+    try {
+      const r = await apiExportProductActions(sessionId, format);
+      if (!r.ok) {
+        // eslint-disable-next-line no-console
+        console.error("product actions export failed", r.error);
+        return;
+      }
+      const url = URL.createObjectURL(r.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = r.filename || `product-actions-export.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className={styles.suggestionExportDropdown}>
+      <button
+        type="button"
+        className="secondaryBtn smallBtn"
+        onClick={() => setOpen((prev) => !prev)}
+        disabled={busy}
+        data-testid="product-actions-export"
+      >
+        {busy ? t("processAnalysis.ai.exportReady") : t("processAnalysis.ai.export")} ▼
+      </button>
+      {open ? (
+        <div className={styles.suggestionExportMenu}>
+          <button type="button" className="secondaryBtn smallBtn" onClick={() => handleExport("csv")} data-testid="product-actions-export-csv">
+            {t("processAnalysis.ai.exportCsv")}
+          </button>
+          <button type="button" className="secondaryBtn smallBtn" onClick={() => handleExport("xlsx")} data-testid="product-actions-export-xlsx">
+            {t("processAnalysis.ai.exportXlsx")}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -288,6 +422,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
   const [error, setError] = useState(null);
   const [ragReadiness, setRagReadiness] = useState(null);
   const [editingIds, setEditingIds] = useState(new Set());
+  const [editingDrafts, setEditingDrafts] = useState(new Map());
 
   const stepOptions = useMemo(() => {
     return Array.isArray(steps)
@@ -307,24 +442,24 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
     try {
       const r = await apiListProductActionSuggestions(sessionId);
       if (!r.ok) {
-        setError(r.error || r.data?.detail?.message || "Не удалось загрузить подсказки");
+        setError(r.error || r.data?.detail?.message || t("processAnalysis.ai.errorTitle"));
         return;
       }
       setSuggestions(r.suggestions || []);
       setCounts(r.counts || { pending: 0, approved: 0, rejected: 0, total: 0 });
     } catch (e) {
-      setError(String(e || "Ошибка загрузки"));
+      setError(String(e || t("processAnalysis.ai.errorTitle")));
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   const loadRagReadiness = useCallback(async () => {
     try {
       const r = await apiGetRagReadiness(sessionId);
       if (r.ok) setRagReadiness(r.readiness || null);
     } catch {
-      // игнорируем — RAG-статус не блокирует основной флоу
+      // RAG status is non-blocking
     }
   }, [sessionId]);
 
@@ -339,7 +474,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
     try {
       const r = await apiSuggestProductActions(sessionId, { options: { max_suggestions: 20 } });
       if (!r.ok) {
-        setError(r.error || r.message || "Не удалось сгенерировать действия");
+        setError(r.error || r.message || t("processAnalysis.ai.errorTitle"));
         return;
       }
       const generated = Array.isArray(r.suggestions) ? r.suggestions : [];
@@ -356,6 +491,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
           status: "pending",
           source: text(row.source) || "llm",
           action: {
+            action_text: text(action.action_text || row.action_text),
             product_name: text(action.product_name || row.product_name),
             product_group: text(action.product_group || row.product_group),
             action_type: text(action.action_type || row.action_type),
@@ -381,15 +517,11 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
       }
       await loadSuggestions();
     } catch (e) {
-      setError(String(e || "Ошибка генерации"));
+      setError(String(e || t("processAnalysis.ai.errorTitle")));
     } finally {
       setGenerating(false);
     }
-  }, [sessionId, loadSuggestions]);
-
-  const updateSuggestionLocal = useCallback((id, updater) => {
-    setSuggestions((prev) => prev.map((s) => (String(s.id) === String(id) ? updater(s) : s)));
-  }, []);
+  }, [sessionId, loadSuggestions, t]);
 
   const persistSuggestion = useCallback(
     async (suggestion) => {
@@ -403,51 +535,102 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
       };
       const r = await apiUpdateProductActionSuggestion(sessionId, payload);
       if (!r.ok) {
-        setError(r.error || "Не удалось сохранить изменения");
+        setError(r.error || t("processAnalysis.ai.errorTitle"));
         return false;
       }
       return true;
     },
-    [sessionId]
+    [sessionId, t]
   );
 
   const handleStatusChange = useCallback(
     async (id, status) => {
-      let updated = null;
-      updateSuggestionLocal(id, (s) => {
-        updated = { ...s, status };
-        return updated;
-      });
-      if (updated) await persistSuggestion(updated);
+      const current = suggestions.find((s) => String(s.id) === String(id));
+      if (!current) return;
+      const updated = { ...current, status };
+      setSuggestions((prev) => prev.map((s) => (String(s.id) === String(id) ? updated : s)));
+      await persistSuggestion(updated);
     },
-    [updateSuggestionLocal, persistSuggestion]
+    [suggestions, persistSuggestion]
   );
 
   const handleFieldChange = useCallback(
     async (id, key, value) => {
-      let updated = null;
-      updateSuggestionLocal(id, (s) => {
-        if (key === "__replace__" && isPlainObject(value)) {
-          updated = value;
-          return updated;
-        }
-        updated = setActionField(s, key, value);
-        return updated;
-      });
-      if (updated) await persistSuggestion(updated);
+      const current = suggestions.find((s) => String(s.id) === String(id));
+      if (!current) return;
+      const updated = key === "__replace__" && isPlainObject(value) ? value : setActionField(current, key, value);
+      setSuggestions((prev) => prev.map((s) => (String(s.id) === String(id) ? updated : s)));
+      await persistSuggestion(updated);
     },
-    [updateSuggestionLocal, persistSuggestion]
+    [suggestions, persistSuggestion]
   );
 
-  const handleBulkApprove = useCallback(async () => {
-    const pending = suggestions.filter((s) => text(s.status) !== "approved" && text(s.status) !== "rejected");
-    for (const s of pending) {
+  const startEdit = useCallback((id) => {
+    const key = String(id);
+    setEditingIds((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    setEditingDrafts((prev) => {
+      const suggestion = suggestions.find((s) => String(s.id) === key);
+      if (!suggestion) return prev;
+      const next = new Map(prev);
+      next.set(key, cloneSuggestion(suggestion));
+      return next;
+    });
+  }, [suggestions]);
+
+  const cancelEdit = useCallback((id) => {
+    const key = String(id);
+    setEditingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setEditingDrafts((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const doneEdit = useCallback(
+    async (id) => {
+      const key = String(id);
+      const draft = editingDrafts.get(key);
+      if (draft) {
+        await handleFieldChange(id, "__replace__", draft);
+      }
+      setEditingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      setEditingDrafts((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    },
+    [editingDrafts, handleFieldChange]
+  );
+
+  const handleBulkApproveValid = useCallback(async () => {
+    const validPending = suggestions.filter((s) => {
+      const status = text(s.status);
+      return status !== "approved" && status !== "rejected" && isProductActionValid(s);
+    });
+    for (const s of validPending) {
       await handleStatusChange(s.id, "approved");
     }
   }, [suggestions, handleStatusChange]);
 
   const handleBulkReject = useCallback(async () => {
-    const pending = suggestions.filter((s) => text(s.status) !== "approved" && text(s.status) !== "rejected");
+    const pending = suggestions.filter((s) => {
+      const status = text(s.status);
+      return status !== "approved" && status !== "rejected";
+    });
     for (const s of pending) {
       await handleStatusChange(s.id, "rejected");
     }
@@ -459,17 +642,17 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
     try {
       const r = await apiApplyProductActionSuggestions(sessionId, baseDiagramStateVersion);
       if (!r.ok) {
-        setError(r.error || r.data?.detail?.message || "Не удалось применить утверждённые действия");
+        setError(r.error || r.data?.detail?.message || t("processAnalysis.ai.errorTitle"));
         return;
       }
       await loadSuggestions();
       await loadRagReadiness();
     } catch (e) {
-      setError(String(e || "Ошибка применения"));
+      setError(String(e || t("processAnalysis.ai.errorTitle")));
     } finally {
       setApplying(false);
     }
-  }, [sessionId, baseDiagramStateVersion, loadSuggestions, loadRagReadiness]);
+  }, [sessionId, baseDiagramStateVersion, loadSuggestions, loadRagReadiness, t]);
 
   const handleSendToRag = useCallback(async () => {
     setRagLoading(true);
@@ -477,21 +660,25 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
     try {
       const r = await apiTransitionRagReadiness(sessionId, "queued");
       if (!r.ok) {
-        setError(r.error || r.data?.detail?.message || "Не удалось отправить на индексацию");
+        setError(r.error || r.data?.detail?.message || t("processAnalysis.ai.errorTitle"));
         return;
       }
       await loadRagReadiness();
     } catch (e) {
-      setError(String(e || "Ошибка индексации"));
+      setError(String(e || t("processAnalysis.ai.errorTitle")));
     } finally {
       setRagLoading(false);
     }
-  }, [sessionId, loadRagReadiness]);
+  }, [sessionId, loadRagReadiness, t]);
 
   const approvedCount = counts.approved || 0;
   const pendingCount = counts.pending || 0;
   const rejectedCount = counts.rejected || 0;
   const hasSuggestions = suggestions.length > 0;
+  const validPendingCount = useMemo(
+    () => suggestions.filter((s) => text(s.status) !== "approved" && text(s.status) !== "rejected" && isProductActionValid(s)).length,
+    [suggestions]
+  );
 
   const actions = (
     <>
@@ -500,11 +687,11 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
           <button
             type="button"
             className="secondaryBtn smallBtn"
-            onClick={handleBulkApprove}
-            disabled={pendingCount === 0}
+            onClick={handleBulkApproveValid}
+            disabled={validPendingCount === 0}
             data-testid="product-actions-bulk-approve"
           >
-            Утвердить всё
+            {t("processAnalysis.ai.bulkApproveValidOnly")}
           </button>
           <button
             type="button"
@@ -513,8 +700,9 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
             disabled={pendingCount === 0}
             data-testid="product-actions-bulk-reject"
           >
-            Отклонить всё
+            {t("processAnalysis.ai.bulkReject")}
           </button>
+          <ExportDropdown sessionId={sessionId} t={t} />
         </>
       ) : null}
       <button
@@ -524,7 +712,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
         disabled={generating || loading}
         data-testid="product-actions-generate"
       >
-        {generating ? "Генерация…" : "Сгенерировать действия"}
+        {generating ? t("processAnalysis.ai.generating") : t("processAnalysis.ai.generateActions")}
       </button>
     </>
   );
@@ -535,8 +723,8 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
 
   return (
     <AnalysisSection
-      title="Действия с продуктом"
-      subtitle="AI-предложения действий с продуктом/ингредиентом: утвердите, отредактируйте теги и привяжите к шагам."
+      title={t("processAnalysis.ai.title")}
+      subtitle={t("processAnalysis.ai.subtitle")}
       actions={actions}
       data-testid="product-action-suggestions-panel"
     >
@@ -554,7 +742,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
           />
           {getErrorCode(error) ? (
             <div className={styles.analysisHint} data-testid="product-actions-error-code">
-              Код ошибки: {getErrorCode(error)}
+              {t("processAnalysis.ai.errorCodeLabel")} {getErrorCode(error)}
             </div>
           ) : null}
         </>
@@ -571,31 +759,57 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
       {hasSuggestions ? (
         <>
           <div className={styles.suggestionStats} data-testid="product-actions-stats">
-            <span>Всего: <b>{counts.total}</b></span>
-            <span className={styles.suggestionStatsPending}>На рассмотрении: <b>{pendingCount}</b></span>
-            <span className={styles.suggestionStatsApproved}>Утверждено: <b>{approvedCount}</b></span>
-            <span className={styles.suggestionStatsRejected}>Отклонено: <b>{rejectedCount}</b></span>
+            <span>{t("processAnalysis.ai.total")}: <b>{counts.total}</b></span>
+            <span className={styles.suggestionStatsPending}>{t("processAnalysis.ai.pending")}: <b>{pendingCount}</b></span>
+            <span className={styles.suggestionStatsApproved}>{t("processAnalysis.ai.approved")}: <b>{approvedCount}</b></span>
+            <span className={styles.suggestionStatsRejected}>{t("processAnalysis.ai.rejected")}: <b>{rejectedCount}</b></span>
           </div>
 
-          <div className={styles.suggestionList} data-testid="product-actions-list">
-            {suggestions.map((s) => (
-              <SuggestionRow
-                key={String(s.id || Math.random())}
-                suggestion={s}
-                stepOptions={stepOptions}
-                editing={editingIds.has(String(s.id))}
-                onToggleEdit={() => {
-                  setEditingIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(String(s.id))) next.delete(String(s.id));
-                    else next.add(String(s.id));
-                    return next;
-                  });
-                }}
-                onStatusChange={(status) => void handleStatusChange(s.id, status)}
-                onFieldChange={(key, value) => void handleFieldChange(s.id, key, value)}
-              />
-            ))}
+          <div className={styles.analysisTableWrap} data-testid="product-actions-list">
+            <table className={styles.analysisTable}>
+              <thead className={styles.analysisTableHead}>
+                <tr>
+                  <th>{t("processAnalysis.ai.columnAction")}</th>
+                  <th>{t("processAnalysis.ai.columnType")}</th>
+                  <th>{t("processAnalysis.ai.columnStage")}</th>
+                  <th>{t("processAnalysis.ai.columnObject")}</th>
+                  <th>{t("processAnalysis.ai.columnMethod")}</th>
+                  <th>{t("processAnalysis.ai.columnBinding")}</th>
+                  <th>{t("processAnalysis.ai.columnStatus")}</th>
+                  <th>{t("processAnalysis.ai.columnActions")}</th>
+                </tr>
+              </thead>
+              <tbody className={styles.analysisTableBody}>
+                {suggestions.map((s) => {
+                  const editing = editingIds.has(String(s.id));
+                  return editing ? (
+                    <SuggestionEditRow
+                      key={`edit-${String(s.id || Math.random())}`}
+                      draft={editingDrafts.get(String(s.id)) || s}
+                      stepOptions={stepOptions}
+                      onDraftChange={(draft) => {
+                        setEditingDrafts((prev) => {
+                          const next = new Map(prev);
+                          next.set(String(s.id), draft);
+                          return next;
+                        });
+                      }}
+                      onDone={() => void doneEdit(s.id)}
+                      onCancel={() => cancelEdit(s.id)}
+                      t={t}
+                    />
+                  ) : (
+                    <SuggestionDisplayRow
+                      key={String(s.id || Math.random())}
+                      suggestion={s}
+                      onStatusChange={(id, status) => void handleStatusChange(id, status)}
+                      onStartEdit={startEdit}
+                      t={t}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
           {approvedCount > 0 ? (
@@ -607,11 +821,11 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
                 disabled={applying}
                 data-testid="product-actions-apply"
               >
-                {applying ? "Применение…" : `Применить ${approvedCount} утверждённых`}
+                {applying
+                  ? t("processAnalysis.ai.applying")
+                  : fmt(t("processAnalysis.ai.applyApproved"), { count: approvedCount })}
               </button>
-              <span className={styles.analysisHint}>
-                После применения действия сохранятся в сессии и сессия станет готовой к RAG-индексации.
-              </span>
+              <span className={styles.analysisHint}>{t("processAnalysis.ai.applyHint")}</span>
             </div>
           ) : null}
         </>
@@ -620,7 +834,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
       {ragReadiness ? (
         <div className={styles.suggestionRagBanner} data-testid="product-actions-rag-banner">
           <div className={styles.suggestionRagStatus}>
-            <span className={styles.suggestionRagLabel}>RAG-статус:</span>
+            <span className={styles.suggestionRagLabel}>{t("processAnalysis.ai.ragStatusLabel")}</span>
             <span className={styles.suggestionRagValue}>
               {ragStatusLabel(text(ragReadiness.rag_readiness_status), t)}
             </span>
@@ -633,7 +847,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
               disabled={ragLoading}
               data-testid="product-actions-send-rag"
             >
-              {ragLoading ? "Отправка…" : t("processAnalysis.ai.ragStatus.cta")}
+              {ragLoading ? t("common.loading") : t("processAnalysis.ai.ragStatus.cta")}
             </button>
           ) : null}
           {text(ragReadiness.rag_readiness_status) === "queued" ? (
@@ -641,7 +855,7 @@ export const ProductActionSuggestionsPanel = React.memo(function ProductActionSu
           ) : null}
           {text(ragReadiness.rag_readiness_status) === "indexed" ? (
             <span className={styles.analysisHint}>
-              Последняя индексация: {ragReadiness.indexed_at ? new Date(ragReadiness.indexed_at).toLocaleString("ru-RU") : "—"}
+              {t("processAnalysis.ai.indexedAt")} {ragReadiness.indexed_at ? new Date(ragReadiness.indexed_at).toLocaleString("ru-RU") : "—"}
               {ragReadiness.has_unindexed_changes ? ` (${t("processAnalysis.ai.ragStatus.dirty")})` : ""}
             </span>
           ) : null}

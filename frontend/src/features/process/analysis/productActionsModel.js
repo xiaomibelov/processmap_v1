@@ -155,6 +155,7 @@ export function normalizeProductActionRow(rowRaw, options = {}) {
       ACTION_OBJECT_CATEGORIES,
     ),
     action_method: normalizeOption(safe.action_method || safe.actionMethod, ACTION_METHODS),
+    action_text: toText(safe.action_text || safe.actionText),
     role: toText(safe.role),
     source: toText(safe.source) || "manual",
     confidence: Number.isFinite(Number(safe.confidence)) ? Number(safe.confidence) : 1,
@@ -180,6 +181,25 @@ export function normalizeProductActionsList(raw, options = {}) {
       seen.add(row.id);
       return true;
     });
+}
+
+export function isProductActionValid(rowRaw) {
+  const row = isPlainObject(rowRaw) ? rowRaw : {};
+  const action = isPlainObject(row.action) ? row.action : row;
+  const binding = isPlainObject(row.binding) ? row.binding : row;
+  const actionText = toText(row.action_text ?? action.action_text ?? action.actionText);
+  const actionType = toText(row.action_type ?? action.action_type ?? action.actionType);
+  const actionStage = toText(row.action_stage ?? action.action_stage ?? action.actionStage);
+  const actionObject = toText(row.action_object ?? action.action_object ?? action.actionObject);
+  const actionMethod = toText(row.action_method ?? action.action_method ?? action.actionMethod);
+  const stepId = toText(row.step_id ?? binding.step_id ?? binding.stepId ?? action.step_id ?? action.stepId);
+  const nodeId = toText(row.node_id ?? binding.node_id ?? binding.nodeId ?? action.node_id ?? action.nodeId);
+  const bpmnElementId = toText(
+    row.bpmn_element_id ?? binding.bpmn_element_id ?? binding.bpmnElementId ?? action.bpmn_element_id ?? action.bpmnElementId,
+  );
+  return Boolean(
+    actionText && actionType && actionStage && actionObject && actionMethod && (stepId || nodeId || bpmnElementId),
+  );
 }
 
 export function createProductActionId(options = {}) {
