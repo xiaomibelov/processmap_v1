@@ -206,6 +206,7 @@
 - `backend/app/ai/product_actions_suggest.py`:
   - `_extract_suggestions_array` извлекает массив из обёрток `suggestions`, `actions`, `items`, `results`, `data`.
   - `normalize_product_action_suggestions_response` использует этот экстрактор.
+  - `parse_product_actions_suggestions` валидирует структуру: JSON без известного wrapper-массива → `AI_RESPONSE_PARSE_ERROR`, чтобы не маскировать битый ответ под пустой результат.
 - `backend/app/routers/product_actions_ai.py`:
   - Инструментирование каждого вызова: `steps_sent`, `provider_id`, `model`, `raw_len`, `parsed_count`, `selected_count`, `kept_count`, `drop_reasons`.
   - Диагностика пишется в `usage` execution log и возвращается в `diagnostics` успешного ответа.
