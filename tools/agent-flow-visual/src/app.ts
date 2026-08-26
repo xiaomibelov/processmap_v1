@@ -95,6 +95,7 @@ export class App {
     });
 
     this.setupKeyboard(canvas);
+    canvas.focus();
     this.renderer.start();
   }
 

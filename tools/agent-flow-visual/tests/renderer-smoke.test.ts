@@ -21,6 +21,7 @@ function createMockCanvas(): HTMLCanvasElement {
     fill: vi.fn(),
     stroke: vi.fn(),
     arcTo: vi.fn(),
+    bezierCurveTo: vi.fn(),
     clearRect: vi.fn(),
     setLineDash: vi.fn(),
     measureText: vi.fn(() => ({ width: 60 })),
