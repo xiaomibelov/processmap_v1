@@ -10,6 +10,9 @@ function resolveLogPath(): string {
   const fromEnv = import.meta.env.AGENT_EVENTS_LOG;
   if (fromEnv) return fromEnv;
 
+  // Default log path. In dev mode the Vite middleware maps this to the
+  // repo-root .agents/events/ directory; in production/headless it resolves
+  // relative to the served page.
   return ".agents/events/agent-events.ndjson";
 }
 
