@@ -9,8 +9,15 @@ const STEP_EVENTS = new Set(["step.started", "step.finished"]);
 export class Timeline {
   private readonly events: RawEvent[];
 
-  constructor(events: RawEvent[]) {
+  constructor(events: RawEvent[] = []) {
     this.events = events;
+  }
+
+  /**
+   * Append new events to the live edge.
+   */
+  append(events: RawEvent[]): void {
+    this.events.push(...events);
   }
 
   /**
