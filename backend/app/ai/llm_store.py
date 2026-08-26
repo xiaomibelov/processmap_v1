@@ -36,6 +36,33 @@ def _row(cur: Any) -> Optional[Dict[str, Any]]:
 
 # ---------------------------------------------------------------- providers
 
+_CAPABILITIES_DEFAULT = {"supports_json_mode": True}
+
+
+def _parse_capabilities(raw: Any) -> Dict[str, Any]:
+    """Parse provider capabilities JSON; default enables json_mode for backward compat."""
+    if isinstance(raw, dict):
+        return dict(_CAPABILITIES_DEFAULT, **raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return dict(_CAPABILITIES_DEFAULT, **parsed)
+        except Exception:
+            pass
+    return dict(_CAPABILITIES_DEFAULT)
+
+
+def provider_capabilities(provider: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return parsed capabilities dict for a provider row (defaults to json_mode=True)."""
+    return _parse_capabilities(provider.get("capabilities") if provider else None)
+
+
+def provider_supports_json_mode(provider: Optional[Dict[str, Any]]) -> bool:
+    """Check whether provider supports OpenAI-style response_format=json_object."""
+    return bool(provider_capabilities(provider).get("supports_json_mode"))
+
+
 def mask_provider(p: Dict[str, Any]) -> Dict[str, Any]:
     """Публичная форма провайдера: БЕЗ api_key, только has_api_key + key_last4."""
     key = str(p.get("api_key") or "")
@@ -47,6 +74,7 @@ def mask_provider(p: Dict[str, Any]) -> Dict[str, Any]:
         "model": p.get("model") or "",
         "priority": int(p.get("priority") or 0),
         "enabled": bool(p.get("enabled")),
+        "capabilities": provider_capabilities(p),
         "has_api_key": bool(key),
         "key_last4": key[-4:] if key else "",
         "created_by": p.get("created_by") or "",
@@ -92,28 +120,34 @@ def create_provider(
     api_key: str = "",
     priority: int = 100,
     enabled: bool = True,
+    capabilities: Optional[Dict[str, Any]] = None,
     actor: str = "",
 ) -> Dict[str, Any]:
     pid = _new_id("llmprov")
     now = _now()
+    caps = json.dumps(_parse_capabilities(capabilities), ensure_ascii=False)
     with _connect() as con:
         con.execute(
             "INSERT INTO llm_providers"
             " (id, org_id, name, base_url, api_key, model, priority, enabled,"
-            "  created_by, created_at, updated_by, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  capabilities, created_by, created_at, updated_by, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (pid, org_id, name, base_url, api_key, model, int(priority),
-             bool(enabled), actor, now, actor, now),
+             bool(enabled), caps, actor, now, actor, now),
         )
     return get_provider(pid) or {}
 
 
 def update_provider(provider_id: str, fields: Dict[str, Any], *, actor: str = "") -> Optional[Dict[str, Any]]:
-    allowed = {"name", "base_url", "model", "priority", "enabled", "api_key", "org_id"}
+    allowed = {"name", "base_url", "model", "priority", "enabled", "api_key", "org_id", "capabilities"}
     sets: List[str] = []
     params: List[Any] = []
     for key in sorted(fields):
         if key not in allowed or fields[key] is None:
+            continue
+        if key == "capabilities":
+            sets.append("capabilities = ?")
+            params.append(json.dumps(_parse_capabilities(fields[key]), ensure_ascii=False))
             continue
         sets.append(f"{key} = ?")
         params.append(fields[key])

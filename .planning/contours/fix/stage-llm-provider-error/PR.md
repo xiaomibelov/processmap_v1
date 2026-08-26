@@ -1,84 +1,88 @@
-# PR — fix/stage-suggest-empty-agent-stream (итерация 3)
+# PR — fix/stage-json-mode-provider-capability (итерация 4)
 
-**Ветка:** `fix/stage-suggest-empty-agent-stream`  
-**База:** `main` (после merge PR #836)  
-**Тип:** fix  
-**Заголовок:** `fix(llm): suggest не теряет предложения в JSON-обёртках; инструментирование + диагностика agent-сервиса`
+**Ветка:** `fix/stage-json-mode-provider-capability`
+**База:** `main` (после merge PR #838)
+**Тип:** fix
+**Заголовок:** `fix(llm): json_mode зависит от capability провайдера; repair-retry для non-json_mode`
 
-## Root cause (итерация 3)
+## Root cause
 
-После мержа PR #836 на stage:
+После итераций 1–3 на stage осталось два режима отказа `suggest`:
 
-1. **suggest → пустой результат** (D4). Парсер `backend/app/ai/product_actions_suggest.py` умел снимать code-fences и чинить обрезанный JSON, но `normalize_product_action_suggestions_response` ожидала только ключ `suggestions`. При `json_mode=True` / `response_format: json_object` LLM может вернуть массив в обёртке `{"actions": [...]}`, `{"items": [...]}`, `{"results": [...]}`, `{"data": [...]}` — и предложения молча терялись. Отсутствовала диагностика: не было видно, сколько шагов ушло, какой провайдер/модель ответил, сколько элементов распарсилось и сколько выжило.
-2. **processman всё ещё падает** (D2). Пользователь сообщает, что фикс #836 в `backend/services/agent/` на stage не наблюдается. Возможные причины: stale-образ агент-сервиса или провайдер `processman_agent` всё ещё прибит к VVPROXY `claude-opus-4-6`. Нужна runtime-верификация задеплоенного commit'а и provider/model в SSE-ошибках.
-3. **Латентность suggest ~47,5 с** (D3). Primary-провайдер VVPROXY таймаутится 30 с, затем deepseek генерирует. Требуется конфигурационное переключение приоритетов в `/admin/llm` (не код).
+1. **Сессия «ВЫВЫВ» (~19:38)** — `AI_RESPONSE_PARSE_ERROR`. Провайдер VVPROXY (`claude-opus-4-6`) не поддерживает OpenAI-style `response_format: json_object`; модель возвращает prose/markdown, парсер падает.
+2. **Сессия «еkеkе` (~18:11)** — пустой список предложений от deepseek-main. `json_mode` работает (валидный JSON), но список пуст.
+
+Главный дефект: шлюз не учитывал per-provider capability `supports_json_mode` и передавал `response_format` всем провайдерам, запрошенным через `json_mode=True`.
 
 ## Что изменено
 
-### D4 — парсер обёрток + инструментирование suggest
+### Capability-aware json_mode
 
-- `backend/app/ai/product_actions_suggest.py`:
-  - `_extract_suggestions_array` извлекает массив предложений из ключей `suggestions`, `actions`, `items`, `results`, `data`.
-  - `normalize_product_action_suggestions_response` использует этот экстрактор.
-  - `parse_product_actions_suggestions` валидирует структуру: если JSON не содержит известный wrapper-массив, возвращается `AI_RESPONSE_PARSE_ERROR`, а не пустой результат.
-- `backend/app/routers/product_actions_ai.py`:
-  - Инструментирование каждого вызова: `steps_sent`, `provider_id`, `model`, `raw_len`, `parsed_count`, `selected_count`, `kept_count`, `drop_reasons`.
-  - Диагностика пишется в execution log (`usage`) и возвращается в `diagnostics` успешного ответа.
-  - Различимые коды ошибок для пустого результата:
-    - `AI_SUGGEST_NO_STEPS` — в сессии нет шагов (ранний возврат без вызова LLM).
-    - `AI_SUGGEST_LLM_EMPTY` — LLM вернул пустой список.
-    - `AI_SUGGEST_ALL_INVALID` — все предложения отбракованы.
-  - Ранний возврат `AI_SUGGEST_NO_STEPS`, если в контексте 0 шагов.
-- `frontend/src/features/process/analysis/ProductActionSuggestionsPanel.jsx` + `frontend/src/shared/i18n/ru.js`:
-  - Добавлены коды ошибок и человекочитаемые сообщения для новых `AI_SUGGEST_*` кодов.
+- `backend/alembic/versions/031_llm_provider_capabilities.py` — добавляет `llm_providers.capabilities TEXT NOT NULL DEFAULT '{}'`.
+- `backend/app/ai/llm_store.py`:
+  - `_parse_capabilities`, `provider_capabilities`, `provider_supports_json_mode`.
+  - Default `supports_json_mode: true` для обратной совместимости.
+  - `create_provider` / `update_provider` / `mask_provider` поддерживают `capabilities`.
+- `backend/app/routers/admin_llm.py` — `LlmProviderBody` / `LlmProviderPatchBody` принимают `capabilities`.
+- `backend/app/ai/gateway.py`:
+  - `json_mode_used = json_mode and provider_supports_json_mode(provider)`.
+  - `response_format: json_object` передаётся только при `json_mode_used=True`.
+  - Возвращает `json_mode_used` в результате.
+  - `prompt_override` позволяет caller подменить system/template/max_tokens.
+- `backend/services/agent/gateway/gateway.py` и `backend/services/agent/gateway/llm_store.py` — синхронизированы с монолитом.
+- `backend/app/ai/llm_internal_client.py` и `backend/services/agent/routers/internal_llm.py` — проброс `json_mode` и `prompt_override` в agent-сервис.
 
-### D2 — диагностика agent-сервиса
+### Repair-retry для non-json_mode провайдеров
 
-- `backend/services/agent/routers/health.py`:
-  - Новый endpoint `/version` с `build_id`, `build_time`, `build_branch`, `build_env`, `git_commit`.
-- `backend/services/agent/gateway/gateway.py`:
-  - В error-событие `complete_stream()` добавлены `provider_id` и `model` последнего attempted-провайдера.
-- `backend/services/agent/memory/chat.py`:
-  - При `stream_error` логируется `session_id`, `provider_id`, `model`, `status`, `error`.
-  - Error-событие передаёт `provider_id`/`model` в SSE.
-- `backend/services/agent/routers/agent_stream.py`:
-  - Логирование SSE error-событий с `provider_id`/`model`.
-  - Логирование необработанных исключений потока.
-
-### D3 — конфигурация
-
-- Оставлена рекомендация из #836: для org `8b89c83ea810` в `/admin/llm` поднять приоритет `deepseek-main` над VVPROXY для фич `product_actions_suggest` и `processman_agent`. Код не меняет конфигурацию.
+- `backend/app/ai/product_actions_suggest.py` — добавлен константный `PRODUCT_ACTIONS_SUGGEST_REPAIR_PROMPT_TEMPLATE`.
+- `backend/app/routers/product_actions_ai.py::_call_product_actions_llm`:
+  - При `ProductActionsAiResponseParseError` и `json_mode_used=False` делает один повторный вызов с `prompt_override`.
+  - При неудаче repair — `AI_RESPONSE_PARSE_ERROR` с диагностикой и `raw_content` первого ответа.
+  - При `json_mode_used=True` repair не делается (провайдер обязан вернуть валидный JSON).
 
 ## Тесты
 
-- `backend/tests/test_product_actions_suggest_v2.py` — добавлены:
-  - `test_parse_actions_wrapper_response`
-  - `test_parse_items_wrapper_response`
-  - `test_parse_empty_array_response`
-- `backend/tests/test_product_actions_ai_suggest.py` — добавлены/обновлены:
-  - `test_success_response_includes_diagnostics_block`
-  - `test_empty_suggestions_no_steps_returns_distinct_error`
-  - `test_empty_suggestions_llm_empty_returns_distinct_error`
-  - `test_llm_response_wrapped_in_actions_key_is_parsed`
-- `backend/services/agent/tests/test_health.py` — добавлен:
-  - `test_version_returns_build_metadata`
-- `backend/services/agent/tests/test_streaming.py` — добавлен:
-  - `test_stream_gateway_error_includes_provider_and_model`
+- `backend/tests/test_llm_gateway.py` — добавлены:
+  - `test_gateway_skips_json_mode_for_provider_without_capability`
+  - `test_gateway_uses_json_mode_when_provider_supports_it`
+  - `test_gateway_defaults_json_mode_to_supported`
+- `backend/tests/test_product_actions_ai_suggest.py` — добавлены:
+  - `test_repair_retry_succeeds_for_non_json_mode_provider`
+  - `test_repair_retry_failure_returns_parse_error_for_non_json_mode_provider`
+  - `test_no_repair_retry_for_json_mode_provider_parse_error`
+- `backend/services/agent/tests/test_internal_llm.py` — добавлен:
+  - `test_complete_propagates_json_mode_and_prompt_override`
 
 ### Pre-existing
 
 - `backend/tests/test_llm_gateway.py::test_effective_providers_with_key_prefers_org_then_org_default` падает из-за загрязнения dev-БД предыдущими прогонами. Вне скоупа этого контура.
-- `frontend/src/features/process/analysis/...NotesPanel.advanced-badge-semantics.test.mjs` — pre-existing, не трогаем.
+
+## Результаты прогонов (локально)
+
+- `backend/tests/test_product_actions_suggest_v2.py`: 12 passed.
+- `backend/tests/test_product_actions_ai_suggest.py`: 35 passed.
+- `backend/tests/test_llm_gateway.py`: 20 passed, 1 pre-existing failed.
+- `backend/services/agent/tests/test_internal_llm.py`: 7 passed.
+- `backend/services/agent/tests/test_streaming.py` + `test_health.py`: 6 passed.
+- `frontend`: `npm run build` green; `node --test src/features/process/analysis/productActionSuggestionsPanel.error.test.mjs`: 4 passed.
+
+## Конфигурация провайдеров
+
+**Текущие приоритеты и capability (рекомендация, не изменение кода):**
+
+- Для org `8b89c83ea810` рекомендуется:
+  1. У VVPROXY-провайдера (`vvchat`) установить `capabilities: {"supports_json_mode": false}`.
+  2. Поднять приоритет `deepseek-main` выше VVPROXY для фич `product_actions_suggest` и `processman_agent`.
+- Это конфигурационное действие выполняется пользователем в `/admin/llm`; код не меняет приоритеты.
 
 ## Stage-верификация (после мержа пользователем)
 
-- [ ] `/agent/version` (или прямой хит к agent-сервису) возвращает commit из PR #836/итерации 3.
-- [ ] suggest на сессии `e9dd18bcbe` возвращает непустой список валидных предложений (скрин + Network + execution log).
-- [ ] Execution log /admin/llm для suggest показывает `provider_id`, `model`, `parsed_count`, `kept_count`.
+- [ ] Execution log /admin/llm подтверждает матрицу: VVPROXY → parse error (без json_mode), deepseek → валидный JSON.
+- [ ] suggest на сессиях «ВЫВЫВ» и «еkеkе` возвращает непустой список валидных предложений с `action_text` и 4 тегами.
 - [ ] processman отвечает содержательно; SSE-ошибка (если есть) содержит `provider_id`/`model`.
-- [ ] В /admin/llm «Модули» проверить привязку `product_actions_suggest`/`processman_agent`; при необходимости переставить приоритеты (решение пользователя).
+- [ ] `/admin/llm` показывает capability `supports_json_mode` для каждого провайдера.
 
 ## Merge/deploy
 
 - **Merge и deploy выполняет пользователь вручно.**
-- После merge требуется проверка на stage.
+- После merge требуется проверка на stage и, при необходимости, перестановка приоритетов провайдеров / установка capability.

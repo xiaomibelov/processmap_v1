@@ -11,7 +11,11 @@ from pydantic import BaseModel, Field
 from ..ai import llm_internal_client
 from ..ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
 from ..ai.gateway import complete as gateway_complete
-from ..ai.product_actions_suggest import ProductActionsAiResponseParseError, parse_product_actions_suggestions
+from ..ai.product_actions_suggest import (
+    PRODUCT_ACTIONS_SUGGEST_REPAIR_PROMPT_TEMPLATE,
+    ProductActionsAiResponseParseError,
+    parse_product_actions_suggestions,
+)
 from ..ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from ..legacy.request_context import require_authenticated_user, request_active_org_id
 from ..models import Edge, Node, Session
@@ -85,10 +89,41 @@ def _call_product_actions_llm(
     )
     status = result.get("status")
     if status == "ok":
-        parsed = parse_product_actions_suggestions(
-            str(result.get("text") or ""), max_suggestions=max_suggestions
-        )
-        return parsed, result
+        try:
+            parsed = parse_product_actions_suggestions(
+                str(result.get("text") or ""), max_suggestions=max_suggestions
+            )
+            return parsed, result
+        except ProductActionsAiResponseParseError as parse_exc:
+            # Если провайдер не поддерживает json_mode, LLM мог вернуть prose/markdown.
+            # Делаем один repair-retry с усиленным промптом, требующим только JSON.
+            if result.get("json_mode_used"):
+                raise
+            repair_template = PRODUCT_ACTIONS_SUGGEST_REPAIR_PROMPT_TEMPLATE.replace(
+                "{parse_error}", _safe_error_message(str(parse_exc))
+            )
+            repair_result = _llm_complete(
+                FEATURE,
+                {"previous_response": str(result.get("text") or "")},
+                user_id=actor_user_id,
+                project_id=project_id,
+                session_id=session_id,
+                org_id=org_id,
+                max_tokens=4000,
+                timeout_sec=int(_PRODUCT_ACTIONS_LLM_KWARGS.get("timeout_sec", 30)),
+                json_mode=_PRODUCT_ACTIONS_LLM_KWARGS.get("json_mode", False),
+                prompt_override={"template": repair_template},
+            )
+            if repair_result.get("status") != "ok":
+                raise
+            repair_text = str(repair_result.get("text") or "")
+            try:
+                parsed = parse_product_actions_suggestions(repair_text, max_suggestions=max_suggestions)
+            except ProductActionsAiResponseParseError as repair_parse_exc:
+                # Сохраняем raw первого ответа для диагностики.
+                repair_parse_exc.raw_content = (getattr(parse_exc, "raw_content", "") or str(result.get("text") or "")[:1000])
+                raise repair_parse_exc
+            return parsed, repair_result
     if status == "no_provider":
         raise _ProductActionsLLMNoProviderError(str(result.get("error") or "no enabled LLM providers"))
     if status == "rate_limited":

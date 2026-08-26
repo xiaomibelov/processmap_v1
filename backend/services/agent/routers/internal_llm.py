@@ -33,6 +33,7 @@ class InternalCompleteIn(BaseModel):
     max_tokens: Optional[int] = None
     timeout_sec: int = 30
     json_mode: bool = False
+    prompt_override: Optional[Dict[str, Any]] = None
 
 
 class InternalCompleteCachedIn(BaseModel):
@@ -69,6 +70,7 @@ def internal_complete(
         max_tokens=body.max_tokens,
         timeout_sec=body.timeout_sec,
         json_mode=body.json_mode,
+        prompt_override=body.prompt_override,
     )
 
 
