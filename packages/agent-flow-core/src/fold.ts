@@ -37,6 +37,9 @@ function makeSteps(): RegulationStep[] {
     startedAt: null,
     finishedAt: null,
     durationMs: null,
+    description: null,
+    toolCalls: [],
+    outputTokens: 0,
     artifacts: [],
   }));
 }
@@ -97,6 +100,9 @@ function buildContour(runEvents: RawEvent[]): ContourModel {
         if (step) {
           step.status = "running";
           step.startedAt = ts;
+          if (typeof event.description === "string") {
+            step.description = event.description;
+          }
         }
         break;
       }
@@ -110,6 +116,41 @@ function buildContour(runEvents: RawEvent[]): ContourModel {
             : "ok";
           step.finishedAt = ts;
           step.durationMs = parseTs(ts) - parseTs(step.startedAt);
+        }
+        break;
+      }
+      case "tool.started": {
+        const stepName = event.step as string;
+        const step = steps.find((s) => s.step === stepName);
+        if (step) {
+          step.toolCalls.push({
+            name: (event.tool as string) || "tool",
+            status: "pending",
+            startedAt: ts,
+            finishedAt: null,
+          });
+        }
+        break;
+      }
+      case "tool.finished": {
+        const stepName = event.step as string;
+        const step = steps.find((s) => s.step === stepName);
+        if (step) {
+          const last = step.toolCalls.find((t) => t.status === "pending");
+          if (last) {
+            last.status = ["ok", "fail"].includes(event.result as string)
+              ? (event.result as "ok" | "fail")
+              : "ok";
+            last.finishedAt = ts;
+          }
+        }
+        break;
+      }
+      case "tokens.used": {
+        const stepName = event.step as string;
+        const step = steps.find((s) => s.step === stepName);
+        if (step && typeof event.tokens === "number") {
+          step.outputTokens += event.tokens;
         }
         break;
       }

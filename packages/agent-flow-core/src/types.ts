@@ -26,6 +26,16 @@ export interface ArtifactChip {
 }
 
 /**
+ * A single tool call observed while a step is running.
+ */
+export interface ToolCallInfo {
+  name: string;
+  status: "pending" | "ok" | "fail";
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+/**
  * State of a single regulation step within a contour run.
  */
 export interface RegulationStep {
@@ -34,6 +44,9 @@ export interface RegulationStep {
   startedAt: string | null;
   finishedAt: string | null;
   durationMs: number | null;
+  description: string | null;
+  toolCalls: ToolCallInfo[];
+  outputTokens: number;
   artifacts: ArtifactChip[];
 }
 
@@ -86,7 +99,14 @@ export interface LayoutNode {
   width: number;
   height: number;
   label: string;
+  title: string;
+  description: string | null;
   status: string;
+  toolCount: number;
+  lastTool: string | null;
+  outputTokens: number;
+  interactive: boolean;
+  parentId: string | null;
   chips: ArtifactChip[];
 }
 
