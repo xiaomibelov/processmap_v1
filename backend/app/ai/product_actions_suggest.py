@@ -346,6 +346,17 @@ def normalize_product_action_suggestions_response(raw: Any, *, max_suggestions: 
     return {"suggestions": suggestions, "warnings": warnings}
 
 
+def _looks_like_suggestions_payload(raw: Any) -> bool:
+    """Return True if the parsed JSON is a list or a dict with a known wrapper key."""
+    if isinstance(raw, list):
+        return True
+    if not isinstance(raw, dict):
+        return False
+    if not raw:
+        return True
+    return any(key in raw for key in _SUGGESTION_WRAPPER_KEYS)
+
+
 def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Dict[str, Any]:
     """Parse gateway/agent-service response text into normalized suggestions dict.
 
@@ -365,6 +376,12 @@ def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Di
         )
         parse_exc.raw_content = str(cand or "")[:1000]
         raise parse_exc from exc
+    if not _looks_like_suggestions_payload(raw):
+        parse_exc = ProductActionsAiResponseParseError(
+            "response json does not contain a suggestions array"
+        )
+        parse_exc.raw_content = str(cand or "")[:1000]
+        raise parse_exc
     return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)
 
 
