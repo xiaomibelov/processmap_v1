@@ -102,4 +102,36 @@ describe("foldEvents", () => {
     const model = foldEvents(events);
     expect(model.map((c) => c.contourId)).toEqual(["feature/b", "feature/a"]);
   });
+
+  it("records step description from step.started", () => {
+    const rid = "rid_desc";
+    const events = [
+      contourStarted("feature/x", undefined, { run_id: rid }),
+      stepStarted("feature/x", "plan", undefined, {
+        run_id: rid,
+        description: "Draft plan",
+      }),
+    ];
+    const model = foldEvents(events);
+    const planStep = model[0].steps.find((s) => s.step === "plan");
+    expect(planStep?.description).toBe("Draft plan");
+  });
+
+  it("tracks tool calls and token usage", () => {
+    const rid = "rid_tools";
+    const events = [
+      contourStarted("feature/x", undefined, { run_id: rid }),
+      stepStarted("feature/x", "api", undefined, { run_id: rid }),
+      { ts: new Date().toISOString(), event: "tool.started", contour_id: "feature/x", run_id: rid, step: "api", tool: "Read" },
+      { ts: new Date().toISOString(), event: "tool.finished", contour_id: "feature/x", run_id: rid, step: "api", tool: "Read", result: "ok" },
+      { ts: new Date().toISOString(), event: "tokens.used", contour_id: "feature/x", run_id: rid, step: "api", tokens: 220 },
+      stepFinished("feature/x", "api", "ok", undefined, { run_id: rid }),
+    ];
+    const model = foldEvents(events);
+    const apiStep = model[0].steps.find((s) => s.step === "api");
+    expect(apiStep?.toolCalls).toHaveLength(1);
+    expect(apiStep?.toolCalls[0].name).toBe("Read");
+    expect(apiStep?.toolCalls[0].status).toBe("ok");
+    expect(apiStep?.outputTokens).toBe(220);
+  });
 });

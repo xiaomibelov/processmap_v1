@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildLayout } from "../src/layout.js";
-import { allStepsOk, contourStarted } from "./fixtures/builders.js";
+import { allStepsOk, contourStarted, stepFinished, stepStarted } from "./fixtures/builders.js";
 import { foldEvents } from "../src/fold.js";
 
 describe("buildLayout", () => {
@@ -63,5 +63,44 @@ describe("buildLayout", () => {
     const layout = buildLayout([]);
     expect(layout.nodes).toHaveLength(0);
     expect(layout.viewport.maxX).toBeGreaterThan(layout.viewport.minX);
+  });
+
+  it("populates zoetrope-style node fields", () => {
+    const rid = "rid_fields";
+    const events = [
+      contourStarted("feature/x", undefined, { run_id: rid }),
+      stepStarted("feature/x", "plan", undefined, {
+        run_id: rid,
+        description: "Plan it",
+      }),
+      { ts: new Date().toISOString(), event: "tool.started", contour_id: "feature/x", run_id: rid, step: "plan", tool: "Read" },
+      { ts: new Date().toISOString(), event: "tool.finished", contour_id: "feature/x", run_id: rid, step: "plan", tool: "Read", result: "ok" },
+      { ts: new Date().toISOString(), event: "tokens.used", contour_id: "feature/x", run_id: rid, step: "plan", tokens: 120 },
+      stepFinished("feature/x", "plan", "ok", undefined, { run_id: rid }),
+    ];
+    const model = foldEvents(events);
+    const layout = buildLayout(model);
+    const stepNode = layout.nodes.find((n) => n.title === "plan");
+    expect(stepNode).toBeDefined();
+    expect(stepNode?.description).toBe("Plan it");
+    expect(stepNode?.toolCount).toBe(1);
+    expect(stepNode?.lastTool).toBe("Read");
+    expect(stepNode?.outputTokens).toBe(120);
+    expect(stepNode?.parentId).toMatch(/:root$/);
+  });
+
+  it("places root above children in hierarchical layout", () => {
+    const rid = "rid_hierarchy";
+    const events = [
+      contourStarted("feature/x", undefined, { run_id: rid }),
+      ...allStepsOk("feature/x", rid),
+    ];
+    const model = foldEvents(events);
+    const layout = buildLayout(model);
+    const root = layout.nodes.find((n) => n.parentId === null);
+    const children = layout.nodes.filter((n) => n.parentId === root?.id);
+    expect(root).toBeDefined();
+    expect(children.length).toBeGreaterThan(0);
+    expect(children.every((c) => c.y > root!.y)).toBe(true);
   });
 });
