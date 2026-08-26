@@ -3,6 +3,7 @@
 **Ветка:** `fix/stage-llm-provider-error`  
 **База:** `main` (`67083197`)  
 **Тип:** fix  
+**PR:** https://github.com/xiaomibelov/processmap_v1/pull/835  
 **Заголовок:** `fix(llm): быстрый failover при таймауте провайдера, маппинг AI_PROVIDER_ERROR, action_text в промпте v4`
 
 ## Root cause
