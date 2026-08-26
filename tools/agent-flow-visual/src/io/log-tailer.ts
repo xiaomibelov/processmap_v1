@@ -66,6 +66,7 @@ export class LogTailer {
     const url = `${this.path}?_=${Date.now()}`;
     try {
       const response = await this.fetchImpl(url, {
+        cache: "no-store",
         headers:
           this.lastByteOffset > 0
             ? { Range: `bytes=${this.lastByteOffset}-` }
