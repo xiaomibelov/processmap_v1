@@ -70,6 +70,26 @@ test("extractAnswerText: explain/qa → текст + note", () => {
   assert.equal(extractAnswerText("qa", {}), "");
 });
 
+test("extractAnswerText: processman-аналоги suggest-next/explain-step/step-qa", () => {
+  assert.equal(
+    extractAnswerText("suggest-next", {
+      suggestions: {
+        candidates: [{ code: "op_cook", rationale: "нагрев" }],
+        note: "контекст: супы",
+      },
+    }),
+    "• op_cook — нагрев\n\nконтекст: супы",
+    "suggest-next → кандидаты + note",
+  );
+  assert.equal(
+    extractAnswerText("explain-step", { explanation: "шаг нужен", note: "n" }),
+    "шаг нужен\n\nn",
+    "explain-step → explanation + note",
+  );
+  assert.equal(extractAnswerText("step-qa", { answer: "ответ", note: "примечание" }), "ответ\n\nпримечание", "step-qa → answer + note");
+  assert.equal(extractAnswerText("unknown-action", { answer: "x" }), "", "неизвестный action → пусто");
+});
+
 test("mapActionResponse: ok → OK + data; ok:false → ERROR с человекочитаемым текстом", () => {
   const ok = mapActionResponse({ ok: true, status: 200, result: { ok: true, status: "ok", answer: "a" } });
   assert.equal(ok.status, ANSWER_STATUS.OK);
