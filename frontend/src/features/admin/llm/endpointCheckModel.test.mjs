@@ -6,6 +6,7 @@ import {
   ENDPOINT_CHECK_FILTER_ALL,
   ENDPOINT_CHECK_FILTER_FAILING,
   ENDPOINT_CHECK_FILTER_FIXED,
+  ENDPOINT_CHECK_FILTER_FLAKY,
   ENDPOINT_CHECK_FILTER_NEW,
   ENDPOINT_CHECK_POLL_INTERVAL_MS,
   buildEndpointCheckSummary,
@@ -26,6 +27,7 @@ const RESULTS = [
   { operation_id: "op_still", method: "get", path: "/api/d", http_status: 404, category: "http_error", diff_status: "still_failing", latency_ms: 8 },
   { operation_id: "op_fixed", method: "get", path: "/api/e", http_status: 200, category: "ok", diff_status: "fixed", latency_ms: 21 },
   { operation_id: "op_newep", method: "get", path: "/api/f", http_status: 200, category: "ok", diff_status: "new_endpoint", latency_ms: 5 },
+  { operation_id: "op_flaky", method: "get", path: "/api/g", http_status: 404, category: "http_error", diff_status: "flaky", latency_ms: 7 },
 ];
 
 test("дефолтный фильтр — «только новые ошибки» (new_error + new_domain_error)", () => {
@@ -34,7 +36,7 @@ test("дефолтный фильтр — «только новые ошибки
   assert.deepEqual(out.map((r) => r.operation_id), ["op_new", "op_new_dom"]);
 });
 
-test("фильтры: все / падающие / починившиеся", () => {
+test("фильтры: все / падающие / починившиеся / flaky", () => {
   assert.equal(filterEndpointCheckResults(RESULTS, ENDPOINT_CHECK_FILTER_ALL).length, RESULTS.length);
   assert.deepEqual(
     filterEndpointCheckResults(RESULTS, ENDPOINT_CHECK_FILTER_FAILING).map((r) => r.operation_id),
@@ -43,6 +45,10 @@ test("фильтры: все / падающие / починившиеся", () 
   assert.deepEqual(
     filterEndpointCheckResults(RESULTS, ENDPOINT_CHECK_FILTER_FIXED).map((r) => r.operation_id),
     ["op_fixed"],
+  );
+  assert.deepEqual(
+    filterEndpointCheckResults(RESULTS, ENDPOINT_CHECK_FILTER_FLAKY).map((r) => r.operation_id),
+    ["op_flaky"],
   );
 });
 
@@ -61,8 +67,10 @@ test("diff-группы и подписи", () => {
   assert.equal(endpointCheckDiffGroup("domain_fixed"), "fixed");
   assert.equal(endpointCheckDiffGroup("ok"), "ok");
   assert.equal(endpointCheckDiffGroup("new_endpoint"), "other");
+  assert.equal(endpointCheckDiffGroup("flaky"), "flaky");
   assert.equal(endpointCheckDiffLabel("new_error"), "новая ошибка");
   assert.equal(endpointCheckDiffLabel("still_failing"), "всё ещё падает");
+  assert.equal(endpointCheckDiffLabel("flaky"), "flaky");
   assert.equal(endpointCheckDiffLabel(""), "—");
 });
 
@@ -98,6 +106,18 @@ test("сводка: new_error = 0 → красного бейджа нет", () 
   assert.equal(summary.hasNewErrors, false);
   assert.equal(summary.newErrors, 0);
   assert.equal(summary.triggerLabel, "вручную");
+});
+
+test("сводка: flaky считается отдельно и включает бейдж", () => {
+  const summary = buildEndpointCheckSummary({
+    id: "run_3",
+    trigger: "manual",
+    counts: { ok: 10, scanned: 11 },
+    diff: { new_error: 0, still_failing: 0, fixed: 0, flaky: 3 },
+  });
+  assert.equal(summary.flaky, 3);
+  assert.equal(summary.hasFlaky, true);
+  assert.equal(summary.hasNewErrors, false);
 });
 
 test("сводка: прогонов не было → честное пустое состояние", () => {

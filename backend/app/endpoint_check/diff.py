@@ -25,6 +25,11 @@ OK = "ok"
 DOMAIN = "domain_error"
 _ERROR_CATEGORIES = {"http_error", "timeout", "conn_error"}
 
+# Flap-detection: сколько раз эндпоинт менял состояние ok↔error
+# в окне последних N завершённых прогонов — считаем flaky.
+FLAP_THRESHOLD = 2
+FLAP_WINDOW_RUNS = 5
+
 
 def _group(category: str) -> str:
     cat = str(category or "").strip()
@@ -33,6 +38,29 @@ def _group(category: str) -> str:
     if cat == DOMAIN:
         return DOMAIN
     return "error"
+
+
+def _is_error_group(category: str) -> bool:
+    return _group(category) != OK
+
+
+def is_flaky(history_categories: List[str]) -> bool:
+    """True, если в хронологии категорий (старые → новые) окном в FLAP_WINDOW_RUNS
+    зафиксировано >= FLAP_THRESHOLD переходов между ok и error-группой.
+
+    Стабильная ошибка или стабильный ok — не flaky.
+    """
+    window = history_categories[-FLAP_WINDOW_RUNS:]
+    if len(window) < 2:
+        return False
+    flaps = 0
+    prev_error = _is_error_group(window[0])
+    for cat in window[1:]:
+        cur_error = _is_error_group(cat)
+        if cur_error != prev_error:
+            flaps += 1
+            prev_error = cur_error
+    return flaps >= FLAP_THRESHOLD
 
 
 def compute_diff(

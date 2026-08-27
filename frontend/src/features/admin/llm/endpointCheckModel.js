@@ -25,6 +25,7 @@ export const ENDPOINT_CHECK_FILTER_ALL = "all";
 export const ENDPOINT_CHECK_FILTER_NEW = "new";
 export const ENDPOINT_CHECK_FILTER_FAILING = "failing";
 export const ENDPOINT_CHECK_FILTER_FIXED = "fixed";
+export const ENDPOINT_CHECK_FILTER_FLAKY = "flaky";
 export const ENDPOINT_CHECK_DEFAULT_FILTER = ENDPOINT_CHECK_FILTER_NEW;
 
 export const ENDPOINT_CHECK_POLL_INTERVAL_MS = 7000;
@@ -38,6 +39,7 @@ const DIFF_LABELS = {
   domain_fixed: "починилось (доменная)",
   ok: "ok",
   new_endpoint: "новый эндпоинт",
+  flaky: "flaky",
 };
 
 // Видимость панели = право кнопки «API Docs»: canOpenOrgSettings в
@@ -48,6 +50,7 @@ export function endpointCheckDiffGroup(diffStatusRaw) {
   if (s === "new_error" || s === "new_domain_error") return "new";
   if (s === "still_failing" || s === "still_domain_error") return "failing";
   if (s === "fixed" || s === "domain_fixed") return "fixed";
+  if (s === "flaky") return "flaky";
   if (s === "ok") return "ok";
   return "other"; // new_endpoint и неизвестные статусы
 }
@@ -66,6 +69,7 @@ export function filterEndpointCheckResults(resultsRaw, filterRaw = ENDPOINT_CHEC
     if (filter === ENDPOINT_CHECK_FILTER_NEW) return group === "new";
     if (filter === ENDPOINT_CHECK_FILTER_FAILING) return group === "new" || group === "failing";
     if (filter === ENDPOINT_CHECK_FILTER_FIXED) return group === "fixed";
+    if (filter === ENDPOINT_CHECK_FILTER_FLAKY) return group === "flaky";
     return true;
   });
 }
@@ -102,6 +106,7 @@ export function buildEndpointCheckSummary(lastRunRaw) {
     newErrors: 0,
     stillFailing: 0,
     fixed: 0,
+    flaky: 0,
     newEndpoints: 0,
     trigger: "",
     triggerLabel: "",
@@ -109,6 +114,7 @@ export function buildEndpointCheckSummary(lastRunRaw) {
     branch: "",
     env: "",
     hasNewErrors: false,
+    hasFlaky: false,
     startedAt: null,
     finishedAt: null,
   };
@@ -118,6 +124,7 @@ export function buildEndpointCheckSummary(lastRunRaw) {
   const version = asObject(run.version);
   const trigger = toText(run.trigger).toLowerCase();
   const newErrors = toInt(diff.new_error, 0) + toInt(diff.new_domain_error, 0);
+  const flaky = toInt(diff.flaky, 0) + toInt(counts.flaky, 0);
   return {
     hasRun: true,
     id: toText(run.id),
@@ -126,6 +133,7 @@ export function buildEndpointCheckSummary(lastRunRaw) {
     newErrors,
     stillFailing: toInt(diff.still_failing, 0) + toInt(diff.still_domain_error, 0),
     fixed: toInt(diff.fixed, 0) + toInt(diff.domain_fixed, 0),
+    flaky,
     newEndpoints: toInt(diff.new_endpoint, 0),
     trigger,
     triggerLabel: trigger === "deploy" ? "деплой" : trigger === "manual" ? "вручную" : trigger,
@@ -133,6 +141,7 @@ export function buildEndpointCheckSummary(lastRunRaw) {
     branch: toText(version.branch),
     env: toText(version.env),
     hasNewErrors: newErrors > 0,
+    hasFlaky: flaky > 0,
     startedAt: run.started_at ?? null,
     finishedAt: run.finished_at ?? null,
   };

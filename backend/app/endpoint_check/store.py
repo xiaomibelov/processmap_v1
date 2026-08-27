@@ -182,6 +182,23 @@ def get_last_done_run() -> Optional[Dict[str, Any]]:
     return _run_row_to_dict(row)
 
 
+def get_recent_done_runs(limit: int = 5) -> List[Dict[str, Any]]:
+    """Последние завершённые прогоны для flap-detection."""
+    lim = max(1, min(int(limit), 20))
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT {_RUN_COLUMNS} FROM endpoint_check_runs
+             WHERE status = 'done'
+             ORDER BY started_at DESC, id DESC
+             LIMIT ?
+            """,
+            [lim],
+        ).fetchall()
+    return [_run_row_to_dict(row) for row in rows]
+
+
 def find_recent_deploy_run(since_ts: int) -> Optional[Dict[str, Any]]:
     """Недавний (pending/running) deploy-прогон в окне дебаунса (started_at >= since_ts)."""
     _ensure_schema()
