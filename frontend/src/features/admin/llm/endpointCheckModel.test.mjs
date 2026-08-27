@@ -16,6 +16,7 @@ import {
   filterEndpointCheckResults,
   formatEndpointCheckTransition,
   formatEndpointCheckTs,
+  getEndpointCheckEmptyFilterState,
 } from "./endpointCheckModel.js";
 
 const RESULTS = [
@@ -175,4 +176,37 @@ test("buildNotScannedSummary: пустые и битые данные → бло
   assert.equal(junk.mutationsCount, 0);
   assert.deepEqual(junk.blindZone, []);
   assert.equal(junk.hasAny, false);
+});
+
+test("getEndpointCheckEmptyFilterState: при 0 новых ошибок предлагает переключиться на Все", () => {
+  const rows = [
+    { diff_status: "ok" },
+    { diff_status: "fixed" },
+  ];
+  const state = getEndpointCheckEmptyFilterState(rows, ENDPOINT_CHECK_FILTER_NEW);
+  assert.equal(state.isEmpty, true);
+  assert.equal(state.messageKey, "noNewErrors");
+  assert.equal(state.suggestAll, true);
+});
+
+test("getEndpointCheckEmptyFilterState: пустой фильтр, но не «новые»", () => {
+  const rows = [{ diff_status: "ok" }];
+  const state = getEndpointCheckEmptyFilterState(rows, ENDPOINT_CHECK_FILTER_FIXED);
+  assert.equal(state.isEmpty, true);
+  assert.equal(state.messageKey, "noFilterRows");
+  assert.equal(state.suggestAll, true);
+});
+
+test("getEndpointCheckEmptyFilterState: нет результатов вообще", () => {
+  const state = getEndpointCheckEmptyFilterState([], ENDPOINT_CHECK_FILTER_NEW);
+  assert.equal(state.isEmpty, true);
+  assert.equal(state.messageKey, "noResults");
+  assert.equal(state.suggestAll, false);
+});
+
+test("getEndpointCheckEmptyFilterState: есть строки — не пусто", () => {
+  const rows = [{ diff_status: "new_error" }];
+  const state = getEndpointCheckEmptyFilterState(rows, ENDPOINT_CHECK_FILTER_NEW);
+  assert.equal(state.isEmpty, false);
+  assert.equal(state.messageKey, "");
 });
