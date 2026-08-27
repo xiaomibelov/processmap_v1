@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from ..auth import _bool_env, create_access_token
 from ..storage import _connect, _ensure_schema, _now_ts, list_auth_users
 from . import store
-from .diff import compute_diff, diff_counters
+from .diff import FLAP_THRESHOLD, FLAP_WINDOW_RUNS, OK, _group, compute_diff, diff_counters, is_flaky
 
 logger = logging.getLogger(__name__)
 
@@ -323,11 +323,17 @@ def _fetch_first_id(con: Any, sql: str, params: Optional[List[Any]] = None) -> s
         return ""
 
 
-def _resolve_ids_from_db(user_id: str) -> Dict[str, str]:
-    """Значения реальных id напрямую из БД (первая org, workspace, последняя сессия,
-    любой проект, папка; user_id = инициатор)."""
+def _resolve_ids_from_db(user_id: str) -> Tuple[Dict[str, str], List[str]]:
+    """Значения реальных id напрямую из БД в рамках выбранной org.
+
+    Возвращает (context, missing_keys). Сессия/проект/папка фильтруются по org_id,
+    чтобы не получать id из чужой организации (см. audit/endpoint-check-flap).
+    Если в целевой орге нет подходящей сущности — ключ остаётся пустым,
+    а имя попадает в missing_keys для fallback-discovery.
+    """
     _ensure_schema()
     context: Dict[str, str] = {}
+    missing: List[str] = []
     with _connect() as con:
         org_id = _fetch_first_id(con, "SELECT id FROM orgs WHERE is_active = 1 ORDER BY created_at ASC, id ASC LIMIT 1") or _fetch_first_id(
             con, "SELECT id FROM orgs ORDER BY created_at ASC, id ASC LIMIT 1"
@@ -335,19 +341,37 @@ def _resolve_ids_from_db(user_id: str) -> Dict[str, str]:
         workspace_id = ""
         if org_id:
             workspace_id = _fetch_first_id(con, "SELECT id FROM workspaces WHERE org_id = ? ORDER BY created_at ASC, id ASC LIMIT 1", [org_id])
-        if not workspace_id:
-            workspace_id = _fetch_first_id(con, "SELECT id FROM workspaces ORDER BY created_at ASC, id ASC LIMIT 1")
-        session_id = _fetch_first_id(con, "SELECT id FROM sessions WHERE deleted_at = 0 ORDER BY updated_at DESC, id DESC LIMIT 1") or _fetch_first_id(
-            con, "SELECT id FROM sessions ORDER BY updated_at DESC, id DESC LIMIT 1"
-        )
-        project_id = _fetch_first_id(con, "SELECT id FROM projects ORDER BY updated_at DESC, id DESC LIMIT 1")
-        folder_id = ""
-        if workspace_id:
-            folder_id = _fetch_first_id(
-                con, "SELECT id FROM workspace_folders WHERE workspace_id = ? ORDER BY created_at ASC, id ASC LIMIT 1", [workspace_id]
+
+        session_id = ""
+        if org_id:
+            session_id = _fetch_first_id(
+                con,
+                "SELECT id FROM sessions WHERE deleted_at = 0 AND org_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
+                [org_id],
             )
-        if not folder_id:
-            folder_id = _fetch_first_id(con, "SELECT id FROM workspace_folders ORDER BY created_at ASC, id ASC LIMIT 1")
+        if not session_id:
+            missing.append("session_id")
+
+        project_id = ""
+        if org_id:
+            project_id = _fetch_first_id(
+                con,
+                "SELECT id FROM projects WHERE org_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
+                [org_id],
+            )
+        if not project_id:
+            missing.append("project_id")
+
+        folder_id = ""
+        if org_id and workspace_id:
+            folder_id = _fetch_first_id(
+                con,
+                "SELECT id FROM workspace_folders WHERE org_id = ? AND workspace_id = ? ORDER BY created_at ASC, id ASC LIMIT 1",
+                [org_id, workspace_id],
+            )
+        if workspace_id and not folder_id:
+            missing.append("folder_id")
+
     if org_id:
         context["org_id"] = org_id
     if workspace_id:
@@ -360,7 +384,7 @@ def _resolve_ids_from_db(user_id: str) -> Dict[str, str]:
         context["folder_id"] = folder_id
     if user_id:
         context["user_id"] = user_id
-    return context
+    return context, missing
 
 
 def _resolve_ids_via_discovery(
@@ -391,6 +415,53 @@ def _resolve_ids_via_discovery(
             if context.get(name):
                 break
     return context
+
+
+# ------------------------------------------------------------------ probe resolved ids
+_PROBE_PATHS: Dict[str, str] = {
+    "session_id": "/api/sessions/{session_id}",
+    "project_id": "/api/projects/{project_id}",
+    "folder_id": "/api/workspaces/{workspace_id}/folders/{folder_id}",
+}
+
+
+def _probe_resolved_ids(
+    context: Dict[str, str], executor: Executor, token: str, timeout_s: float, max_attempts: int = 2
+) -> Tuple[float, List[str]]:
+    """Проверяет доступность resolved id пробным GET.
+
+    При 404/403 ключ сбрасывается и запускается discovery (до max_attempts раз).
+    После успешного rediscovery новые id тоже пробуются на следующей итерации.
+    Возвращает (duration_ms, still_missing_keys).
+    """
+    started = time.monotonic()
+    for attempt in range(max_attempts):
+        failed_this_round: List[str] = []
+        probed_any = False
+        for key, template in _PROBE_PATHS.items():
+            value = context.get(key)
+            if not value:
+                continue
+            probed_any = True
+            url_path = template
+            for k, v in context.items():
+                url_path = url_path.replace("{" + k + "}", str(v))
+            if "{" in url_path:
+                continue
+            status, _, _, err = executor(url_path, {}, token, timeout_s)
+            if err or status in (404, 403):
+                context.pop(key, None)
+                failed_this_round.append(key)
+        # Успех: пробовали хотя бы один ключ и все прошли.
+        if probed_any and not failed_this_round:
+            return (time.monotonic() - started) * 1000, []
+        if attempt < max_attempts - 1:
+            # Пробуем восполнить провалившиеся id через discovery; следующая
+            # итерация проверит найденные замены.
+            _resolve_ids_via_discovery(context, executor, token, timeout_s)
+    # Ключи, которые так и не разрешились (или были сброшены) после всех попыток.
+    still_missing = [k for k in _PROBE_PATHS if not context.get(k)]
+    return (time.monotonic() - started) * 1000, still_missing
 
 
 # ------------------------------------------------------------------ error-events связка
@@ -466,15 +537,34 @@ def _scan_token_uid(run: Dict[str, Any]) -> str:
 
 
 def _store_results_with_diff(run_id: str, results: List[Dict[str, Any]]) -> str:
-    """Дифф против прошлого завершённого прогона + INSERT результатов.
+    """Дифф против прошлого завершённого прогона + flap-detection + INSERT результатов.
 
     Возвращает prev_run_id (пусто, если прошлого прогона не было).
     """
-    prev_run = store.get_last_done_run()
+    # История категорий по operation_id для flap-detection.
+    recent_runs = store.get_recent_done_runs(FLAP_WINDOW_RUNS)
+    # recent_runs отсортированы от нового к старому; для хронологии разворачиваем.
+    history_by_op: Dict[str, List[str]] = {}
+    for run in reversed(recent_runs):
+        for row in store.list_results(run["id"]):
+            op_id = str(row.get("operation_id") or "")
+            if op_id:
+                history_by_op.setdefault(op_id, []).append(str(row.get("category") or ""))
+
+    prev_run = recent_runs[0] if recent_runs else None
     prev_results = store.list_results(prev_run["id"]) if prev_run else []
     diff_map = compute_diff(prev_results, results)
     for result in results:
-        diff_status, diff_note = diff_map.get(result["operation_id"], ("", ""))
+        op_id = result["operation_id"]
+        diff_status, diff_note = diff_map.get(op_id, ("", ""))
+        history = history_by_op.get(op_id, [])
+        history.append(str(result.get("category") or ""))
+        if is_flaky(history) and _group(result.get("category")) != OK:
+            diff_status = "flaky"
+            diff_note = (
+                (diff_note + "; " if diff_note else "")
+                + f"flaky: менял состояние >= {FLAP_THRESHOLD} раз за {FLAP_WINDOW_RUNS} прогонов"
+            )
         result["diff_status"] = diff_status
         if diff_note:
             result["note"] = (result["note"] + "; " if result["note"] else "") + diff_note
@@ -520,8 +610,11 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
 
         # --- реальные id ---
         context: Dict[str, str] = dict(STATIC_PARAMS)
-        context.update(_resolve_ids_from_db(str(run.get("requested_by") or "")))
+        db_context, missing_ids = _resolve_ids_from_db(str(run.get("requested_by") or ""))
+        context.update(db_context)
         context = _resolve_ids_via_discovery(context, exec_fn, token, timeout_s)
+        probe_duration_ms, still_missing = _probe_resolved_ids(context, exec_fn, token, timeout_s)
+        missing_ids = [k for k in missing_ids if not context.get(k)]
         for alias, target in ALIASES.items():
             if target in context:
                 context[alias] = context[target]
@@ -553,13 +646,18 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
                 op["_note"] = "в contract-suite исключён (sqlite-env); на postgres сканируется"
             unresolved = [n for n in _path_param_names(op) if n not in context]
             if unresolved:
+                missing_unresolved = [n for n in unresolved if n in missing_ids]
+                if missing_unresolved:
+                    reason = f"в орг {context.get('org_id', '?')} нет данных для: {', '.join(missing_unresolved)}"
+                else:
+                    reason = f"нет маппинга реальных id для path-параметров: {', '.join(unresolved)}"
                 blind_zone.append(
                     {
                         "operation_id": op_id,
                         "method": "GET",
                         "path": op["path"],
                         "status": "out_of_scope",
-                        "reason": f"нет маппинга реальных id для path-параметров: {', '.join(unresolved)}",
+                        "reason": reason,
                     }
                 )
                 continue
@@ -584,6 +682,8 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
                 "resolved_ids": {k: v for k, v in sorted(context.items())},
                 "blind_zone": blind_zone,
                 "not_scanned": {"count": len(not_scanned_mutations), "operation_ids": sorted(not_scanned_mutations)},
+                "probe_duration_ms": round(probe_duration_ms, 1),
+                "missing_ids": missing_ids,
             }
         )
         store.update_run(run_id, summary_json=summary)
@@ -649,6 +749,7 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
         counts: Dict[str, int] = {}
         for r in results:
             counts[r["category"]] = counts.get(r["category"], 0) + 1
+        diff_counts = diff_counters([r["diff_status"] for r in results])
         summary.update(
             {
                 "progress": {"scanned": len(results), "total": len(plan)},
@@ -663,8 +764,9 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
                     "scanned": len(results),
                     "out_of_scope": sum(1 for b in blind_zone if b.get("status") == "out_of_scope"),
                     "blind_zone": len(blind_zone),
+                    "flaky": diff_counts.get("flaky", 0),
                 },
-                "diff": diff_counters([r["diff_status"] for r in results]),
+                "diff": diff_counts,
                 "prev_run_id": prev_run_id,
                 "blind_zone": blind_zone,
             }

@@ -11,6 +11,7 @@ import {
   ENDPOINT_CHECK_FILTER_ALL,
   ENDPOINT_CHECK_FILTER_FAILING,
   ENDPOINT_CHECK_FILTER_FIXED,
+  ENDPOINT_CHECK_FILTER_FLAKY,
   ENDPOINT_CHECK_FILTER_NEW,
   ENDPOINT_CHECK_POLL_INTERVAL_MS,
   buildEndpointCheckSummary,
@@ -28,6 +29,7 @@ const FILTERS = [
   { id: ENDPOINT_CHECK_FILTER_NEW, label: t("endpointCheck.filter.new") },
   { id: ENDPOINT_CHECK_FILTER_FAILING, label: t("endpointCheck.filter.failing") },
   { id: ENDPOINT_CHECK_FILTER_FIXED, label: t("endpointCheck.filter.fixed") },
+  { id: ENDPOINT_CHECK_FILTER_FLAKY, label: t("endpointCheck.filter.flaky") },
 ];
 
 function errorText(res, fallback) {
@@ -36,8 +38,11 @@ function errorText(res, fallback) {
   return toText(err || fallback);
 }
 
-function categoryClass(categoryRaw) {
+function categoryClass(categoryRaw, diffStatusRaw) {
   const c = toText(categoryRaw).toLowerCase();
+  if (toText(diffStatusRaw).toLowerCase() === "flaky") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
   if (c === "ok") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (c === "timeout" || c === "conn_error") return "border-amber-200 bg-amber-50 text-amber-700";
   return "border-rose-200 bg-rose-50 text-rose-700";
@@ -186,6 +191,17 @@ export default function EndpointCheckPanel() {
           <span className="tabular-nums">{summary.newErrors}</span>
         </span>
       ) : null}
+      {summary.hasFlaky ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-full border border-amber-300/70 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+          title={tf("endpointCheck.badge.flakyTitle", { count: summary.flaky })}
+          aria-label={tf("endpointCheck.badge.flakyTitle", { count: summary.flaky })}
+          data-testid="endpoint-check-flaky-badge"
+        >
+          <span>{t("endpointCheck.badge.flaky")}</span>
+          <span className="tabular-nums">{summary.flaky}</span>
+        </span>
+      ) : null}
       <button
         type="button"
         className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
@@ -233,6 +249,14 @@ export default function EndpointCheckPanel() {
                   <span>
                     {summary.fixed} {t("endpointCheck.summary.fixed")}
                   </span>
+                  {summary.flaky > 0 ? (
+                    <>
+                      {" · "}
+                      <span className="font-medium text-amber-700">
+                        {summary.flaky} {t("endpointCheck.summary.flaky")}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
                 <div className="text-[11px] text-slate-500">
                   {summary.triggerLabel ? `${t("endpointCheck.summary.trigger")}: ${summary.triggerLabel}` : ""}
@@ -333,7 +357,7 @@ export default function EndpointCheckPanel() {
                                 {toText(item.path || item.url_path)}
                               </td>
                               <td className="px-2 py-2">
-                                <span className={`mr-1 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${categoryClass(item.category)}`}>
+                                <span className={`mr-1 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${categoryClass(item.category, item.diff_status)}`}>
                                   {endpointCheckDiffLabel(item.diff_status)}
                                 </span>
                                 <span className="text-slate-500">{formatEndpointCheckTransition(item)}</span>

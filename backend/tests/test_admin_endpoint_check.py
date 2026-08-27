@@ -21,6 +21,7 @@ from app.auth import create_access_token, create_user
 from app.endpoint_check import diff as diff_mod
 from app.endpoint_check import service, store
 from app.main import app
+from app.storage import _now_ts
 
 RUN_PATH = "/api/admin/endpoint-check/run"
 STATUS_PATH = "/api/admin/endpoint-check/status"
@@ -437,3 +438,139 @@ def test_fingerprint_strips_dynamics():
     assert fp1 == fp2, "динамика (request_id/timestamp) не должна влиять на fingerprint"
     fp3 = service.error_fingerprint("GET", "/api/x", 500, b'{"detail": "other"}')
     assert fp3 != fp1
+
+
+# ------------------------------------------------------------------ id resolution + probe
+from app.storage import _connect, _ensure_schema
+
+
+def _seed_org_with_data(org_id, workspace_id, session_id, project_id, folder_id, *, created_at=1):
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            "INSERT INTO orgs (id, name, is_active, created_at) VALUES (?, ?, 1, ?)",
+            [org_id, f"Org {org_id}", created_at],
+        )
+        con.execute(
+            "INSERT INTO workspaces (id, org_id, name, created_at) VALUES (?, ?, ?, ?)",
+            [workspace_id, org_id, f"WS {workspace_id}", created_at],
+        )
+        con.execute(
+            "INSERT INTO sessions (id, org_id, title, deleted_at, updated_at) VALUES (?, ?, ?, 0, ?)",
+            [session_id, org_id, f"Session {session_id}", created_at],
+        )
+        con.execute(
+            "INSERT INTO projects (id, org_id, title, updated_at) VALUES (?, ?, ?, ?)",
+            [project_id, org_id, f"Proj {project_id}", created_at],
+        )
+        con.execute(
+            "INSERT INTO workspace_folders (id, org_id, workspace_id, name, created_at) VALUES (?, ?, ?, ?, ?)",
+            [folder_id, org_id, workspace_id, f"Folder {folder_id}", created_at],
+        )
+        con.commit()
+
+
+def test_resolve_ids_from_db_filters_by_org():
+    """Если выбранная org пуста, id из другой org не попадают в context."""
+    _seed_org_with_data("org_with_data", "ws1", "sess1", "proj1", "fold1", created_at=2)
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            "INSERT INTO orgs (id, name, is_active, created_at) VALUES (?, ?, 1, ?)",
+            ["org_empty", "Empty org", 1],
+        )
+        con.commit()
+
+    context, missing = service._resolve_ids_from_db("userX")
+    # Первая по created_at — org_empty (created_at=1).
+    assert context.get("org_id") == "org_empty"
+    assert "session_id" in missing
+    assert "project_id" in missing
+    # folder_id добавляется в missing только при наличии workspace_id;
+    # в пустой org workspace тоже отсутствует.
+    assert context.get("session_id") != "sess1"
+    assert context.get("project_id") != "proj1"
+
+
+def test_probe_resolved_ids_rediscovery_on_404():
+    """404 на /api/sessions/{id} → сброс ключа, discovery, успешная проба нового id."""
+    calls = []
+
+    def _exec(url_path, query, token, timeout_s):
+        calls.append(url_path)
+        if url_path == "/api/sessions/s1":
+            return 404, 1.0, b'{"detail": "not found"}', ""
+        if url_path == "/api/sessions":
+            return 200, 1.0, b'[{"id": "s2"}]', ""
+        if url_path == "/api/sessions/s2":
+            return 200, 1.0, b'{"id": "s2"}', ""
+        return 404, 1.0, b"", ""
+
+    context = {"session_id": "s1"}
+    duration, missing = service._probe_resolved_ids(context, _exec, "token", 5.0, max_attempts=2)
+    assert context.get("session_id") == "s2"
+    assert missing == []
+    assert "/api/sessions/s1" in calls
+    assert "/api/sessions" in calls
+    assert "/api/sessions/s2" in calls
+    assert duration >= 0
+
+
+def test_probe_resolved_ids_gives_up_when_discovery_empty():
+    """Discovery не находит замену → ключ остаётся в missing."""
+    def _exec(url_path, query, token, timeout_s):
+        if url_path == "/api/sessions/s1":
+            return 404, 1.0, b"", ""
+        if url_path == "/api/sessions":
+            return 200, 1.0, b"[]", ""
+        return 404, 1.0, b"", ""
+
+    context = {"session_id": "s1"}
+    duration, missing = service._probe_resolved_ids(context, _exec, "token", 5.0, max_attempts=2)
+    assert "session_id" in missing
+    assert context.get("session_id") is None
+
+
+# ------------------------------------------------------------------ flap-detection
+def test_flap_detection_ok_err_ok_is_flaky():
+    assert diff_mod.is_flaky(["ok", "http_error", "ok"]) is True
+
+
+def test_flap_detection_stable_error_is_not_flaky():
+    assert diff_mod.is_flaky(["http_error", "http_error", "http_error"]) is False
+
+
+def test_flap_detection_window_respects_last_n():
+    # 5 элементов, 4 перехода → flaky.
+    assert diff_mod.is_flaky(["ok", "http_error", "ok", "http_error", "ok"]) is True
+    # 8 элементов, последние 5 — stable error → не flaky (окно обрезает старое).
+    assert diff_mod.is_flaky(["ok", "http_error", "ok", "http_error", "http_error", "http_error", "http_error", "http_error"]) is False
+    # Предыдущие переходы вне окна не влияют: последние 5 содержат 1 flap → не flaky.
+    assert diff_mod.is_flaky(["ok", "http_error", "ok", "ok", "ok", "ok", "http_error", "http_error"]) is False
+
+
+def test_flap_detection_domain_error_counts_as_error():
+    assert diff_mod.is_flaky(["ok", "domain_error", "ok"]) is True
+
+
+def test_store_results_with_diff_does_not_mark_ok_as_flaky():
+    """op с историей ok→err→ok и текущим ok остаётся ok (flaky только для не-ok)."""
+    _ensure_schema()
+
+    def _make_run(results):
+        run = store.create_run(trigger="manual", requested_by="")
+        run_id = run["id"]
+        for r in results:
+            r["run_id"] = run_id
+        service._store_results_with_diff(run_id, results)
+        store.update_run(run_id, status="done", finished_at=_now_ts())
+        return run_id
+
+    _make_run([{"operation_id": "op_ok_flap", "category": "ok", "fingerprint": "", "http_status": 200, "note": ""}])
+    _make_run([{"operation_id": "op_ok_flap", "category": "http_error", "fingerprint": "fp1", "http_status": 404, "note": ""}])
+    run3 = store.create_run(trigger="manual", requested_by="")
+    current = [{"operation_id": "op_ok_flap", "category": "ok", "fingerprint": "", "http_status": 200, "note": "", "run_id": run3["id"]}]
+    service._store_results_with_diff(run3["id"], current)
+
+    row = store.list_results(run3["id"])[0]
+    assert row["diff_status"] != "flaky", "ok-запись не должна получать flaky-статус"
