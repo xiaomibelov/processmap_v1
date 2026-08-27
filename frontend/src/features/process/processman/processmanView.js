@@ -64,22 +64,24 @@ export function answerCacheKey(action = "", stepId = "") {
   return `${String(action || "")}:${String(stepId || "")}`;
 }
 
-/** Текст ответа из result конкретного действия (suggest/explain/qa). */
+/** Текст ответа из result конкретного действия (suggest/explain/qa и processman-аналоги). */
 export function extractAnswerText(action = "", data = {}) {
   const d = data && typeof data === "object" ? data : {};
-  if (action === "suggest") {
+  // PROCESSMAN action-имена используют kebab-case (suggest-next и т.д.), но payload
+  // идентичен старым suggest/explain/qa — reuse той же логики.
+  if (action === "suggest" || action === "suggest-next") {
     const candidates = d?.suggestions?.candidates;
     const list = Array.isArray(candidates) ? candidates : [];
     const lines = list.map((c) => `• ${String(c?.code || "")} — ${String(c?.rationale || "")}`.trim());
     const note = String(d?.suggestions?.note || "").trim();
     return [lines.join("\n"), note].filter(Boolean).join("\n\n");
   }
-  if (action === "explain") {
+  if (action === "explain" || action === "explain-step") {
     const explanation = String(d?.explanation || "").trim();
     const note = String(d?.note || "").trim();
     return [explanation, note].filter(Boolean).join("\n\n");
   }
-  if (action === "qa") {
+  if (action === "qa" || action === "step-qa") {
     const answer = String(d?.answer || "").trim();
     const note = String(d?.note || "").trim();
     return [answer, note].filter(Boolean).join("\n\n");
