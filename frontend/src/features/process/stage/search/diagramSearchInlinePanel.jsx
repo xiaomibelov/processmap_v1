@@ -6,6 +6,8 @@ import {
   groupSearchRows,
 } from "./diagramSearchGroups.js";
 import { isSubprocessSearchRow } from "./diagramSearchInlineModel.js";
+import { INSTANT_RESULTS_CAP as ELEMENT_INSTANT_CAP } from "./useDiagramSearchModel.js";
+import { INSTANT_RESULTS_CAP as PROPERTY_INSTANT_CAP } from "./useDiagramPropertySearchModel.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -17,6 +19,10 @@ function getTypeChip(mode, row) {
   const typeLabel = toText(row?.typeLabel || row?.type);
   if (typeLabel) return typeLabel;
   return "Элемент";
+}
+
+function resolveInstantCap(mode) {
+  return toText(mode).toLowerCase() === "properties" ? PROPERTY_INSTANT_CAP : ELEMENT_INSTANT_CAP;
 }
 
 function ResultItem({
@@ -139,12 +145,20 @@ export default function DiagramSearchInlinePanel({
   mode = "elements",
   pending = false,
   onSelect = null,
+  isInstant = false,
+  onOpenAdvanced = null,
 }) {
   const panelRef = useRef(null);
   const [mounted, setMounted] = useState(false);
-  const rows = useMemo(() => groupSearchRows(results.slice(0, SEARCH_RESULTS_CAP)), [results]);
   const isPropertiesMode = toText(mode).toLowerCase() === "properties";
+  const instantCap = resolveInstantCap(mode);
+  const cappedResults = useMemo(
+    () => (isInstant ? results.slice(0, instantCap) : results.slice(0, SEARCH_RESULTS_CAP)),
+    [isInstant, instantCap, results],
+  );
+  const rows = useMemo(() => groupSearchRows(cappedResults), [cappedResults]);
   const hasResults = rows.length > 0;
+  const hasMore = isInstant && results.length > cappedResults.length;
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setMounted(true));
@@ -159,6 +173,10 @@ export default function DiagramSearchInlinePanel({
     event.stopPropagation();
   };
 
+  const instantHeadLabel = isPropertiesMode
+    ? `Все свойства (${results.length})`
+    : `Все элементы (${results.length})`;
+
   return (
     <div
       ref={panelRef}
@@ -168,7 +186,7 @@ export default function DiagramSearchInlinePanel({
     >
       <div className="diagramSearchInlinePanelHead">
         <span className="diagramSearchInlinePanelCount" data-testid="diagram-action-search-count">
-          {pending ? "поиск…" : `${results.length} найдено`}
+          {pending ? "поиск…" : (isInstant ? instantHeadLabel : `${results.length} найдено`)}
         </span>
         <span className={`diagramSearchInlineModeChip ${isPropertiesMode ? "isProperties" : ""}`}>
           {isPropertiesMode ? "Свойства" : "Элементы"}
@@ -191,19 +209,38 @@ export default function DiagramSearchInlinePanel({
           <span>Ничего не найдено</span>
         </div>
       ) : (
-        <div className="diagramSearchInlineList">
-          {rows.map((group, groupIndex) => (
-            <ResultGroup
-              key={`inline_search_group_${group.key}`}
-              group={group}
-              mode={mode}
-              activeIndex={activeIndex}
-              onSelect={onSelect}
-              onMouseDown={handleRowMouseDown}
-              defaultExpanded={rows.length <= 2 ? true : groupIndex === 0}
-            />
-          ))}
-        </div>
+        <>
+          <div className="diagramSearchInlineList">
+            {rows.map((group, groupIndex) => (
+              <ResultGroup
+                key={`inline_search_group_${group.key}`}
+                group={group}
+                mode={mode}
+                activeIndex={activeIndex}
+                onSelect={onSelect}
+                onMouseDown={handleRowMouseDown}
+                defaultExpanded={rows.length <= 2 ? true : groupIndex === 0}
+              />
+            ))}
+          </div>
+          {(hasMore || isInstant) ? (
+            <div className="diagramSearchInlineFooter">
+              {hasMore ? (
+                <span className="diagramSearchInlineHint">
+                  Показано {cappedResults.length} из {results.length}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="diagramSearchInlineAdvancedBtn"
+                onClick={onOpenAdvanced}
+                data-testid="diagram-action-search-advanced"
+              >
+                Расширенный поиск
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

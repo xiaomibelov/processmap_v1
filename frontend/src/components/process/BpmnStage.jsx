@@ -2129,10 +2129,18 @@ const BpmnStage = forwardRef(function BpmnStage({
             || element?.businessObject?.label
             || element?.businessObject?.text,
         );
+        const description = toText(
+          asArray(bo?.documentation)
+            .map((doc) => toText(doc?.text || doc?.value))
+            .filter(Boolean)
+            .join(" "),
+        );
         result.push({
           elementId,
+          taskId: elementId,
           name,
           label,
+          description,
           title: toText(label || name || elementId) || elementId,
           type,
           typeLabel: toText(type.split(":").pop()) || type,

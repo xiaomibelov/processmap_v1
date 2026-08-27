@@ -29,14 +29,18 @@ export function normalizeDiagramSearchElement(raw) {
   const type = toText(item.type || item.bpmnType);
   const typeLabel = toTypeLabel(item.typeLabel || type);
   const title = toText(item.title || label || name || elementId) || elementId;
+  const description = toText(item.description);
+  const taskId = toText(item.taskId || item.elementId || item.id || item.bpmnId);
   const effectiveLabel = normalizeLoose(label) === normalizeLoose(name) ? "" : label;
   const searchText = [
     elementId,
+    taskId,
     name,
     effectiveLabel,
     type,
     typeLabel,
     title,
+    description,
   ]
     .map((part) => normalizeLoose(part))
     .filter(Boolean)
@@ -44,11 +48,13 @@ export function normalizeDiagramSearchElement(raw) {
   const processContext = normalizeDiagramSearchProcessContext(item);
   return {
     elementId,
+    taskId,
     name,
     label: effectiveLabel,
     type,
     typeLabel,
     title,
+    description,
     searchText,
     ...processContext,
   };
@@ -69,6 +75,8 @@ export function collectDiagramSearchResults(elementsRaw, queryRaw) {
   return out;
 }
 
+export const INSTANT_RESULTS_CAP = 10;
+
 export default function useDiagramSearchModel({
   elements = [],
   isOpen = false,
@@ -78,10 +86,17 @@ export default function useDiagramSearchModel({
   const [activeIndex, setActiveIndex] = useState(-1);
   const activeElementIdRef = useRef("");
   const hasQuery = normalizeLoose(query).length > 0;
-  const results = useMemo(
-    () => collectDiagramSearchResults(elements, query),
-    [elements, query],
-  );
+  const results = useMemo(() => {
+    if (!hasQuery) {
+      // Instant list: show all available elements sorted by title/name when
+      // the search input is focused but empty.
+      return asArray(elements)
+        .map(normalizeDiagramSearchElement)
+        .filter(Boolean)
+        .sort((a, b) => a.title.localeCompare(b.title));
+    }
+    return collectDiagramSearchResults(elements, query);
+  }, [elements, query, hasQuery]);
   const activeResult = activeIndex >= 0 && activeIndex < results.length ? results[activeIndex] : null;
 
   // NOTE: closing the panel (Escape / blur / toggle) intentionally keeps the
