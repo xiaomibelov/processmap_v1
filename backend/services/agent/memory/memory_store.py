@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from db import adapt_sql, get_conn
+from db import adapt_sql, get_conn, is_sqlite
 
 
 @dataclass
@@ -54,6 +54,24 @@ _SCHEMA_READY: bool = False
 _SCHEMA_DB_URL: str = ""
 
 
+def _column_exists(con: Any, table: str, column: str) -> bool:
+    """Check whether a column exists (SQLite or PostgreSQL)."""
+    table = str(table or "").strip()
+    column = str(column or "").strip()
+    if not table or not column:
+        return False
+    if is_sqlite():
+        cur = con.execute(f"PRAGMA table_info({table})")
+        return any(str(row["name"] or "").lower() == column.lower() for row in cur.fetchall())
+    cur = con.execute(
+        adapt_sql(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s"
+        ),
+        [table, column],
+    )
+    return cur.fetchone() is not None
+
+
 def _ensure_agent_schema() -> None:
     """Idempotent DDL for agent memory tables (mirrors migration 017)."""
     global _SCHEMA_READY, _SCHEMA_DB_URL
@@ -87,11 +105,10 @@ def _ensure_agent_schema() -> None:
                 """
             )
         )
-        # SQLite не поддерживает ADD COLUMN IF NOT EXISTS; ловим ошибку дубликата.
-        try:
+        # ADD COLUMN IF NOT EXISTS: guard with explicit column check so a failed
+        # ALTER does not leave a PostgreSQL transaction in aborted state.
+        if not _column_exists(con, "agent_conversations", "summary"):
             con.execute(adapt_sql("ALTER TABLE agent_conversations ADD COLUMN summary TEXT"))
-        except Exception:
-            pass
         con.execute(
             adapt_sql(
                 """

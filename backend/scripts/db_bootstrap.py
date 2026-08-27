@@ -22,15 +22,24 @@ import sys
 
 import psycopg
 
-# линейный порядок цепочки (001→002→004→003→005→006→007→008→009→010→011)
+# линейный порядок цепочки (001→002→004→003→005→006→007→008→009→010→011→...→031)
 # NB: 010/011 без маркеров — они нужны здесь, чтобы валидная alembic_version
 # 010/011 НЕ считалась «невалидной» и не уводилась stamp'ом вниз до 009
 # (иначе каждый рестарт api пересаживал upgrade на неидемпотентную 010 →
 # column process_layer already exists → ретраи + degraded-старт).
-LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023", "024", "025", "026", "027", "028"]
+# 029–031 добавлены в P0-stage-unblock: ранее миграции существовали в коде,
+# но не были включены в LINEAR/MARKERS, из-за чего ALEMBIC_HEAD оставался 028,
+# а БД на stage уже была на 031 (degraded health).
+LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023", "024", "025", "026", "027", "028", "029", "030", "031"]
 
 # маркер «объект ревизии существует» (SELECT 1 ... LIMIT 1)
 MARKERS = {
+    # P0-stage-unblock: маркер 031 — колонка capabilities в llm_providers.
+    "031": "SELECT 1 FROM information_schema.columns WHERE table_name='llm_providers' AND column_name='capabilities' LIMIT 1",
+    # P0-stage-unblock: маркер 030 — active prompt v2 для product_actions_suggest (action_text + 4 tags).
+    "030": "SELECT 1 FROM llm_prompts WHERE feature='product_actions_suggest' AND version=2 AND status='active' LIMIT 1",
+    # P0-stage-unblock: маркер 029 — active prompt v1 для product_actions_suggest (LLM gateway).
+    "029": "SELECT 1 FROM llm_prompts WHERE feature='product_actions_suggest' AND version=1 AND status='active' LIMIT 1",
     # AGENT-OBS: маркер 028 — колонка summary в agent_conversations.
     "028": "SELECT 1 FROM information_schema.columns WHERE table_name='agent_conversations' AND column_name='summary' LIMIT 1",
     # PR1 analysis-tabs-redesign: маркер 027 — таблица session_product_action_suggestions.
