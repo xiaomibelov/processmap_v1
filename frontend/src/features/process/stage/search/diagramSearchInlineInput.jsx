@@ -38,6 +38,7 @@ export default function DiagramSearchInlineInput({
   onOpenAdvanced = null,
   advancedOpen = false,
   onAdvancedOpenChange = null,
+  onRefresh = null,
 } = {}) {
   const inputRef = useRef(null);
   const triggerRef = useRef(null);
@@ -88,6 +89,11 @@ export default function DiagramSearchInlineInput({
 
   const handleExpand = () => {
     if (typeof onOpenChange === "function") onOpenChange(true);
+    onRefresh?.();
+  };
+
+  const handleInputFocus = () => {
+    onRefresh?.();
   };
 
   const applyTransition = (event) => {
@@ -191,6 +197,7 @@ export default function DiagramSearchInlineInput({
             className="diagramSearchInlineInput"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onFocus={handleInputFocus}
             onKeyDown={handleInputKeyDown}
             placeholder="Поиск по элементам, свойствам..."
             data-testid="diagram-action-search-input"

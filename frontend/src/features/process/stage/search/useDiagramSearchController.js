@@ -87,6 +87,13 @@ export default function useDiagramSearchController({
     setAdvancedOpen(false);
   }, []);
 
+  const refreshActiveSource = useCallback(() => {
+    if (mode === "properties") {
+      return refreshProperties();
+    }
+    return refreshElements();
+  }, [mode, refreshElements, refreshProperties]);
+
   const focusResult = useCallback((result, source = "search") => {
     const elementId = toText(result?.elementId);
     if (!elementId) return;
@@ -288,5 +295,6 @@ export default function useDiagramSearchController({
     clearQuery,
     refreshElements,
     refreshProperties,
+    refreshActiveSource,
   };
 }
