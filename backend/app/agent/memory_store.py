@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from ..db.config import get_db_runtime_config
 from ..storage import _connect, _json_loads, _now_ts
 
 
@@ -32,6 +33,23 @@ class AgentTurn:
 
 _SCHEMA_READY: bool = False
 _SCHEMA_DB_FILE: str = ""
+
+
+def _column_exists(con: Any, table: str, column: str) -> bool:
+    """Check whether a column exists (SQLite or PostgreSQL)."""
+    table = str(table or "").strip()
+    column = str(column or "").strip()
+    if not table or not column:
+        return False
+    cfg = get_db_runtime_config()
+    if cfg.backend == "sqlite":
+        cur = con.execute(f"PRAGMA table_info({table})")
+        return any(str(row["name"] or "").lower() == column.lower() for row in cur.fetchall())
+    cur = con.execute(
+        "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+        [table, column],
+    )
+    return cur.fetchone() is not None
 
 
 def _ensure_agent_schema() -> None:
@@ -63,11 +81,10 @@ def _ensure_agent_schema() -> None:
             ON agent_conversations(org_id, session_id, user_id)
             """
         )
-        # SQLite не поддерживает ADD COLUMN IF NOT EXISTS; ловим ошибку дубликата.
-        try:
+        # ADD COLUMN IF NOT EXISTS: guard with explicit column check so a failed
+        # ALTER does not leave a PostgreSQL transaction in aborted state.
+        if not _column_exists(con, "agent_conversations", "summary"):
             con.execute("ALTER TABLE agent_conversations ADD COLUMN summary TEXT")
-        except Exception:
-            pass
         con.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_agent_conversations_updated_at
