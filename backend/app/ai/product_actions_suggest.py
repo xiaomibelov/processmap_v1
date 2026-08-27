@@ -251,6 +251,31 @@ PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4 = """Ты помогаешь запо
   "warnings": []
 }
 
+Важно: всегда возвращай массив "suggestions", даже если подходящее действие одно. Не возвращай одно действие как верхнеуровневый JSON-объект — оберни его в массив.
+
+Пример для одного действия:
+{
+  "suggestions": [
+    {
+      "step_id": "Activity_1",
+      "bpmn_element_id": "Activity_1",
+      "step_label": "Поставить емкость",
+      "action_text": "Поставить емкость на рабочий стол",
+      "product_name": "",
+      "product_group": "",
+      "action_type": "размещение",
+      "action_stage": "подготовка",
+      "action_object": "емкость",
+      "action_object_category": "",
+      "action_method": "поставить",
+      "role": "Работа манипуляторов",
+      "confidence": "high",
+      "reason": "Шаг описывает физическое размещение емкости"
+    }
+  ],
+  "warnings": []
+}
+
 Правила:
 - Предлагай только физические действия сотрудников с продуктом, ингредиентом, полуфабрикатом, готовым блюдом, тарой, контейнером или упаковкой.
 - Каждое предложение — это глагольная формулировка физического действия. Обязательно заполни поле action_text (например: "Перелить суп из контейнера в гастроёмкость", "Нарезать куриную грудку ножом").
@@ -345,9 +370,30 @@ def normalize_product_action_suggestion(raw: Any, *, index: int = 0) -> Dict[str
 # "items", "results", or "data" instead of "suggestions".
 _SUGGESTION_WRAPPER_KEYS = ("suggestions", "actions", "items", "results", "data")
 
+# Fields that identify a single suggestion object when the LLM returns a dict
+# instead of an array (common with scope=selected_step).
+_SUGGESTION_SIGNATURE_FIELDS = ("action_text", "action_type", "action_stage", "action_object", "action_method")
+
+
+def _looks_like_single_suggestion(payload: Any) -> bool:
+    """Return True if payload is a dict representing one suggestion, not a wrapper."""
+    if not isinstance(payload, dict) or not payload:
+        return False
+    # Must have action_text and at least one tag or tag group to be a real suggestion.
+    if not _text(payload.get("action_text")):
+        return False
+    tags = _as_dict(payload.get("tags"))
+    tag_values = [_text(tags.get(k)) for k in _SUGGESTION_SIGNATURE_FIELDS[1:]]
+    direct_values = [_text(payload.get(k)) for k in _SUGGESTION_SIGNATURE_FIELDS[1:]]
+    return any(tag_values) or any(direct_values)
+
 
 def _extract_suggestions_array(payload: Any) -> Optional[List[Any]]:
-    """Extract the suggestions array from common LLM response wrappers."""
+    """Extract the suggestions array from common LLM response wrappers.
+
+    Also handles the single-object case: when the LLM returns one suggestion
+    as a top-level dict (e.g. scope=selected_step), wrap it in a list.
+    """
     if isinstance(payload, list):
         return payload
     if not isinstance(payload, dict):
@@ -356,6 +402,8 @@ def _extract_suggestions_array(payload: Any) -> Optional[List[Any]]:
         value = payload.get(key)
         if isinstance(value, list):
             return value
+    if _looks_like_single_suggestion(payload):
+        return [payload]
     return None
 
 
@@ -376,14 +424,16 @@ def normalize_product_action_suggestions_response(raw: Any, *, max_suggestions: 
 
 
 def _looks_like_suggestions_payload(raw: Any) -> bool:
-    """Return True if the parsed JSON is a list or a dict with a known wrapper key."""
+    """Return True if the parsed JSON is a list, a dict with a known wrapper key, or a single suggestion."""
     if isinstance(raw, list):
         return True
     if not isinstance(raw, dict):
         return False
     if not raw:
         return True
-    return any(key in raw for key in _SUGGESTION_WRAPPER_KEYS)
+    if any(key in raw for key in _SUGGESTION_WRAPPER_KEYS):
+        return True
+    return _looks_like_single_suggestion(raw)
 
 
 def parse_product_actions_suggestions(text: str, max_suggestions: int = 3) -> Dict[str, Any]:
