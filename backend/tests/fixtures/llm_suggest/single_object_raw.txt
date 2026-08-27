@@ -1,0 +1,17 @@
+{
+  "action_text": "Поставить емкость",
+  "tags": {
+    "action_type": "размещение",
+    "action_stage": "подготовка",
+    "action_object": "емкость",
+    "action_method": "поставить"
+  },
+  "product_name": "",
+  "product_group": "",
+  "step_id": "Activity_1ve2y8x",
+  "bpmn_element_id": "Activity_1ve2y8x",
+  "step_label": "Поставить емкость",
+  "role": "Работа манипуляторов",
+  "confidence": "high",
+  "reason": "Физическое действие с емкостью"
+}
