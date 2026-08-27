@@ -1,0 +1,5 @@
+READY_FOR_EXECUTION
+Contour: fix/deploy-verify-and-healthchecks
+Branch: fix/deploy-verify-and-healthchecks
+Base: origin/main (9d99e8ae)
+Gate: explicit user approval required before merge/deploy/PR-merge.
