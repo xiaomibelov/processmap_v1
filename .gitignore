@@ -5,6 +5,7 @@
 .tools/
 
 .venv/
+.venv-test/
 venv/
 env/
 

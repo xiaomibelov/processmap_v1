@@ -1,0 +1,33 @@
+{
+  "contour": "fix/deploy-verify-and-healthchecks",
+  "type": "fix",
+  "role": "planner",
+  "status": "ready_for_execution",
+  "blocked": false,
+  "blocker_reason": null,
+  "branch": "fix/deploy-verify-and-healthchecks",
+  "base": "origin/main",
+  "head": "9d99e8ae7e990992aab573f7f3a8e5d4408de139",
+  "workspace": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/fix-deploy-verify-and-healthchecks",
+  "artifacts": [
+    "PLAN.md",
+    "STATE.json",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "READY_FOR_EXECUTION"
+  ],
+  "rag_preflight": {
+    "index": "/Users/mac/agents_place/kimi_PM/rag-index/RAG_SEARCH_INDEX.json",
+    "results": "no prior art found",
+    "query": "verify-deploy.sh SHA normalization compose project name celery-worker healthcheck JSONDecodeError agent service version endpoint BRPOP timeout"
+  },
+  "tasks": {
+    "verify_deploy_sh": "pending",
+    "celery_healthcheck": "pending",
+    "agent_version_format": "pending",
+    "brpop_log_level": "pending",
+    "drift_cleanup_plan": "pending",
+    "tests": "pending"
+  },
+  "next_step": "start implementation per PLAN.md",
+  "updated_at": "2026-08-27T23:35:00Z"
+}
