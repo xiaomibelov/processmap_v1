@@ -26,6 +26,7 @@ const searchCssSource = readSource("../../../../styles/app/05/05-02-bpmn-text-co
 const controlsSource = readSource("../ui/ProcessStageDiagramControls.jsx");
 const inlineSource = readSource("./diagramSearchInlineInput.jsx");
 const panelSource = readSource("./diagramSearchInlinePanel.jsx");
+const advancedPanelSource = readSource("./diagramSearchAdvancedPanel.jsx");
 const modeToggleSource = readSource("./diagramSearchModeToggle.jsx");
 
 // ---------------------------------------------------------------------------
@@ -366,4 +367,43 @@ test("contract S3: keyboard handlers are wired through sections and ProcessStage
     assert.equal(processStageSource.includes(`${key}: diagramSearch.`), true, `ProcessStage must pass ${key}`);
     assert.equal(controlsSource.includes(key), true, `controls must thread ${key}`);
   });
+});
+
+// ---------------------------------------------------------------------------
+// H. Canvas search improvements contract (feature/canvas-search-improvements)
+// ---------------------------------------------------------------------------
+
+test("contract: inline panel renders instant list footer with advanced search trigger", () => {
+  assert.equal(panelSource.includes('data-testid="diagram-action-search-advanced"'), true);
+  assert.equal(panelSource.includes("diagramSearchInlineFooter"), true);
+  assert.equal(panelSource.includes("diagramSearchInlineAdvancedBtn"), true);
+  assert.equal(panelSource.includes("onOpenAdvanced"), true);
+});
+
+test("contract: inline input supports advanced open state and advanced panel", () => {
+  assert.equal(inlineSource.includes("advancedOpen"), true);
+  assert.equal(inlineSource.includes("onAdvancedOpenChange"), true);
+  assert.equal(inlineSource.includes("DiagramSearchAdvancedPanel"), true);
+});
+
+test("contract: controls wire advanced search open state", () => {
+  assert.equal(controlsSource.includes("diagramSearchAdvancedOpen"), true);
+  assert.equal(controlsSource.includes("setDiagramSearchAdvancedOpen"), true);
+  assert.equal(controlsSource.includes("onOpenAdvanced"), true);
+  assert.equal(controlsSource.includes("onAdvancedOpenChange"), true);
+});
+
+test("contract: ProcessStage exposes advanced search controller state", () => {
+  assert.equal(processStageSource.includes("diagramSearchAdvancedOpen: diagramSearch.advancedOpen"), true);
+  assert.equal(processStageSource.includes("setDiagramSearchAdvancedOpen: diagramSearch.setAdvancedOpen"), true);
+});
+
+test("contract: advanced panel exposes expected sections and controls", () => {
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-panel"'), true);
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-close"'), true);
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-input"'), true);
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-tags"'), true);
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-tasks"'), true);
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-property"'), true);
+  assert.equal(advancedPanelSource.includes('data-testid="diagram-action-search-advanced-show-more"'), true);
 });

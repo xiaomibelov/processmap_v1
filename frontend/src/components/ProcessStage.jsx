@@ -7974,6 +7974,8 @@ function ProcessStage({
                     moveDiagramSearchActive: diagramSearch.moveActive,
                     moveDiagramSearchActiveBoundary: diagramSearch.moveActiveBoundary,
                     activateDiagramSearchResult: diagramSearch.activateActive,
+                    diagramSearchAdvancedOpen: diagramSearch.advancedOpen,
+                    setDiagramSearchAdvancedOpen: diagramSearch.setAdvancedOpen,
                     hasPathHighlightData,
                     setPathHighlightEnabled,
                     availablePathTiers,
