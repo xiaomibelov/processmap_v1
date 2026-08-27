@@ -40,6 +40,7 @@ export default function useDiagramSearchController({
   const [elements, setElements] = useState([]);
   const [properties, setProperties] = useState([]);
   const [mode, setModeState] = useState("elements");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const lastSessionIdRef = useRef(toText(sessionId));
 
   const refreshElements = useCallback(() => {
@@ -76,6 +77,14 @@ export default function useDiagramSearchController({
 
   const setMode = useCallback((nextMode) => {
     setModeState(normalizeSearchMode(nextMode));
+  }, []);
+
+  const openAdvanced = useCallback(() => {
+    setAdvancedOpen(true);
+  }, []);
+
+  const closeAdvanced = useCallback(() => {
+    setAdvancedOpen(false);
   }, []);
 
   const focusResult = useCallback((result, source = "search") => {
@@ -152,7 +161,7 @@ export default function useDiagramSearchController({
   }, [activeModel]);
 
   useEffect(() => {
-    if (!isEnabled || !isOpen) return;
+    if (!isEnabled) return;
     if (mode === "properties") {
       refreshProperties();
       return;
@@ -160,7 +169,6 @@ export default function useDiagramSearchController({
     refreshElements();
   }, [
     isEnabled,
-    isOpen,
     mode,
     refreshElements,
     refreshProperties,
@@ -202,6 +210,7 @@ export default function useDiagramSearchController({
     setElements([]);
     setProperties([]);
     setModeState("elements");
+    setAdvancedOpen(false);
     elementModel.reset();
     propertyModel.reset();
     if (typeof setOpen === "function") setOpen(false);
@@ -266,6 +275,10 @@ export default function useDiagramSearchController({
     activeResult: activeModel.activeResult,
     mode,
     setMode,
+    advancedOpen,
+    setAdvancedOpen,
+    openAdvanced,
+    closeAdvanced,
     next,
     prev,
     selectIndex,

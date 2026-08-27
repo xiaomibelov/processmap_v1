@@ -6,6 +6,7 @@ import {
 } from "./diagramSearchInlineModel.js";
 import DiagramSearchModeToggle from "./diagramSearchModeToggle.jsx";
 import DiagramSearchInlinePanel from "./diagramSearchInlinePanel.jsx";
+import DiagramSearchAdvancedPanel from "./diagramSearchAdvancedPanel.jsx";
 
 function toText(value) {
   return String(value || "").trim();
@@ -34,6 +35,9 @@ export default function DiagramSearchInlineInput({
   onMoveActive = null,
   onMoveActiveBoundary = null,
   onActivate = null,
+  onOpenAdvanced = null,
+  advancedOpen = false,
+  onAdvancedOpenChange = null,
 } = {}) {
   const inputRef = useRef(null);
   const triggerRef = useRef(null);
@@ -205,15 +209,27 @@ export default function DiagramSearchInlineInput({
           ) : null}
           <div className="diagramSearchInlineDrop">
             <DiagramSearchModeToggle mode={mode} onModeChange={onModeChange} />
-            {hasQuery ? (
+            {advancedOpen ? (
+              <DiagramSearchAdvancedPanel
+                results={results}
+                mode={mode}
+                activeIndex={activeIndex}
+                query={query}
+                onQueryChange={onQueryChange}
+                onSelect={handleSelect}
+                onClose={() => onAdvancedOpenChange?.(false)}
+              />
+            ) : (
               <DiagramSearchInlinePanel
                 results={results}
                 activeIndex={activeIndex}
                 mode={mode}
                 pending={pending}
                 onSelect={handleSelect}
+                isInstant={!hasQuery}
+                onOpenAdvanced={onOpenAdvanced}
               />
-            ) : null}
+            )}
           </div>
         </>
       )}

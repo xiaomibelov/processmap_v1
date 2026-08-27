@@ -501,3 +501,123 @@ test("useDiagramSearchController refreshes property source on first query withou
     await cleanup();
   }
 });
+
+test("useDiagramSearchController preloads source data even when the panel is closed", async () => {
+  const { root, cleanup } = setupDom();
+  let latest = null;
+  let open = false;
+
+  const bpmnRef = {
+    current: {
+      listSearchableElements: () => [
+        { elementId: "Task_A", name: "Alpha", type: "bpmn:Task" },
+        { elementId: "Task_B", name: "Beta", type: "bpmn:Task" },
+      ],
+      setSearchHighlights: () => true,
+      clearSearchHighlights: () => true,
+    },
+  };
+
+  try {
+    await renderHarness(root, {
+      bpmnRef,
+      requestDiagramFocus: () => {},
+      sessionId: "sid_preload",
+      reloadKey: 1,
+      diagramXml: "<bpmn:definitions/>",
+      mutationVersion: 0,
+      isOpen: open,
+      setOpen: (next) => {
+        open = next === true;
+      },
+      isEnabled: true,
+    }, (value) => {
+      latest = value;
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    assert.equal(latest.results.length, 2);
+    assert.equal(latest.results[0]?.elementId, "Task_A");
+    assert.equal(latest.results[1]?.elementId, "Task_B");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("useDiagramSearchController exposes instant list for empty query and advanced panel state", async () => {
+  const { root, cleanup } = setupDom();
+  let latest = null;
+  let open = true;
+
+  const bpmnRef = {
+    current: {
+      listSearchableElements: () => [
+        { elementId: "Task_Z", name: "Zulu", type: "bpmn:Task" },
+        { elementId: "Task_A", name: "Alpha", type: "bpmn:Task" },
+      ],
+      listSearchableProperties: () => [
+        {
+          searchId: "Task_A::prop_0",
+          elementId: "Task_A",
+          elementTitle: "Alpha",
+          elementType: "bpmn:Task",
+          propertyName: "retries",
+          propertyValue: "3",
+        },
+      ],
+      setSearchHighlights: () => true,
+      clearSearchHighlights: () => true,
+    },
+  };
+
+  try {
+    await renderHarness(root, {
+      bpmnRef,
+      requestDiagramFocus: () => {},
+      sessionId: "sid_instant",
+      reloadKey: 1,
+      diagramXml: "<bpmn:definitions/>",
+      mutationVersion: 0,
+      isOpen: open,
+      setOpen: (next) => {
+        open = next === true;
+      },
+      isEnabled: true,
+    }, (value) => {
+      latest = value;
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    // Empty query should return the full instant list sorted by title.
+    assert.equal(latest.results.length, 2);
+    assert.equal(latest.results[0]?.elementId, "Task_A");
+    assert.equal(latest.results[1]?.elementId, "Task_Z");
+
+    assert.equal(latest.advancedOpen, false);
+    await act(async () => {
+      latest.openAdvanced();
+    });
+    assert.equal(latest.advancedOpen, true);
+    await act(async () => {
+      latest.closeAdvanced();
+    });
+    assert.equal(latest.advancedOpen, false);
+
+    await act(async () => {
+      latest.setMode("properties");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.propertyName, "retries");
+  } finally {
+    await cleanup();
+  }
+});
