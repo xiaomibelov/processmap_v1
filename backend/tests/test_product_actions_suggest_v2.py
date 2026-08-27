@@ -269,6 +269,49 @@ class ProductActionsSuggestV2Tests(unittest.TestCase):
         self.assertEqual(result["suggestions"], [])
         self.assertEqual(result.get("warnings", []), [])
 
+    def test_parse_single_object_response(self):
+        """LLM returns one suggestion as top-level object (scope=selected_step)."""
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        fixture_path = Path(__file__).resolve().parent / "fixtures" / "llm_suggest" / "single_object_raw.txt"
+        raw = fixture_path.read_text(encoding="utf-8")
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        suggestion = result["suggestions"][0]
+        self.assertEqual(suggestion["action_text"], "Поставить емкость")
+        self.assertEqual(suggestion["action_type"], "размещение")
+        self.assertEqual(suggestion["action_stage"], "подготовка")
+        self.assertEqual(suggestion["action_object"], "емкость")
+        self.assertEqual(suggestion["action_method"], "поставить")
+        self.assertEqual(suggestion["missing_fields"], [])
+
+    def test_parse_single_object_with_incomplete_tags(self):
+        """Single object missing required tags is kept but marked with missing_fields."""
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        raw = json.dumps({
+            "action_text": "Поставить емкость",
+            "tags": {"action_type": "размещение"},
+            "step_id": "Activity_1",
+        }, ensure_ascii=False)
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_text"], "Поставить емкость")
+        self.assertIn("action_stage", result["suggestions"][0]["missing_fields"])
+        self.assertIn("action_object", result["suggestions"][0]["missing_fields"])
+        self.assertIn("action_method", result["suggestions"][0]["missing_fields"])
+
+    def test_parse_random_dict_still_raises(self):
+        """A dict that does not look like a suggestion still raises parse error."""
+        from app.ai.product_actions_suggest import (
+            ProductActionsAiResponseParseError,
+            parse_product_actions_suggestions,
+        )
+
+        with self.assertRaises(ProductActionsAiResponseParseError) as ctx:
+            parse_product_actions_suggestions('{"foo": "bar"}')
+        self.assertTrue(hasattr(ctx.exception, "raw_content"))
+
 
 if __name__ == "__main__":
     unittest.main()
