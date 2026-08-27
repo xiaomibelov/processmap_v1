@@ -43,6 +43,14 @@
 - Без product-code изменений вне заявленного bounded contour.
 - Любые решения по runtime/save/revision/status/template контурам не смешиваются между собой без прямого evidence.
 
+### 6.1. OpenAPI/spec freshness (blocking rule)
+- Любой PR, добавляющий или изменяющий HTTP-эндпоинты, ОБЯЗАН содержать регенерированный `docs/openapi.yaml`.
+- Регенерация только через `scripts/dump_openapi.py` (или `./scripts/update_openapi.sh` / `make openapi`), никогда руками.
+- Перед коммитом спеки: `./scripts/update_openapi.sh` должен завершиться с `0 errors` линтера `@redocly/cli lint`.
+- CI job `spec-drift` блокирует PR, если живая спека (`app.openapi()`) расходится с закоммиченным `docs/openapi.yaml`. Сообщение об ошибке содержит команду регенерации.
+- Breaking-изменения API требуют маркера `BREAKING-API-OK` в PR (title/body); без маркера job падает даже при обновлённой спеке.
+- PR с изменением роутов без обновления спеки — не принимается.
+
 ## 7. Review, merge, release gate
 - Review обязателен для каждого bounded контура.
 - Merge в `main` только после явного подтверждения пользователя.

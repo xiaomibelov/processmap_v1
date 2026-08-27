@@ -1,8 +1,8 @@
-// Чистая логика карточки «Проверка эндпоинтов»: сводка, бейдж, фильтры,
-// подписи диффа. Модуль dependency-free (без импортов), тестируется через
-// node --test без vite/node_modules. Видимость по праву живёт в
+// Чистая логика панели «Проверка эндпоинтов»: сводка, бейдж, фильтры,
+// подписи диффа, пустые состояния фильтров. Модуль dependency-free (без импортов),
+// тестируется через node --test без vite/node_modules. Видимость по праву живёт в
 // adminUtils.canOpenOrgSettings (как у кнопки «API Docs») и гейтится в
-// AdminApp/AdminDashboardPage — сюда не дублируется.
+// AdminApp/AdminLlmPage — сюда не дублируется.
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -40,8 +40,8 @@ const DIFF_LABELS = {
   new_endpoint: "новый эндпоинт",
 };
 
-// Видимость карточки = право кнопки «API Docs»: canOpenOrgSettings в
-// adminUtils.js; гейт — AdminApp (canOpenApiDocs) → AdminDashboardPage.
+// Видимость панели = право кнопки «API Docs»: canOpenOrgSettings в
+// adminUtils.js; гейт — AdminApp (canOpenApiDocs) → AdminLlmPage.
 
 export function endpointCheckDiffGroup(diffStatusRaw) {
   const s = toText(diffStatusRaw).toLowerCase();
@@ -72,6 +72,24 @@ export function filterEndpointCheckResults(resultsRaw, filterRaw = ENDPOINT_CHEC
 
 export function countEndpointCheckFilter(resultsRaw, filterRaw) {
   return filterEndpointCheckResults(resultsRaw, filterRaw).length;
+}
+
+// Пустое состояние таблицы результатов: если активный фильтр не даёт строк,
+// предлагаем переключиться на «Все» и показываем осмысленное сообщение.
+export function getEndpointCheckEmptyFilterState(resultsRaw, filterRaw) {
+  const rows = asArray(resultsRaw);
+  const filter = toText(filterRaw).toLowerCase() || ENDPOINT_CHECK_DEFAULT_FILTER;
+  if (rows.length === 0) {
+    return { isEmpty: true, messageKey: "noResults", suggestAll: false };
+  }
+  const filtered = filterEndpointCheckResults(rows, filter);
+  if (filtered.length === 0) {
+    if (filter === ENDPOINT_CHECK_FILTER_NEW) {
+      return { isEmpty: true, messageKey: "noNewErrors", suggestAll: true };
+    }
+    return { isEmpty: true, messageKey: "noFilterRows", suggestAll: true };
+  }
+  return { isEmpty: false, messageKey: "", suggestAll: false };
 }
 
 export function buildEndpointCheckSummary(lastRunRaw) {

@@ -54,12 +54,14 @@ def main() -> int:
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.services.api_docs_ru import build_ru_openapi
 
     response = TestClient(app).get("/api/openapi.json", headers={"Authorization": f"Bearer {token}"})
     if response.status_code != 200:
         print(f"ERROR: /api/openapi.json вернул {response.status_code}: {response.text[:300]}", file=sys.stderr)
         return 1
-    spec = response.json()
+    raw_spec = response.json()
+    spec = build_ru_openapi(raw_spec)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if fmt == "json":

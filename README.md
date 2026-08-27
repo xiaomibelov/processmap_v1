@@ -82,8 +82,25 @@ backend/          # FastAPI backend, alembic, тесты, сервисы
 frontend/         # Vite/React SPA
 deploy/           # деплой-скрипты, nginx-конфиги, systemd
 docs/openapi.yaml # OpenAPI-снапшот (используется CI contract-тестами)
-scripts/          # вспомогательные скрипты CI (dump_openapi, api_coverage_report)
+scripts/          # вспомогательные скрипты CI (dump_openapi, update_openapi, api_coverage_report)
 design-system/    # дизайн-токены и гайдлайны TO BE
 ```
+
+## Обновление OpenAPI-спеки
+
+Любой PR, меняющий HTTP-эндпоинты, обязан обновить `docs/openapi.yaml`:
+
+```bash
+make openapi
+# или
+./scripts/update_openapi.sh
+```
+
+Скрипт выполнит:
+1. Дамп живой спеки из `app.openapi()` через `scripts/dump_openapi.py`.
+2. Линт `@redocly/cli lint docs/openapi.yaml` (в Docker, если `npx` недоступен).
+3. Вывод статистики: количество paths/operations до и после.
+
+CI job `spec-drift` в `.github/workflows/backend-contract.yml` блокирует PR, если живая спека расходится с `docs/openapi.yaml`. Breaking-изменения требуют маркера `BREAKING-API-OK` в описании PR.
 
 Legacy-артефакты (`.planning/`, `archive/`, `backups/`, `obsidian/`, `vault/`, `zip/`, `tools/rag/`, корневые audit-отчёты и т.п.) удалены из `main-v2` и остаются в истории `archive/v1`.
