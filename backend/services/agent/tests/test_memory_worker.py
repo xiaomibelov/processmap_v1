@@ -1,6 +1,7 @@
 """AGENT-1: schema memory CRUD + background worker tests."""
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import uuid
@@ -8,6 +9,7 @@ from unittest import mock
 
 import fakeredis
 import pytest
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -83,3 +85,19 @@ def test_run_memory_worker_once_skips_empty_projection(seed, fake_redis):
     assert processed is True
     row = load_schema_memory(sid, "org_default")
     assert row is None
+
+
+def test_run_memory_worker_once_logs_brpop_timeout_at_debug(seed, fake_redis, caplog):
+    """BRPOP long-poll timeout must be logged at debug, not warning."""
+    with mock.patch("memory.schema_memory.get_redis_client", return_value=fake_redis):
+        fake_redis.brpop = mock.Mock(
+            side_effect=RedisTimeoutError("Timeout reading from socket")
+        )
+        with caplog.at_level(logging.DEBUG, logger="agent.schema_memory"):
+            processed = run_memory_worker_once(timeout_sec=1.0)
+
+    assert processed is False
+    assert "BRPOP timeout" in caplog.text
+    assert "Timeout reading from socket" in caplog.text
+    # The generic warning message must not appear for timeout errors.
+    assert "BRPOP failed" not in caplog.text
