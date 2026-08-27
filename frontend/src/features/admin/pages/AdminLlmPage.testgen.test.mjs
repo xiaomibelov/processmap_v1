@@ -28,7 +28,11 @@ async function loadPage() {
       appType: "custom",
     });
   }
-  return viteServer.ssrLoadModule("/src/features/admin/pages/AdminLlmPage.jsx");
+  const [pageMod, authMod] = await Promise.all([
+    viteServer.ssrLoadModule("/src/features/admin/pages/AdminLlmPage.jsx"),
+    viteServer.ssrLoadModule("/src/features/auth/AuthProvider.jsx"),
+  ]);
+  return { AdminLlmPage: pageMod.default, AuthProvider: authMod.AuthProvider };
 }
 
 after(async () => {
@@ -50,6 +54,8 @@ function setupDom() {
     MouseEvent: globalThis.MouseEvent,
     requestAnimationFrame: globalThis.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     reactActEnv: globalThis.IS_REACT_ACT_ENVIRONMENT,
     fetch: globalThis.fetch,
   };
@@ -63,6 +69,8 @@ function setupDom() {
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
   globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
+  globalThis.localStorage = dom.window.localStorage;
+  globalThis.sessionStorage = dom.window.sessionStorage;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = dom.window.document.createElement("div");
@@ -83,6 +91,8 @@ function setupDom() {
     globalThis.MouseEvent = previous.MouseEvent;
     globalThis.requestAnimationFrame = previous.requestAnimationFrame;
     globalThis.cancelAnimationFrame = previous.cancelAnimationFrame;
+    globalThis.localStorage = previous.localStorage;
+    globalThis.sessionStorage = previous.sessionStorage;
     globalThis.IS_REACT_ACT_ENVIRONMENT = previous.reactActEnv;
     globalThis.fetch = previous.fetch;
   };
@@ -94,6 +104,10 @@ async function flush(ms = 30) {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, ms));
   });
+}
+
+function wrapInAuth(element, AuthProviderComponent) {
+  return React.createElement(AuthProviderComponent, null, element);
 }
 
 function jsonResponse(payload, status = 200) {
@@ -130,13 +144,12 @@ const QUEUED_RUN = {
 };
 
 test("без права (showTestgen=false) таба и панели TestGen нет в DOM", async () => {
-  const mod = await loadPage();
-  const AdminLlmPage = mod.default;
+  const { AdminLlmPage, AuthProvider } = await loadPage();
   const { root, container, cleanup } = setupDom();
   installFetchMock({ ok: true, items: [], count: 0 });
 
   await act(async () => {
-    root.render(React.createElement(AdminLlmPage));
+    root.render(wrapInAuth(React.createElement(AdminLlmPage), AuthProvider));
   });
   await flush();
 
@@ -148,13 +161,12 @@ test("без права (showTestgen=false) таба и панели TestGen н�
 });
 
 test("с правом (showTestgen=true) таб есть, панель открывается, форма видна", async () => {
-  const mod = await loadPage();
-  const AdminLlmPage = mod.default;
+  const { AdminLlmPage, AuthProvider } = await loadPage();
   const { root, container, cleanup } = setupDom();
   installFetchMock({ ok: true, items: [], count: 0 });
 
   await act(async () => {
-    root.render(React.createElement(AdminLlmPage, { showTestgen: true }));
+    root.render(wrapInAuth(React.createElement(AdminLlmPage, { showTestgen: true }), AuthProvider));
   });
   await flush();
 
@@ -177,8 +189,7 @@ test("с правом (showTestgen=true) таб есть, панель откр�
 });
 
 test("запуск: POST уходит с tag/limit, кнопка блокируется на активном запуске", async () => {
-  const mod = await loadPage();
-  const AdminLlmPage = mod.default;
+  const { AdminLlmPage, AuthProvider } = await loadPage();
   const { root, container, cleanup } = setupDom();
   const calls = installFetchMock(
     { ok: true, items: [QUEUED_RUN], count: 1 },
@@ -186,7 +197,7 @@ test("запуск: POST уходит с tag/limit, кнопка блокиру�
   );
 
   await act(async () => {
-    root.render(React.createElement(AdminLlmPage, { showTestgen: true }));
+    root.render(wrapInAuth(React.createElement(AdminLlmPage, { showTestgen: true }), AuthProvider));
   });
   await flush();
   await act(async () => {
@@ -204,8 +215,7 @@ test("запуск: POST уходит с tag/limit, кнопка блокиру�
 });
 
 test("клик по кнопке: POST /api/admin/testgen/run с телом tag/limit", async () => {
-  const mod = await loadPage();
-  const AdminLlmPage = mod.default;
+  const { AdminLlmPage, AuthProvider } = await loadPage();
   const { root, container, cleanup } = setupDom();
   let started = false;
   const calls = installFetchMock(
@@ -224,7 +234,7 @@ test("клик по кнопке: POST /api/admin/testgen/run с телом tag/
   };
 
   await act(async () => {
-    root.render(React.createElement(AdminLlmPage, { showTestgen: true }));
+    root.render(wrapInAuth(React.createElement(AdminLlmPage, { showTestgen: true }), AuthProvider));
   });
   await flush();
   await act(async () => {
@@ -258,8 +268,7 @@ test("клик по кнопке: POST /api/admin/testgen/run с телом tag/
 });
 
 test("ошибка 409: показывается сообщение, кнопка остаётся доступной", async () => {
-  const mod = await loadPage();
-  const AdminLlmPage = mod.default;
+  const { AdminLlmPage, AuthProvider } = await loadPage();
   const { root, container, cleanup } = setupDom();
   installFetchMock(
     { ok: true, items: [], count: 0 },
@@ -267,7 +276,7 @@ test("ошибка 409: показывается сообщение, кнопк�
   );
 
   await act(async () => {
-    root.render(React.createElement(AdminLlmPage, { showTestgen: true }));
+    root.render(wrapInAuth(React.createElement(AdminLlmPage, { showTestgen: true }), AuthProvider));
   });
   await flush();
   await act(async () => {

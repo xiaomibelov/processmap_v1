@@ -1,0 +1,27 @@
+{
+  "contour_id": "feat/endpoint-check-llm-tab",
+  "created_at": "2026-08-27T19:35:00Z",
+  "updated_at": "2026-08-27T19:35:00Z",
+  "state": "ready_for_review",
+  "base_truth": "origin/main",
+  "control_plane": ".planning/contours/feat/endpoint-check-llm-tab",
+  "head": "b58dc6c2be73cef5f74ed15ab014da6dc40c1735",
+  "origin_main": "307effbb8736e354a50a337be445dd3ee2d6b288",
+  "markers": {
+    "ready_for_execution": true,
+    "execution_started": true,
+    "ready_for_review": true,
+    "review_pass": false,
+    "changes_requested": false,
+    "closed": false
+  },
+  "scope_guard": {
+    "product_code_allowed": true,
+    "bpmn_xml_allowed": false,
+    "schema_allowed": true,
+    "deploy_allowed": false
+  },
+  "artifacts": {
+    "EXEC_REPORT.md": ".planning/contours/feat/endpoint-check-llm-tab/EXEC_REPORT.md"
+  }
+}
