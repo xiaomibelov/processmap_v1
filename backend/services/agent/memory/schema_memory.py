@@ -11,6 +11,8 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
 from db import adapt_sql, get_conn
 from gateway import gateway
 from gateway.redis_cache import get_client as get_redis_client
@@ -280,6 +282,12 @@ def run_memory_worker_once(
         return False
     try:
         item = redis.brpop(QUEUE_KEY, timeout=int(timeout_sec))
+    except RedisTimeoutError as exc:
+        # Long-poll timeout is expected when the queue is empty or Redis is
+        # temporarily slow. Avoid log spam; real connection errors are still
+        # logged at warning level below.
+        logger.debug("run_memory_worker_once: BRPOP timeout (queue empty or slow): %s", exc)
+        return False
     except Exception as exc:
         logger.warning("run_memory_worker_once: BRPOP failed: %s", exc)
         return False
