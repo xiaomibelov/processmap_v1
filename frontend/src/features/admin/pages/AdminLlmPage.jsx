@@ -9,6 +9,7 @@ import LlmPromptsPanel from "../llm/LlmPromptsPanel";
 import LlmFeaturesPanel from "../llm/LlmFeaturesPanel";
 import LlmUsagePanel from "../llm/LlmUsagePanel";
 import TestgenPanel from "../llm/TestgenPanel";
+import EndpointCheckPanel from "../llm/EndpointCheckPanel";
 import { t } from "../llm/i18n";
 
 const ALL_LLM_TABS = [
@@ -23,11 +24,16 @@ const ALL_LLM_TABS = [
 const DEFAULT_TAB = "providers";
 
 const TESTGEN_TAB = { id: "testgen", label: t("tab.testgen") };
+const ENDPOINT_CHECK_TAB = { id: "endpoint-check", label: t("tab.endpointCheck") };
 
-export default function AdminLlmPage({ showTestgen = false }) {
-  // Видимость таба TestGen — по праву «API Docs» (вычисляется в AdminApp).
+export default function AdminLlmPage({ showTestgen = false, showEndpointCheck = false }) {
+  // Видимость табов TestGen и Проверка эндпоинтов — по праву «API Docs» (вычисляется в AdminApp).
   // Без права таба и панели нет в DOM.
-  const tabs = showTestgen ? [...ALL_LLM_TABS, TESTGEN_TAB] : ALL_LLM_TABS;
+  const tabs = [
+    ...ALL_LLM_TABS,
+    ...(showTestgen ? [TESTGEN_TAB] : []),
+    ...(showEndpointCheck ? [ENDPOINT_CHECK_TAB] : []),
+  ];
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return DEFAULT_TAB;
     const params = new URLSearchParams(window.location.search);
@@ -61,6 +67,7 @@ export default function AdminLlmPage({ showTestgen = false }) {
     if (activeTab === "features") return <LlmFeaturesPanel />;
     if (activeTab === "usage") return <LlmUsagePanel />;
     if (activeTab === "testgen") return showTestgen ? <TestgenPanel /> : null;
+    if (activeTab === "endpoint-check") return showEndpointCheck ? <EndpointCheckPanel /> : null;
     return <LlmProvidersPanel />;
   }
 

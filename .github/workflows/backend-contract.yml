@@ -62,7 +62,6 @@ jobs:
   spec-drift:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true # снапшот docs/openapi.yaml ведётся вручную — drift ожидаем
     steps:
       - uses: actions/checkout@v4
 
@@ -83,13 +82,45 @@ jobs:
 
       - name: oasdiff (live vs snapshot)
         run: |
+          set +e
+          mkdir -p build
           docker run --rm -v "$PWD:/specs" tufin/oasdiff:latest \
             diff /specs/docs/openapi.yaml /specs/build/openapi-live.yaml \
-            > build/spec-drift.txt || true
+            > build/spec-drift.txt
+          DIFF_EXIT=$?
           docker run --rm -v "$PWD:/specs" tufin/oasdiff:latest \
             breaking /specs/docs/openapi.yaml /specs/build/openapi-live.yaml \
-            > build/spec-drift-breaking.txt || true
-          head -50 build/spec-drift-breaking.txt || true
+            > build/spec-drift-breaking.txt
+          BREAKING_EXIT=$?
+          set -e
+
+          echo "--- drift summary ---"
+          cat build/spec-drift.txt
+          echo "--- breaking summary ---"
+          cat build/spec-drift-breaking.txt
+
+          # oasdiff diff returns 0 even when differences exist; treat any non-empty output as drift.
+          DIFF_OUTPUT="$(cat build/spec-drift.txt | tr -d '[:space:]')"
+          if [[ -n "$DIFF_OUTPUT" && "$DIFF_OUTPUT" != "{}" ]]; then
+            echo ""
+            echo "❌ ERROR: docs/openapi.yaml is out of sync with the live API."
+            echo "   Regenerate it with: ./scripts/update_openapi.sh   (or: make openapi)"
+            echo "   Then commit the updated docs/openapi.yaml."
+            exit 1
+          fi
+
+          if [[ "$BREAKING_EXIT" -ne 0 ]]; then
+            PR_TEXT="${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}"
+            if echo "$PR_TEXT" | grep -q 'BREAKING-API-OK'; then
+              echo "⚠️ Breaking API changes detected, but BREAKING-API-OK marker found — allowing."
+            else
+              echo ""
+              echo "❌ ERROR: breaking API changes detected and BREAKING-API-OK marker is missing."
+              echo "   Add BREAKING-API-OK to the PR title or description if the breaking change is intentional."
+              echo "   Then regenerate docs/openapi.yaml with: ./scripts/update_openapi.sh"
+              exit 1
+            fi
+          fi
 
       - name: Upload drift report
         if: always()

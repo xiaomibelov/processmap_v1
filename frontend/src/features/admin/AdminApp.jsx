@@ -102,7 +102,7 @@ function AdminAppInner({
   }, [onNavigate, pathname, rawSearch]);
 
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgs), [orgs, user]);
-  // Право «API Docs» — гейт таба TestGen в /admin/llm.
+  // Право «API Docs» — гейт табов TestGen и Проверка эндпоинтов в /admin/llm.
   const canOpenApiDocs = useMemo(
     () => canOpenOrgSettings(user, orgs, toText(activeOrgId)),
     [orgs, user, activeOrgId],
@@ -381,7 +381,7 @@ function AdminAppInner({
       return <AdminAiModulesPage onNavigate={onNavigate} />;
     }
     if (route.section === "llm") {
-      return <AdminLlmPage showTestgen={canOpenApiDocs} />;
+      return <AdminLlmPage showTestgen={canOpenApiDocs} showEndpointCheck={canOpenApiDocs} />;
     }
     if (route.section === "rag") {
       return <AdminRagPage payload={ragQ} />;
