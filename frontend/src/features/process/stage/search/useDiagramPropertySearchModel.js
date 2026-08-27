@@ -77,6 +77,8 @@ export function collectDiagramPropertySearchResults(entriesRaw, queryRaw) {
   return out;
 }
 
+export const INSTANT_RESULTS_CAP = 10;
+
 export default function useDiagramPropertySearchModel({
   entries = [],
   isOpen = false,
@@ -86,10 +88,24 @@ export default function useDiagramPropertySearchModel({
   const [activeIndex, setActiveIndex] = useState(-1);
   const activeSearchIdRef = useRef("");
   const hasQuery = normalizeLoose(query).length > 0;
-  const results = useMemo(
-    () => collectDiagramPropertySearchResults(entries, query),
-    [entries, query],
-  );
+  const results = useMemo(() => {
+    if (!hasQuery) {
+      // Instant list: show all available properties sorted by property name
+      // when the search input is focused but empty.
+      return asArray(entries)
+        .map((raw, index) => {
+          const item = normalizeDiagramPropertySearchEntry(raw);
+          if (!item) return null;
+          return {
+            ...item,
+            searchId: `${item.entryKey || item.elementId}::row_${index}`,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.propertyName.localeCompare(b.propertyName));
+    }
+    return collectDiagramPropertySearchResults(entries, query);
+  }, [entries, query, hasQuery]);
   const activeResult = activeIndex >= 0 && activeIndex < results.length ? results[activeIndex] : null;
 
   // NOTE: closing the panel keeps the query and the active index (see
