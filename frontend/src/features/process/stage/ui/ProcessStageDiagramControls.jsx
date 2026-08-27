@@ -321,6 +321,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     moveDiagramSearchActive,
     moveDiagramSearchActiveBoundary,
     activateDiagramSearchResult,
+    refreshDiagramSearchActiveSource,
     diagramSearchAdvancedOpen,
     setDiagramSearchAdvancedOpen,
   } = searchSection;
@@ -687,6 +688,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             onOpenAdvanced={() => setDiagramSearchAdvancedOpen?.(true)}
             advancedOpen={diagramSearchAdvancedOpen === true}
             onAdvancedOpenChange={setDiagramSearchAdvancedOpen}
+            onRefresh={refreshDiagramSearchActiveSource}
           />
           <span className="diagramActionBarSpacer" />
           <button
