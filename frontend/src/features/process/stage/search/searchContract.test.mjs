@@ -393,6 +393,15 @@ test("contract: controls wire advanced search open state", () => {
   assert.equal(controlsSource.includes("onAdvancedOpenChange"), true);
 });
 
+test("contract: focus/expand triggers active source refresh", () => {
+  assert.equal(inlineSource.includes("onRefresh"), true);
+  assert.equal(inlineSource.includes("onFocus={handleInputFocus}"), true);
+  assert.equal(inlineSource.includes("handleInputFocus"), true);
+  assert.equal(controlsSource.includes("refreshDiagramSearchActiveSource"), true);
+  assert.equal(controlsSource.includes("onRefresh={refreshDiagramSearchActiveSource}"), true);
+  assert.equal(processStageSource.includes("refreshDiagramSearchActiveSource: diagramSearch.refreshActiveSource"), true);
+});
+
 test("contract: ProcessStage exposes advanced search controller state", () => {
   assert.equal(processStageSource.includes("diagramSearchAdvancedOpen: diagramSearch.advancedOpen"), true);
   assert.equal(processStageSource.includes("setDiagramSearchAdvancedOpen: diagramSearch.setAdvancedOpen"), true);
