@@ -71,8 +71,10 @@ jobs:
             echo "build_time=${build_time}"
           } >> "${GITHUB_OUTPUT}"
 
-      # AGENT-SVC: agent-образ собираем только при изменении backend/services/agent/**
-      # (решение владельца). Если before-sha недоступен — считаем изменённым (safe).
+      # AGENT-SVC: agent-образ собираем при изменении backend/services/agent/**
+      # или общих модулей, от которых зависит агентский gateway (llm_store,
+      # gateway, internal client, product_actions_suggest и т.п.).
+      # Если before-sha недоступен — считаем изменённым (safe).
       - name: Detect agent service changes
         id: changes
         shell: bash
@@ -84,11 +86,12 @@ jobs:
             echo "agent=true" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          if git diff --name-only "${before}" "${GITHUB_SHA}" | grep -q '^backend/services/agent/'; then
-            echo "[changes] backend/services/agent changed"
+          changed_files="$(git diff --name-only "${before}" "${GITHUB_SHA}")"
+          if echo "${changed_files}" | grep -qE '^backend/services/agent/|^backend/app/ai/'; then
+            echo "[changes] agent service or shared AI modules changed"
             echo "agent=true" >> "${GITHUB_OUTPUT}"
           else
-            echo "[changes] backend/services/agent unchanged"
+            echo "[changes] agent service and shared AI modules unchanged"
             echo "agent=false" >> "${GITHUB_OUTPUT}"
           fi
 
