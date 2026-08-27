@@ -621,3 +621,92 @@ test("useDiagramSearchController exposes instant list for empty query and advanc
     await cleanup();
   }
 });
+
+test("useDiagramSearchController refreshActiveSource reloads current mode data", async () => {
+  const { root, cleanup } = setupDom();
+  let latest = null;
+  let elementCalls = 0;
+  let propertyCalls = 0;
+  let open = true;
+
+  const bpmnRef = {
+    current: {
+      listSearchableElements: () => {
+        elementCalls += 1;
+        return [
+          { elementId: `Task_${elementCalls}`, name: `Call ${elementCalls}`, type: "bpmn:Task" },
+        ];
+      },
+      listSearchableProperties: () => {
+        propertyCalls += 1;
+        return [
+          {
+            searchId: `Task_${propertyCalls}::prop_0`,
+            elementId: `Task_${propertyCalls}`,
+            elementTitle: `Call ${propertyCalls}`,
+            elementType: "bpmn:Task",
+            propertyName: "retry",
+            propertyValue: String(propertyCalls),
+          },
+        ];
+      },
+      setSearchHighlights: () => true,
+      clearSearchHighlights: () => true,
+    },
+  };
+
+  try {
+    await renderHarness(root, {
+      bpmnRef,
+      requestDiagramFocus: () => {},
+      sessionId: "sid_refresh",
+      reloadKey: 1,
+      diagramXml: "<bpmn:definitions/>",
+      mutationVersion: 0,
+      isOpen: open,
+      setOpen: (next) => {
+        open = next === true;
+      },
+      isEnabled: true,
+    }, (value) => {
+      latest = value;
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    assert.equal(elementCalls, 1);
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.elementId, "Task_1");
+
+    await act(async () => {
+      latest.refreshActiveSource();
+    });
+
+    assert.equal(elementCalls, 2);
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.elementId, "Task_2");
+
+    await act(async () => {
+      latest.setMode("properties");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    assert.equal(propertyCalls >= 1, true);
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.propertyValue, "1");
+
+    await act(async () => {
+      latest.refreshActiveSource();
+    });
+
+    assert.equal(propertyCalls >= 2, true);
+    assert.equal(latest.results.length, 1);
+    assert.equal(latest.results[0]?.propertyValue, "2");
+  } finally {
+    await cleanup();
+  }
+});
