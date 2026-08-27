@@ -234,6 +234,41 @@ class ProductActionsSuggestV2Tests(unittest.TestCase):
         result = parse_product_actions_suggestions('{"suggestions": []}')
         self.assertEqual(result["suggestions"], [])
 
+    def test_parse_vvproxy_prose_raw(self):
+        """Realistic VVPROXY-style prose/markdown with valid JSON inside is parsed."""
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        fixture_path = Path(__file__).resolve().parent / "fixtures" / "llm_suggest" / "vvproxy_prose_raw.txt"
+        raw = fixture_path.read_text(encoding="utf-8")
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["action_text"], "Упаковать сэндвич в коробку")
+        self.assertEqual(result["suggestions"][0]["action_object"], "сэндвич")
+
+    def test_parse_vvproxy_prose_broken_json_raises(self):
+        """Realistic VVPROXY-style prose with corrupted JSON raises parse error with diagnostics."""
+        from app.ai.product_actions_suggest import (
+            ProductActionsAiResponseParseError,
+            parse_product_actions_suggestions,
+        )
+
+        fixture_path = Path(__file__).resolve().parent / "fixtures" / "llm_suggest" / "vvproxy_prose_broken_json.txt"
+        raw = fixture_path.read_text(encoding="utf-8")
+        with self.assertRaises(ProductActionsAiResponseParseError) as ctx:
+            parse_product_actions_suggestions(raw)
+        self.assertTrue(hasattr(ctx.exception, "raw_content"))
+        self.assertIn("не могу вернуть структурированный JSON", str(ctx.exception.raw_content))
+
+    def test_parse_deepseek_empty_raw(self):
+        """DeepSeek-style empty suggestions array returns empty list."""
+        from app.ai.product_actions_suggest import parse_product_actions_suggestions
+
+        fixture_path = Path(__file__).resolve().parent / "fixtures" / "llm_suggest" / "deepseek_empty_raw.txt"
+        raw = fixture_path.read_text(encoding="utf-8")
+        result = parse_product_actions_suggestions(raw)
+        self.assertEqual(result["suggestions"], [])
+        self.assertEqual(result.get("warnings", []), [])
+
 
 if __name__ == "__main__":
     unittest.main()
