@@ -152,11 +152,13 @@ jobs:
 
             cd "${STAGE_DIR}"
 
-            # Preserve server-only stage config across checkout.
+            # Preserve server-only stage config from the prod checkout.
+            # The stage worktree is bootstrapped empty, so .env/.env.stage must be
+            # copied from MAIN_DIR, not from STAGE_DIR.
             PRESERVE_DIR="$(mktemp -d /tmp/processmap-stage-preserve.XXXXXX)"
             for path in .env .env.stage; do
-              if [ -e "${path}" ]; then
-                cp -a "${path}" "${PRESERVE_DIR}/"
+              if [ -e "${MAIN_DIR}/${path}" ]; then
+                cp -a "${MAIN_DIR}/${path}" "${PRESERVE_DIR}/"
               fi
             done
 
