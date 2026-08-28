@@ -646,7 +646,7 @@ function ProcessStage({
   const autoPassDocSyncLastAttemptMsRef = useRef(0);
   const localStateResetSidRef = useRef("");
   const diagramStateVersionSidRef = useRef("");
-  const diagramStateVersionRef = useRef(0);
+  const diagramStateVersionRef = useRef(null);
   const sessionTruthProbeSeqRef = useRef(0);
   const sessionTruthProbeLastRef = useRef({
     scopeKey: "",
@@ -785,7 +785,7 @@ function ProcessStage({
     const nextVersion = resolveDraftDiagramStateVersion();
     if (!currentSid) {
       diagramStateVersionSidRef.current = "";
-      diagramStateVersionRef.current = 0;
+      diagramStateVersionRef.current = null;
       return;
     }
     const nextContext = rememberMonotonicDiagramStateVersion({
@@ -796,7 +796,9 @@ function ProcessStage({
       incomingVersion: nextVersion,
     });
     diagramStateVersionSidRef.current = nextContext.sessionId;
-    diagramStateVersionRef.current = nextContext.version;
+    // Preserve "uninitialized" (null) when the draft has not yet supplied a
+    // version, so callers can distinguish "server version 0" from "not loaded".
+    diagramStateVersionRef.current = nextVersion === null ? null : nextContext.version;
   }, [resolveDraftDiagramStateVersion, sid]);
 
   const getBaseDiagramStateVersion = useCallback(() => {
@@ -4644,7 +4646,7 @@ function ProcessStage({
     sessionWorkspaceTruthOwnerRef.current = null;
     sessionWorkspaceTruthOwnerSidRef.current = "";
     diagramStateVersionSidRef.current = "";
-    diagramStateVersionRef.current = 0;
+    diagramStateVersionRef.current = null;
 
     if (typeof window !== "undefined") {
       try {
