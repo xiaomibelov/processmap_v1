@@ -336,7 +336,7 @@ export default function createBpmnPersistence(options = {}) {
 
   function resolveBaseDiagramStateVersion(sessionId = "") {
     const sid = asText(sessionId).trim();
-    if (!sid) return 0;
+    if (!sid) return null;
 
     const trackedVersion = getTrackedDiagramStateVersion(sid);
     const externalVersion = readExternalBaseDiagramStateVersion();
@@ -350,7 +350,7 @@ export default function createBpmnPersistence(options = {}) {
       externalVersion ?? -1,
       draftVersion ?? -1,
     );
-    return resolved >= 0 ? Math.max(0, Math.round(resolved)) : 0;
+    return resolved >= 0 ? Math.max(0, Math.round(resolved)) : null;
   }
 
   function rememberDiagramStateVersion(raw, sessionId = "") {
@@ -684,6 +684,23 @@ export default function createBpmnPersistence(options = {}) {
     }
 
     const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid);
+    if (baseDiagramStateVersion === null) {
+      emit("API_PUT_BPMN_XML_MISSING_BASE", {
+        sid,
+        reason: asText(reason || "save"),
+        trigger_class: classifyPersistTrigger(reason),
+        rev: targetRev,
+        xml_len: xml.length,
+      });
+      return {
+        ok: false,
+        status: 0,
+        error: "missing base diagram state version",
+        reason: "missing_base_version",
+        needsHydration: true,
+      };
+    }
+
     emit("API_PUT_BPMN_XML_ENTRY", {
       sid,
       reason: asText(reason || "save"),
