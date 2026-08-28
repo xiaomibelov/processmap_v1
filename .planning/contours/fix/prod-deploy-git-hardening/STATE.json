@@ -1,0 +1,29 @@
+{
+  "contour": "fix/prod-deploy-git-hardening",
+  "type": "fix",
+  "role": "executor",
+  "status": "ready_for_review",
+  "branch": "fix/prod-deploy-git-hardening",
+  "head": "d7ff6f1e",
+  "origin_main": "ffaaa38f",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/854",
+  "artifacts": [
+    "PLAN.md",
+    "RAG_PREFLIGHT_EXECUTOR.md",
+    "EXEC_REPORT.md",
+    "STATE.json"
+  ],
+  "gates": {
+    "planning": true,
+    "implementation": true,
+    "tests": true,
+    "workflow_syntax": true,
+    "pr_created": true,
+    "review_requested": false,
+    "merged": false,
+    "deployed": false
+  },
+  "blockers": [
+    "Obsidian mirror skipped: canonical paths /opt/processmap-test and /srv/obsidian/project-atlas are not available in this macOS environment."
+  ]
+}

@@ -59,6 +59,43 @@ docker() {
 assert_eq "running" "$(check_agent_container "app")" "check_agent_container returns running for healthy agent"
 unset -f command docker list_compose_services
 
+# --- require_compose_project_app ---
+assert_eq "OK: COMPOSE_PROJECT_NAME=app" "$(require_compose_project_app "app")" "require_compose_project_app accepts app"
+assert_eq "1" "$([ "$(require_compose_project_app "processmap_v1" 2>&1)" = "ERROR: COMPOSE_PROJECT_NAME must be 'app', got 'processmap_v1'" ] && echo 1 || echo 0)" "require_compose_project_app rejects non-app"
+
+# --- get_expected_services ---
+prod_services="$(get_expected_services "prod" | tr '\n' ',')"
+assert_eq "api,gateway,celery-worker,agent,notifications,frontend," "${prod_services}" "get_expected_services prod set is complete"
+dev_services="$(get_expected_services "dev" | tr '\n' ',')"
+assert_eq "api,frontend,agent,notifications,celery-worker," "${dev_services}" "get_expected_services dev set includes celery-worker"
+
+# --- check_service_sha_consistency ---
+# Stub docker and normalize_sha to simulate matching labels.
+normalize_sha() {
+  printf '%s' "${1:-unknown}" | cut -c1-8
+}
+docker() {
+  if [ "$1" = "inspect" ] && [ "$2" = "-f" ]; then
+    case "$3" in
+      '{{.State.Status}}')
+        echo "running"
+        ;;
+      '{{index .Config.Labels "buildId"}}')
+        # Return the container name suffix as the buildId.
+        echo "abcdef12"
+        ;;
+    esac
+  fi
+}
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "docker" ]; then
+    return 0
+  fi
+  command "$@"
+}
+assert_eq "0" "$(check_service_sha_consistency "app" "abcdef1234567890" >/dev/null 2>&1; echo $?)" "check_service_sha_consistency passes when labels match"
+unset -f docker command normalize_sha
+
 # --- summary ---
 echo ""
 echo "=== verify-deploy tests: ${PASS} passed, ${FAIL} failed ==="
