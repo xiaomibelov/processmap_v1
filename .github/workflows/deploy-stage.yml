@@ -27,7 +27,7 @@ jobs:
       - name: Deploy target disclaimer
         shell: bash
         run: |
-          echo "::warning::This workflow deploys to /opt/processmap-stage/app via STAGE_HOST secret."
+          echo "::warning::This workflow deploys to /opt/processmap/stage/app via STAGE_HOST secret."
           echo "::warning::Stage URL: https://stage.processmap.ru; prod URL: https://processmap.ru."
           echo "::warning::Stage checkout is isolated from /opt/processmap/app (prod runtime)."
 
@@ -107,7 +107,9 @@ jobs:
             set -euo pipefail
 
             MAIN_DIR="/opt/processmap/app"
-            STAGE_DIR="/opt/processmap-stage/app"
+            # Stage checkout lives under /opt/processmap (owned by deploy user) to avoid
+            # needing password-less sudo for /opt/processmap-stage.
+            STAGE_DIR="/opt/processmap/stage/app"
             REQUESTED_REF="${{ steps.resolve.outputs.requested_ref }}"
             EXPECTED_SHA="${{ steps.resolve.outputs.deploy_sha }}"
             AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
