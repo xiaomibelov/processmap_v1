@@ -2,6 +2,7 @@ name: Rollback Prod
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   rollback:
@@ -13,22 +14,56 @@ jobs:
           host: ${{ secrets.STAGE_HOST }}
           username: ${{ secrets.STAGE_USER }}
           key: ${{ secrets.STAGE_SSH_KEY }}
-          command_timeout: 5m
+          command_timeout: 10m
           script: |
-            set -e
+            set -euo pipefail
+            cd /opt/processmap/app
+
+            COMPOSE_PROJECT_NAME=app
+            export COMPOSE_PROJECT_NAME
+            if [ "${COMPOSE_PROJECT_NAME}" != "app" ]; then
+              echo "[rollback-prod] ERROR: COMPOSE_PROJECT_NAME must be 'app', got '${COMPOSE_PROJECT_NAME}'"
+              exit 1
+            fi
+
+            ENV_FILE="/opt/processmap/env/prod.env"
+            ROLLBACK_SHA=$(grep -E '^PREVIOUS_BUILD_ID=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2- || echo "unknown")
+            if [ "${ROLLBACK_SHA}" = "unknown" ] || [ -z "${ROLLBACK_SHA}" ]; then
+              echo "[rollback-prod] ERROR: PREVIOUS_BUILD_ID not found in ${ENV_FILE}. Cannot determine rollback SHA."
+              exit 1
+            fi
+            echo "[rollback-prod] target rollback SHA: ${ROLLBACK_SHA}"
 
             # Verify rollback images exist
-            docker image inspect processmap-gateway:rollback > /dev/null 2>&1 || \
-              { echo "[rollback] ERROR: processmap-gateway:rollback not found"; exit 1; }
-            docker image inspect app-api:rollback > /dev/null 2>&1 || \
-              { echo "[rollback] ERROR: app-api:rollback not found"; exit 1; }
+            MISSING=0
+            for img in processmap-gateway:rollback app-api:rollback app-celery-worker:rollback app-agent:rollback app-notifications:rollback app-frontend:rollback; do
+              if ! docker image inspect "${img}" > /dev/null 2>&1; then
+                echo "[rollback-prod] ERROR: ${img} not found"
+                MISSING=1
+              fi
+            done
+            [ "${MISSING}" -eq 0 ] || exit 1
+
+            # Restore BUILD_ID in prod.env so /version reports the rollback SHA after recreate.
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${ENV_FILE}" 2>/dev/null || true
+            {
+              echo ""
+              echo "# Restored by rollback-prod.yml"
+              echo "BUILD_ID=${ROLLBACK_SHA}"
+              echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "BUILD_BRANCH=rollback"
+              echo "BUILD_ENV=prod"
+            } >> "${ENV_FILE}"
 
             # Re-tag rollback images as current
             docker tag processmap-gateway:rollback processmap-gateway:dev
             docker tag app-api:rollback app-api:latest
+            docker tag app-celery-worker:rollback app-celery-worker:latest
+            docker tag app-agent:rollback app-agent:latest
+            docker tag app-notifications:rollback app-notifications:latest
+            docker tag app-frontend:rollback app-frontend:latest
 
-            # Restart containers with rolled-back images (no rebuild)
-            cd /opt/processmap/app
+            # Restart all prod containers with rolled-back images (no rebuild)
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -36,6 +71,7 @@ jobs:
               -f docker-compose.ssl.yml \
               -f docker-compose.prod.gateway.yml \
               -p app \
-              up -d --no-deps api gateway
+              up -d --no-deps --force-recreate -V \
+                api gateway celery-worker agent notifications frontend
 
-            echo "[rollback-prod] done"
+            echo "[rollback-prod] done (rolled back to ${ROLLBACK_SHA})"

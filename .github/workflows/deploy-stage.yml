@@ -27,8 +27,9 @@ jobs:
       - name: Deploy target disclaimer
         shell: bash
         run: |
-          echo "::warning::This workflow deploys to /opt/processmap/app via STAGE_HOST secret."
-          echo "::warning::Stage URL: https://stage.processmap.ru; prod URL: https://processmap.ru. Stage/prod deploy only manually via deploy/deploy.sh on the server."
+          echo "::warning::This workflow deploys to /opt/processmap-stage/app via STAGE_HOST secret."
+          echo "::warning::Stage URL: https://stage.processmap.ru; prod URL: https://processmap.ru."
+          echo "::warning::Stage checkout is isolated from /opt/processmap/app (prod runtime)."
 
       - name: Checkout source
         uses: actions/checkout@v4
@@ -104,98 +105,87 @@ jobs:
           command_timeout: 20m
           script: |
             set -euo pipefail
-            cd /opt/processmap/app
 
+            MAIN_DIR="/opt/processmap/app"
+            STAGE_DIR="/opt/processmap-stage/app"
             REQUESTED_REF="${{ steps.resolve.outputs.requested_ref }}"
             EXPECTED_SHA="${{ steps.resolve.outputs.deploy_sha }}"
             AGENT_CHANGED="${{ steps.changes.outputs.agent }}"
             BUILD_TIME="${{ steps.meta.outputs.build_time }}"
 
             echo "[deploy-stage] preflight: stage boundary"
-            test -f ".env.stage"
-            test -f "docker-compose.yml"
-            test -f "docker-compose.stage.yml"
-            stage_api_count="$(docker ps -q \
-              --filter label=com.docker.compose.project=processmap_stage \
-              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
-            prod_api_count="$(docker ps -q \
-              --filter label=com.docker.compose.project=app \
-              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
-            echo "[deploy-stage] stage api containers: ${stage_api_count}"
-            echo "[deploy-stage] prod api containers visible but not targeted: ${prod_api_count}"
-            [ "${stage_api_count}" -ge 1 ] || {
-              echo "[deploy-stage] ERROR: processmap_stage api container not found" >&2
-              exit 1
-            }
+            echo "[deploy-stage] stage checkout: ${STAGE_DIR}"
+            echo "[deploy-stage] prod checkout (untouched): ${MAIN_DIR}"
 
-            echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
-            echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
-
+            # Resolve the requested ref using the prod repo as the object store,
+            # then materialize a detached-HEAD stage worktree at DEPLOY_SHA.
+            cd "${MAIN_DIR}"
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
             git fetch origin
 
-            # Resolve the requested ref on the server the same way the runner did.
             if git show-ref --verify --quiet "refs/remotes/origin/${REQUESTED_REF}" 2>/dev/null; then
               DEPLOY_SHA="$(git rev-parse --verify "origin/${REQUESTED_REF}")"
             else
               DEPLOY_SHA="$(git rev-parse --verify "${REQUESTED_REF}^{commit}" 2>/dev/null || git rev-parse --verify "${REQUESTED_REF}")"
             fi
 
+            echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
+            echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
             [ "${DEPLOY_SHA}" = "${EXPECTED_SHA}" ] || {
               echo "[deploy-stage] ERROR: resolved ${DEPLOY_SHA} != expected ${EXPECTED_SHA}" >&2
               exit 1
             }
 
+            mkdir -p "$(dirname "${STAGE_DIR}")"
+            if [ ! -d "${STAGE_DIR}/.git" ]; then
+              echo "[deploy-stage] bootstrapping isolated stage worktree"
+              git worktree add --force -d "${STAGE_DIR}" "${DEPLOY_SHA}"
+            else
+              echo "[deploy-stage] reusing existing stage worktree"
+              cd "${STAGE_DIR}"
+              git fetch origin
+              git checkout -f "${DEPLOY_SHA}"
+            fi
+
+            cd "${STAGE_DIR}"
+
+            # Preserve server-only stage config across checkout.
             PRESERVE_DIR="$(mktemp -d /tmp/processmap-stage-preserve.XXXXXX)"
-            for path in \
-              .env \
-              .env.stage \
-              docker-compose.ssl.yml \
-              docker-compose.prod.yml \
-              docker-compose.prod.gateway.yml \
-              backend/alembic.stage.ini; do
+            for path in .env .env.stage; do
               if [ -e "${path}" ]; then
-                mkdir -p "${PRESERVE_DIR}/$(dirname "${path}")"
-                cp -a "${path}" "${PRESERVE_DIR}/${path}"
+                cp -a "${path}" "${PRESERVE_DIR}/"
               fi
             done
 
             # Ensure preserved server-only files do not block `git checkout -f`.
-            # They may be modified, assume-unchanged, or left in an unmerged state
-            # from a previous failed deploy. They are restored from PRESERVE_DIR below.
-            for path in \
-              .env \
-              .env.stage \
-              docker-compose.ssl.yml \
-              docker-compose.prod.yml \
-              docker-compose.prod.gateway.yml \
-              backend/alembic.stage.ini; do
+            for path in .env .env.stage; do
               git update-index --no-assume-unchanged -- "${path}" 2>/dev/null || true
               git update-index --no-skip-worktree -- "${path}" 2>/dev/null || true
               if git ls-files --error-unmatch "${path}" >/dev/null 2>&1; then
                 git rm -f -- "${path}" >/dev/null 2>&1 || true
-              else
-                rm -f -- "${path}" || true
               fi
             done
 
-            # Full checkout makes the stage worktree consistent after a failed
-            # previous checkout; server-only config files are restored below.
             git checkout -f "${DEPLOY_SHA}"
 
-            for path in \
-              .env \
-              .env.stage \
-              docker-compose.ssl.yml \
-              docker-compose.prod.yml \
-              docker-compose.prod.gateway.yml \
-              backend/alembic.stage.ini; do
+            for path in .env .env.stage; do
               if [ -e "${PRESERVE_DIR}/${path}" ]; then
-                mkdir -p "$(dirname "${path}")"
                 cp -a "${PRESERVE_DIR}/${path}" "${path}"
               fi
             done
+
+            test -f ".env.stage"
+            test -f "docker-compose.yml"
+            test -f "docker-compose.stage.yml"
+
+            stage_api_count="$(docker ps -q \
+              --filter label=com.docker.compose.project=processmap_stage \
+              --filter label=com.docker.compose.service=api | wc -l | tr -d ' ')"
+            echo "[deploy-stage] stage api containers: ${stage_api_count}"
+            [ "${stage_api_count}" -ge 1 ] || {
+              echo "[deploy-stage] WARNING: processmap_stage api container not found (first deploy?)"
+            }
 
             echo "[deploy-stage] source diagnostics:"
             git status --short

@@ -6,38 +6,39 @@ cd "$(dirname "$0")/.."
 COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-processmap_v1}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT}"
 
+# Guard: running with COMPOSE_PROJECT_NAME=app on the prod server without an explicit
+# opt-in flag is forbidden. Use deploy-prod.yml workflow or runbook procedure instead.
+ALLOW_PROD_LOCAL=false
+if [ "${1:-}" = "--prod-local" ]; then
+  ALLOW_PROD_LOCAL=true
+  shift
+fi
+if [ "${COMPOSE_PROJECT_NAME}" = "app" ] && [ "${ALLOW_PROD_LOCAL}" != "true" ]; then
+  echo "[DEPLOY] ERROR: COMPOSE_PROJECT_NAME=app looks like the production project."
+  echo "[DEPLOY] Run deploy-prod.yml workflow instead, or pass --prod-local only if the runbook explicitly requires it."
+  exit 1
+fi
+
 # 1. Collect build metadata
 BUILD_ID="$(git rev-parse --short HEAD 2>/dev/null || echo 'dev')"
 BUILD_BRANCH="$(git branch --show-current 2>/dev/null || echo 'unknown')"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 BUILD_ENV="${BUILD_ENV:-prod}"
 
-# 2. Inject into .env (remove old keys first, then append)
-# Портируемо GNU/BSD: `sed -i` без суффикса не работает в BSD sed (macOS),
-# поэтому in-place через .bak + rm (одинаково на сервере и на Mac).
-sed -i.bak '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d' .env
-rm -f .env.bak
-{
-  echo ""
-  echo "# Auto-injected by deploy.sh at ${BUILD_TIME}"
-  echo "BUILD_ID=${BUILD_ID}"
-  echo "BUILD_TIME=${BUILD_TIME}"
-  echo "BUILD_BRANCH=${BUILD_BRANCH}"
-  echo "BUILD_ENV=${BUILD_ENV}"
-  echo "VITE_BUILD_ID=${BUILD_ID}"
-  echo "VITE_BUILD_TIME=${BUILD_TIME}"
-  echo "VITE_BUILD_BRANCH=${BUILD_BRANCH}"
-  echo "VITE_BUILD_ENV=${BUILD_ENV}"
-} >> .env
+echo "[DEPLOY] BUILD_ID=${BUILD_ID} branch=${BUILD_BRANCH} env=${BUILD_ENV} project=${COMPOSE_PROJECT_NAME}"
 
-echo "[DEPLOY] BUILD_ID=${BUILD_ID} branch=${BUILD_BRANCH} env=${BUILD_ENV}"
-
-# 2a. Regenerate frontend build-info.json so the deployed frontend shows the real SHA.
+# 2. Export build metadata so docker compose picks them up without mutating .env.
 export BUILD_ID
 export BUILD_BRANCH
 export BUILD_TIME
 export BUILD_ENV
 export BUILD_HOST="${BUILD_HOST:-processmap.ru}"
+export VITE_BUILD_ID="${BUILD_ID}"
+export VITE_BUILD_TIME="${BUILD_TIME}"
+export VITE_BUILD_BRANCH="${BUILD_BRANCH}"
+export VITE_BUILD_ENV="${BUILD_ENV}"
+
+# 2a. Regenerate frontend build-info.json so the deployed frontend shows the real SHA.
 (cd frontend && node scripts/generate-build-info.mjs)
 
 # 3. Detect if full clean build is needed (package.json / Dockerfile / docker-compose changed)
@@ -54,12 +55,12 @@ else
   docker compose build --no-cache api frontend
 fi
 
-# 4b. Build agent/notifications с --no-cache: исключаем риск поднять
+# 4b. Build agent/notifications/celery-worker с --no-cache: исключаем риск поднять
 # stale-образ, в котором отсутствует свежий код сервиса. Фатально при
 # падении (set -e): нельзя деплоить виду успешного обновления со
 # старым агентом. Health-ожидание agent остаётся не фатальным — даём
 # шанс стартовать с WARNING, но собрать обязаны.
-docker compose build --no-cache agent notifications
+docker compose build --no-cache agent notifications celery-worker
 
 # 5. Deprecate old running containers (rename so compose can create new ones)
 deprecate_old() {
@@ -77,14 +78,15 @@ deprecate_old() {
 
 deprecate_old api
 deprecate_old frontend
+deprecate_old celery-worker
 
 # 6. Start new containers
 # NB: миграции БД + сиды — в entrypoint api-контейнера (backend/docker-entrypoint.sh),
 # единая точка для любого пути деплоя. Здесь НЕ дублировать: прямой вызов
 # `alembic -c backend/alembic.ini` не работает (в ini placeholder fpc:***@postgres).
-# agent/notifications включены в up: иначе они теряются при редеплое
+# agent/notifications/celery-worker включены в up: иначе они теряются при редеплое
 # (раньше поднимались ручным `docker compose up -d`).
-docker compose up -d --build api frontend agent notifications
+docker compose up -d --build api frontend agent notifications celery-worker
 
 # 7. Healthcheck: wait for /version 200
 HEALTH_URL="http://localhost:${HOST_PORT:-8011}/version"
@@ -95,15 +97,15 @@ until curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; do
   HEALTH_RETRIES=$((HEALTH_RETRIES + 1))
   if [ "$HEALTH_RETRIES" -gt "$MAX_RETRIES" ]; then
     echo "[DEPLOY] ERROR: Healthcheck failed after ${MAX_RETRIES} attempts. Rolling back..."
-    docker compose stop api frontend || true
-    for svc in api frontend; do
+    docker compose stop api frontend celery-worker || true
+    for svc in api frontend celery-worker; do
       latest_deprecated=$(docker ps -a --filter "name=${COMPOSE_PROJECT}-${svc}-1-deprecated-" --format '{{.Names}}' | sort | tail -1)
       if [ -n "${latest_deprecated}" ]; then
         docker rename "${latest_deprecated}" "${COMPOSE_PROJECT}-${svc}-1" || true
         docker start "${COMPOSE_PROJECT}-${svc}-1" || true
       fi
     done
-    docker compose up -d --build api frontend agent notifications || true
+    docker compose up -d --build api frontend agent notifications celery-worker || true
     exit 1
   fi
   sleep 2
@@ -184,7 +186,7 @@ docker ps --filter "label=status=active" --format "table {{.Names}}\t{{.Status}}
 
 # 11. Явный итог по здоровью всех сервисов контура деплоя
 echo "[DEPLOY] Health summary:"
-for svc in api frontend agent notifications; do
+for svc in api frontend agent notifications celery-worker; do
   svc_health=$(docker inspect -f '{{.State.Health.Status}}' "${COMPOSE_PROJECT}-${svc}-1" 2>/dev/null || echo "not-running")
   echo "[DEPLOY]   ${svc}: ${svc_health}"
 done
