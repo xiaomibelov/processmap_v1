@@ -55,11 +55,11 @@
     },
     {
       "id": "q6-test-runtime",
-      "query": "clearvestnic opt processmap test 5180 8088 runtime RUNTIME_NAVIGATION RUNTIME_PROOF",
+      "query": "ProcessMap local dev runtime localhost 5177 8011 RUNTIME_NAVIGATION RUNTIME_PROOF",
       "query_type": "runtime_lookup",
-      "expected_terms": ["clearvestnic", "opt", "processmap", "test", "5180", "8088", "runtime", "proof"],
+      "expected_terms": ["localhost", "5177", "8011", "runtime", "local", "proof"],
       "expected_path_patterns": ["*RUNTIME_NAVIGATION*", "*RUNTIME_PROOF*", "*RAG_PREFLIGHT*", "*EXEC_REPORT*"],
-      "expected_answer_summary": "Test runtime: clearvestnic.ru, /opt/processmap-test, frontend :5180, backend :8088.",
+      "expected_answer_summary": "Local dev runtime: localhost, frontend :5177, backend :8011.",
       "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
       "failure_explanation": ""
     },

@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # RUNTIME_NAVIGATION — stage3/test-heartbeat-1781302150
 
 ## Runtime context

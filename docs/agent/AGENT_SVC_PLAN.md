@@ -17,7 +17,7 @@
 - База: `origin/main` @ `ad02fba3` (на момент редакции).
 - **Зависимость-блокер:** AGENT-0 (`backend/app/agent/`, `backend/app/routers/agent_chat.py`, миграции 017/018, тесты `test_agent_chat_*` / `test_agent_memory`) на момент написания плана существует только в ветке `feat/agent-0-processman-memory` и **не влит в main**. AGENT-SVC стартует только после мержа AGENT-0 в main; ветка работы — `feat/agent-svc-extraction` от обновлённого main.
 - Образец реализации: `backend/services/notifications/` (FastAPI-сервис с собственным Dockerfile, JWT decode общим секретом, membership lookup по общей БД).
-- Верификация: только `clearvestnic.ru:5177` (stage). Prod — запрещён без отдельного апрува.
+- Верификация: только `https://stage.processmap.ru` (stage). Prod — запрещён без отдельного апрува.
 
 ### 0.0 Preconditions старта (жёсткий гейт — решение владельца 2026-08-16)
 
@@ -164,7 +164,7 @@ backend/services/agent/
 3. Включение `LLM_VIA_AGENT_SVC=1` на stage: LLM1/LLM2/LLM3 идут через `/internal/llm/complete`. Проверка честных статусов при остановленном сервисе: монолит не падает, LLM1/2/3 отдают свои `status="error"`/timeout-статусы; панель показывает S6/S7 по `docs/llm/LLM4_PROCESSMAN_PANEL.md`.
 4. Откат за 5 минут: убрать nginx location (или `LLM_VIA_AGENT_SVC=0`) + redeploy монолита. Данные не затрагиваются (общая БД, общий Redis, кэш-ключи неизменны).
 
-## Phase 5 — верификация (только clearvestnic.ru:5177)
+## Phase 5 — верификация (только stage.processmap.ru)
 
 Регрессия (все проверки на stage):
 - Тесты AGENT-0 (`test_agent_chat_*`, `test_agent_memory`) — зелёные в новом расположении, **поведение без изменений** (кейсы и ассерты один в один, правлен только import-path — гейт по решению владельца).

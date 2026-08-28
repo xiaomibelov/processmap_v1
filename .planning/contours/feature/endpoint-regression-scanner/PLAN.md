@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # PLAN — feature/endpoint-regression-scanner
 
 Регрессионный сканер эндпоинтов: кнопка в админке + автозапуск после деплоя →

@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # RUNTIME_PROOF_CHECKLIST — Analytics UI/UX + Additional Fields + Excel Export
 
 **Contour:** `premium-urgent-task-analytics-ui-ux-addi-mqdketwb`  

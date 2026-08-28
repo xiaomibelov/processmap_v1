@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Runtime Proof — clearvestnic.ru:5177
 
 **Contour:** `premium-urgent-task-analytics-ui-ux-addi-mqdo4sea`  

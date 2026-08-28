@@ -35,9 +35,9 @@
     "id": "rule-agent3-fresh-runtime",
     "type": "agent_rule",
     "role": "agent3",
-    "rule": "Agent 3 must verify fresh :5180 runtime for UI/runtime work",
+    "rule": "Agent 3 must verify fresh local runtime for UI/runtime work",
     "condition": "When reviewing frontend or runtime contours",
-    "required_action": "curl -I http://clearvestnic.ru:5180 and confirm HTTP 200 with no-cache headers",
+    "required_action": "curl -I http://localhost:5177 and confirm HTTP 200 with no-cache headers",
     "forbidden_action": "Review UI/runtime contour without verifying the runtime is actually serving",
     "severity": "critical",
     "source_refs": [

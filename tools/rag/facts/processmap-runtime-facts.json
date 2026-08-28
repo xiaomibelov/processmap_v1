@@ -4,15 +4,15 @@
     "type": "runtime_fact",
     "project": "ProcessMap",
     "key": "server_host",
-    "value": "clearvestnic.ru",
-    "environment": "test",
+    "value": "stage.processmap.ru",
+    "environment": "stage",
     "source_refs": [
-      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+      "/opt/processmap-test/AGENTS.md"
     ],
-    "valid_from": "2026-05-16T16:22:46+00:00",
+    "valid_from": "2026-08-28T00:00:00+00:00",
     "status": "active",
     "confidence": "high",
-    "updated_at": "2026-05-16T16:22:46+00:00"
+    "updated_at": "2026-08-28T00:00:00+00:00"
   },
   {
     "id": "rt-repo-root",
@@ -35,32 +35,30 @@
     "type": "runtime_fact",
     "project": "ProcessMap",
     "key": "frontend_url",
-    "value": "http://clearvestnic.ru:5180",
-    "environment": "test",
+    "value": "https://stage.processmap.ru",
+    "environment": "stage",
     "source_refs": [
-      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md",
-      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RUNTIME_NAVIGATION.md"
+      "/opt/processmap-test/AGENTS.md"
     ],
-    "valid_from": "2026-05-16T16:22:46+00:00",
+    "valid_from": "2026-08-28T00:00:00+00:00",
     "status": "active",
     "confidence": "high",
-    "updated_at": "2026-05-16T16:22:46+00:00"
+    "updated_at": "2026-08-28T00:00:00+00:00"
   },
   {
     "id": "rt-api-health-url",
     "type": "runtime_fact",
     "project": "ProcessMap",
     "key": "api_health_url",
-    "value": "http://clearvestnic.ru:8088/health",
-    "environment": "test",
+    "value": "https://stage.processmap.ru/api/health",
+    "environment": "stage",
     "source_refs": [
-      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md",
-      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RUNTIME_NAVIGATION.md"
+      "/opt/processmap-test/AGENTS.md"
     ],
-    "valid_from": "2026-05-16T16:22:46+00:00",
+    "valid_from": "2026-08-28T00:00:00+00:00",
     "status": "active",
     "confidence": "high",
-    "updated_at": "2026-05-16T16:22:46+00:00"
+    "updated_at": "2026-08-28T00:00:00+00:00"
   },
   {
     "id": "rt-project-atlas-server",
