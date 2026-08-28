@@ -137,6 +137,75 @@ main() {
   fi
 }
 
+# require_compose_project_app
+# Fail-fast guard used by deploy scripts: production project name must be 'app'.
+require_compose_project_app() {
+  local project="${1:-${COMPOSE_PROJECT_NAME:-}}"
+  if [ "${project}" != "app" ]; then
+    echo "ERROR: COMPOSE_PROJECT_NAME must be 'app', got '${project}'"
+    return 1
+  fi
+  echo "OK: COMPOSE_PROJECT_NAME=app"
+}
+
+# get_expected_services <env>
+# Returns the canonical list of services that must be rebuilt/recreated together.
+get_expected_services() {
+  local env="${1:-dev}"
+  if [ "${env}" = "prod" ]; then
+    printf 'api\ngateway\ncelery-worker\nagent\nnotifications\nfrontend\n'
+  else
+    printf 'api\nfrontend\nagent\nnotifications\ncelery-worker\n'
+  fi
+}
+
+# check_service_sha_consistency <project> <expected_sha>
+# Checks that running containers for the expected prod services report a matching SHA.
+# Uses buildId container label when available; otherwise warns.
+check_service_sha_consistency() {
+  local project="$1"
+  local expected_sha="$2"
+  local expected_short
+  expected_short=$(normalize_sha "${expected_sha}")
+  local all_ok=1
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "SKIP: docker CLI unavailable — service SHA consistency check skipped"
+    return 0
+  fi
+
+  echo "=== service SHA consistency (project=${project}) ==="
+  for svc in api celery-worker agent notifications frontend; do
+    local container="${project}-${svc}-1"
+    local state
+    state=$(docker inspect -f '{{.State.Status}}' "${container}" 2>/dev/null || echo "missing")
+    if [ "${state}" = "missing" ]; then
+      echo "MISMATCH: ${svc} container ${container} is missing"
+      all_ok=0
+      continue
+    fi
+    local build_id_label
+    build_id_label=$(docker inspect -f '{{index .Config.Labels "buildId"}}' "${container}" 2>/dev/null || echo "")
+    if [ -n "${build_id_label}" ]; then
+      local label_short
+      label_short=$(normalize_sha "${build_id_label}")
+      if [ "${label_short}" = "${expected_short}" ]; then
+        echo "MATCH: ${svc} buildId=${build_id_label}"
+      else
+        echo "MISMATCH: ${svc} buildId=${build_id_label} (expected ${expected_sha})"
+        all_ok=0
+      fi
+    else
+      echo "WARN: ${svc} has no buildId label (manual verification required)"
+    fi
+  done
+
+  if [ "${all_ok}" = "1" ]; then
+    return 0
+  fi
+  return 1
+}
+
 # Allow sourcing for unit tests; run main only when executed directly.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   main "$@"

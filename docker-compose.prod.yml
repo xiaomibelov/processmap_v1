@@ -1,8 +1,22 @@
 services:
   api:
     ports: !override []
+    env_file: !override
+      - /opt/processmap/env/prod.env
     volumes:
       - /opt/processmap/data/prod/workspace:/app/workspace
+
+  celery-worker:
+    env_file: !override
+      - /opt/processmap/env/prod.env
+
+  agent:
+    env_file: !override
+      - /opt/processmap/env/prod.env
+
+  notifications:
+    env_file: !override
+      - /opt/processmap/env/prod.env
 
   redis:
     ports: !override []

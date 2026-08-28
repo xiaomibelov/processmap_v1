@@ -15,8 +15,15 @@ jobs:
           key: ${{ secrets.STAGE_SSH_KEY }}
           command_timeout: 20m
           script: |
-            set -e
+            set -euo pipefail
             cd /opt/processmap/app
+
+            COMPOSE_PROJECT_NAME=app
+            export COMPOSE_PROJECT_NAME
+            if [ "${COMPOSE_PROJECT_NAME}" != "app" ]; then
+              echo "[deploy-prod] ERROR: COMPOSE_PROJECT_NAME must be 'app', got '${COMPOSE_PROJECT_NAME}'"
+              exit 1
+            fi
 
             # Pull latest source code only, preserve server configs
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
@@ -31,10 +38,15 @@ jobs:
             BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
             DEPLOY_FINGERPRINT="processmap-prod-deploy-sha:${GIT_SHA}"
 
+            CURRENT_SHA=$(git rev-parse HEAD)
+            echo "[deploy-prod] current checkout SHA: ${CURRENT_SHA}"
+            echo "[deploy-prod] target SHA: ${GIT_SHA}"
+
             # Persist build metadata in the prod env file so the API /version endpoint
             # reports the deployed SHA instead of whatever the local repo HEAD was.
             ENV_FILE="/opt/processmap/env/prod.env"
-            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${ENV_FILE}" 2>/dev/null || true
+            PREVIOUS_BUILD_ID=$(grep -E '^BUILD_ID=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2- || echo "unknown")
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^PREVIOUS_BUILD_ID=/d' "${ENV_FILE}" 2>/dev/null || true
             {
               echo ""
               echo "# Auto-injected by deploy-prod.yml at ${BUILD_TIME}"
@@ -42,26 +54,21 @@ jobs:
               echo "BUILD_TIME=${BUILD_TIME}"
               echo "BUILD_BRANCH=${GIT_REF}"
               echo "BUILD_ENV=prod"
+              echo "PREVIOUS_BUILD_ID=${PREVIOUS_BUILD_ID}"
             } >> "${ENV_FILE}"
 
-            # The API service reads its env_file from /opt/processmap/app/.env, so keep
-            # BUILD_* metadata in sync there as well.
-            APP_DOTENV="/opt/processmap/app/.env"
-            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${APP_DOTENV}" 2>/dev/null || true
-            {
-              echo ""
-              echo "# Auto-injected by deploy-prod.yml at ${BUILD_TIME}"
-              echo "BUILD_ID=${GIT_SHA}"
-              echo "BUILD_TIME=${BUILD_TIME}"
-              echo "BUILD_BRANCH=${GIT_REF}"
-              echo "BUILD_ENV=prod"
-            } >> "${APP_DOTENV}"
-
             # Save current images as rollback point before rebuilding
-            docker tag processmap-gateway:dev processmap-gateway:rollback 2>/dev/null || true
-            docker tag app-api:latest app-api:rollback 2>/dev/null || true
+            for img in processmap-gateway:dev app-api:latest app-celery-worker:latest app-agent:latest app-notifications:latest app-frontend:latest; do
+              tag="${img##*:}"
+              name="${img%:*}"
+              docker tag "${img}" "${name}:rollback" 2>/dev/null || echo "[deploy-prod] WARN: could not tag ${img} as rollback"
+            done
 
-            # Rebuild api (cached)
+            # Full prod service set. Partial deploy is forbidden: every service must be rebuilt
+            # from the same SHA to avoid split-brain (see audit/prod-deploy-incident-audit).
+            PROD_SERVICES="api gateway celery-worker agent notifications frontend"
+
+            # Rebuild api, celery-worker, agent, notifications (cached) with backend metadata.
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -74,24 +81,9 @@ jobs:
                 --build-arg BUILD_TIME="${BUILD_TIME}" \
                 --build-arg BUILD_BRANCH="${GIT_REF}" \
                 --build-arg BUILD_ENV=prod \
-                api
+                api celery-worker agent notifications
 
-            # Rebuild celery-worker so new/updated task modules are registered
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
-              -p app \
-              build \
-                --build-arg BUILD_ID="${GIT_SHA}" \
-                --build-arg BUILD_TIME="${BUILD_TIME}" \
-                --build-arg BUILD_BRANCH="${GIT_REF}" \
-                --build-arg BUILD_ENV=prod \
-                celery-worker
-
-            # Rebuild gateway without cache so fresh frontend statics + fingerprint are baked in
+            # Rebuild frontend (prod gateway image) without cache so fresh statics + fingerprint are baked in.
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -108,7 +100,24 @@ jobs:
                 --build-arg VITE_DEPLOY_RESOLVED_SHA="${GIT_SHA}" \
                 gateway
 
-            # Remove the old gateway container and any attached volumes so stale statics cannot survive
+            # Rebuild standalone frontend service so it matches the same SHA (does not serve traffic in prod).
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              build --no-cache \
+                --build-arg VITE_BUILD_ID="${GIT_SHA}" \
+                --build-arg VITE_BUILD_BRANCH="${GIT_REF}" \
+                --build-arg VITE_BUILD_TIME="${BUILD_TIME}" \
+                --build-arg VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}" \
+                --build-arg VITE_DEPLOY_REQUESTED_REF="${GIT_REF}" \
+                --build-arg VITE_DEPLOY_RESOLVED_SHA="${GIT_SHA}" \
+                frontend
+
+            # Remove the old gateway/frontend containers and any attached volumes so stale statics cannot survive.
             docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -128,17 +137,7 @@ jobs:
               -f docker-compose.ssl.yml \
               -f docker-compose.prod.gateway.yml \
               -p app \
-              up -d --no-deps --force-recreate -V api gateway
-
-            # Recreate celery-worker so it picks up the rebuilt image and registers new tasks
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
-              -p app \
-              up -d --no-deps --force-recreate -V celery-worker
+              up -d --no-deps --force-recreate -V ${PROD_SERVICES}
 
             # Post-deploy freshness proof: poll /version (api стартует не мгновенно —
             # entrypoint гонит миграции/сиды; 502 первые N секунд — норма, не fail).
@@ -190,3 +189,17 @@ jobs:
             fi
 
             echo "[deploy-prod] done"
+
+  verify:
+    name: Post-deploy verify
+    needs: deploy
+    if: always() && needs.deploy.result == 'success'
+    uses: ./.github/workflows/prod-deploy-verify.yml
+    secrets: inherit
+
+  rollback-on-failure:
+    name: Auto-rollback on verify failure
+    needs: verify
+    if: always() && needs.verify.result == 'failure'
+    uses: ./.github/workflows/rollback-prod.yml
+    secrets: inherit

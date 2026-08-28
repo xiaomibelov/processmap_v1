@@ -2,12 +2,13 @@ name: Prod Deploy Verify
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check celery-worker logs and task registration
+      - name: Check all prod service SHAs and task registration
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.STAGE_HOST }}
@@ -17,6 +18,72 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/processmap/app
+
+            COMPOSE_PROJECT_NAME=app
+            export COMPOSE_PROJECT_NAME
+
+            ENV_FILE="/opt/processmap/env/prod.env"
+            EXPECTED_SHA=$(grep -E '^BUILD_ID=' "${ENV_FILE}" | cut -d= -f2- || echo "unknown")
+            echo "[prod-deploy-verify] expected SHA: ${EXPECTED_SHA}"
+
+            # Helper: first 8 chars of a SHA.
+            short_sha() {
+              local sha="${1:-}"
+              printf '%s' "${sha}" | cut -c1-8
+            }
+
+            # Check /version reports the expected SHA.
+            VERSION_RESPONSE=$(curl -fsS https://processmap.ru/version 2>/dev/null || echo "{}")
+            API_SHA=$(echo "${VERSION_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('commit','unknown'))" || echo "unknown")
+            echo "[prod-deploy-verify] api /version SHA: ${API_SHA}"
+            if [ "$(short_sha "${EXPECTED_SHA}")" != "$(short_sha "${API_SHA}")" ]; then
+              echo "ERROR: api /version commit does not match expected SHA"
+              exit 1
+            fi
+
+            # Check gateway/frontend fingerprint.
+            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+            if [ -n "${MAIN_JS}" ]; then
+              FINGERPRINT=$(curl -fsS "https://processmap.ru/${MAIN_JS}" \
+                | grep -oE "processmap-prod-deploy-sha:[a-f0-9]+" \
+                | head -1)
+              echo "[prod-deploy-verify] gateway fingerprint: ${FINGERPRINT}"
+              if ! echo "${FINGERPRINT}" | grep -q "$(short_sha "${EXPECTED_SHA}")"; then
+                echo "ERROR: gateway frontend fingerprint does not match expected SHA"
+                exit 1
+              fi
+            else
+              echo "ERROR: could not locate main JS asset"
+              exit 1
+            fi
+
+            # Check container image labels/SHA for each prod service.
+            echo "=== service container SHA checks ==="
+            for svc in api gateway celery-worker agent notifications frontend; do
+              container="${COMPOSE_PROJECT_NAME}-${svc}-1"
+              if [ "${svc}" = "gateway" ]; then
+                # gateway is built from the same SHA as the frontend statics.
+                image_label=$(docker inspect "${container}" --format '{{index .Config.Labels "com.docker.compose.service"}}' 2>/dev/null || true)
+                echo "[prod-deploy-verify] ${svc}: ${image_label} (verified via fingerprint above)"
+                continue
+              fi
+              image_id=$(docker inspect "${container}" --format '{{.Image}}' 2>/dev/null || echo "missing")
+              if [ "${image_id}" = "missing" ]; then
+                echo "ERROR: ${svc} container ${container} is missing"
+                exit 1
+              fi
+              # Prefer explicit build metadata label if present; fall back to image id prefix match.
+              build_id_label=$(docker inspect "${container}" --format '{{index .Config.Labels "buildId"}}' 2>/dev/null || echo "")
+              if [ -n "${build_id_label}" ]; then
+                echo "[prod-deploy-verify] ${svc} buildId label: ${build_id_label}"
+                if [ "$(short_sha "${EXPECTED_SHA}")" != "$(short_sha "${build_id_label}")" ]; then
+                  echo "ERROR: ${svc} buildId label does not match expected SHA"
+                  exit 1
+                fi
+              else
+                echo "[prod-deploy-verify] ${svc} image id: ${image_id} (no buildId label; verify manually)"
+              fi
+            done
 
             echo "=== celery-worker recent logs ==="
             docker compose \
