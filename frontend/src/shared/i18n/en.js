@@ -474,4 +474,11 @@ export const en = {
     },
     loading: "Loading analytics…",
   },
+  topbar: {
+    org: "Organization",
+    user: "User",
+    orgContext: "Organization context",
+    openWorkspace: "Open workspace",
+    inactiveOrgLabel: "disabled",
+  },
 };
