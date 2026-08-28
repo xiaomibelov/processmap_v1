@@ -109,18 +109,13 @@ jobs:
             fi
             echo "OK: no 'unregistered task' errors"
 
-            echo "=== checking task registration in worker startup logs ==="
-            if docker compose \
-                 --env-file /opt/processmap/env/prod.env \
-                 -f docker-compose.yml \
-                 -f docker-compose.prod.yml \
-                 -f docker-compose.ssl.yml \
-                 -f docker-compose.prod.gateway.yml \
-                 -p app \
-                 logs celery-worker | grep -q "refresh_session_analytics_task"; then
+            echo "=== checking task registration via celery inspect ==="
+            if docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
+                 celery -A backend.app.celery_app inspect registered --quiet 2>/dev/null \
+                 | grep -q "refresh_session_analytics_task"; then
               echo "OK: refresh_session_analytics_task is registered"
             else
-              echo "ERROR: refresh_session_analytics_task not found in celery-worker logs"
+              echo "ERROR: refresh_session_analytics_task not registered in celery worker"
               exit 1
             fi
 
