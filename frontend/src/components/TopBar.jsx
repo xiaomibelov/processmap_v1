@@ -442,7 +442,7 @@ export default function TopBar({
                   const label = String(item?.name || item?.org_name || id || `Org ${index + 1}`).trim();
                   const isInactive = item?.is_active === false;
                   const inactiveSuffix = isInactive && user?.is_admin
-                    ? ` (${getDict().topbar.inactiveOrgLabel || "отключена"})`
+                    ? ` (${getDict().topbar?.inactiveOrgLabel || "отключена"})`
                     : "";
                   return <option key={id || `org_${index}`} value={id}>{`${label}${inactiveSuffix}`}</option>;
                 })}
