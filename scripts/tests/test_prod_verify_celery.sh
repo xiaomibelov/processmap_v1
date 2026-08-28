@@ -39,7 +39,7 @@ export PATH="${MOCK_DIR}:${PATH}"
 run_check() {
   local retries="${1:-3}"
   local delay="${2:-0}"
-  "${REPO_ROOT}/scripts/prod_verify_celery_task.sh" \
+  "${REPO_ROOT}/deploy/verify_celery_task.sh" \
     --container "app-celery-worker-1" \
     --task "refresh_session_analytics_task" \
     --retries "${retries}" \
