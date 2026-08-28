@@ -116,7 +116,7 @@ jobs:
             echo "=== checking task registration via celery inspect ==="
             # Use a standalone script to avoid the SIGPIPE/pipefail hazard of
             # "celery ... | grep -q" and to keep the retry/fail-fast logic testable.
-            ./scripts/prod_verify_celery_task.sh \
+            ./deploy/verify_celery_task.sh \
               --container "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
               --task "refresh_session_analytics_task" \
               --retries 10 \
