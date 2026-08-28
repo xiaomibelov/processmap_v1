@@ -363,7 +363,6 @@ export const KNOWN_MISSING_KEYS = new Set([
   "tobe.leave.save",
   "tobe.leave.saving",
   "tobe.leave.title",
-  "topbar.inactiveOrgLabel",
   "transform.accept",
   "transform.asIsAria",
   "transform.decisions",
