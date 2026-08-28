@@ -140,14 +140,18 @@ jobs:
             }
 
             mkdir -p "$(dirname "${STAGE_DIR}")"
-            if [ ! -d "${STAGE_DIR}/.git" ]; then
-              echo "[deploy-stage] bootstrapping isolated stage worktree"
-              git worktree add --force -d "${STAGE_DIR}" "${DEPLOY_SHA}"
-            else
+            if git -C "${MAIN_DIR}" worktree list | grep -q "^${STAGE_DIR} "; then
               echo "[deploy-stage] reusing existing stage worktree"
               cd "${STAGE_DIR}"
               git fetch origin
               git checkout -f "${DEPLOY_SHA}"
+            else
+              if [ -e "${STAGE_DIR}" ]; then
+                echo "[deploy-stage] removing stale stage path"
+                rm -rf "${STAGE_DIR}"
+              fi
+              echo "[deploy-stage] bootstrapping isolated stage worktree"
+              git worktree add --force -d "${STAGE_DIR}" "${DEPLOY_SHA}"
             fi
 
             cd "${STAGE_DIR}"
