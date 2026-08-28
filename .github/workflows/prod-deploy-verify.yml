@@ -123,7 +123,7 @@ jobs:
               echo "[prod-deploy-verify] celery inspect attempt ${attempt}/${MAX_RETRIES}..."
               if docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
                    celery -A backend.app.celery_app inspect registered \
-                   --timeout "${INSPECT_TIMEOUT}" --quiet 2>&1 \
+                   --timeout "${INSPECT_TIMEOUT}" 2>&1 \
                    | grep -q "${TASK_NAME}"; then
                 echo "OK: ${TASK_NAME} is registered"
                 registered="true"
