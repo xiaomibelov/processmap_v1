@@ -1,7 +1,7 @@
 # AGENT-SVC Phase 5 — протокол верификации с реальными LLM-ответами
 
 > Дата: 2026-08-17. Среда: **локальный docker-compose стек** (`server-backup/root/processmap_v1`),
-> HEAD = `47a5f05c` = `origin/main`. Stage-хост `clearvestnic.ru:5177` больше не используется
+> HEAD = `47a5f05c` = `origin/main`. Stage-хост `stage.processmap.ru` используется
 > (решение владельца 2026-08-16): прогоны и верификация — только локально.
 > Секреты замаскированы по `docs/PASSWORD_ROTATION_RULE.md` (`has_api_key` + `key_last4`).
 

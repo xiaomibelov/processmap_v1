@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Аудит Version Conflict Detection + Merge — `feat/version-conflict-merge`
 
 **Branch:** `feat/version-conflict-merge`  
