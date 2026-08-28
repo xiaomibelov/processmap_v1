@@ -110,12 +110,36 @@ jobs:
             echo "OK: no 'unregistered task' errors"
 
             echo "=== checking task registration via celery inspect ==="
-            if docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
-                 celery -A backend.app.celery_app inspect registered --quiet 2>/dev/null \
-                 | grep -q "refresh_session_analytics_task"; then
-              echo "OK: refresh_session_analytics_task is registered"
-            else
-              echo "ERROR: refresh_session_analytics_task not registered in celery worker"
+            # Worker may still be importing tasks or draining the prefetch buffer
+            # right after startup. Retry with a generous inspect timeout so we do
+            # not fail a healthy deployment because of a transient race.
+            TASK_NAME="refresh_session_analytics_task"
+            MAX_RETRIES=10
+            RETRY_DELAY=3
+            INSPECT_TIMEOUT=10
+            registered="false"
+
+            for attempt in $(seq 1 "${MAX_RETRIES}"); do
+              echo "[prod-deploy-verify] celery inspect attempt ${attempt}/${MAX_RETRIES}..."
+              if docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
+                   celery -A backend.app.celery_app inspect registered \
+                   --timeout "${INSPECT_TIMEOUT}" --quiet 2>&1 \
+                   | grep -q "${TASK_NAME}"; then
+                echo "OK: ${TASK_NAME} is registered"
+                registered="true"
+                break
+              fi
+              if [ "${attempt}" -lt "${MAX_RETRIES}" ]; then
+                echo "[prod-deploy-verify] task not registered yet, waiting ${RETRY_DELAY}s..."
+                sleep "${RETRY_DELAY}"
+              fi
+            done
+
+            if [ "${registered}" != "true" ]; then
+              echo "ERROR: ${TASK_NAME} not registered in celery worker after ${MAX_RETRIES} attempts"
+              echo "[prod-deploy-verify] dumping celery inspect output for diagnostics:"
+              docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
+                celery -A backend.app.celery_app inspect registered --timeout "${INSPECT_TIMEOUT}" 2>&1 || true
               exit 1
             fi
 
