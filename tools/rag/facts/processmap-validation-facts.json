@@ -82,8 +82,8 @@
   {
     "id": "val-q6-test-runtime",
     "type": "validation_fact",
-    "query": "What is current ProcessMap test runtime?",
-    "expected_terms": ["clearvestnic", "5180", "8088", "runtime", "test"],
+    "query": "What is current ProcessMap local dev runtime?",
+    "expected_terms": ["localhost", "5177", "8011", "runtime", "local"],
     "expected_sources": ["planning-contours"],
     "current_result": "7/7 PASS on full manifest with improved ranking",
     "pass_fail": "PASS",

@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # EXEC_REPORT — feature/endpoint-regression-scanner
 
 Дата: 2026-08-19. Ветка: `feature/endpoint-regression-scanner` (base origin/main = e462d99d;

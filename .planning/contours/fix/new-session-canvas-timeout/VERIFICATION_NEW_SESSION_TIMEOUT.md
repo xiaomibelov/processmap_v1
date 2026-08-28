@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Verification — New Session Canvas Timeout
 
 **Branch:** `fix/new-session-canvas-timeout`  

@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # PLAN — Prod runtime/source truth alignment
 
 **Contour:** `audit/prod-runtime-source-truth-20260615`

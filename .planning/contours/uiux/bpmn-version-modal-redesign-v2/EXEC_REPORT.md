@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Отчёт по доработке модалки "История версий BPMN"
 
 **Контур:** `uiux/bpmn-version-modal-redesign-v2`  

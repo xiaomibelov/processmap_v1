@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # GSD Audit: Subprocess Navigation Reload Root Cause
 
 **Branch:** `fix/canvas-navigation-stability` (PR #399)  
