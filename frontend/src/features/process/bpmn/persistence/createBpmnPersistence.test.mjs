@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 
 import createBpmnPersistence from "./createBpmnPersistence.js";
 import { saveCoordinator } from "../../../session/saveCoordinator.js";
-import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../../lib/casVersionTracker.js";
+import {
+  __resetForTests as resetCasVersionTracker,
+  getVersion as getTrackedVersion,
+  setVersion as setTrackedVersion,
+} from "../../../../lib/casVersionTracker.js";
 
 test.beforeEach(() => {
   resetCasVersionTracker();
@@ -103,7 +107,7 @@ test("save then reread resolves to remote durable truth even if stale local cach
   window.localStorage.clear();
   let remoteXml = "<bpmn:baseline/>";
   const persistence = createBpmnPersistence({
-    getSessionDraft: () => ({ bpmn_xml: "<bpmn:stale_draft/>", bpmn_xml_version: 4, version: 4 }),
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:stale_draft/>", bpmn_xml_version: 4, version: 4, diagram_state_version: 0 }),
     apiPutBpmnXml: async (_sid, xml) => {
       remoteXml = String(xml || "");
       return { ok: true, status: 200, storedRev: 5 };
@@ -127,7 +131,7 @@ test("save then reread resolves to remote durable truth even if stale local cach
 test("saveRaw propagates backend bpmn version snapshot for canonical revision UI", async () => {
   window.localStorage.clear();
   const persistence = createBpmnPersistence({
-    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>", bpmn_xml_version: 7, version: 7 }),
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>", bpmn_xml_version: 7, version: 7, diagram_state_version: 0 }),
     apiPutBpmnXml: async () => ({
       ok: true,
       status: 200,
@@ -165,7 +169,7 @@ test("when remote API is unavailable, local winner stays bounded fallback with e
 test("saveRaw keeps structured conflict details from backend 409 payload", async () => {
   window.localStorage.clear();
   const persistence = createBpmnPersistence({
-    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>", bpmn_xml_version: 10, version: 10 }),
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>", bpmn_xml_version: 10, version: 10, diagram_state_version: 0 }),
     apiPutBpmnXml: async () => ({
       ok: false,
       status: 409,
@@ -338,6 +342,32 @@ test("saveRaw bumps tracked diagram state version on successful ack", async () =
   assert.equal(saved.ok, true);
   assert.equal(saved.diagramStateVersion, 6);
   assert.equal(getTrackedVersion("sid_track_bump"), 6);
+});
+
+test("saveRaw returns missing_base_version when base diagram state version is not known", async () => {
+  window.localStorage.clear();
+  const putCalls = [];
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "<bpmn:baseline/>" }),
+    apiPutBpmnXml: async (_sid, _xml, options) => {
+      putCalls.push(options);
+      return { ok: true, status: 200 };
+    },
+  });
+
+  const saved = await persistence.saveRaw("sid_missing_base", "<bpmn:new/>", 1, "manual_save");
+
+  assert.equal(saved.ok, false);
+  assert.equal(saved.reason, "missing_base_version");
+  assert.equal(saved.needsHydration, true);
+  assert.equal(putCalls.length, 0, "transport must not run when base version is missing");
+});
+
+test("tracked diagram state version is scoped by session id", () => {
+  resetCasVersionTracker();
+  setTrackedVersion("sid_a", 5);
+  assert.equal(getTrackedVersion("sid_a"), 5);
+  assert.equal(getTrackedVersion("sid_b"), null);
 });
 
 test("saveRaw does NOT adopt tracked base on 409; conflict gate blocks next save until resolution", async () => {

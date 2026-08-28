@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiPatchSession } from "../../../lib/api/sessionApi";
+import { apiGetSession, apiPatchSession } from "../../../lib/api/sessionApi";
 import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
@@ -327,6 +327,30 @@ export default function useProcessTabs({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sid]);
 
+  const hydrateBaseDiagramStateVersion = useCallback(async () => {
+    const sidNow = String(sidRef.current || "");
+    if (!sidNow) {
+      return { ok: false, error: "missing session id" };
+    }
+    try {
+      const res = await apiGetSession(sidNow);
+      if (!res?.ok) {
+        return { ok: false, error: res?.error || "session_fetch_failed" };
+      }
+      const data = res?.data && typeof res.data === "object" ? res.data : {};
+      const rawVersion = data?.diagram_state_version ?? data?.diagramStateVersion;
+      const version = Number(rawVersion);
+      if (!Number.isFinite(version) || version < 0) {
+        return { ok: false, error: "missing_diagram_state_version_in_session" };
+      }
+      const normalized = Math.round(version);
+      rememberDiagramStateVersion?.(normalized, { sessionId: sidNow });
+      return { ok: true, version: normalized };
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error || "hydration_exception") };
+    }
+  }, [rememberDiagramStateVersion]);
+
   const flushBpmnTab = useCallback(
     async (activeTab, reason = "tab_switch") => {
       const current = String(activeTab || "").toLowerCase();
@@ -344,6 +368,13 @@ export default function useProcessTabs({
       flushBusyRef.current = true;
       setIsFlushingTab(true);
       try {
+        const knownBase = Number(getBaseDiagramStateVersion?.());
+        if (!Number.isFinite(knownBase) || knownBase < 0) {
+          const hydrated = await hydrateBaseDiagramStateVersion();
+          if (!hydrated.ok) {
+            return { ok: false, error: hydrated.error, reason: "hydration_failed" };
+          }
+        }
         const flushed = await bpmnSync.flushFromActiveTab(current, {
           force: current === "diagram",
           source: reason,
@@ -355,7 +386,7 @@ export default function useProcessTabs({
         setIsFlushingTab(false);
       }
     },
-    [bpmnSync],
+    [bpmnSync, getBaseDiagramStateVersion, hydrateBaseDiagramStateVersion],
   );
 
   useEffect(() => {
