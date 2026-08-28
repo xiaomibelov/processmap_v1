@@ -20,7 +20,7 @@ $ git status -sb
  M frontend/src/features/process/hooks/useProcessTabs.js
 
 $ git rev-parse HEAD
-95fc4d897e8f05e36543c33ed54c439e13723cde
+2ae25dcd72578c2fdc6fe6ad1f9652acb8ea05ac
 
 $ git diff --stat
  frontend/src/components/ProcessStage.jsx           | 10 +++---

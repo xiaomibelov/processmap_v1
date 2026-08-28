@@ -3,7 +3,9 @@
 **Contour:** `fix/session-version-conflict-base-hydration-v1`  
 **Status:** `READY_FOR_REVIEW`  
 **Branch:** `fix/session-version-conflict-base-hydration-v1`  
-**HEAD:** `95fc4d897e8f05e36543c33ed54c439e13723cde`  
+**HEAD:** `2ae25dcd72578c2fdc6fe6ad1f9652acb8ea05ac` (HEAD after fix commit)  
+**PR:** https://github.com/xiaomibelov/processmap_v1/pull/853  
+**Obsidian mirror:** skipped (`/opt/processmap-test` and `/srv/obsidian` are not mounted in this environment)  
 
 ---
 
