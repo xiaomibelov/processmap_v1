@@ -1,0 +1,35 @@
+{
+  "contour": "fix/purge-clearvestnic-domain",
+  "type": "fix",
+  "branch": "fix/purge-clearvestnic-domain",
+  "baseline_head": "ffaaa38f45e78a215471b980c8f98b1c333a412d",
+  "status": "READY_FOR_REVIEW",
+  "created_at": "2026-08-28T13:20:52Z",
+  "updated_at": "2026-08-28T13:20:52Z",
+  "owner_approval_required": true,
+  "artifacts": {
+    "PLAN.md": "created",
+    "EXEC_REPORT.md": "created",
+    "REVIEW_REPORT.md": "created",
+    "RAG_PREFLIGHT_PLANNER.md": "created",
+    "STATE.json": "created"
+  },
+  "active_files_changed": [
+    "AGENTS.md",
+    "docs/agent/AGENT_SVC_PLAN.md",
+    "docs/agent/AGENT_SVC_PHASE5_VERIFICATION.md",
+    "tools/rag/facts/processmap-runtime-facts.json",
+    "tools/rag/facts/processmap-agent-rules.json",
+    "tools/rag/facts/processmap-validation-facts.json",
+    "tools/rag/processmap-rag-validation-queries.json"
+  ],
+  "historical_files_banned": {
+    "worktree_planning": 128,
+    "obsidian": 468
+  },
+  "verification": {
+    "grep_active_clean": true,
+    "ci_workflows_clean": true,
+    "json_valid": true,
+    "tests": "no product tests affected; RAG validation runner requires missing RAG_SEARCH_INDEX_BALANCED.json"
+}

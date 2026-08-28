@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # PREMIUM/URGENT audit: session delete/rename → "not found"
 
 Контур: `audit/session-delete-not-found`  

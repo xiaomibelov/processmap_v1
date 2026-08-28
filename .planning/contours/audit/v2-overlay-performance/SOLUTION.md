@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Solution Plan — V2 Overlay Performance Audit
 
 **Approved:** Phase 2 fix authorized. Target: min FPS ≥ 22 during pan/drag with V2 overlays ON and "show overlays during pan" enabled on a 200-element diagram.

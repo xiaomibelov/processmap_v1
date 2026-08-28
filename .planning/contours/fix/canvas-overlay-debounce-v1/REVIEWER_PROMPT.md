@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Agent 3 / Reviewer Prompt — Overlay Debounce Verification
 
 **Contour**: `fix/canvas-overlay-debounce-v1`  

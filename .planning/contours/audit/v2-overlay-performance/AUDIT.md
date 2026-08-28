@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # V2 Overlay Performance Audit — `audit/v2-overlay-performance`
 
 **Branch:** `main`  

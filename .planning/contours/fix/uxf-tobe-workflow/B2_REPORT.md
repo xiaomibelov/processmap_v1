@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # B2 — отчёт по диагностике «Сессия AS IS пуста» у отрисованной сессии
 
 **Дата:** 2026-07-31 · **Контур:** fix/uxf-tobe-workflow

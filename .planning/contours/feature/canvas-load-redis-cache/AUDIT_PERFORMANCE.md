@@ -1,3 +1,5 @@
+> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
+
 # Performance Audit — Canvas / Session Load (`feature/canvas-load-redis-cache`)
 
 **Date:** 2026-06-22
