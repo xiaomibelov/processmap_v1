@@ -18,6 +18,13 @@ export const ru = {
     errorServer: "Ошибка сервера",
     errorUnavailable: "Сервер недоступен",
   },
+  topbar: {
+    org: "Организация",
+    user: "Пользователь",
+    orgContext: "Контекст организации",
+    openWorkspace: "Открыть рабочую область",
+    inactiveOrgLabel: "отключена",
+  },
   auth: {
     loginTitle: "Вход в PROCESSMAP",
     loginSubtitle: "Используйте рабочий аккаунт, чтобы открыть рабочую область.",
@@ -191,12 +198,6 @@ export const ru = {
       aiModules: "AI модули",
       llm: "LLM",
       agentRuns: "Диалоги агентов",
-    },
-    topbar: {
-      org: "Организация",
-      user: "Пользователь",
-      orgContext: "Контекст организации",
-      openWorkspace: "Открыть рабочую область",
     },
     sidebar: {
       title: "Операционная консоль",
