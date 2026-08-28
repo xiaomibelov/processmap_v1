@@ -42,9 +42,9 @@ export default function AdminTopbar({
   return (
     <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/95 px-3 backdrop-blur">
       <div className="flex min-w-0 items-center gap-2">
-        <ContextBadge label={ru.admin.topbar.org} value={currentOrgLabel} />
+        <ContextBadge label={ru.topbar.org} value={currentOrgLabel} />
         <ContextBadge label="Система" value={`Redis ${toText(redisMode) || "UNKNOWN"}`} tone={redisTone} />
-        <ContextBadge label={ru.admin.topbar.user} value={userLabel} />
+        <ContextBadge label={ru.topbar.user} value={userLabel} />
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <select
@@ -71,7 +71,7 @@ export default function AdminTopbar({
           onClick={() => onNavigate?.("/app")}
           data-testid="admin-back-workspace"
         >
-          {ru.admin.topbar.openWorkspace}
+          {ru.topbar.openWorkspace}
         </button>
       </div>
     </header>
