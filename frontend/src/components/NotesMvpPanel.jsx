@@ -121,6 +121,12 @@ function numericTime(value) {
   return n < 100000000000 ? n * 1000 : n;
 }
 
+function threadListIdentityKey(threads) {
+  return asArray(threads)
+    .map((t) => `${text(t?.id)}:${numericTime(t?.updated_at || t?.updatedAt)}`)
+    .join("\u001f");
+}
+
 function formatDate(value) {
   const n = numericTime(value);
   if (!n) return "";
@@ -555,6 +561,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const sid = text(sessionId);
   const viewerUserId = text(currentUserId);
   const selectedElementId = text(selectedElement?.id);
+  const selectedElementIdRef = useRef(selectedElementId);
+  useEffect(() => {
+    selectedElementIdRef.current = selectedElementId;
+  }, [selectedElementId]);
   const selectedElementName = readableBpmnLabel(selectedElement?.name) || "Элемент BPMN";
   const selectedElementType = text(selectedElement?.type);
 
@@ -1022,12 +1032,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (open) setLoading(true);
     setError("");
     const preferredThreadId = text(options?.preferredThreadId);
+    const currentSelectedElementId = selectedElementIdRef.current;
     let filters;
     if (!open) {
       // Keep overlay counts up to date even when the panel is closed.
       filters = { status: "", scopeType: "", elementId: "" };
     } else {
-      if (!notificationMode && scopeFilter === "selected_element" && !selectedElementId) {
+      if (!notificationMode && scopeFilter === "selected_element" && !currentSelectedElementId) {
         setThreads([]);
         setSelectedThreadId("");
         setLoading(false);
@@ -1036,7 +1047,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       filters = {
         status: "",
         scopeType: notificationMode || scopeFilter === "all" ? "" : (scopeFilter === "selected_element" ? "diagram_element" : scopeFilter),
-        elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? selectedElementId : ""),
+        elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? currentSelectedElementId : ""),
       };
     }
     const idsToLoad = descendantSessionIds.length ? descendantSessionIds : [sid];
@@ -1055,7 +1066,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       }
     }
     nextThreads.sort((left, right) => threadUpdatedAt(right) - threadUpdatedAt(left));
-    setThreads(nextThreads);
+    setThreads((prevThreads) => {
+      if (threadListIdentityKey(prevThreads) === threadListIdentityKey(nextThreads)) {
+        // Identical payload: skip state update to break the cascade into overlay re-renders.
+        return prevThreads;
+      }
+      return nextThreads;
+    });
     if (loadError) {
       setError(loadError);
     }
@@ -1067,7 +1084,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return "";
     });
     setLoading(false);
-  }, [descendantSessionIds, notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
+  }, [descendantSessionIds, notificationMode, open, scopeFilter, sid]);
 
   useEffect(() => {
     const unsubscribe = onDiagramDragEnd(() => {
@@ -1081,6 +1098,15 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (isDiagramDragging()) return;
     void fetchThreads();
   }, [fetchThreads, open, dragFlushKey]);
+
+  // Refetch only when selection actually changes the filters.
+  useEffect(() => {
+    if (!open) return;
+    if (notificationMode) return;
+    if (scopeFilter !== "selected_element") return;
+    if (isDiagramDragging()) return;
+    void fetchThreads();
+  }, [fetchThreads, open, scopeFilter, selectedElementId, notificationMode]);
 
   useEffect(() => {
     emitElementNoteThreadsChanged(
