@@ -4,6 +4,11 @@ import {
   apiCreateNoteThread,
   apiListNoteThreads,
 } from "../../lib/api.js";
+import {
+  fetchNoteThreads,
+  getCachedNoteThreads,
+  invalidateNoteThreads,
+} from "../../lib/noteThreadsCache.js";
 
 function text(value) {
   return String(value || "").trim();
@@ -52,6 +57,9 @@ function emitElementNoteThreadsChanged(sessionId, threads) {
  * Read: threads where scope_type="diagram_element" and scope_ref.element_id = elementId.
  * Writes reuse the existing note_threads API (outside diagram CAS — never touches
  * bpmn_xml / diagram_state_version).
+ *
+ * Reads go through the shared noteThreadsCache so two consumers on the same element
+ * produce only one network request.
  */
 export function useElementThreads(sessionId, elementId) {
   const sid = text(sessionId);
@@ -61,17 +69,22 @@ export function useElementThreads(sessionId, elementId) {
   const [error, setError] = useState("");
   const reqIdRef = useRef(0);
 
-  const fetchThreads = useCallback(async () => {
+  const fetchThreads = useCallback(async (options = {}) => {
     const reqId = ++reqIdRef.current;
     if (!sid || !eid) {
-      setThreads([]);
-      setError("");
-      setLoading(false);
+      if (reqId === reqIdRef.current) {
+        setThreads([]);
+        setError("");
+        setLoading(false);
+      }
       return;
     }
-    setLoading(true);
+    if (reqId !== reqIdRef.current) return;
+    setLoading(!getCachedNoteThreads(sid, "diagram_element", eid));
     setError("");
-    const result = await apiListNoteThreads(sid, { scopeType: "diagram_element", elementId: eid });
+    const result = await fetchNoteThreads(sid, "diagram_element", eid, {
+      force: options?.force === true,
+    });
     if (reqId !== reqIdRef.current) return; // superseded by a newer request
     if (!result.ok) {
       setError(String(result.error || "Не удалось загрузить заметки."));
@@ -108,7 +121,8 @@ export function useElementThreads(sessionId, elementId) {
       requires_attention: requiresAttention,
     });
     if (!result.ok) return result;
-    await fetchThreads();
+    invalidateNoteThreads(sid, "diagram_element", eid);
+    await fetchThreads({ force: true });
     await syncThreadBadges();
     return result;
   }, [sid, eid, fetchThreads, syncThreadBadges]);
@@ -119,10 +133,11 @@ export function useElementThreads(sessionId, elementId) {
     if (!tid || !noteBody) return { ok: false, error: "empty" };
     const result = await apiAddNoteThreadComment(tid, { body: noteBody });
     if (!result.ok) return result;
-    await fetchThreads();
+    invalidateNoteThreads(sid, "diagram_element", eid);
+    await fetchThreads({ force: true });
     await syncThreadBadges();
     return result;
-  }, [sid, fetchThreads, syncThreadBadges]);
+  }, [sid, eid, fetchThreads, syncThreadBadges]);
 
   return { threads, loading, error, createThread, addComment, refetch: fetchThreads };
 }
