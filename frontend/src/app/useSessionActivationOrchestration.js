@@ -278,6 +278,12 @@ export default function useSessionActivationOrchestration({
       }
 
       nextRaw = r.session || ensureDraftShape(sid);
+      const serverDiagramStateVersion = Number(
+        nextRaw?.diagram_state_version ?? nextRaw?.diagramStateVersion
+      );
+      if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
+        setTrackedDiagramStateVersion(sid, serverDiagramStateVersion);
+      }
       if (sessionCacheRef?.current) {
         sessionCacheRef.current.set(sid, nextRaw);
       }
