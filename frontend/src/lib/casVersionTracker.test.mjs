@@ -82,6 +82,17 @@ test("session isolation: versions are independent per session", () => {
   assert.equal(getVersion("sid-b"), 99);
 });
 
+test("setVersion is idempotent: repeated calls replace history", () => {
+  setVersion("sid-1", 5);
+  assert.equal(getVersion("sid-1"), 5);
+  setVersion("sid-1", 5);
+  assert.equal(getVersion("sid-1"), 5);
+  setVersion("sid-1", 7);
+  assert.equal(getVersion("sid-1"), 7);
+  // After idempotent reset, rollback should not restore an older value.
+  assert.equal(rollbackVersion("sid-1"), 7);
+});
+
 test("clearSession removes state", () => {
   setVersion("sid-1", 5);
   assert.equal(isValidForSession("sid-1"), true);
