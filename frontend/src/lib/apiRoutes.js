@@ -328,6 +328,7 @@ export const apiRoutes = {
     deploymentNotices: () => "/api/admin/deployment-notices",
     deploymentNotice: (noticeId) => `/api/admin/deployment-notices/${encodeURIComponent(String(noticeId || ""))}`,
     graphsSnapshots: () => "/api/admin/graphs/snapshots",
+    graphsSnapshotUpload: () => "/api/admin/graphs/snapshots",
     graphsSnapshotCurrent: () => "/api/admin/graphs/snapshot/current",
     graphsSnapshotCurrentHtml: () => "/api/admin/graphs/snapshot/current/html",
     graphsSnapshotCurrentJson: () => "/api/admin/graphs/snapshot/current/json",

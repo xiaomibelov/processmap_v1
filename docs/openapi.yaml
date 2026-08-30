@@ -597,6 +597,23 @@ components:
       - recipe_id
       title: BindingCreate
       type: object
+    Body_admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post:
+      properties:
+        analysis_json:
+          description: .graphify_analysis.json produced by graphify analysis
+          format: binary
+          title: Analysis Json
+          type: string
+        graph_json:
+          description: graph.json produced by graphify analysis
+          format: binary
+          title: Graph Json
+          type: string
+      required:
+      - graph_json
+      - analysis_json
+      title: Body_admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post
+      type: object
     Body_import_bpmn_api_process_templates_import_bpmn_post:
       properties:
         file:
@@ -4666,6 +4683,45 @@ paths:
       security:
       - bearerAuth: []
       summary: Получить snapshots
+      tags:
+      - admin
+    post:
+      description: 'Создать/выполнить snapshots. Особенности: доступ: администратор
+        платформы/организации; тело валидируется схемой (422 при несоответствии).'
+      operationId: admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Upload Snapshot Api Admin Graphs Snapshots
+                  Post
+          description: Successful Response
+        '400':
+          description: Invalid JSON or missing required fields
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+        '413':
+          description: Uploaded files too large
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить snapshots
       tags:
       - admin
   /api/admin/invites/{invite_id}/permissions:
