@@ -141,4 +141,27 @@ describe("AdminGraphsPage smoke", () => {
     root.unmount();
     cleanup();
   });
+
+  it("shows neutral empty state when no snapshot", async () => {
+    const onRebuild = vi.fn();
+    const { container, root, cleanup } = await renderPage({
+      ...FIXTURE,
+      data: { snapshots: [], current: null, analytics: null },
+      rebuild: onRebuild,
+    });
+    expect(container.textContent).toContain("Граф ещё не собран");
+    expect(container.textContent).toContain("Первая сборка занимает");
+    expect(container.textContent).toContain("Вьювер графа");
+    expect(container.textContent).not.toContain("Ошибка загрузки данных");
+    const button = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent.includes("Пересобрать")
+    );
+    expect(button).not.toBeNull();
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onRebuild).toHaveBeenCalledTimes(1);
+    root.unmount();
+    cleanup();
+  });
 });

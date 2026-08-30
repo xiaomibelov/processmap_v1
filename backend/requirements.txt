@@ -17,3 +17,4 @@ celery>=5.3.0
 prometheus-client>=0.25.0
 xlsxwriter>=3.0.0
 alembic==1.13.3
+networkx>=3.0  # graphify render pipeline
