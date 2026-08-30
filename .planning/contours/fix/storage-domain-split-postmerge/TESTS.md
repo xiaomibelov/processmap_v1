@@ -20,9 +20,21 @@
 - Full `pytest backend/tests --timeout=120` still hangs on the host because of the pre-existing `app/metrics.py::_poll` background thread. This is unchanged from `origin/main` and is not in scope.
 - `test_auto_create_subprocess_sessions.py` and `test_bpmn_meta.py` remain skipped outside Docker Compose because the Celery broker `redis://redis:6379/1` is unreachable.
 
-## Stage verification
+## Stage runtime proof (post-merge)
 
-Could not be performed locally:
-- `processmap_stage-api-1` container is not present on this host.
-- `docker-compose.stage.yml` requires `.env.stage` and `EDGE_NETWORK_NAME`; both are missing.
-- Stage must be validated on the stage host after merge.
+Deploy workflow: `Deploy to Stage` #33303923101 for commit `39bb6f8c9f5534d9deae4711800cd0bb3d67eb5d`.
+Status: **success** (`deploy` job completed in 2m53s).
+
+| Check | URL / Command | Expected | Actual |
+|-------|---------------|----------|--------|
+| `/api/health` | `curl https://stage.processmap.ru/api/health` | 200 + `{"ok":true,"status":"ok",...}` | ✅ 200, API ready, Redis healthy, migrations OK |
+| `/admin` | `curl https://stage.processmap.ru/admin` | 200 | ✅ 200 |
+| `/admin/graphs` | `curl https://stage.processmap.ru/admin/graphs` | 200 | ✅ 200 |
+| `/health` | `curl https://stage.processmap.ru/health` | 301 (redirect) | ✅ 301 |
+
+Notes:
+- `/health` returns 301 because nginx redirects the root health path; `/api/health` is the canonical API health endpoint and returns 200.
+- `processmap_stage-api-1` container status was verified indirectly via the successful GitHub Actions deploy run and the responding API health endpoint. Direct `docker ps` was not available from the review host.
+- No 5xx errors observed on the checked admin routes.
+
+Stage validation is complete; prod-deploy moratorium can be lifted.

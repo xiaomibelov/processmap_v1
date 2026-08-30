@@ -4,11 +4,10 @@
   "branch": "fix/storage-domain-split-postmerge",
   "base_commit": "ae8b78d306f80e48173cd908b354196e78fca854",
   "origin_main": "dc030f1c118cb5dc487d85ef47d0d7608c5fa7cd",
-  "status": "READY_FOR_REVIEW",
+  "status": "DONE",
   "blockers": [],
   "open_risks": [
-    "Static baseline fixture must be updated deliberately if app.storage public surface changes.",
-    "Stage validation deferred: .env.stage and EDGE_NETWORK_NAME missing locally."
+    "Static baseline fixture must be updated deliberately if app.storage public surface changes."
   ],
   "test_summary": {
     "contract": "35 passed",
@@ -16,7 +15,10 @@
     "container_import": "OK",
     "dev_import": "OK",
     "uvicorn_health": "200",
-    "generator_determinism": "pass"
+    "generator_determinism": "pass",
+    "stage_deploy_workflow": "success (#33303923101)",
+    "stage_api_health": "200",
+    "stage_admin_graphs": "200"
   },
   "artifacts": [
     "PLAN.md",
