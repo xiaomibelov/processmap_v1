@@ -93,8 +93,12 @@ docker run --rm fpc-frontend-build-test npm run test:smoke -- src/features/admin
 
 ```
 branch: fix/admin-graphs-build-pipeline
-HEAD: 25650e02
 base: origin/main (7edec2c24a7bf994c4f32690c2c838eafd33b7fe)
 status: clean
 pushed: git@github.com:xiaomibelov/processmap_v1.git fix/admin-graphs-build-pipeline
 ```
+
+## PR
+
+- https://github.com/xiaomibelov/processmap_v1/pull/873
+- **Merge только по явному approve.**
