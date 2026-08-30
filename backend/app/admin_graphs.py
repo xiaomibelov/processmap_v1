@@ -63,8 +63,12 @@ def _git_info() -> Tuple[str, str]:
     return sha, msg
 
 
-def _ensure_dirs() -> None:
-    _snapshots_dir().mkdir(parents=True, exist_ok=True)
+def _ensure_dirs() -> bool:
+    try:
+        _snapshots_dir().mkdir(parents=True, exist_ok=True)
+        return True
+    except (OSError, PermissionError):
+        return False
 
 
 def _is_current(snapshot_id: str) -> bool:
@@ -89,7 +93,8 @@ def _read_meta(snapshot_id: str) -> Optional[Dict[str, Any]]:
 
 def list_snapshots() -> List[Dict[str, Any]]:
     """Return all snapshots ordered by creation time (newest first)."""
-    _ensure_dirs()
+    if not _ensure_dirs():
+        return []
     snapshots: List[Dict[str, Any]] = []
     if not _snapshots_dir().exists():
         return snapshots
@@ -105,7 +110,8 @@ def list_snapshots() -> List[Dict[str, Any]]:
 
 def current_snapshot() -> Optional[Dict[str, Any]]:
     """Return metadata for the current snapshot (the one pointed to by 'current' symlink)."""
-    _ensure_dirs()
+    if not _ensure_dirs():
+        return None
     link = _current_symlink()
     try:
         if not link.is_symlink():
@@ -119,9 +125,9 @@ def current_snapshot() -> Optional[Dict[str, Any]]:
 def read_snapshot_file(snapshot_id: str, filename: str) -> Optional[bytes]:
     """Read a file from a snapshot directory."""
     path = _snapshot_dir(snapshot_id) / filename
-    if not path.exists():
-        return None
     try:
+        if not path.exists():
+            return None
         return path.read_bytes()
     except Exception:
         return None
@@ -255,6 +261,8 @@ def _rebuild_worker(snapshot_id: str) -> None:
         _update_status(snapshot_id, "failed", error=str(exc))
 
 
+# In-memory fallback for jobs that could not be persisted (e.g. graph storage unavailable).
+_failed_jobs: Dict[str, Dict[str, Any]] = {}
 _rebuild_lock = threading.Lock()
 
 
@@ -263,10 +271,27 @@ def start_rebuild() -> str:
 
     Returns the snapshot/job id.
     """
-    _ensure_dirs()
     snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    if not _ensure_dirs():
+        _failed_jobs[snapshot_id] = {
+            "job_id": snapshot_id,
+            "status": "failed",
+            "error": "graph storage directory is not available",
+            "log": ["ERROR: graph storage directory is not available"],
+        }
+        return snapshot_id
+
     snapshot_path = _snapshot_dir(snapshot_id)
-    snapshot_path.mkdir(parents=True, exist_ok=True)
+    try:
+        snapshot_path.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError):
+        _failed_jobs[snapshot_id] = {
+            "job_id": snapshot_id,
+            "status": "failed",
+            "error": "cannot create snapshot directory",
+            "log": ["ERROR: cannot create snapshot directory"],
+        }
+        return snapshot_id
 
     sha, msg = _git_info()
     meta = {
@@ -297,9 +322,14 @@ def start_rebuild() -> str:
 
 
 def rebuild_status(snapshot_id: str) -> Optional[Dict[str, Any]]:
+    if snapshot_id in _failed_jobs:
+        return dict(_failed_jobs[snapshot_id])
     status_path = _snapshot_dir(snapshot_id) / "status.json"
     log_path = _snapshot_dir(snapshot_id) / "rebuild.log"
-    if not status_path.exists():
+    try:
+        if not status_path.exists():
+            return None
+    except (OSError, PermissionError):
         return None
     try:
         data = json.loads(status_path.read_text(encoding="utf-8"))

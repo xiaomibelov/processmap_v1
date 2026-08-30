@@ -18,12 +18,17 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
-# --- 1. Session-wide тестовая БД ДО импорта app -------------------------------
+# --- 1. Session-wide тестовая БД + graph storage ДО импорта app --------------
 # tests/conftest.py изолирует БД per-test; contract-suite нужна одна БД на сессию
 # со seed-данными (см. conftest.py:isolate_process_db — переопределён там).
+# GRAPHS_DIR указываем во временную директорию, чтобы админ-эндпоинты графов не
+# пытались создать /app/graphify-out в CI (PermissionError → 500 в fuzz).
 _SESSION_DB = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _SESSION_DB.close()
 os.environ["PROCESS_DB_PATH"] = _SESSION_DB.name
+
+_SESSION_GRAPHS_DIR = tempfile.mkdtemp(prefix="contract_graphs_")
+os.environ["GRAPHS_DIR"] = _SESSION_GRAPHS_DIR
 
 import yaml  # noqa: E402
 

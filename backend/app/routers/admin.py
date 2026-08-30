@@ -2614,7 +2614,10 @@ def admin_graphs_snapshots(request: Request) -> Any:
     return [_snapshot_out(m) for m in list_snapshots()]
 
 
-@router.get("/api/admin/graphs/snapshot/current")
+@router.get(
+    "/api/admin/graphs/snapshot/current",
+    responses={404: {"description": "No current graph snapshot"}},
+)
 def admin_graphs_current_snapshot(request: Request) -> Any:
     err = _graphs_admin_check(request)
     if err is not None:
@@ -2625,7 +2628,10 @@ def admin_graphs_current_snapshot(request: Request) -> Any:
     return _snapshot_out(meta)
 
 
-@router.get("/api/admin/graphs/snapshot/current/html")
+@router.get(
+    "/api/admin/graphs/snapshot/current/html",
+    responses={404: {"description": "No current graph snapshot or graph.html missing"}},
+)
 def admin_graphs_current_html(request: Request) -> Any:
     err = _graphs_admin_check(request)
     if err is not None:
@@ -2639,7 +2645,10 @@ def admin_graphs_current_html(request: Request) -> Any:
     return Response(content=data, media_type="text/html")
 
 
-@router.get("/api/admin/graphs/snapshot/current/json")
+@router.get(
+    "/api/admin/graphs/snapshot/current/json",
+    responses={404: {"description": "No current graph snapshot or graph JSON missing"}},
+)
 def admin_graphs_current_json(request: Request) -> Any:
     err = _graphs_admin_check(request)
     if err is not None:
@@ -2666,7 +2675,10 @@ def admin_graphs_rebuild(request: Request) -> Any:
     return GraphRebuildOut(job_id=job_id, status=status.get("status", "pending"))
 
 
-@router.get("/api/admin/graphs/rebuild/{job_id}")
+@router.get(
+    "/api/admin/graphs/rebuild/{job_id}",
+    responses={404: {"description": "Rebuild job not found"}},
+)
 def admin_graphs_rebuild_status(job_id: str, request: Request) -> Any:
     err = _graphs_admin_check(request)
     if err is not None:
@@ -2684,7 +2696,10 @@ def admin_graphs_rebuild_status(job_id: str, request: Request) -> Any:
     )
 
 
-@router.get("/api/admin/graphs/analytics")
+@router.get(
+    "/api/admin/graphs/analytics",
+    responses={404: {"description": "No current graph snapshot"}},
+)
 def admin_graphs_analytics(request: Request) -> Any:
     err = _graphs_admin_check(request)
     if err is not None:

@@ -4501,6 +4501,8 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
+        '404':
+          description: No current graph snapshot
       security:
       - bearerAuth: []
       summary: Получить аналитику
@@ -4556,7 +4558,7 @@ paths:
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Rebuild job not found
         '422':
           content:
             application/json:
@@ -4586,6 +4588,8 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
+        '404':
+          description: No current graph snapshot
       security:
       - bearerAuth: []
       summary: Получить current
@@ -4609,6 +4613,8 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
+        '404':
+          description: No current graph snapshot or graph.html missing
       security:
       - bearerAuth: []
       summary: Получить html
@@ -4632,6 +4638,8 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
+        '404':
+          description: No current graph snapshot or graph JSON missing
       security:
       - bearerAuth: []
       summary: Получить json
