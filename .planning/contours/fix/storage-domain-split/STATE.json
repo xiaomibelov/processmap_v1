@@ -1,0 +1,38 @@
+{
+  "contour": "fix/storage-domain-split",
+  "type": "fix",
+  "role": "executor",
+  "branch": "fix/storage-domain-split",
+  "checkout": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone",
+  "base": "origin/main",
+  "head": "7f16147897dbc52464a0ee41391896d076f414f0",
+  "origin_main": "7f16147897dbc52464a0ee41391896d076f414f0",
+  "precondition_legacy_main_session_facade": "not_found",
+  "rag_preflight": "done",
+  "artifacts": {
+    "PLAN.md": "written",
+    "CHANGES.md": "written_iteration_2",
+    "TESTS.md": "written_iteration_2",
+    "PR.md": "written",
+    "EXEC_REPORT.md": "written_iteration_2",
+    "CROSS_DOMAIN_TX.md": "written",
+    "MISPLACED.md": "written",
+    "READY_FOR_REVIEW": "set",
+    "iteration_3_fix": "test_generator_determinism sys.path fix"
+  },
+  "status": "execution_done",
+  "phase": "READY_FOR_REVIEW",
+  "test_results": {
+    "contract_tests": "34 passed (32 base + determinism + backward-compat)",
+    "contract_tests_from_backend": "34 passed",
+    "contract_tests_from_root": "34 passed",
+    "hang_skip_tests": "75 skipped (test_auto_create_subprocess_sessions.py 36 + test_bpmn_meta.py 39)",
+    "targeted_tests": "50 passed, 10 warnings, 2 subtests passed in 53.83s",
+    "save_data_guard_tests": "13 passed",
+    "full_suite": "incomplete on localhost: fix ~31%, origin/main ~20%; pre-existing hang in app/metrics.py::_poll thread outside Docker Compose",
+    "backward_compat": "365 top-level names from origin/main storage.py, missing = 0",
+    "facade_imports": "[FACADE] cross-domain repository imports = 0",
+    "facade_loc": "storage.py non-re-export code ≤ 30 lines",
+    "iteration_3_diff": "only backend/tests/contract/test_storage_domain_contract.py changed"
+  }
+}

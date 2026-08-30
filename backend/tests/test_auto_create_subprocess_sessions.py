@@ -18,6 +18,10 @@ from app.storage import (
     upsert_project_membership,
 )
 
+import pytest
+
+pytestmark = pytest.mark.skip_if_hanging
+
 
 class _DummyRequest:
     def __init__(self, user, active_org_id):
