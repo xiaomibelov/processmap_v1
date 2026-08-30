@@ -1,0 +1,38 @@
+{
+  "contour": "feature/graphify-semantic-zones",
+  "status": "READY_FOR_REVIEW",
+  "branch": "feature/graphify-semantic-zones",
+  "worktree": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-graphify-semantic-zones",
+  "base_commit": "7f161478",
+  "cherry_picks": ["dbe7074a"],
+  "plan_approved": true,
+  "artifacts": {
+    "PLAN.md": ".planning/contours/feature/graphify-semantic-zones/PLAN.md",
+    "TESTS.md": ".planning/contours/feature/graphify-semantic-zones/TESTS.md",
+    "EXEC_REPORT.md": ".planning/contours/feature/graphify-semantic-zones/EXEC_REPORT.md",
+    "PR.md": ".planning/contours/feature/graphify-semantic-zones/PR.md"
+  },
+  "deliverables": [
+    "tools/graphify-semantic-config.json",
+    "tools/graphify-render-graph.py",
+    "tools/graphify-render-graph.test.py",
+    "graphify-out/graph.html",
+    "graphify-out/graph_zones_all.png",
+    "graphify-out/graph_zones_nodeinfo.png",
+    "graphify-out/graph_trace_save_diagram.png",
+    "graphify-out/graph_trace_create_session.png",
+    "graphify-out/graph_trace_ask_ai.png"
+  ],
+  "tests": {
+    "unit": "tools/graphify-render-graph.test.py",
+    "result": "OK"
+  },
+  "criteria": {
+    "classification_coverage": "96.7% classified (unclassified 3.3%)",
+    "zones_visible": true,
+    "traces_count": 3,
+    "semantic_links_distinct": true,
+    "persistence_zone_labeled": true
+  },
+  "next_action": "REQUEST_PR_APPROVE"
+}
