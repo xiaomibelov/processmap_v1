@@ -1,12 +1,14 @@
 {
   "contour": "fix/admin-graphs-stage-bootstrap",
-  "phase": "implementation",
-  "status": "READY_FOR_REVIEW",
+  "phase": "merged",
+  "status": "MERGED_WAITING_FOR_DEPLOY",
   "blockers": [],
   "ready_for_execution": false,
-  "next_action": "Create PR, await user approval for deploy on stage and merge.",
+  "next_action": "Deploy on stage and seed initial graph snapshot; verify empty state, rebuild, analytics, 403 for non-admin.",
   "branch": "fix/admin-graphs-stage-bootstrap",
   "base_commit": "700eaf02d667a10a233c0a54f6f74f88f7526f82",
+  "merge_commit": "42779eca82b7ced6793c7a6ff3af1b74d1c5b47a",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/870",
   "test_results": {
     "backend_tests": "12 passed",
     "frontend_smoke_tests": "27 passed",
