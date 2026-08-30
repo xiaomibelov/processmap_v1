@@ -33,7 +33,7 @@
 
 ```
 branch: fix/admin-graphs-build-pipeline
-HEAD: fa402644
+HEAD: e23daf52
 base: origin/main (7edec2c2)
 ```
 
