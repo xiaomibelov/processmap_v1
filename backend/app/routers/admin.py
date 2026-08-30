@@ -7,9 +7,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
+from pathlib import Path
 from pydantic import BaseModel, Field
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 
 from .. import _legacy_main
 from ..utils.authz import is_role_allowed, scope_allowed_project_ids
@@ -64,6 +65,14 @@ from ..storage import (
     _admin_entity_permission_keys,
 )
 from ..ai.gateway import complete
+from ..admin_graphs import (
+    current_snapshot,
+    compute_analytics,
+    list_snapshots,
+    read_snapshot_file,
+    rebuild_status,
+    start_rebuild,
+)
 
 router = APIRouter()
 
@@ -2497,3 +2506,205 @@ def admin_invite_permissions_patch(
         meta={"permissions": body},
     )
     return {"ok": True, "invite_id": invite_id}
+
+
+# ---------------------------------------------------------------------------
+# Admin Graphs tab
+# ---------------------------------------------------------------------------
+
+
+class GraphSnapshotOut(BaseModel):
+    id: str
+    created_at: str
+    commit_sha: str
+    commit_message: str
+    is_current: bool
+    html_size: int = 0
+    json_size: int = 0
+
+
+class GraphRebuildOut(BaseModel):
+    job_id: str
+    status: str
+
+
+class GraphRebuildStatusOut(BaseModel):
+    job_id: str
+    status: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    log: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class LayerDistributionItem(BaseModel):
+    layer_id: str
+    label: str
+    color: str
+    node_count: int
+    percent: float
+
+
+class HubNodeItem(BaseModel):
+    node_id: str
+    label: str
+    layer: str
+    degree: int
+
+
+class CommunityItem(BaseModel):
+    community_id: Any
+    label: str
+    layer: str
+    size: int
+
+
+class LayerGapItem(BaseModel):
+    source_layer: str
+    target_layer: str
+    edge_count: int
+    has_edges: bool
+    note: str
+
+
+class GraphAnalyticsOut(BaseModel):
+    snapshot_id: str
+    commit_sha: str
+    total_nodes: int
+    total_edges: int
+    community_nodes: int
+    cross_community_edges: int
+    isolated_nodes: int
+    layer_distribution: List[LayerDistributionItem]
+    unclassified_percent: float
+    top_hubs: List[HubNodeItem]
+    largest_communities: List[CommunityItem]
+    layer_gaps: List[LayerGapItem]
+
+
+def _graphs_admin_check(request: Request) -> Optional[Any]:
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+    return None
+
+
+def _snapshot_out(meta: Dict[str, Any]) -> GraphSnapshotOut:
+    sid = meta["id"]
+    html_bytes = read_snapshot_file(sid, "graph.html") or b""
+    json_bytes = read_snapshot_file(sid, "graph.json") or b""
+    return GraphSnapshotOut(
+        id=sid,
+        created_at=meta.get("created_at", ""),
+        commit_sha=meta.get("commit_sha", ""),
+        commit_message=meta.get("commit_message", ""),
+        is_current=bool(meta.get("is_current", False)),
+        html_size=len(html_bytes),
+        json_size=len(json_bytes),
+    )
+
+
+@router.get("/api/admin/graphs/snapshots")
+def admin_graphs_snapshots(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    return [_snapshot_out(m) for m in list_snapshots()]
+
+
+@router.get(
+    "/api/admin/graphs/snapshot/current",
+    responses={404: {"description": "No current graph snapshot"}},
+)
+def admin_graphs_current_snapshot(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    meta = current_snapshot()
+    if meta is None:
+        return _legacy_main._enterprise_error(404, "not_found", "no current graph snapshot")
+    return _snapshot_out(meta)
+
+
+@router.get(
+    "/api/admin/graphs/snapshot/current/html",
+    responses={404: {"description": "No current graph snapshot or graph.html missing"}},
+)
+def admin_graphs_current_html(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    meta = current_snapshot()
+    if meta is None:
+        return _legacy_main._enterprise_error(404, "not_found", "no current graph snapshot")
+    data = read_snapshot_file(meta["id"], "graph.html")
+    if data is None:
+        return _legacy_main._enterprise_error(404, "not_found", "graph.html not found")
+    return Response(content=data, media_type="text/html")
+
+
+@router.get(
+    "/api/admin/graphs/snapshot/current/json",
+    responses={404: {"description": "No current graph snapshot or graph JSON missing"}},
+)
+def admin_graphs_current_json(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    meta = current_snapshot()
+    if meta is None:
+        return _legacy_main._enterprise_error(404, "not_found", "no current graph snapshot")
+    # Prefer the raw graph.json artifact; fallback to nodes.json.
+    data = read_snapshot_file(meta["id"], "graph.json")
+    if data is None:
+        data = read_snapshot_file(meta["id"], "nodes.json")
+    if data is None:
+        return _legacy_main._enterprise_error(404, "not_found", "graph json not found")
+    return Response(content=data, media_type="application/json")
+
+
+@router.post("/api/admin/graphs/rebuild")
+def admin_graphs_rebuild(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    job_id = start_rebuild()
+    status = rebuild_status(job_id) or {"status": "pending"}
+    return GraphRebuildOut(job_id=job_id, status=status.get("status", "pending"))
+
+
+@router.get(
+    "/api/admin/graphs/rebuild/{job_id}",
+    responses={404: {"description": "Rebuild job not found"}},
+)
+def admin_graphs_rebuild_status(job_id: str, request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    st = rebuild_status(job_id)
+    if st is None:
+        return _legacy_main._enterprise_error(404, "not_found", "rebuild job not found")
+    return GraphRebuildStatusOut(
+        job_id=st.get("job_id", job_id),
+        status=st.get("status", "unknown"),
+        started_at=st.get("started_at"),
+        finished_at=st.get("finished_at"),
+        log=st.get("log", []),
+        error=st.get("error"),
+    )
+
+
+@router.get(
+    "/api/admin/graphs/analytics",
+    responses={404: {"description": "No current graph snapshot"}},
+)
+def admin_graphs_analytics(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    analytics = compute_analytics()
+    if analytics is None:
+        return _legacy_main._enterprise_error(404, "not_found", "no current graph snapshot")
+    return GraphAnalyticsOut(**analytics)

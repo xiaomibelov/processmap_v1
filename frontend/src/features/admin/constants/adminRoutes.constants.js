@@ -12,6 +12,7 @@ export const ADMIN_SECTIONS = {
   llm: "llm",
   agentRuns: "agent-runs",
   rag: "rag",
+  graphs: "graphs",
 };
 
 export const ADMIN_ROUTE_META = {
@@ -69,6 +70,11 @@ export const ADMIN_ROUTE_META = {
     title: ru.admin.route.rag.title,
     subtitle: ru.admin.route.rag.subtitle,
     path: "/admin/rag",
+  },
+  [ADMIN_SECTIONS.graphs]: {
+    title: ru.admin.route.graphs.title,
+    subtitle: ru.admin.route.graphs.subtitle,
+    path: "/admin/graphs",
   },
 };
 
