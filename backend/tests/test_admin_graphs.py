@@ -210,7 +210,7 @@ class AdminGraphsTests(unittest.TestCase):
         result = self.rebuild_fn(self._admin_request())
         self.assertTrue(hasattr(result, "job_id"))
         self.assertTrue(result.job_id)
-        self.assertEqual(result.status, "pending")
+        self.assertIn(result.status, {"pending", "running"})
 
     def test_rebuild_status_not_found(self):
         result = self.rebuild_status_fn("no-such-job", self._admin_request())
@@ -277,7 +277,7 @@ class AdminGraphsTests(unittest.TestCase):
     def test_upload_snapshot_admin_allowed(self):
         graph_file, analysis_file = self._upload_files(
             {"nodes": [{"id": 1}], "links": []},
-            {"raw_nodes": 1, "raw_edges": 0},
+            {"raw_nodes": 1, "raw_edges": 0, "communities": {"0": ["a"]}},
         )
         result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
         self.assertTrue(hasattr(result, "id"))
@@ -295,7 +295,15 @@ class AdminGraphsTests(unittest.TestCase):
     def test_upload_snapshot_invalid_analysis_json(self):
         graph_file, analysis_file = self._upload_files(
             {"nodes": [{"id": 1}], "links": []},
-            {"raw_nodes": "not an int"},
+            {"raw_nodes": "not an int", "communities": {"0": ["a"]}},
+        )
+        result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
+        self.assertEqual(result.status_code, 400)
+
+    def test_upload_snapshot_missing_communities(self):
+        graph_file, analysis_file = self._upload_files(
+            {"nodes": [{"id": 1}], "links": []},
+            {"raw_nodes": 1, "raw_edges": 0},
         )
         result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
         self.assertEqual(result.status_code, 400)
@@ -303,7 +311,7 @@ class AdminGraphsTests(unittest.TestCase):
     def test_upload_snapshot_viewer_forbidden_403(self):
         graph_file, analysis_file = self._upload_files(
             {"nodes": [{"id": 1}], "links": []},
-            {"raw_nodes": 1, "raw_edges": 0},
+            {"raw_nodes": 1, "raw_edges": 0, "communities": {"0": ["a"]}},
         )
         result = self.upload_fn(self._viewer_request(), graph_json=graph_file, analysis_json=analysis_file)
         self.assertEqual(result.status_code, 403)

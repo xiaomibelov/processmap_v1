@@ -1,10 +1,10 @@
 {
   "contour": "fix/admin-graphs-build-pipeline",
-  "phase": "planning",
-  "status": "PLAN_READY",
+  "phase": "execution",
+  "status": "READY_FOR_STAGE_DEPLOY",
   "blockers": [],
-  "ready_for_execution": true,
-  "next_action": "Mirror PLAN.md to Obsidian, then implement POST /api/admin/graphs/snapshots and UI upload.",
+  "ready_for_execution": false,
+  "next_action": "Deploy branch to stage, verify upload/render/403, make screenshots, open PR, await merge approve.",
   "branch": "fix/admin-graphs-build-pipeline",
   "base_commit": "7edec2c24a7bf994c4f32690c2c838eafd33b7fe",
   "related_contours": [
