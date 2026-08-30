@@ -1,0 +1,29 @@
+{
+  "contour": "fix/storage-domain-split-postmerge",
+  "type": "fix",
+  "branch": "fix/storage-domain-split-postmerge",
+  "base_commit": "ae8b78d306f80e48173cd908b354196e78fca854",
+  "origin_main": "dc030f1c118cb5dc487d85ef47d0d7608c5fa7cd",
+  "status": "READY_FOR_REVIEW",
+  "blockers": [],
+  "open_risks": [
+    "Static baseline fixture must be updated deliberately if app.storage public surface changes.",
+    "Stage validation deferred: .env.stage and EDGE_NETWORK_NAME missing locally."
+  ],
+  "test_summary": {
+    "contract": "35 passed",
+    "targeted": "50 passed",
+    "container_import": "OK",
+    "dev_import": "OK",
+    "uvicorn_health": "200",
+    "generator_determinism": "pass"
+  },
+  "artifacts": [
+    "PLAN.md",
+    "CHANGES.md",
+    "TESTS.md",
+    "PR.md",
+    "EXEC_REPORT.md",
+    "STATE.json"
+  ]
+}
