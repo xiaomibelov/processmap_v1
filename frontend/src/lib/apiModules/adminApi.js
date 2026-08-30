@@ -576,3 +576,32 @@ export async function apiAdminCancelDeploymentNotice(noticeId) {
   const r = okOrError(await request(apiRoutes.admin.deploymentNotice(id), { method: "DELETE" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+// ------- Admin Graphs -------
+export async function apiAdminGraphsListSnapshots() {
+  const r = okOrError(await request(apiRoutes.admin.graphsSnapshots(), { method: "GET" }));
+  const items = Array.isArray(r.data) ? r.data : [];
+  return r.ok ? { ok: true, status: r.status, items } : r;
+}
+
+export async function apiAdminGraphsGetCurrentSnapshot() {
+  const r = okOrError(await request(apiRoutes.admin.graphsSnapshotCurrent(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGraphsRebuild() {
+  const r = okOrError(await request(apiRoutes.admin.graphsRebuild(), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGraphsGetRebuildStatus(jobId) {
+  const id = String(jobId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing job_id" };
+  const r = okOrError(await request(apiRoutes.admin.graphsRebuildStatus(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGraphsGetAnalytics() {
+  const r = okOrError(await request(apiRoutes.admin.graphsAnalytics(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

@@ -54,6 +54,16 @@ test("apiRoutes: admin AI routes are canonical", () => {
   assert.equal(apiRoutes.admin.aiPromptArchive("prompt_1"), "/api/admin/ai/prompts/prompt_1/archive");
 });
 
+test("apiRoutes: admin graphs routes are canonical", () => {
+  assert.equal(apiRoutes.admin.graphsSnapshots(), "/api/admin/graphs/snapshots");
+  assert.equal(apiRoutes.admin.graphsSnapshotCurrent(), "/api/admin/graphs/snapshot/current");
+  assert.equal(apiRoutes.admin.graphsSnapshotCurrentHtml(), "/api/admin/graphs/snapshot/current/html");
+  assert.equal(apiRoutes.admin.graphsSnapshotCurrentJson(), "/api/admin/graphs/snapshot/current/json");
+  assert.equal(apiRoutes.admin.graphsRebuild(), "/api/admin/graphs/rebuild");
+  assert.equal(apiRoutes.admin.graphsRebuildStatus("job_1"), "/api/admin/graphs/rebuild/job_1");
+  assert.equal(apiRoutes.admin.graphsAnalytics(), "/api/admin/graphs/analytics");
+});
+
 test("apiRoutes: generated sample URLs do not have trailing slash variants", () => {
   const samples = [
     apiRoutes.auth.login(),

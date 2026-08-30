@@ -327,6 +327,13 @@ export const apiRoutes = {
     invitePermissions: (inviteId) => `/api/admin/invites/${encodeURIComponent(String(inviteId || ""))}/permissions`,
     deploymentNotices: () => "/api/admin/deployment-notices",
     deploymentNotice: (noticeId) => `/api/admin/deployment-notices/${encodeURIComponent(String(noticeId || ""))}`,
+    graphsSnapshots: () => "/api/admin/graphs/snapshots",
+    graphsSnapshotCurrent: () => "/api/admin/graphs/snapshot/current",
+    graphsSnapshotCurrentHtml: () => "/api/admin/graphs/snapshot/current/html",
+    graphsSnapshotCurrentJson: () => "/api/admin/graphs/snapshot/current/json",
+    graphsRebuild: () => "/api/admin/graphs/rebuild",
+    graphsRebuildStatus: (jobId) => `/api/admin/graphs/rebuild/${encodeURIComponent(String(jobId || ""))}`,
+    graphsAnalytics: () => "/api/admin/graphs/analytics",
   },
   featureFlags: {
     get: () => "/api/feature-flags",

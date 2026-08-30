@@ -4483,6 +4483,183 @@ paths:
       summary: Сохранить (replace) feature flags
       tags:
       - feature-flags
+  /api/admin/graphs/analytics:
+    get:
+      description: 'Получить аналитику. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_graphs_analytics_api_admin_graphs_analytics_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Analytics Api Admin Graphs Analytics
+                  Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить аналитику
+      tags:
+      - admin
+  /api/admin/graphs/rebuild:
+    post:
+      description: 'Создать/выполнить rebuild. Особенности: доступ: администратор
+        платформы/организации; тело валидируется схемой (422 при несоответствии).'
+      operationId: admin_graphs_rebuild_api_admin_graphs_rebuild_post
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Rebuild Api Admin Graphs Rebuild Post
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить rebuild
+      tags:
+      - admin
+  /api/admin/graphs/rebuild/{job_id}:
+    get:
+      description: 'Получить rebuild. Особенности: доступ: администратор платформы/организации;
+        404 — ресурс не найден/вне scope.'
+      operationId: admin_graphs_rebuild_status_api_admin_graphs_rebuild__job_id__get
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Rebuild Status Api Admin Graphs Rebuild  Job
+                  Id  Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить rebuild
+      tags:
+      - admin
+  /api/admin/graphs/snapshot/current:
+    get:
+      description: 'Получить current. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_graphs_current_snapshot_api_admin_graphs_snapshot_current_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Current Snapshot Api Admin Graphs Snapshot
+                  Current Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить current
+      tags:
+      - admin
+  /api/admin/graphs/snapshot/current/html:
+    get:
+      description: 'Получить html. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_graphs_current_html_api_admin_graphs_snapshot_current_html_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Current Html Api Admin Graphs Snapshot
+                  Current Html Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить html
+      tags:
+      - admin
+  /api/admin/graphs/snapshot/current/json:
+    get:
+      description: 'Получить json. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_graphs_current_json_api_admin_graphs_snapshot_current_json_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Current Json Api Admin Graphs Snapshot
+                  Current Json Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить json
+      tags:
+      - admin
+  /api/admin/graphs/snapshots:
+    get:
+      description: 'Получить snapshots. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_graphs_snapshots_api_admin_graphs_snapshots_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Graphs Snapshots Api Admin Graphs Snapshots
+                  Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить snapshots
+      tags:
+      - admin
   /api/admin/invites/{invite_id}/permissions:
     get:
       description: 'Получить permissions. Особенности: доступ: администратор платформы/организации;

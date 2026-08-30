@@ -74,6 +74,7 @@ export function parseAdminRoute(pathnameRaw) {
     telemetry: ru.admin.sections.telemetry,
     "ai-modules": ru.admin.sections.aiModules,
     llm: ru.admin.sections.llm,
+    graphs: ru.admin.sections.graphs,
   };
   return {
     section,
