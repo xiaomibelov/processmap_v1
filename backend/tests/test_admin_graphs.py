@@ -264,6 +264,32 @@ class AdminGraphsTests(unittest.TestCase):
         self.assertEqual(result.total_nodes, 10)
         self.assertTrue(len(result.layer_distribution) > 0)
 
+    def test_list_snapshots_excludes_current_symlink(self):
+        self._create_snapshot()
+        result = self.snapshots_fn(self._admin_request())
+        self.assertIsInstance(result, list)
+        ids = [m.id for m in result]
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(ids[0], "20260830-000000-000000")
+
+    def test_analytics_fallback_edges_from_graph_json(self):
+        snapshot_dir = self._create_snapshot()
+        # Remove raw counters from analysis.json.
+        analysis_path = snapshot_dir / ".graphify_analysis.json"
+        analysis_path.write_text(json.dumps({"communities": {}}), encoding="utf-8")
+        # Write graph.json with a few edges using the "links" key.
+        graph_path = snapshot_dir / "graph.json"
+        graph_path.write_text(
+            json.dumps({
+                "nodes": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                "links": [{"source": "a", "target": "b"}, {"source": "b", "target": "c"}],
+            }),
+            encoding="utf-8",
+        )
+        result = self.analytics_fn(self._admin_request())
+        self.assertEqual(result.total_nodes, 3)
+        self.assertEqual(result.total_edges, 2)
+
     # ── Upload tests ──────────────────────────────────────────────────────────
 
     def _upload_files(self, graph_data, analysis_data):
