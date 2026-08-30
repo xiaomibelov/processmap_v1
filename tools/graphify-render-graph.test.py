@@ -117,6 +117,123 @@ def test_render_produces_readable_html() -> None:
         assert 'id="select-all-cb"' in html
 
 
+def _write_semantic_fixture(graph_dir: Path, config_path: Path) -> None:
+    """Create a graph with frontend/backend/persistence layers and a trace scenario."""
+    G = nx.Graph()
+    nodes = [
+        ("SaveCoordinator.js", {"label": "SaveCoordinator.js", "source_file": "frontend/src/saveCoordinator.js"}),
+        ("lib/api.js", {"label": "lib/api.js", "source_file": "frontend/src/lib/api.js"}),
+        ("session_service.py", {"label": "session_service.py", "source_file": "backend/app/services/session_service.py"}),
+        ("sessions.py", {"label": "sessions.py", "source_file": "backend/app/routers/sessions.py"}),
+        ("models.py", {"label": "models.py", "source_file": "backend/app/models.py"}),
+        ("Session", {"label": "Session", "source_file": "backend/app/models.py"}),
+        ("orphan", {"label": "orphan", "source_file": "backend/app/orphan.py"}),
+    ]
+    G.add_nodes_from(nodes)
+    # Real edges within layers
+    G.add_edges_from([
+        ("SaveCoordinator.js", "lib/api.js", {"relation": "imports"}),
+        ("session_service.py", "sessions.py", {"relation": "calls"}),
+        ("session_service.py", "models.py", {"relation": "imports"}),
+        ("models.py", "Session", {"relation": "defines"}),
+    ])
+
+    graph_data = nx.node_link_data(G, edges="links")
+    (graph_dir / "graph.json").write_text(json.dumps(graph_data), encoding="utf-8")
+
+    communities = {
+        0: ["SaveCoordinator.js", "lib/api.js"],
+        1: ["session_service.py", "sessions.py"],
+        2: ["models.py", "Session"],
+        3: ["orphan"],
+    }
+    (graph_dir / ".graphify_analysis.json").write_text(
+        json.dumps({"communities": {str(k): v for k, v in communities.items()}}),
+        encoding="utf-8",
+    )
+
+    config = {
+        "layers": [
+            {"id": "frontend", "label": "FRONTEND", "color": "#4E79A7",
+             "rules": [{"path_prefix": "frontend/src/", "weight": 1.0}]},
+            {"id": "backend", "label": "BACKEND", "color": "#59A14F",
+             "rules": [{"path_prefix": "backend/app/", "weight": 1.0}]},
+            {"id": "persistence", "label": "STORAGE", "color": "#E15759",
+             "rules": [{"path_glob": "*/models.py", "weight": 1.0}, {"label_regex": "^Session$", "weight": 1.0}]},
+        ],
+        "default_layer": "unclassified",
+        "layer_zone_threshold": {"min_nodes": 2, "min_width": 50, "min_height": 50},
+        "scenarios": [
+            {
+                "id": "save-diagram",
+                "label": "Сохранение диаграммы",
+                "seeds": {
+                    "frontend": [{"path_glob": "**/saveCoordinator.js", "weight": 2.0}],
+                    "backend": [{"path_glob": "**/session_service.py", "weight": 2.0}],
+                    "persistence": [{"label_regex": "^Session$", "weight": 2.0}],
+                },
+                "max_depth": 2,
+                "note": "semantic link: no graph edge frontend↔backend",
+            }
+        ],
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+
+def test_semantic_zones_and_traces() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        graph_dir = Path(tmp) / "graphify-out"
+        graph_dir.mkdir()
+        config_path = Path(tmp) / "semantic-config.json"
+        _write_semantic_fixture(graph_dir, config_path)
+        output = graph_dir / "graph.html"
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--graph-dir", str(graph_dir),
+             "--output", str(output), "--semantic-config", str(config_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        html = output.read_text(encoding="utf-8")
+
+        # 1. Layer legend exists and includes persistence.
+        assert "LAYERS" in html
+        assert "STORAGE" in html
+        assert "FRONTEND" in html
+        assert "BACKEND" in html
+        assert 'id="zones-toggle"' in html
+        assert "toggleZones()" in html
+
+        # 2. Trace data includes semantic steps.
+        traces_match = re.search(r"const TRACES = (\[.*?\]);", html, re.DOTALL)
+        assert traces_match, "TRACES not found"
+        traces = json.loads(traces_match.group(1))
+        assert len(traces) == 1
+        trace = traces[0]
+        assert trace["id"] == "save-diagram"
+        steps = trace["steps"]
+        layers = [s["layer"] for s in steps]
+        assert "frontend" in layers
+        assert "backend" in layers
+        assert "persistence" in layers
+        semantic_steps = [s for s in steps if s.get("semantic")]
+        assert semantic_steps, "Expected at least one reconstructed semantic step"
+
+        # 3. Semantic edges are reconstructed, visually distinct from real edges.
+        sem_edges_match = re.search(r"const SEMANTIC_EDGES = (\[.*?\]);", html, re.DOTALL)
+        assert sem_edges_match, "SEMANTIC_EDGES not found"
+        sem_edges = json.loads(sem_edges_match.group(1))
+        assert len(sem_edges) >= 1
+        for e in sem_edges:
+            assert e["kind"] == "semantic"
+            assert e["dashes"] == [10, 6]
+
+        # 4. Raw vs aggregate node counts are both exposed in stats.
+        assert "raw nodes" in html
+        assert "community nodes" in html
+
+
 def test_missing_graph_json_fails() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         graph_dir = Path(tmp) / "graphify-out"
@@ -133,5 +250,6 @@ def test_missing_graph_json_fails() -> None:
 
 if __name__ == "__main__":
     test_render_produces_readable_html()
+    test_semantic_zones_and_traces()
     test_missing_graph_json_fails()
     print("OK")
