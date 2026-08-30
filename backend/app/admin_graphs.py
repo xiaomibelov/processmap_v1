@@ -185,10 +185,17 @@ def _validate_graph_json(data: Dict[str, Any]) -> None:
 
 
 def _validate_analysis_json(data: Dict[str, Any]) -> None:
-    """Validate the top-level contract of .graphify_analysis.json."""
+    """Validate the top-level contract of .graphify_analysis.json.
+
+    The render pipeline only requires a 'communities' mapping. Optional
+    integer counters (raw_nodes/raw_edges) are used by analytics when present.
+    """
+    if not isinstance(data.get("communities"), dict):
+        raise ValueError(".graphify_analysis.json must contain a 'communities' object")
     for key in ("raw_nodes", "raw_edges"):
-        if not isinstance(data.get(key), int):
-            raise ValueError(f".graphify_analysis.json must contain integer '{key}'")
+        value = data.get(key)
+        if value is not None and not isinstance(value, int):
+            raise ValueError(f".graphify_analysis.json field '{key}' must be an integer when present")
 
 
 def seed_snapshot_from_files(
