@@ -1,0 +1,2718 @@
+[
+  {
+    "name": "_bpmn_local_name",
+    "type": "FunctionDef",
+    "start": 62,
+    "end": 67,
+    "domain": "compat"
+  },
+  {
+    "name": "_count_bpmn_activities",
+    "type": "FunctionDef",
+    "start": 70,
+    "end": 83,
+    "domain": "compat"
+  },
+  {
+    "name": "_clamp_int64",
+    "type": "FunctionDef",
+    "start": 105,
+    "end": 110,
+    "domain": "compat"
+  },
+  {
+    "name": "_now_ts",
+    "type": "FunctionDef",
+    "start": 127,
+    "end": 128,
+    "domain": "compat"
+  },
+  {
+    "name": "push_storage_request_scope",
+    "type": "FunctionDef",
+    "start": 131,
+    "end": 135,
+    "domain": "compat"
+  },
+  {
+    "name": "pop_storage_request_scope",
+    "type": "FunctionDef",
+    "start": 138,
+    "end": 153,
+    "domain": "compat"
+  },
+  {
+    "name": "_scope_user_id",
+    "type": "FunctionDef",
+    "start": 156,
+    "end": 159,
+    "domain": "compat"
+  },
+  {
+    "name": "_scope_is_admin",
+    "type": "FunctionDef",
+    "start": 162,
+    "end": 165,
+    "domain": "compat"
+  },
+  {
+    "name": "_scope_org_id",
+    "type": "FunctionDef",
+    "start": 168,
+    "end": 171,
+    "domain": "compat"
+  },
+  {
+    "name": "_db_base_dir",
+    "type": "FunctionDef",
+    "start": 174,
+    "end": 178,
+    "domain": "compat"
+  },
+  {
+    "name": "_db_path",
+    "type": "FunctionDef",
+    "start": 181,
+    "end": 187,
+    "domain": "compat"
+  },
+  {
+    "name": "_RowCompat",
+    "type": "ClassDef",
+    "start": 190,
+    "end": 207,
+    "domain": "compat"
+  },
+  {
+    "name": "__init__",
+    "type": "FunctionDef",
+    "start": 193,
+    "end": 196,
+    "domain": "compat"
+  },
+  {
+    "name": "__getitem__",
+    "type": "FunctionDef",
+    "start": 198,
+    "end": 201,
+    "domain": "compat"
+  },
+  {
+    "name": "get",
+    "type": "FunctionDef",
+    "start": 203,
+    "end": 204,
+    "domain": "compat"
+  },
+  {
+    "name": "keys",
+    "type": "FunctionDef",
+    "start": 206,
+    "end": 207,
+    "domain": "compat"
+  },
+  {
+    "name": "_PgResult",
+    "type": "ClassDef",
+    "start": 210,
+    "end": 230,
+    "domain": "compat"
+  },
+  {
+    "name": "__init__",
+    "type": "FunctionDef",
+    "start": 213,
+    "end": 216,
+    "domain": "compat"
+  },
+  {
+    "name": "fetchone",
+    "type": "FunctionDef",
+    "start": 218,
+    "end": 223,
+    "domain": "compat"
+  },
+  {
+    "name": "fetchall",
+    "type": "FunctionDef",
+    "start": 225,
+    "end": 230,
+    "domain": "compat"
+  },
+  {
+    "name": "_PgCompatConnection",
+    "type": "ClassDef",
+    "start": 233,
+    "end": 281,
+    "domain": "compat"
+  },
+  {
+    "name": "__init__",
+    "type": "FunctionDef",
+    "start": 234,
+    "end": 236,
+    "domain": "compat"
+  },
+  {
+    "name": "__enter__",
+    "type": "FunctionDef",
+    "start": 238,
+    "end": 239,
+    "domain": "compat"
+  },
+  {
+    "name": "__exit__",
+    "type": "FunctionDef",
+    "start": 241,
+    "end": 249,
+    "domain": "compat"
+  },
+  {
+    "name": "close",
+    "type": "FunctionDef",
+    "start": 251,
+    "end": 259,
+    "domain": "compat"
+  },
+  {
+    "name": "commit",
+    "type": "FunctionDef",
+    "start": 261,
+    "end": 262,
+    "domain": "compat"
+  },
+  {
+    "name": "rollback",
+    "type": "FunctionDef",
+    "start": 264,
+    "end": 265,
+    "domain": "compat"
+  },
+  {
+    "name": "execute",
+    "type": "FunctionDef",
+    "start": 267,
+    "end": 281,
+    "domain": "compat"
+  },
+  {
+    "name": "_qmark_to_pyformat",
+    "type": "FunctionDef",
+    "start": 284,
+    "end": 307,
+    "domain": "compat"
+  },
+  {
+    "name": "_named_to_pyformat",
+    "type": "FunctionDef",
+    "start": 310,
+    "end": 312,
+    "domain": "compat"
+  },
+  {
+    "name": "_translate_sql_for_postgres",
+    "type": "FunctionDef",
+    "start": 315,
+    "end": 364,
+    "domain": "compat"
+  },
+  {
+    "name": "_get_pg_pool",
+    "type": "FunctionDef",
+    "start": 367,
+    "end": 384,
+    "domain": "compat"
+  },
+  {
+    "name": "_connect",
+    "type": "FunctionDef",
+    "start": 387,
+    "end": 398,
+    "domain": "compat"
+  },
+  {
+    "name": "_legacy_sessions_dir",
+    "type": "FunctionDef",
+    "start": 401,
+    "end": 403,
+    "domain": "compat"
+  },
+  {
+    "name": "_legacy_projects_dir",
+    "type": "FunctionDef",
+    "start": 406,
+    "end": 410,
+    "domain": "compat"
+  },
+  {
+    "name": "_json_dumps",
+    "type": "FunctionDef",
+    "start": 413,
+    "end": 442,
+    "domain": "compat"
+  },
+  {
+    "name": "_to_jsonable",
+    "type": "FunctionDef",
+    "start": 415,
+    "end": 437,
+    "domain": "compat"
+  },
+  {
+    "name": "_json_loads",
+    "type": "FunctionDef",
+    "start": 445,
+    "end": 455,
+    "domain": "compat"
+  },
+  {
+    "name": "_row_to_dict",
+    "type": "FunctionDef",
+    "start": 458,
+    "end": 459,
+    "domain": "compat"
+  },
+  {
+    "name": "_json_text",
+    "type": "FunctionDef",
+    "start": 462,
+    "end": 463,
+    "domain": "compat"
+  },
+  {
+    "name": "DiagramStateConflictError",
+    "type": "ClassDef",
+    "start": 466,
+    "end": 475,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "__init__",
+    "type": "FunctionDef",
+    "start": 469,
+    "end": 475,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "SessionNotFoundError",
+    "type": "ClassDef",
+    "start": 478,
+    "end": 489,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "__init__",
+    "type": "FunctionDef",
+    "start": 487,
+    "end": 489,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "SessionTitleConflictError",
+    "type": "ClassDef",
+    "start": 492,
+    "end": 493,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_is_integrity_error",
+    "type": "FunctionDef",
+    "start": 496,
+    "end": 501,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_parse_json_text",
+    "type": "FunctionDef",
+    "start": 504,
+    "end": 505,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "list_process_property_metadata",
+    "type": "FunctionDef",
+    "start": 595,
+    "end": 616,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "get_process_property_metadata",
+    "type": "FunctionDef",
+    "start": 619,
+    "end": 639,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "upsert_process_property_metadata",
+    "type": "FunctionDef",
+    "start": 642,
+    "end": 718,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "list_reference_options",
+    "type": "FunctionDef",
+    "start": 721,
+    "end": 754,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "_seed_process_property_metadata",
+    "type": "FunctionDef",
+    "start": 757,
+    "end": 814,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "_seed_reference_tables",
+    "type": "FunctionDef",
+    "start": 817,
+    "end": 858,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "_build_diagram_truth_payload",
+    "type": "FunctionDef",
+    "start": 861,
+    "end": 873,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_without_session_companion_meta",
+    "type": "FunctionDef",
+    "start": 876,
+    "end": 883,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "build_session_version_payload",
+    "type": "FunctionDef",
+    "start": 886,
+    "end": 901,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "session_version_payload_hash",
+    "type": "FunctionDef",
+    "start": 904,
+    "end": 911,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_diagram_truth_payload_hash",
+    "type": "FunctionDef",
+    "start": 914,
+    "end": 921,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_owner_clause",
+    "type": "FunctionDef",
+    "start": 924,
+    "end": 927,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_org_clause",
+    "type": "FunctionDef",
+    "start": 930,
+    "end": 934,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_session_read_scope",
+    "type": "FunctionDef",
+    "start": 937,
+    "end": 977,
+    "domain": "compat"
+  },
+  {
+    "name": "_session_read_scope_filter",
+    "type": "FunctionDef",
+    "start": 980,
+    "end": 1007,
+    "domain": "compat"
+  },
+  {
+    "name": "_session_read_scope_filters",
+    "type": "FunctionDef",
+    "start": 1010,
+    "end": 1038,
+    "domain": "compat"
+  },
+  {
+    "name": "_row_value",
+    "type": "FunctionDef",
+    "start": 1041,
+    "end": 1055,
+    "domain": "compat"
+  },
+  {
+    "name": "_column_exists",
+    "type": "FunctionDef",
+    "start": 1058,
+    "end": 1068,
+    "domain": "compat"
+  },
+  {
+    "name": "_table_exists",
+    "type": "FunctionDef",
+    "start": 1071,
+    "end": 1087,
+    "domain": "compat"
+  },
+  {
+    "name": "_normalize_git_mirror_provider",
+    "type": "FunctionDef",
+    "start": 1090,
+    "end": 1092,
+    "domain": "compat"
+  },
+  {
+    "name": "_normalize_git_mirror_health_status",
+    "type": "FunctionDef",
+    "start": 1095,
+    "end": 1097,
+    "domain": "compat"
+  },
+  {
+    "name": "_normalize_note_scope",
+    "type": "FunctionDef",
+    "start": 1105,
+    "end": 1115,
+    "domain": "compat"
+  },
+  {
+    "name": "_normalize_note_status",
+    "type": "FunctionDef",
+    "start": 1118,
+    "end": 1122,
+    "domain": "utils"
+  },
+  {
+    "name": "_normalize_note_priority",
+    "type": "FunctionDef",
+    "start": 1125,
+    "end": 1129,
+    "domain": "utils"
+  },
+  {
+    "name": "_normalize_bool_flag",
+    "type": "FunctionDef",
+    "start": 1132,
+    "end": 1143,
+    "domain": "utils"
+  },
+  {
+    "name": "_note_thread_row_to_dict",
+    "type": "FunctionDef",
+    "start": 1146,
+    "end": 1174,
+    "domain": "utils"
+  },
+  {
+    "name": "_note_comment_row_to_dict",
+    "type": "FunctionDef",
+    "start": 1177,
+    "end": 1192,
+    "domain": "utils"
+  },
+  {
+    "name": "_note_comment_body_preview",
+    "type": "FunctionDef",
+    "start": 1195,
+    "end": 1207,
+    "domain": "utils"
+  },
+  {
+    "name": "_note_notification_plain_preview",
+    "type": "FunctionDef",
+    "start": 1210,
+    "end": 1216,
+    "domain": "utils"
+  },
+  {
+    "name": "_note_thread_title_from_scope",
+    "type": "FunctionDef",
+    "start": 1219,
+    "end": 1238,
+    "domain": "utils"
+  },
+  {
+    "name": "_comment_author_display",
+    "type": "FunctionDef",
+    "start": 1241,
+    "end": 1244,
+    "domain": "utils"
+  },
+  {
+    "name": "_apply_note_comment_reply_summaries",
+    "type": "FunctionDef",
+    "start": 1247,
+    "end": 1268,
+    "domain": "utils"
+  },
+  {
+    "name": "_note_mention_row_to_dict",
+    "type": "FunctionDef",
+    "start": 1271,
+    "end": 1283,
+    "domain": "utils"
+  },
+  {
+    "name": "_auth_user_profiles_by_id_with_connection",
+    "type": "FunctionDef",
+    "start": 1286,
+    "end": 1300,
+    "domain": "utils"
+  },
+  {
+    "name": "_apply_note_author_profiles",
+    "type": "FunctionDef",
+    "start": 1303,
+    "end": 1324,
+    "domain": "utils"
+  },
+  {
+    "name": "_project_workspace_id_for_session",
+    "type": "FunctionDef",
+    "start": 1327,
+    "end": 1337,
+    "domain": "utils"
+  },
+  {
+    "name": "_opt_text",
+    "type": "FunctionDef",
+    "start": 1340,
+    "end": 1342,
+    "domain": "utils"
+  },
+  {
+    "name": "_org_git_mirror_payload",
+    "type": "FunctionDef",
+    "start": 1345,
+    "end": 1372,
+    "domain": "utils"
+  },
+  {
+    "name": "_ensure_schema",
+    "type": "FunctionDef",
+    "start": 1375,
+    "end": 2949,
+    "domain": "compat"
+  },
+  {
+    "name": "get_rag_settings",
+    "type": "FunctionDef",
+    "start": 2952,
+    "end": 2984,
+    "domain": "platform"
+  },
+  {
+    "name": "get_feature_flags",
+    "type": "FunctionDef",
+    "start": 2987,
+    "end": 2993,
+    "domain": "platform"
+  },
+  {
+    "name": "get_feature_flag",
+    "type": "FunctionDef",
+    "start": 2996,
+    "end": 3002,
+    "domain": "platform"
+  },
+  {
+    "name": "set_feature_flag",
+    "type": "FunctionDef",
+    "start": 3005,
+    "end": 3015,
+    "domain": "platform"
+  },
+  {
+    "name": "create_deployment_notice",
+    "type": "FunctionDef",
+    "start": 3018,
+    "end": 3043,
+    "domain": "platform"
+  },
+  {
+    "name": "get_deployment_notice",
+    "type": "FunctionDef",
+    "start": 3046,
+    "end": 3057,
+    "domain": "platform"
+  },
+  {
+    "name": "list_deployment_notices",
+    "type": "FunctionDef",
+    "start": 3060,
+    "end": 3073,
+    "domain": "platform"
+  },
+  {
+    "name": "get_active_deployment_notice",
+    "type": "FunctionDef",
+    "start": 3076,
+    "end": 3095,
+    "domain": "platform"
+  },
+  {
+    "name": "cancel_deployment_notice",
+    "type": "FunctionDef",
+    "start": 3098,
+    "end": 3105,
+    "domain": "platform"
+  },
+  {
+    "name": "_format_deployment_notice_row",
+    "type": "FunctionDef",
+    "start": 3108,
+    "end": 3117,
+    "domain": "platform"
+  },
+  {
+    "name": "_meta_get",
+    "type": "FunctionDef",
+    "start": 3120,
+    "end": 3124,
+    "domain": "platform"
+  },
+  {
+    "name": "_meta_set",
+    "type": "FunctionDef",
+    "start": 3127,
+    "end": 3134,
+    "domain": "platform"
+  },
+  {
+    "name": "_read_legacy_json",
+    "type": "FunctionDef",
+    "start": 3137,
+    "end": 3142,
+    "domain": "compat"
+  },
+  {
+    "name": "_maybe_migrate_legacy_files",
+    "type": "FunctionDef",
+    "start": 3145,
+    "end": 3238,
+    "domain": "compat"
+  },
+  {
+    "name": "_default_org_id",
+    "type": "FunctionDef",
+    "start": 3241,
+    "end": 3242,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_default_org_name",
+    "type": "FunctionDef",
+    "start": 3245,
+    "end": 3246,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_default_workspace_name",
+    "type": "FunctionDef",
+    "start": 3249,
+    "end": 3250,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_default_workspace_id",
+    "type": "FunctionDef",
+    "start": 3253,
+    "end": 3255,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_read_auth_users_rows",
+    "type": "FunctionDef",
+    "start": 3258,
+    "end": 3272,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_as_int_bool",
+    "type": "FunctionDef",
+    "start": 3275,
+    "end": 3284,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_auth_user_from_mapping",
+    "type": "FunctionDef",
+    "start": 3287,
+    "end": 3323,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_auth_user_row_to_dict",
+    "type": "FunctionDef",
+    "start": 3326,
+    "end": 3343,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_auth_user_insert_params",
+    "type": "FunctionDef",
+    "start": 3346,
+    "end": 3363,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_insert_auth_user_ignore",
+    "type": "FunctionDef",
+    "start": 3366,
+    "end": 3379,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_upsert_auth_user",
+    "type": "FunctionDef",
+    "start": 3382,
+    "end": 3409,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_ensure_auth_users_backfill",
+    "type": "FunctionDef",
+    "start": 3412,
+    "end": 3420,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_users_has_role_column",
+    "type": "FunctionDef",
+    "start": 3426,
+    "end": 3438,
+    "domain": "compat"
+  },
+  {
+    "name": "_get_auth_user_by_id_with_connection",
+    "type": "FunctionDef",
+    "start": 3441,
+    "end": 3457,
+    "domain": "compat"
+  },
+  {
+    "name": "_get_auth_user_by_email_with_connection",
+    "type": "FunctionDef",
+    "start": 3460,
+    "end": 3476,
+    "domain": "compat"
+  },
+  {
+    "name": "_merge_auth_user_profile_with_connection",
+    "type": "FunctionDef",
+    "start": 3479,
+    "end": 3515,
+    "domain": "compat"
+  },
+  {
+    "name": "list_auth_users",
+    "type": "FunctionDef",
+    "start": 3518,
+    "end": 3530,
+    "domain": "compat"
+  },
+  {
+    "name": "save_auth_users",
+    "type": "FunctionDef",
+    "start": 3533,
+    "end": 3539,
+    "domain": "compat"
+  },
+  {
+    "name": "get_auth_user_by_email",
+    "type": "FunctionDef",
+    "start": 3542,
+    "end": 3545,
+    "domain": "compat"
+  },
+  {
+    "name": "get_auth_user_by_id",
+    "type": "FunctionDef",
+    "start": 3548,
+    "end": 3551,
+    "domain": "org_auth"
+  },
+  {
+    "name": "create_auth_user",
+    "type": "FunctionDef",
+    "start": 3554,
+    "end": 3567,
+    "domain": "org_auth"
+  },
+  {
+    "name": "update_auth_user",
+    "type": "FunctionDef",
+    "start": 3570,
+    "end": 3614,
+    "domain": "org_auth"
+  },
+  {
+    "name": "merge_auth_user_profile",
+    "type": "FunctionDef",
+    "start": 3617,
+    "end": 3627,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_ensure_workspace_folder_backfill",
+    "type": "FunctionDef",
+    "start": 3634,
+    "end": 3707,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_ensure_enterprise_bootstrap",
+    "type": "FunctionDef",
+    "start": 3710,
+    "end": 3837,
+    "domain": "compat"
+  },
+  {
+    "name": "_ensure_workspace_record",
+    "type": "FunctionDef",
+    "start": 3840,
+    "end": 3882,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_ensure_org_workspaces_bootstrap",
+    "type": "FunctionDef",
+    "start": 3885,
+    "end": 3931,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_session_row_to_model",
+    "type": "FunctionDef",
+    "start": 3934,
+    "end": 3989,
+    "domain": "compat"
+  },
+  {
+    "name": "_suggestion_row_to_dict",
+    "type": "FunctionDef",
+    "start": 3992,
+    "end": 4007,
+    "domain": "compat"
+  },
+  {
+    "name": "_project_row_to_model",
+    "type": "FunctionDef",
+    "start": 4010,
+    "end": 4030,
+    "domain": "compat"
+  },
+  {
+    "name": "Storage",
+    "type": "ClassDef",
+    "start": 4034,
+    "end": 5960,
+    "domain": "compat"
+  },
+  {
+    "name": "__post_init__",
+    "type": "FunctionDef",
+    "start": 4038,
+    "end": 4040,
+    "domain": "compat"
+  },
+  {
+    "name": "create",
+    "type": "FunctionDef",
+    "start": 4042,
+    "end": 4110,
+    "domain": "compat"
+  },
+  {
+    "name": "load",
+    "type": "FunctionDef",
+    "start": 4112,
+    "end": 4149,
+    "domain": "compat"
+  },
+  {
+    "name": "list_product_action_suggestions",
+    "type": "FunctionDef",
+    "start": 4151,
+    "end": 4176,
+    "domain": "compat"
+  },
+  {
+    "name": "upsert_product_action_suggestion",
+    "type": "FunctionDef",
+    "start": 4178,
+    "end": 4243,
+    "domain": "compat"
+  },
+  {
+    "name": "delete_product_action_suggestions",
+    "type": "FunctionDef",
+    "start": 4245,
+    "end": 4270,
+    "domain": "compat"
+  },
+  {
+    "name": "get_rag_readiness",
+    "type": "FunctionDef",
+    "start": 4272,
+    "end": 4286,
+    "domain": "compat"
+  },
+  {
+    "name": "set_rag_readiness",
+    "type": "FunctionDef",
+    "start": 4288,
+    "end": 4302,
+    "domain": "compat"
+  },
+  {
+    "name": "list_sessions_by_rag_status",
+    "type": "FunctionDef",
+    "start": 4304,
+    "end": 4340,
+    "domain": "compat"
+  },
+  {
+    "name": "load_session_projection",
+    "type": "FunctionDef",
+    "start": 4342,
+    "end": 4417,
+    "domain": "compat"
+  },
+  {
+    "name": "count_bpmn_versions",
+    "type": "FunctionDef",
+    "start": 4419,
+    "end": 4455,
+    "domain": "compat"
+  },
+  {
+    "name": "count_note_threads",
+    "type": "FunctionDef",
+    "start": 4457,
+    "end": 4486,
+    "domain": "compat"
+  },
+  {
+    "name": "find_by_parent_element",
+    "type": "FunctionDef",
+    "start": 4488,
+    "end": 4507,
+    "domain": "compat"
+  },
+  {
+    "name": "find_or_create_child_session",
+    "type": "FunctionDef",
+    "start": 4509,
+    "end": 4662,
+    "domain": "compat"
+  },
+  {
+    "name": "soft_delete_children_by_parent",
+    "type": "FunctionDef",
+    "start": 4664,
+    "end": 4723,
+    "domain": "compat"
+  },
+  {
+    "name": "save",
+    "type": "FunctionDef",
+    "start": 4725,
+    "end": 5048,
+    "domain": "compat"
+  },
+  {
+    "name": "patch_session_meta",
+    "type": "FunctionDef",
+    "start": 5050,
+    "end": 5122,
+    "domain": "compat"
+  },
+  {
+    "name": "patch_session_interview",
+    "type": "FunctionDef",
+    "start": 5124,
+    "end": 5176,
+    "domain": "compat"
+  },
+  {
+    "name": "delete",
+    "type": "FunctionDef",
+    "start": 5178,
+    "end": 5201,
+    "domain": "compat"
+  },
+  {
+    "name": "rename",
+    "type": "FunctionDef",
+    "start": 5203,
+    "end": 5217,
+    "domain": "compat"
+  },
+  {
+    "name": "list",
+    "type": "FunctionDef",
+    "start": 5219,
+    "end": 5267,
+    "domain": "compat"
+  },
+  {
+    "name": "list_project_session_summaries",
+    "type": "FunctionDef",
+    "start": 5269,
+    "end": 5387,
+    "domain": "compat"
+  },
+  {
+    "name": "list_product_action_registry_sources",
+    "type": "FunctionDef",
+    "start": 5389,
+    "end": 5492,
+    "domain": "compat"
+  },
+  {
+    "name": "list_process_properties_registry_sources",
+    "type": "FunctionDef",
+    "start": 5494,
+    "end": 5594,
+    "domain": "compat"
+  },
+  {
+    "name": "_insert_bpmn_version_row",
+    "type": "FunctionDef",
+    "start": 5596,
+    "end": 5675,
+    "domain": "compat"
+  },
+  {
+    "name": "create_bpmn_version_snapshot",
+    "type": "FunctionDef",
+    "start": 5677,
+    "end": 5728,
+    "domain": "compat"
+  },
+  {
+    "name": "list_bpmn_versions",
+    "type": "FunctionDef",
+    "start": 5730,
+    "end": 5807,
+    "domain": "compat"
+  },
+  {
+    "name": "list_bpmn_version_numbers_by_source_actions",
+    "type": "FunctionDef",
+    "start": 5809,
+    "end": 5849,
+    "domain": "compat"
+  },
+  {
+    "name": "get_bpmn_version",
+    "type": "FunctionDef",
+    "start": 5851,
+    "end": 5903,
+    "domain": "compat"
+  },
+  {
+    "name": "list_session_state_versions",
+    "type": "FunctionDef",
+    "start": 5905,
+    "end": 5960,
+    "domain": "compat"
+  },
+  {
+    "name": "gen_project_id",
+    "type": "FunctionDef",
+    "start": 5963,
+    "end": 5964,
+    "domain": "compat"
+  },
+  {
+    "name": "ProjectStorage",
+    "type": "ClassDef",
+    "start": 5967,
+    "end": 6157,
+    "domain": "compat"
+  },
+  {
+    "name": "__init__",
+    "type": "FunctionDef",
+    "start": 5969,
+    "end": 5972,
+    "domain": "compat"
+  },
+  {
+    "name": "create",
+    "type": "FunctionDef",
+    "start": 5974,
+    "end": 6015,
+    "domain": "compat"
+  },
+  {
+    "name": "list",
+    "type": "FunctionDef",
+    "start": 6017,
+    "end": 6036,
+    "domain": "compat"
+  },
+  {
+    "name": "load",
+    "type": "FunctionDef",
+    "start": 6038,
+    "end": 6062,
+    "domain": "compat"
+  },
+  {
+    "name": "save",
+    "type": "FunctionDef",
+    "start": 6064,
+    "end": 6132,
+    "domain": "compat"
+  },
+  {
+    "name": "delete",
+    "type": "FunctionDef",
+    "start": 6134,
+    "end": 6157,
+    "domain": "compat"
+  },
+  {
+    "name": "get_default_org_id",
+    "type": "FunctionDef",
+    "start": 6160,
+    "end": 6161,
+    "domain": "org_auth"
+  },
+  {
+    "name": "count_org_records",
+    "type": "FunctionDef",
+    "start": 6164,
+    "end": 6168,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_org_records",
+    "type": "FunctionDef",
+    "start": 6171,
+    "end": 6207,
+    "domain": "org_auth"
+  },
+  {
+    "name": "read_user_org_memberships_fast",
+    "type": "FunctionDef",
+    "start": 6210,
+    "end": 6289,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_user_org_memberships",
+    "type": "FunctionDef",
+    "start": 6292,
+    "end": 6382,
+    "domain": "org_auth"
+  },
+  {
+    "name": "user_has_org_membership",
+    "type": "FunctionDef",
+    "start": 6385,
+    "end": 6391,
+    "domain": "org_auth"
+  },
+  {
+    "name": "resolve_active_org_id",
+    "type": "FunctionDef",
+    "start": 6394,
+    "end": 6419,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_is_active",
+    "type": "FunctionDef",
+    "start": 6405,
+    "end": 6409,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_user_org_role",
+    "type": "FunctionDef",
+    "start": 6422,
+    "end": 6431,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_workspace_record",
+    "type": "FunctionDef",
+    "start": 6434,
+    "end": 6470,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_org_workspaces",
+    "type": "FunctionDef",
+    "start": 6473,
+    "end": 6500,
+    "domain": "org_auth"
+  },
+  {
+    "name": "create_workspace_record",
+    "type": "FunctionDef",
+    "start": 6503,
+    "end": 6527,
+    "domain": "org_auth"
+  },
+  {
+    "name": "rename_workspace_record",
+    "type": "FunctionDef",
+    "start": 6530,
+    "end": 6563,
+    "domain": "org_auth"
+  },
+  {
+    "name": "create_org_record",
+    "type": "FunctionDef",
+    "start": 6566,
+    "end": 6631,
+    "domain": "org_auth"
+  },
+  {
+    "name": "set_org_active",
+    "type": "FunctionDef",
+    "start": 6634,
+    "end": 6680,
+    "domain": "org_auth"
+  },
+  {
+    "name": "is_org_active",
+    "type": "FunctionDef",
+    "start": 6683,
+    "end": 6694,
+    "domain": "org_auth"
+  },
+  {
+    "name": "rename_org_record",
+    "type": "FunctionDef",
+    "start": 6697,
+    "end": 6752,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_org_git_mirror_config",
+    "type": "FunctionDef",
+    "start": 6755,
+    "end": 6783,
+    "domain": "org_auth"
+  },
+  {
+    "name": "update_org_git_mirror_config",
+    "type": "FunctionDef",
+    "start": 6786,
+    "end": 6847,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_current_mirror_version",
+    "type": "FunctionDef",
+    "start": 6850,
+    "end": 6867,
+    "domain": "org_auth"
+  },
+  {
+    "name": "increment_and_get_next_version",
+    "type": "FunctionDef",
+    "start": 6870,
+    "end": 6903,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_project_membership_role",
+    "type": "FunctionDef",
+    "start": 6906,
+    "end": 6924,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_org_membership_role",
+    "type": "FunctionDef",
+    "start": 6927,
+    "end": 6954,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_permission_template_for_role",
+    "type": "FunctionDef",
+    "start": 6960,
+    "end": 6968,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_membership_permissions",
+    "type": "FunctionDef",
+    "start": 6971,
+    "end": 6985,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_admin_entity_permission_defaults",
+    "type": "FunctionDef",
+    "start": 6988,
+    "end": 7008,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_admin_entity_permission_keys",
+    "type": "FunctionDef",
+    "start": 7011,
+    "end": 7018,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_admin_entity_permissions",
+    "type": "FunctionDef",
+    "start": 7021,
+    "end": 7030,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_admin_entity_permissions",
+    "type": "FunctionDef",
+    "start": 7033,
+    "end": 7072,
+    "domain": "compat"
+  },
+  {
+    "name": "upsert_admin_entity_permission",
+    "type": "FunctionDef",
+    "start": 7075,
+    "end": 7112,
+    "domain": "compat"
+  },
+  {
+    "name": "upsert_admin_entity_permission_by_role",
+    "type": "FunctionDef",
+    "start": 7115,
+    "end": 7123,
+    "domain": "compat"
+  },
+  {
+    "name": "delete_admin_entity_permission",
+    "type": "FunctionDef",
+    "start": 7126,
+    "end": 7144,
+    "domain": "compat"
+  },
+  {
+    "name": "delete_admin_entity_permission_by_role",
+    "type": "FunctionDef",
+    "start": 7147,
+    "end": 7148,
+    "domain": "compat"
+  },
+  {
+    "name": "list_org_workspaces",
+    "type": "FunctionDef",
+    "start": 7151,
+    "end": 7157,
+    "domain": "compat"
+  },
+  {
+    "name": "list_org_workspace_folders",
+    "type": "FunctionDef",
+    "start": 7160,
+    "end": 7171,
+    "domain": "compat"
+  },
+  {
+    "name": "get_admin_invite_permissions",
+    "type": "FunctionDef",
+    "start": 7174,
+    "end": 7180,
+    "domain": "compat"
+  },
+  {
+    "name": "set_admin_invite_permissions",
+    "type": "FunctionDef",
+    "start": 7183,
+    "end": 7195,
+    "domain": "compat"
+  },
+  {
+    "name": "_normalize_org_invite_role",
+    "type": "FunctionDef",
+    "start": 7198,
+    "end": 7202,
+    "domain": "compat"
+  },
+  {
+    "name": "_normalize_email",
+    "type": "FunctionDef",
+    "start": 7205,
+    "end": 7206,
+    "domain": "compat"
+  },
+  {
+    "name": "_invite_status",
+    "type": "FunctionDef",
+    "start": 7209,
+    "end": 7217,
+    "domain": "compat"
+  },
+  {
+    "name": "_invite_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7220,
+    "end": 7258,
+    "domain": "compat"
+  },
+  {
+    "name": "_col",
+    "type": "FunctionDef",
+    "start": 7223,
+    "end": 7224,
+    "domain": "compat"
+  },
+  {
+    "name": "_audit_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7261,
+    "end": 7274,
+    "domain": "compat"
+  },
+  {
+    "name": "_ai_execution_log_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7277,
+    "end": 7305,
+    "domain": "compat"
+  },
+  {
+    "name": "_ai_prompt_version_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7308,
+    "end": 7328,
+    "domain": "compat"
+  },
+  {
+    "name": "_error_event_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7331,
+    "end": 7354,
+    "domain": "compat"
+  },
+  {
+    "name": "_hash_invite_token",
+    "type": "FunctionDef",
+    "start": 7357,
+    "end": 7358,
+    "domain": "compat"
+  },
+  {
+    "name": "list_project_memberships",
+    "type": "FunctionDef",
+    "start": 7361,
+    "end": 7404,
+    "domain": "project"
+  },
+  {
+    "name": "upsert_project_membership",
+    "type": "FunctionDef",
+    "start": 7407,
+    "end": 7443,
+    "domain": "project"
+  },
+  {
+    "name": "delete_project_membership",
+    "type": "FunctionDef",
+    "start": 7446,
+    "end": 7462,
+    "domain": "project"
+  },
+  {
+    "name": "list_org_memberships",
+    "type": "FunctionDef",
+    "start": 7465,
+    "end": 7491,
+    "domain": "org_auth"
+  },
+  {
+    "name": "upsert_org_membership",
+    "type": "FunctionDef",
+    "start": 7494,
+    "end": 7544,
+    "domain": "org_auth"
+  },
+  {
+    "name": "delete_org_membership",
+    "type": "FunctionDef",
+    "start": 7547,
+    "end": 7562,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_group_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7567,
+    "end": 7577,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_group_member_user_row",
+    "type": "FunctionDef",
+    "start": 7580,
+    "end": 7588,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_org_groups",
+    "type": "FunctionDef",
+    "start": 7591,
+    "end": 7618,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_org_group",
+    "type": "FunctionDef",
+    "start": 7621,
+    "end": 7650,
+    "domain": "org_auth"
+  },
+  {
+    "name": "create_org_group",
+    "type": "FunctionDef",
+    "start": 7653,
+    "end": 7693,
+    "domain": "org_auth"
+  },
+  {
+    "name": "update_org_group",
+    "type": "FunctionDef",
+    "start": 7696,
+    "end": 7751,
+    "domain": "org_auth"
+  },
+  {
+    "name": "delete_org_group",
+    "type": "FunctionDef",
+    "start": 7754,
+    "end": 7764,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_group_members",
+    "type": "FunctionDef",
+    "start": 7767,
+    "end": 7791,
+    "domain": "org_auth"
+  },
+  {
+    "name": "add_group_member",
+    "type": "FunctionDef",
+    "start": 7794,
+    "end": 7825,
+    "domain": "org_auth"
+  },
+  {
+    "name": "remove_group_member",
+    "type": "FunctionDef",
+    "start": 7828,
+    "end": 7845,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_user_groups",
+    "type": "FunctionDef",
+    "start": 7848,
+    "end": 7878,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_users_group_memberships",
+    "type": "FunctionDef",
+    "start": 7881,
+    "end": 7937,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_template_scope",
+    "type": "FunctionDef",
+    "start": 7940,
+    "end": 7942,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_template_folder_id",
+    "type": "FunctionDef",
+    "start": 7945,
+    "end": 7946,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_normalize_template_type",
+    "type": "FunctionDef",
+    "start": 7949,
+    "end": 7955,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_template_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7958,
+    "end": 7979,
+    "domain": "org_auth"
+  },
+  {
+    "name": "_template_folder_row_to_dict",
+    "type": "FunctionDef",
+    "start": 7982,
+    "end": 7993,
+    "domain": "org_auth"
+  },
+  {
+    "name": "list_template_folders",
+    "type": "FunctionDef",
+    "start": 7996,
+    "end": 8024,
+    "domain": "explorer"
+  },
+  {
+    "name": "get_template_folder",
+    "type": "FunctionDef",
+    "start": 8027,
+    "end": 8044,
+    "domain": "explorer"
+  },
+  {
+    "name": "_validate_folder_parent",
+    "type": "FunctionDef",
+    "start": 8047,
+    "end": 8083,
+    "domain": "explorer"
+  },
+  {
+    "name": "create_template_folder",
+    "type": "FunctionDef",
+    "start": 8086,
+    "end": 8129,
+    "domain": "explorer"
+  },
+  {
+    "name": "update_template_folder",
+    "type": "FunctionDef",
+    "start": 8132,
+    "end": 8174,
+    "domain": "explorer"
+  },
+  {
+    "name": "delete_template_folder",
+    "type": "FunctionDef",
+    "start": 8177,
+    "end": 8187,
+    "domain": "explorer"
+  },
+  {
+    "name": "list_templates",
+    "type": "FunctionDef",
+    "start": 8190,
+    "end": 8221,
+    "domain": "templates_legacy"
+  },
+  {
+    "name": "get_template",
+    "type": "FunctionDef",
+    "start": 8224,
+    "end": 8241,
+    "domain": "templates_legacy"
+  },
+  {
+    "name": "create_template",
+    "type": "FunctionDef",
+    "start": 8244,
+    "end": 8297,
+    "domain": "templates_legacy"
+  },
+  {
+    "name": "update_template",
+    "type": "FunctionDef",
+    "start": 8300,
+    "end": 8347,
+    "domain": "templates_legacy"
+  },
+  {
+    "name": "delete_template",
+    "type": "FunctionDef",
+    "start": 8350,
+    "end": 8358,
+    "domain": "templates_legacy"
+  },
+  {
+    "name": "_normalize_org_property_dictionary_key",
+    "type": "FunctionDef",
+    "start": 8361,
+    "end": 8368,
+    "domain": "utils"
+  },
+  {
+    "name": "_normalize_org_property_dictionary_label",
+    "type": "FunctionDef",
+    "start": 8371,
+    "end": 8375,
+    "domain": "utils"
+  },
+  {
+    "name": "_normalize_org_property_dictionary_input_mode",
+    "type": "FunctionDef",
+    "start": 8378,
+    "end": 8382,
+    "domain": "utils"
+  },
+  {
+    "name": "_normalize_org_property_dictionary_bool",
+    "type": "FunctionDef",
+    "start": 8385,
+    "end": 8395,
+    "domain": "utils"
+  },
+  {
+    "name": "_org_property_dictionary_operation_row_to_dict",
+    "type": "FunctionDef",
+    "start": 8398,
+    "end": 8415,
+    "domain": "compat"
+  },
+  {
+    "name": "_org_property_dictionary_definition_row_to_dict",
+    "type": "FunctionDef",
+    "start": 8418,
+    "end": 8442,
+    "domain": "compat"
+  },
+  {
+    "name": "_org_property_dictionary_value_row_to_dict",
+    "type": "FunctionDef",
+    "start": 8445,
+    "end": 8464,
+    "domain": "compat"
+  },
+  {
+    "name": "list_org_property_dictionary_operations",
+    "type": "FunctionDef",
+    "start": 8467,
+    "end": 8490,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "get_org_property_dictionary_operation",
+    "type": "FunctionDef",
+    "start": 8493,
+    "end": 8509,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "upsert_org_property_dictionary_operation",
+    "type": "FunctionDef",
+    "start": 8512,
+    "end": 8565,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "list_org_property_dictionary_definitions",
+    "type": "FunctionDef",
+    "start": 8568,
+    "end": 8593,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "get_org_property_dictionary_definition",
+    "type": "FunctionDef",
+    "start": 8596,
+    "end": 8613,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "upsert_org_property_dictionary_definition",
+    "type": "FunctionDef",
+    "start": 8616,
+    "end": 8688,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "delete_org_property_dictionary_definition",
+    "type": "FunctionDef",
+    "start": 8691,
+    "end": 8708,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "list_org_property_dictionary_values",
+    "type": "FunctionDef",
+    "start": 8711,
+    "end": 8738,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "get_org_property_dictionary_value_by_id",
+    "type": "FunctionDef",
+    "start": 8741,
+    "end": 8757,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "upsert_org_property_dictionary_value",
+    "type": "FunctionDef",
+    "start": 8760,
+    "end": 8829,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "update_org_property_dictionary_value",
+    "type": "FunctionDef",
+    "start": 8832,
+    "end": 8883,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "delete_org_property_dictionary_value",
+    "type": "FunctionDef",
+    "start": 8886,
+    "end": 8898,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "get_org_property_dictionary_bundle",
+    "type": "FunctionDef",
+    "start": 8901,
+    "end": 8934,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "list_org_invites",
+    "type": "FunctionDef",
+    "start": 8937,
+    "end": 8965,
+    "domain": "org_auth"
+  },
+  {
+    "name": "create_org_invite",
+    "type": "FunctionDef",
+    "start": 8968,
+    "end": 9083,
+    "domain": "org_auth"
+  },
+  {
+    "name": "delete_org_invite",
+    "type": "FunctionDef",
+    "start": 9086,
+    "end": 9101,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_org_invite_by_id",
+    "type": "FunctionDef",
+    "start": 9104,
+    "end": 9125,
+    "domain": "org_auth"
+  },
+  {
+    "name": "promote_regenerated_org_invite",
+    "type": "FunctionDef",
+    "start": 9128,
+    "end": 9185,
+    "domain": "org_auth"
+  },
+  {
+    "name": "preview_org_invite",
+    "type": "FunctionDef",
+    "start": 9188,
+    "end": 9238,
+    "domain": "org_auth"
+  },
+  {
+    "name": "accept_org_invite",
+    "type": "FunctionDef",
+    "start": 9241,
+    "end": 9339,
+    "domain": "org_auth"
+  },
+  {
+    "name": "revoke_org_invite",
+    "type": "FunctionDef",
+    "start": 9342,
+    "end": 9368,
+    "domain": "org_auth"
+  },
+  {
+    "name": "cleanup_org_invites",
+    "type": "FunctionDef",
+    "start": 9371,
+    "end": 9400,
+    "domain": "org_auth"
+  },
+  {
+    "name": "append_audit_log",
+    "type": "FunctionDef",
+    "start": 9403,
+    "end": 9473,
+    "domain": "org_auth"
+  },
+  {
+    "name": "get_user_preferences",
+    "type": "FunctionDef",
+    "start": 9479,
+    "end": 9505,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "apply_user_preferences_patch",
+    "type": "FunctionDef",
+    "start": 9508,
+    "end": 9573,
+    "domain": "dictionaries"
+  },
+  {
+    "name": "_build_audit_log_where",
+    "type": "FunctionDef",
+    "start": 9576,
+    "end": 9627,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "list_audit_log",
+    "type": "FunctionDef",
+    "start": 9630,
+    "end": 9671,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "count_audit_log",
+    "type": "FunctionDef",
+    "start": 9674,
+    "end": 9713,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "_normalize_ai_execution_status",
+    "type": "FunctionDef",
+    "start": 9719,
+    "end": 9721,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "append_ai_execution_log",
+    "type": "FunctionDef",
+    "start": 9724,
+    "end": 9820,
+    "domain": "ai"
+  },
+  {
+    "name": "_build_ai_execution_log_where",
+    "type": "FunctionDef",
+    "start": 9823,
+    "end": 9862,
+    "domain": "ai"
+  },
+  {
+    "name": "list_ai_execution_log",
+    "type": "FunctionDef",
+    "start": 9865,
+    "end": 9907,
+    "domain": "ai"
+  },
+  {
+    "name": "count_ai_execution_log",
+    "type": "FunctionDef",
+    "start": 9910,
+    "end": 9941,
+    "domain": "ai"
+  },
+  {
+    "name": "_normalize_ai_prompt_status",
+    "type": "FunctionDef",
+    "start": 9948,
+    "end": 9954,
+    "domain": "ai"
+  },
+  {
+    "name": "_normalize_ai_prompt_scope_level",
+    "type": "FunctionDef",
+    "start": 9957,
+    "end": 9961,
+    "domain": "ai"
+  },
+  {
+    "name": "create_ai_prompt_draft",
+    "type": "FunctionDef",
+    "start": 9964,
+    "end": 10017,
+    "domain": "ai"
+  },
+  {
+    "name": "get_ai_prompt_version",
+    "type": "FunctionDef",
+    "start": 10020,
+    "end": 10037,
+    "domain": "ai"
+  },
+  {
+    "name": "_build_ai_prompt_where",
+    "type": "FunctionDef",
+    "start": 10040,
+    "end": 10066,
+    "domain": "ai"
+  },
+  {
+    "name": "list_ai_prompt_versions",
+    "type": "FunctionDef",
+    "start": 10069,
+    "end": 10101,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "count_ai_prompt_versions",
+    "type": "FunctionDef",
+    "start": 10104,
+    "end": 10125,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "get_active_ai_prompt_version",
+    "type": "FunctionDef",
+    "start": 10128,
+    "end": 10152,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "activate_ai_prompt_version",
+    "type": "FunctionDef",
+    "start": 10155,
+    "end": 10195,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "archive_ai_prompt_version",
+    "type": "FunctionDef",
+    "start": 10198,
+    "end": 10225,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "cleanup_audit_log",
+    "type": "FunctionDef",
+    "start": 10228,
+    "end": 10245,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "append_error_event",
+    "type": "FunctionDef",
+    "start": 10248,
+    "end": 10351,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "get_error_event",
+    "type": "FunctionDef",
+    "start": 10354,
+    "end": 10373,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "_build_error_events_where",
+    "type": "FunctionDef",
+    "start": 10376,
+    "end": 10415,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "_eq",
+    "type": "FunctionDef",
+    "start": 10393,
+    "end": 10398,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "list_error_events",
+    "type": "FunctionDef",
+    "start": 10418,
+    "end": 10466,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "count_error_events",
+    "type": "FunctionDef",
+    "start": 10469,
+    "end": 10511,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "cleanup_error_events",
+    "type": "FunctionDef",
+    "start": 10514,
+    "end": 10528,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "update_error_event",
+    "type": "FunctionDef",
+    "start": 10533,
+    "end": 10579,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "delete_error_event",
+    "type": "FunctionDef",
+    "start": 10582,
+    "end": 10591,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "get_effective_project_scope",
+    "type": "FunctionDef",
+    "start": 10593,
+    "end": 10617,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "user_has_project_access",
+    "type": "FunctionDef",
+    "start": 10620,
+    "end": 10634,
+    "domain": "audit_telemetry"
+  },
+  {
+    "name": "_session_presence_display_name",
+    "type": "FunctionDef",
+    "start": 10637,
+    "end": 10647,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "prune_stale_session_presence",
+    "type": "FunctionDef",
+    "start": 10650,
+    "end": 10661,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "touch_session_presence",
+    "type": "FunctionDef",
+    "start": 10664,
+    "end": 10711,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "leave_session_presence",
+    "type": "FunctionDef",
+    "start": 10714,
+    "end": 10741,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "list_session_presence",
+    "type": "FunctionDef",
+    "start": 10744,
+    "end": 10803,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "list_workspace_snapshot_rows",
+    "type": "FunctionDef",
+    "start": 10806,
+    "end": 10935,
+    "domain": "compat"
+  },
+  {
+    "name": "get_project_storage",
+    "type": "FunctionDef",
+    "start": 10938,
+    "end": 10942,
+    "domain": "compat"
+  },
+  {
+    "name": "get_db_runtime_info",
+    "type": "FunctionDef",
+    "start": 10945,
+    "end": 10958,
+    "domain": "compat"
+  },
+  {
+    "name": "startup_db_check",
+    "type": "FunctionDef",
+    "start": 10961,
+    "end": 10968,
+    "domain": "compat"
+  },
+  {
+    "name": "get_storage",
+    "type": "FunctionDef",
+    "start": 10971,
+    "end": 10972,
+    "domain": "compat"
+  },
+  {
+    "name": "_thread_attention_acknowledged_at",
+    "type": "FunctionDef",
+    "start": 10979,
+    "end": 10994,
+    "domain": "compat"
+  },
+  {
+    "name": "_latest_note_comment_info",
+    "type": "FunctionDef",
+    "start": 10997,
+    "end": 11012,
+    "domain": "notes"
+  },
+  {
+    "name": "_apply_note_thread_read_state",
+    "type": "FunctionDef",
+    "start": 11015,
+    "end": 11036,
+    "domain": "notes"
+  },
+  {
+    "name": "_upsert_note_thread_read",
+    "type": "FunctionDef",
+    "start": 11039,
+    "end": 11068,
+    "domain": "notes"
+  },
+  {
+    "name": "_attention_count_case",
+    "type": "FunctionDef",
+    "start": 11071,
+    "end": 11090,
+    "domain": "notes"
+  },
+  {
+    "name": "_personal_discussion_count_case",
+    "type": "FunctionDef",
+    "start": 11093,
+    "end": 11114,
+    "domain": "notes"
+  },
+  {
+    "name": "_normalize_mention_targets",
+    "type": "FunctionDef",
+    "start": 11117,
+    "end": 11129,
+    "domain": "notes"
+  },
+  {
+    "name": "_insert_note_comment_mentions",
+    "type": "FunctionDef",
+    "start": 11132,
+    "end": 11169,
+    "domain": "notes"
+  },
+  {
+    "name": "create_note_thread",
+    "type": "FunctionDef",
+    "start": 11171,
+    "end": 11252,
+    "domain": "notes"
+  },
+  {
+    "name": "get_note_thread",
+    "type": "FunctionDef",
+    "start": 11255,
+    "end": 11324,
+    "domain": "notes"
+  },
+  {
+    "name": "list_note_threads",
+    "type": "FunctionDef",
+    "start": 11327,
+    "end": 11448,
+    "domain": "notes"
+  },
+  {
+    "name": "add_note_comment",
+    "type": "FunctionDef",
+    "start": 11451,
+    "end": 11520,
+    "domain": "notes"
+  },
+  {
+    "name": "get_note_comment",
+    "type": "FunctionDef",
+    "start": 11523,
+    "end": 11552,
+    "domain": "notes"
+  },
+  {
+    "name": "update_note_comment",
+    "type": "FunctionDef",
+    "start": 11555,
+    "end": 11620,
+    "domain": "notes"
+  },
+  {
+    "name": "mark_note_thread_read",
+    "type": "FunctionDef",
+    "start": 11623,
+    "end": 11670,
+    "domain": "notes"
+  },
+  {
+    "name": "patch_note_thread_status",
+    "type": "FunctionDef",
+    "start": 11673,
+    "end": 11685,
+    "domain": "notes"
+  },
+  {
+    "name": "patch_note_thread",
+    "type": "FunctionDef",
+    "start": 11688,
+    "end": 11747,
+    "domain": "notes"
+  },
+  {
+    "name": "acknowledge_note_thread_attention",
+    "type": "FunctionDef",
+    "start": 11750,
+    "end": 11792,
+    "domain": "notes"
+  },
+  {
+    "name": "delete_note_thread",
+    "type": "FunctionDef",
+    "start": 11795,
+    "end": 11837,
+    "domain": "notes"
+  },
+  {
+    "name": "delete_note_comment",
+    "type": "FunctionDef",
+    "start": 11840,
+    "end": 11886,
+    "domain": "notes"
+  },
+  {
+    "name": "list_active_note_mentions_for_user",
+    "type": "FunctionDef",
+    "start": 11889,
+    "end": 11936,
+    "domain": "notes"
+  },
+  {
+    "name": "list_note_notifications_for_user",
+    "type": "FunctionDef",
+    "start": 11939,
+    "end": 12250,
+    "domain": "notes"
+  },
+  {
+    "name": "acknowledge_note_mention",
+    "type": "FunctionDef",
+    "start": 12253,
+    "end": 12285,
+    "domain": "notes"
+  },
+  {
+    "name": "_notes_aggregate_payload",
+    "type": "FunctionDef",
+    "start": 12288,
+    "end": 12314,
+    "domain": "notes"
+  },
+  {
+    "name": "get_session_open_notes_aggregate",
+    "type": "FunctionDef",
+    "start": 12317,
+    "end": 12352,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "get_sessions_open_notes_aggregates",
+    "type": "FunctionDef",
+    "start": 12355,
+    "end": 12408,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "get_project_open_notes_aggregate",
+    "type": "FunctionDef",
+    "start": 12411,
+    "end": 12448,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "get_folder_open_notes_aggregate",
+    "type": "FunctionDef",
+    "start": 12451,
+    "end": 12512,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_folder_row_to_dict",
+    "type": "FunctionDef",
+    "start": 12519,
+    "end": 12535,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "create_workspace_folder",
+    "type": "FunctionDef",
+    "start": 12538,
+    "end": 12599,
+    "domain": "explorer"
+  },
+  {
+    "name": "update_workspace_folder_business_fields",
+    "type": "FunctionDef",
+    "start": 12602,
+    "end": 12652,
+    "domain": "explorer"
+  },
+  {
+    "name": "get_workspace_folder",
+    "type": "FunctionDef",
+    "start": 12655,
+    "end": 12667,
+    "domain": "explorer"
+  },
+  {
+    "name": "rename_workspace_folder",
+    "type": "FunctionDef",
+    "start": 12670,
+    "end": 12706,
+    "domain": "explorer"
+  },
+  {
+    "name": "_get_folder_descendant_ids",
+    "type": "FunctionDef",
+    "start": 12709,
+    "end": 12738,
+    "domain": "explorer"
+  },
+  {
+    "name": "move_workspace_folder",
+    "type": "FunctionDef",
+    "start": 12741,
+    "end": 12793,
+    "domain": "explorer"
+  },
+  {
+    "name": "delete_workspace_folder",
+    "type": "FunctionDef",
+    "start": 12796,
+    "end": 12847,
+    "domain": "explorer"
+  },
+  {
+    "name": "list_workspace_folder_children",
+    "type": "FunctionDef",
+    "start": 12850,
+    "end": 13121,
+    "domain": "explorer"
+  },
+  {
+    "name": "_safe_int",
+    "type": "FunctionDef",
+    "start": 12861,
+    "end": 12865,
+    "domain": "explorer"
+  },
+  {
+    "name": "_clamp_percent",
+    "type": "FunctionDef",
+    "start": 12867,
+    "end": 12873,
+    "domain": "explorer"
+  },
+  {
+    "name": "_compute_folder_metrics",
+    "type": "FunctionDef",
+    "start": 13015,
+    "end": 13089,
+    "domain": "explorer"
+  },
+  {
+    "name": "get_workspace_folder_breadcrumb",
+    "type": "FunctionDef",
+    "start": 13124,
+    "end": 13154,
+    "domain": "explorer"
+  },
+  {
+    "name": "search_workspace_explorer",
+    "type": "FunctionDef",
+    "start": 13157,
+    "end": 13396,
+    "domain": "explorer"
+  },
+  {
+    "name": "user_display",
+    "type": "FunctionDef",
+    "start": 13186,
+    "end": 13192,
+    "domain": "explorer"
+  },
+  {
+    "name": "matches",
+    "type": "FunctionDef",
+    "start": 13194,
+    "end": 13196,
+    "domain": "explorer"
+  },
+  {
+    "name": "folder_path",
+    "type": "FunctionDef",
+    "start": 13198,
+    "end": 13218,
+    "domain": "explorer"
+  },
+  {
+    "name": "append_item",
+    "type": "FunctionDef",
+    "start": 13220,
+    "end": 13225,
+    "domain": "explorer"
+  },
+  {
+    "name": "create_project_in_folder",
+    "type": "FunctionDef",
+    "start": 13399,
+    "end": 13440,
+    "domain": "project"
+  },
+  {
+    "name": "move_project_to_folder",
+    "type": "FunctionDef",
+    "start": 13443,
+    "end": 13510,
+    "domain": "project"
+  },
+  {
+    "name": "get_project_workspace_details",
+    "type": "FunctionDef",
+    "start": 13513,
+    "end": 13541,
+    "domain": "project"
+  },
+  {
+    "name": "get_project_explorer_invalidation_targets",
+    "type": "FunctionDef",
+    "start": 13544,
+    "end": 13595,
+    "domain": "project"
+  },
+  {
+    "name": "_add_target",
+    "type": "FunctionDef",
+    "start": 13563,
+    "end": 13568,
+    "domain": "project"
+  },
+  {
+    "name": "_count_bpmn_activities",
+    "type": "FunctionDef",
+    "start": 13598,
+    "end": 13609,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_session_to_explorer_dict",
+    "type": "FunctionDef",
+    "start": 13612,
+    "end": 13636,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "list_project_sessions_for_explorer",
+    "type": "FunctionDef",
+    "start": 13639,
+    "end": 13697,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_run_query",
+    "type": "FunctionDef",
+    "start": 13675,
+    "end": 13677,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "list_session_children",
+    "type": "FunctionDef",
+    "start": 13700,
+    "end": 13742,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "get_project_session_tree",
+    "type": "FunctionDef",
+    "start": 13745,
+    "end": 13824,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "attach",
+    "type": "FunctionDef",
+    "start": 13812,
+    "end": 13819,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "run_workspace_folder_backfill",
+    "type": "FunctionDef",
+    "start": 13827,
+    "end": 13866,
+    "domain": "canvas_session"
+  },
+  {
+    "name": "_ensure_agent_tables",
+    "type": "FunctionDef",
+    "start": 13875,
+    "end": 13993,
+    "domain": "compat"
+  },
+  {
+    "name": "_conversation_status",
+    "type": "FunctionDef",
+    "start": 13996,
+    "end": 13997,
+    "domain": "compat"
+  },
+  {
+    "name": "_conversation_row_to_dict",
+    "type": "FunctionDef",
+    "start": 14000,
+    "end": 14016,
+    "domain": "compat"
+  },
+  {
+    "name": "list_agent_conversations",
+    "type": "FunctionDef",
+    "start": 14019,
+    "end": 14087,
+    "domain": "ai"
+  },
+  {
+    "name": "get_agent_conversation",
+    "type": "FunctionDef",
+    "start": 14090,
+    "end": 14128,
+    "domain": "ai"
+  },
+  {
+    "name": "list_agent_conversation_turns",
+    "type": "FunctionDef",
+    "start": 14131,
+    "end": 14178,
+    "domain": "ai"
+  },
+  {
+    "name": "update_agent_conversation_summary",
+    "type": "FunctionDef",
+    "start": 14181,
+    "end": 14192,
+    "domain": "ai"
+  }
+]
