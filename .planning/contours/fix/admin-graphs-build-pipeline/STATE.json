@@ -1,0 +1,20 @@
+{
+  "contour": "fix/admin-graphs-build-pipeline",
+  "phase": "planning",
+  "status": "PLAN_READY",
+  "blockers": [],
+  "ready_for_execution": true,
+  "next_action": "Mirror PLAN.md to Obsidian, then implement POST /api/admin/graphs/snapshots and UI upload.",
+  "branch": "fix/admin-graphs-build-pipeline",
+  "base_commit": "7edec2c24a7bf994c4f32690c2c838eafd33b7fe",
+  "related_contours": [
+    "fix/admin-graphs-stage-bootstrap",
+    "fix/admin-graphs-rebuild-fail"
+  ],
+  "related_prs": [
+    "https://github.com/xiaomibelov/processmap_v1/pull/870",
+    "https://github.com/xiaomibelov/processmap_v1/pull/872"
+  ],
+  "stage_seed_snapshot": "20260830-153424-048894",
+  "stage_seed_status": "completed"
+}

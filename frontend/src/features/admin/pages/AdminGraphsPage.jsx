@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import AdminPageContainer from "../layout/AdminPageContainer";
 import SectionCard from "../components/common/SectionCard.jsx";
 import EmptyState from "../components/common/EmptyState.jsx";
@@ -19,12 +20,37 @@ export default function AdminGraphsPage({ payload = {} }) {
     activeJobId,
     activeStatus,
     rebuild,
+    uploading,
+    uploadError,
+    uploadSuccess,
+    uploadSnapshot,
   } = payload;
+
+  const [graphFile, setGraphFile] = useState(null);
+  const [analysisFile, setAnalysisFile] = useState(null);
+  const graphInputRef = useRef(null);
+  const analysisInputRef = useRef(null);
 
   const snapshots = data?.snapshots || [];
   const current = data?.current || null;
   const analytics = data?.analytics || null;
   const hasSnapshot = Boolean(current);
+
+  const canUpload = Boolean(graphFile && analysisFile && !uploading);
+
+  const handleUpload = async () => {
+    if (!canUpload) return;
+    const formData = new FormData();
+    formData.append("graph_json", graphFile);
+    formData.append("analysis_json", analysisFile);
+    const r = await uploadSnapshot(formData);
+    if (r?.ok) {
+      setGraphFile(null);
+      setAnalysisFile(null);
+      if (graphInputRef.current) graphInputRef.current.value = "";
+      if (analysisInputRef.current) analysisInputRef.current.value = "";
+    }
+  };
 
   if (loading) {
     return (
@@ -74,6 +100,50 @@ export default function AdminGraphsPage({ payload = {} }) {
         ) : (
           <div className="text-xs text-slate-500">{t.noRebuildHint}</div>
         )}
+      </SectionCard>
+
+      <SectionCard
+        eyebrow={t.uploadEyebrow}
+        title={t.uploadTitle}
+        subtitle={t.uploadSubtitle}
+      >
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">{t.uploadGraphLabel}</span>
+              <input
+                type="file"
+                accept=".json,application/json"
+                ref={graphInputRef}
+                onChange={(e) => setGraphFile(e.target.files?.[0] || null)}
+                className="mt-1 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">{t.uploadAnalysisLabel}</span>
+              <input
+                type="file"
+                accept=".json,application/json"
+                ref={analysisInputRef}
+                onChange={(e) => setAnalysisFile(e.target.files?.[0] || null)}
+                className="mt-1 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+              />
+            </label>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={handleUpload}
+              disabled={!canUpload}
+              className="rounded-xl border border-slate-200 bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
+            >
+              {uploading ? t.uploadBusy : t.uploadBtn}
+            </button>
+            {uploadSuccess ? <span className="text-xs text-emerald-600 font-medium">{t.uploadSuccess}</span> : null}
+            {uploadError ? <span className="text-xs text-rose-600 font-medium">{uploadError}</span> : null}
+          </div>
+          <p className="text-xs text-slate-500">{t.uploadHint}</p>
+        </div>
       </SectionCard>
 
       {!hasSnapshot && !rebuilding ? (

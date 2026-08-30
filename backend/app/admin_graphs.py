@@ -175,6 +175,87 @@ def _append_log(snapshot_id: str, line: str) -> None:
         pass
 
 
+def _validate_graph_json(data: Dict[str, Any]) -> None:
+    """Validate the top-level contract of graph.json."""
+    if not isinstance(data.get("nodes"), list):
+        raise ValueError("graph.json must contain a 'nodes' list")
+    edges = data.get("links") if "links" in data else data.get("edges")
+    if not isinstance(edges, list):
+        raise ValueError("graph.json must contain a 'links' or 'edges' list")
+
+
+def _validate_analysis_json(data: Dict[str, Any]) -> None:
+    """Validate the top-level contract of .graphify_analysis.json."""
+    for key in ("raw_nodes", "raw_edges"):
+        if not isinstance(data.get(key), int):
+            raise ValueError(f".graphify_analysis.json must contain integer '{key}'")
+
+
+def seed_snapshot_from_files(
+    graph_json_bytes: bytes,
+    analysis_json_bytes: bytes,
+    commit_sha: str = "manual",
+    commit_message: str = "uploaded via admin API",
+) -> Dict[str, Any]:
+    """Create a new snapshot from uploaded graph artifacts and render HTML.
+
+    Raises ValueError on invalid input or RuntimeError if rendering fails.
+    """
+    try:
+        graph_data = json.loads(graph_json_bytes)
+    except Exception as exc:
+        raise ValueError(f"graph.json is not valid JSON: {exc}") from exc
+    _validate_graph_json(graph_data)
+
+    try:
+        analysis_data = json.loads(analysis_json_bytes)
+    except Exception as exc:
+        raise ValueError(f".graphify_analysis.json is not valid JSON: {exc}") from exc
+    _validate_analysis_json(analysis_data)
+
+    if not _ensure_dirs():
+        raise RuntimeError("graph storage directory is not available")
+
+    base_dir = _graphs_dir()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    (base_dir / "graph.json").write_bytes(graph_json_bytes)
+    (base_dir / ".graphify_analysis.json").write_bytes(analysis_json_bytes)
+
+    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    snapshot_path = _snapshot_dir(snapshot_id)
+    snapshot_path.mkdir(parents=True, exist_ok=True)
+
+    meta = {
+        "id": snapshot_id,
+        "created_at": _now_iso(),
+        "commit_sha": commit_sha or "manual",
+        "commit_message": commit_message or "uploaded via admin API",
+        "is_current": False,
+    }
+    (snapshot_path / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    _rebuild_worker(snapshot_id)
+
+    final_meta = _read_meta(snapshot_id)
+    if final_meta is None:
+        raise RuntimeError("snapshot metadata disappeared after render")
+
+    status_path = snapshot_path / "status.json"
+    if status_path.exists():
+        try:
+            status_data = json.loads(status_path.read_text(encoding="utf-8"))
+            if status_data.get("status") == "failed":
+                raise RuntimeError(status_data.get("error", "render failed"))
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+
+    return final_meta
+
+
 def _resolve_render_script() -> Optional[Path]:
     """Locate graphify-render-graph.py across possible runtime layouts."""
     candidates = [
