@@ -1,0 +1,21 @@
+{
+  "contour": "fix/admin-graphs-stage-bootstrap",
+  "phase": "implementation",
+  "status": "READY_FOR_REVIEW",
+  "blockers": [],
+  "ready_for_execution": false,
+  "next_action": "Create PR, await user approval for deploy on stage and merge.",
+  "branch": "fix/admin-graphs-stage-bootstrap",
+  "base_commit": "700eaf02d667a10a233c0a54f6f74f88f7526f82",
+  "test_results": {
+    "backend_tests": "12 passed",
+    "frontend_smoke_tests": "27 passed",
+    "frontend_unit_tests": "12 passed",
+    "openapi_lint": "valid"
+  },
+  "stage_actions_pending": [
+    "Deploy image with tools/ + networkx",
+    "Seed initial snapshot from local graphify-out artifacts",
+    "Verify empty state, rebuild, analytics, 403 for non-admin"
+  ]
+}
