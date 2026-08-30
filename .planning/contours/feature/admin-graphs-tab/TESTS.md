@@ -29,13 +29,13 @@ python -m unittest tests.test_admin_graphs -v
 Файлы:
 - `frontend/src/lib/apiRoutes.test.mjs`
 - `frontend/src/lib/apiModules/adminApi.graphs.test.mjs`
-- `frontend/src/features/admin/pages/AdminGraphsPage.test.mjs`
+- `frontend/src/features/admin/pages/AdminGraphsPage.smoke.test.jsx`
 
-Запуск (внутри frontend-контейнера или при наличии Node.js на хосте):
+Запуск (внутри node-контейнера или при наличии Node.js на хосте):
 ```bash
 cd frontend
-npm test -- src/lib/apiRoutes.test.mjs src/lib/apiModules/adminApi.graphs.test.mjs src/features/admin/pages/AdminGraphsPage.test.mjs
-npm run test:smoke -- --run src/features/admin/pages/AdminGraphsPage.test.mjs
+npm test -- src/lib/apiRoutes.test.mjs src/lib/apiModules/adminApi.graphs.test.mjs
+npm run test:smoke -- src/features/admin/pages/AdminGraphsPage.smoke.test.jsx
 ```
 
 Покрытие:

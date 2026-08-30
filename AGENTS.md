@@ -68,6 +68,16 @@
 - Короткий git-proof (`branch`, `HEAD`, `status`, `diffstat`).
 - Короткий handoff-proof (что именно было целью, что закрыто, какие риски/ограничения остались).
 
+## 8.5. Graph-first rule для анализа архитектуры (feature/admin-graphs-tab)
+- Перед любыми выводами об архитектуре кодовой базы, затрагивающими более одного домена/слоя, агент ОБЯЗАН свериться с актуальным снапшотом графа проекта.
+- Источник истины:
+  - UI: **Админка → Графы** (`/admin/graphs`), вьювер graphify с зонами и трассировкой.
+  - API: `GET /api/admin/graphs/snapshot/current/json` — RAW_NODES с layer/confidence/scenarios.
+  - Файл снапшота (только для чтения в runtime): `graphify-out/snapshots/current/graph.json`.
+- Что проверять: распределение нод по слоям, top hubs по degree, крупнейшие communities, изолированные ноды, layer gaps (особенно frontend↔backend).
+- Если граф устарел или отсутствует — запросить пересборку через `POST /api/admin/graphs/rebuild` и дождаться завершения, прежде чем делать архитектурные рекомендации.
+- Это правило не заменяет чтение исходного кода, но служит первичной проверкой контекста и предотвращает фиксацию решений, противоречащих реальной структуре графа.
+
 ## 9. Известные операционные проблемы деплоя
 
 - **deploy-stage.yml и server-only конфиги:** workflow деплоит на stage через `git checkout -f` в `/opt/processmap/app`. Локальные серверные конфиги (`.env`, `.env.stage`, `docker-compose.ssl.yml`, `docker-compose.prod.yml`, `docker-compose.prod.gateway.yml`, `backend/alembic.stage.ini`) предварительно копируются во временную директорию, затем принудительно удаляются из рабочего дерева/index перед `git checkout -f`, а после checkout восстанавливаются. Это предотвращает ошибку `error: Entry '.env' not uptodate. Cannot merge.`, возникающую, если файл изменён, помечен `assume-unchanged` или находится в неслитом состоянии после неудачного деплоя.
