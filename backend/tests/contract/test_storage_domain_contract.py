@@ -231,25 +231,15 @@ def test_container_context_import_smoke():
 
 
 def test_backward_compat_all_top_level_names():
-    """Every top-level name defined in the original storage.py must remain importable from app.storage."""
-    repo_root = Path(__file__).resolve().parents[3]
-    original_source = subprocess.check_output(
-        ["git", "show", "origin/main:backend/app/storage.py"],
-        cwd=repo_root,
-        text=True,
-    )
-    tree = ast.parse(original_source)
+    """Every top-level name defined in the original monolithic storage.py must remain importable from app.storage.
 
-    names = []
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.append(node.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    names.append(target.id)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.append(node.target.id)
+    The baseline is a checked-in fixture derived from the last monolithic commit
+    (7f161478). It is intentionally static: updating it requires a deliberate
+    contour that changes the public surface of app.storage.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    baseline_path = repo_root / "backend" / "tests" / "contract" / "fixtures" / "storage_top_level_names_baseline.txt"
+    names = [line.strip() for line in baseline_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
     import app.storage
 

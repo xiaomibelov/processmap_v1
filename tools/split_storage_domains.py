@@ -56,18 +56,18 @@ MISPLACED_DOMAINS = frozenset({"ai", "org_auth", "notes"})
 
 
 def read_storage_source() -> Tuple[List[str], ast.Module]:
-    """Read the canonical storage.py source from git HEAD.
+    """Read the canonical monolithic storage.py source from git.
 
-    Reading from HEAD makes the generator idempotent: re-running it after it has
-    already rewritten backend/app/storage.py still uses the original monolithic
-    source as input.
+    The generator must always read the original monolithic storage.py, even when
+    run from a branch where storage.py has already been rewritten as a facade.
+    After the facade was merged to origin/main, origin/main itself contains the
+    facade, so we pin the baseline to the last monolithic commit.
     """
-    # The generator must always read the original monolithic storage.py from
-    # origin/main, even when run from a feature/fix branch where storage.py has
-    # already been rewritten as a facade.
+    # Last monolithic storage.py before the domain split (PR #866).
+    baseline_ref = "7f16147897dbc52464a0ee41391896d076f414f0"
     try:
         text = subprocess.check_output(
-            ["git", "show", "origin/main:backend/app/storage.py"],
+            ["git", "show", f"{baseline_ref}:backend/app/storage.py"],
             cwd=REPO_ROOT,
             text=True,
         )
