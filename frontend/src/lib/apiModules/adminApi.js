@@ -605,3 +605,14 @@ export async function apiAdminGraphsGetAnalytics() {
   const r = okOrError(await request(apiRoutes.admin.graphsAnalytics(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+export async function apiAdminGraphsUploadSnapshot(formData) {
+  if (!formData || !(formData instanceof FormData)) {
+    return { ok: false, status: 0, error: "formData required" };
+  }
+  const r = okOrError(await request(apiRoutes.admin.graphsSnapshotUpload(), {
+    method: "POST",
+    body: formData,
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

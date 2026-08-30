@@ -1,4 +1,5 @@
 import importlib
+import io
 import json
 import os
 import shutil
@@ -7,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+
+from fastapi import UploadFile
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -65,6 +68,7 @@ class AdminGraphsTests(unittest.TestCase):
             admin_graphs_rebuild,
             admin_graphs_rebuild_status,
             admin_graphs_analytics,
+            admin_graphs_upload_snapshot,
         )
 
         self.snapshots_fn = admin_graphs_snapshots
@@ -74,8 +78,19 @@ class AdminGraphsTests(unittest.TestCase):
         self.rebuild_fn = admin_graphs_rebuild
         self.rebuild_status_fn = admin_graphs_rebuild_status
         self.analytics_fn = admin_graphs_analytics
+        self.upload_fn = admin_graphs_upload_snapshot
+
+        # Provide a no-op graphify renderer so upload/rebuild tests don't depend
+        # on the real Python analysis pipeline.
+        self.fake_script = Path(self.tmp_name) / "fake_render.py"
+        self.fake_script.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        import app.admin_graphs as admin_graphs_module
+        self._original_resolve_script = admin_graphs_module._resolve_render_script
+        admin_graphs_module._resolve_render_script = lambda: self.fake_script
 
     def tearDown(self):
+        import app.admin_graphs as admin_graphs_module
+        admin_graphs_module._resolve_render_script = self._original_resolve_script
         shutil.rmtree(self.tmp_name, ignore_errors=True)
         for key, val in [
             ("GRAPHS_DIR", self.old_graphs_dir),
@@ -195,7 +210,7 @@ class AdminGraphsTests(unittest.TestCase):
         result = self.rebuild_fn(self._admin_request())
         self.assertTrue(hasattr(result, "job_id"))
         self.assertTrue(result.job_id)
-        self.assertEqual(result.status, "pending")
+        self.assertIn(result.status, {"pending", "running"})
 
     def test_rebuild_status_not_found(self):
         result = self.rebuild_status_fn("no-such-job", self._admin_request())
@@ -248,6 +263,84 @@ class AdminGraphsTests(unittest.TestCase):
         self.assertEqual(result.snapshot_id, "20260830-000000-000000")
         self.assertEqual(result.total_nodes, 10)
         self.assertTrue(len(result.layer_distribution) > 0)
+
+    def test_list_snapshots_excludes_current_symlink(self):
+        self._create_snapshot()
+        result = self.snapshots_fn(self._admin_request())
+        self.assertIsInstance(result, list)
+        ids = [m.id for m in result]
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(ids[0], "20260830-000000-000000")
+
+    def test_analytics_fallback_edges_from_graph_json(self):
+        snapshot_dir = self._create_snapshot()
+        # Remove raw counters from analysis.json.
+        analysis_path = snapshot_dir / ".graphify_analysis.json"
+        analysis_path.write_text(json.dumps({"communities": {}}), encoding="utf-8")
+        # Write graph.json with a few edges using the "links" key.
+        graph_path = snapshot_dir / "graph.json"
+        graph_path.write_text(
+            json.dumps({
+                "nodes": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+                "links": [{"source": "a", "target": "b"}, {"source": "b", "target": "c"}],
+            }),
+            encoding="utf-8",
+        )
+        result = self.analytics_fn(self._admin_request())
+        self.assertEqual(result.total_nodes, 3)
+        self.assertEqual(result.total_edges, 2)
+
+    # ── Upload tests ──────────────────────────────────────────────────────────
+
+    def _upload_files(self, graph_data, analysis_data):
+        graph_bytes = json.dumps(graph_data).encode("utf-8")
+        analysis_bytes = json.dumps(analysis_data).encode("utf-8")
+        return (
+            UploadFile(filename="graph.json", file=io.BytesIO(graph_bytes)),
+            UploadFile(filename=".graphify_analysis.json", file=io.BytesIO(analysis_bytes)),
+        )
+
+    def test_upload_snapshot_admin_allowed(self):
+        graph_file, analysis_file = self._upload_files(
+            {"nodes": [{"id": 1}], "links": []},
+            {"raw_nodes": 1, "raw_edges": 0, "communities": {"0": ["a"]}},
+        )
+        result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
+        self.assertTrue(hasattr(result, "id"))
+        self.assertTrue(result.id)
+        self.assertTrue(result.commit_sha)
+
+    def test_upload_snapshot_invalid_graph_json(self):
+        graph_file, analysis_file = self._upload_files(
+            {"bad": "no nodes"},
+            {"raw_nodes": 0, "raw_edges": 0},
+        )
+        result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
+        self.assertEqual(result.status_code, 400)
+
+    def test_upload_snapshot_invalid_analysis_json(self):
+        graph_file, analysis_file = self._upload_files(
+            {"nodes": [{"id": 1}], "links": []},
+            {"raw_nodes": "not an int", "communities": {"0": ["a"]}},
+        )
+        result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
+        self.assertEqual(result.status_code, 400)
+
+    def test_upload_snapshot_missing_communities(self):
+        graph_file, analysis_file = self._upload_files(
+            {"nodes": [{"id": 1}], "links": []},
+            {"raw_nodes": 1, "raw_edges": 0},
+        )
+        result = self.upload_fn(self._admin_request(), graph_json=graph_file, analysis_json=analysis_file)
+        self.assertEqual(result.status_code, 400)
+
+    def test_upload_snapshot_viewer_forbidden_403(self):
+        graph_file, analysis_file = self._upload_files(
+            {"nodes": [{"id": 1}], "links": []},
+            {"raw_nodes": 1, "raw_edges": 0, "communities": {"0": ["a"]}},
+        )
+        result = self.upload_fn(self._viewer_request(), graph_json=graph_file, analysis_json=analysis_file)
+        self.assertEqual(result.status_code, 403)
 
 
 if __name__ == "__main__":

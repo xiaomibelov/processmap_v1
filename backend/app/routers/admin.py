@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import APIRouter, BackgroundTasks, File, Query, Request, UploadFile
 from pathlib import Path
 from pydantic import BaseModel, Field
 from starlette.responses import Response, StreamingResponse
@@ -71,6 +71,7 @@ from ..admin_graphs import (
     list_snapshots,
     read_snapshot_file,
     rebuild_status,
+    seed_snapshot_from_files,
     start_rebuild,
 )
 
@@ -2612,6 +2613,50 @@ def admin_graphs_snapshots(request: Request) -> Any:
     if err is not None:
         return err
     return [_snapshot_out(m) for m in list_snapshots()]
+
+
+@router.post(
+    "/api/admin/graphs/snapshots",
+    responses={
+        400: {"description": "Invalid JSON or missing required fields"},
+        413: {"description": "Uploaded files too large"},
+    },
+)
+def admin_graphs_upload_snapshot(
+    request: Request,
+    graph_json: UploadFile = File(..., description="graph.json produced by graphify analysis"),
+    analysis_json: UploadFile = File(..., description=".graphify_analysis.json produced by graphify analysis"),
+) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+
+    try:
+        graph_bytes = graph_json.file.read()
+        analysis_bytes = analysis_json.file.read()
+    except Exception as exc:
+        return _legacy_main._enterprise_error(400, "bad_request", f"failed to read uploaded files: {exc}")
+
+    if not graph_bytes:
+        return _legacy_main._enterprise_error(400, "bad_request", "graph_json is empty")
+    if not analysis_bytes:
+        return _legacy_main._enterprise_error(400, "bad_request", "analysis_json is empty")
+
+    try:
+        meta = seed_snapshot_from_files(
+            graph_bytes,
+            analysis_bytes,
+            commit_sha="upload",
+            commit_message="uploaded via admin UI",
+        )
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(400, "bad_request", str(exc))
+    except RuntimeError as exc:
+        return _legacy_main._enterprise_error(500, "internal_error", str(exc))
+    except Exception as exc:
+        return _legacy_main._enterprise_error(500, "internal_error", f"failed to seed snapshot: {exc}")
+
+    return _snapshot_out(meta)
 
 
 @router.get(
