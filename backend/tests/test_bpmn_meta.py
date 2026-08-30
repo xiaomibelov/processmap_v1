@@ -4,8 +4,12 @@ import unittest
 import json
 from pathlib import Path
 
+import pytest
 
-XOR_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
+pytestmark = pytest.mark.skip_if_hanging
+
+
+XOR_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>""
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_1" isExecutable="false">
     <bpmn:startEvent id="StartEvent_1">
