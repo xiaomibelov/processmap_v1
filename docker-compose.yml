@@ -25,6 +25,7 @@ services:
     volumes:
       - ./workspace:/app/workspace
       - ./backend:/app/backend
+      - ./graphify-out:/app/graphify-out
     depends_on:
       postgres:
         condition: service_healthy

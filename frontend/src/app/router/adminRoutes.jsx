@@ -14,6 +14,7 @@ export const adminRoutes = [
   { path: ADMIN_ROUTE_META.llm.path, section: "llm" },
   { path: ADMIN_ROUTE_META["agent-runs"].path, section: "agent-runs" },
   { path: "/admin/agent-runs/:runId", section: "agent-runs" },
+  { path: ADMIN_ROUTE_META.graphs.path, section: "graphs" },
 ];
 
 export function resolveAdminRoute(pathname = "/admin/dashboard") {

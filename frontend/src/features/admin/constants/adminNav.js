@@ -10,6 +10,7 @@ export const ADMIN_NAV_ITEMS = [
   { id: ADMIN_SECTIONS.llm, label: ru.admin.nav.llm, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.llm].path, shortLabel: "LLM" },
   { id: ADMIN_SECTIONS.agentRuns, label: ru.admin.nav.agentRuns, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.agentRuns].path, shortLabel: "ЗА" },
   { id: ADMIN_SECTIONS.rag, label: ru.admin.nav.rag, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.rag].path, shortLabel: "RAG" },
+  { id: ADMIN_SECTIONS.graphs, label: ru.admin.nav.graphs, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.graphs].path, shortLabel: "Гр" },
   { id: ADMIN_SECTIONS.orgs, label: ru.admin.nav.orgs, href: ADMIN_ROUTE_META.orgs.path, shortLabel: "О" },
   { id: ADMIN_SECTIONS.projects, label: ru.admin.nav.projects, href: ADMIN_ROUTE_META.projects.path, shortLabel: "П" },
 ];
