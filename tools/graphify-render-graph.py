@@ -696,6 +696,13 @@ def _render_aggregate_html(
     )
     output_path.write_text(html, encoding="utf-8")
 
+    # Also emit a machine-readable nodes.json for downstream analytics/API consumers.
+    # This file mirrors RAW_NODES and is guaranteed to match the rendered graph.html.
+    nodes_json_path = output_path.with_name("nodes.json")
+    nodes_json_path.write_text(
+        json.dumps(vis_nodes, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
 
 def _html_document_title(output_path: Path) -> str:
     raw = str(output_path).replace("\\", "/")

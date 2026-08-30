@@ -25,12 +25,14 @@ import useAdminAgentRunDetailData from "./hooks/useAdminAgentRunDetailData";
 import AdminAgentRunsPage from "./pages/AdminAgentRunsPage";
 import AdminAgentRunDetailPage from "./pages/AdminAgentRunDetailPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminGraphsPage from "./pages/AdminGraphsPage";
 import AdminJobsPage from "./pages/AdminJobsPage";
 import AdminOrgsPage from "./pages/AdminOrgsPage";
 import AdminProjectsPage from "./pages/AdminProjectsPage";
 import AdminSessionDetailPage from "./pages/AdminSessionDetailPage";
 import AdminSessionsPage from "./pages/AdminSessionsPage";
 import AdminTelemetryEventsPage from "./pages/AdminTelemetryEventsPage";
+import useAdminGraphsData from "./hooks/useAdminGraphsData";
 import {
   buildTelemetryCorrelationPivotFilters,
   buildTelemetrySearchPatch,
@@ -158,6 +160,7 @@ function AdminAppInner({
     eventId: telemetryFilters.event_id,
   });
   const ragQ = useAdminRagData({ enabled: route.section === "rag" });
+  const graphsQ = useAdminGraphsData({ enabled: route.section === "graphs" });
   const agentRunsQ = useAdminAgentRunsData({ enabled: route.section === "agent-runs" && !toText(route.runId), userId: "" });
   const agentRunDetailQ = useAdminAgentRunDetailData({
     enabled: route.section === "agent-runs" && Boolean(toText(route.runId)),
@@ -188,6 +191,7 @@ function AdminAppInner({
     if (route.section === "ai-modules") return { loading: false, error: "", data: null };
     if (route.section === "llm") return { loading: false, error: "", data: null };
     if (route.section === "rag") return { loading: false, error: "", data: null };
+    if (route.section === "graphs") return graphsQ;
     if (route.section === "agent-runs" && !toText(route.runId)) return agentRunsQ;
     if (route.section === "agent-runs" && Boolean(toText(route.runId))) return agentRunDetailQ;
     return { loading: false, error: "", data: null };
@@ -385,6 +389,9 @@ function AdminAppInner({
     }
     if (route.section === "rag") {
       return <AdminRagPage payload={ragQ} />;
+    }
+    if (route.section === "graphs") {
+      return <AdminGraphsPage payload={graphsQ} />;
     }
     if (route.section === "agent-runs" && !toText(route.runId)) {
       return (
