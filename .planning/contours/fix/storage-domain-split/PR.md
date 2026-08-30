@@ -17,10 +17,11 @@
 - 12 доменных модулей: `compat`, `platform`, `dictionaries`, `utils`, `org_auth`, `project`, `explorer`, `templates_legacy`, `audit_telemetry`, `ai`, `canvas_session`, `notes`.
 - `backend/app/storage.py` уменьшился с ~14k до 91 строки (тонкий фасад).
 - Генератор `tools/split_storage_domains.py` позволяет воспроизвести разрез; детерминизм проверен при `PYTHONHASHSEED=0` и `PYTHONHASHSEED=42`.
+- Генератор эмитит **относительные imports** (`from .db`, `from .domains.storage.*`, `from ....db` в доменных модулях), чтобы фасад и домены корректно загружались в Docker при запуске `uvicorn backend.app.main:app` из `/app`.
 - Cross-domain транзакции выявлены и задокументированы в `CROSS_DOMAIN_TX.md`; 36 misplaced-доменов вынесены в `MISPLACED.md` как вход для следующих контуров.
 
 ## Тесты
-- 34 contract-теста: `backend/tests/contract/test_storage_domain_contract.py` (32 базовых + determinism + backward-compat).
+- 35 contract-тестов: `backend/tests/contract/test_storage_domain_contract.py` (32 базовых + determinism + backward-compat + container-context smoke).
 - Проверена обратная совместимость всех 365 top-level имён из оригинального `storage.py`.
 - Targeted набор из 50 существующих тестов прошёл без изменений.
 - Pre-existing зависающие тесты (`test_auto_create_subprocess_sessions.py`, `test_bpmn_meta.py`) помечены `skip_if_hanging`, чтобы suite доходил до конца вне Docker Compose.
@@ -38,4 +39,8 @@
 cd backend
 ../.venv/bin/python -m pytest tests/contract/test_storage_domain_contract.py -q
 ../.venv/bin/python -m pytest tests/test_storage_schema_bootstrap.py tests/test_admin_permissions.py tests/test_org_invites.py tests/test_notes_mvp1_api.py tests/test_templates_rbac.py tests/test_error_events_intake.py tests/test_ai_execution_log_foundation.py tests/test_explorer_context_folder_fields.py -q
+
+# Container-context smoke (Docker-like uvicorn import from /app)
+cd ..
+PYTHONPATH= .venv/bin/python -c "import backend.app.main"
 ```

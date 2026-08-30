@@ -81,6 +81,35 @@ sys.path.pop(0)
 ### diff итерации 3
 Изменён только `backend/tests/contract/test_storage_domain_contract.py` (локальный `sys.path` fix). `pytest.ini` и прочие файлы не трогались.
 
+## Итерация 4 (hotfix import-регрессии, выявленной на stage)
+
+### Блокер
+После push ветки `fix/storage-domain-split` на stage контейнер `processmap_stage-api-1` ушёл в crash-loop:
+
+```text
+ModuleNotFoundError: No module named 'app'
+```
+
+Причина: в Docker uvicorn стартует из `/app` как `backend.app.main:app`. Генератор `tools/split_storage_domains.py` эмитил **absolute imports** (`from app.db import ...`, `from app.domains.storage.* import ...`), которые не резолвятся, когда модуль загружен через `backend.app.main` (в `sys.path` только `/app`, а не `/app/backend`).
+
+### Правка
+1. `tools/split_storage_domains.py` теперь эмитит **относительные imports**:
+   - `storage.py`: `from .db`, `from .models`, `from .session_status`, `from .domains.storage.*`.
+   - `domains/storage/<domain>/repository.py`: `from ....db`, `from ....models`, `from ....session_status`, `from ..<other>`; внутрителевые single-dot imports также поднимаются до `....`.
+2. Генератор теперь всегда читает исходный монолитный `storage.py` из `origin/main` (`git show origin/main:backend/app/storage.py`), а не из HEAD, чтобы повторная генерация из fix-ветки не брала уже переписанный фасад.
+3. Contract-тест `test_backward_compat_all_top_level_names` переключен на `origin/main:backend/app/storage.py` как baseline.
+4. Добавлен регрессионный тест `test_container_context_import_smoke`: импортирует `backend.app.main` из корня репозитория с `PYTHONPATH=""`, воспроизводя Docker-контекст uvicorn. Тест падает на absolute imports.
+
+### Проверка
+
+| Набор | Результат |
+|-------|-----------|
+| `backend/tests/contract/test_storage_domain_contract.py` из `backend/` | **35 passed** |
+| `backend/tests/contract/test_storage_domain_contract.py` из корня | **35 passed** |
+| `test_generator_determinism` PYTHONHASHSEED=0 / 42 | **pass / pass** |
+| Targeted suite (8 файлов) | **50 passed** |
+| `python -c "import backend.app.main"` с cwd=корень, PYTHONPATH="" | **exit 0** |
+
 ## Риски
 
 - Любой новый код, импортирующий `app.storage`, продолжит работать.
