@@ -1,0 +1,22 @@
+{
+  "contour": "fix/admin-graphs-rebuild-fail",
+  "phase": "implementation",
+  "status": "READY_FOR_REVIEW",
+  "blockers": [],
+  "ready_for_execution": false,
+  "next_action": "Create PR, await user approval for merge and stage seed.",
+  "branch": "fix/admin-graphs-rebuild-fail",
+  "base_commit": "5d535d401cdb9bb9f96ab71def1811081054ed5c",
+  "related_contour": "fix/admin-graphs-stage-bootstrap",
+  "related_pr": "https://github.com/xiaomibelov/processmap_v1/pull/870",
+  "test_results": {
+    "backend_tests": "13 passed",
+    "openapi_lint": "valid"
+  },
+  "root_cause": "graph.json not found in /app/graphify-out/ — render script needs input artifacts",
+  "stage_actions_pending": [
+    "Deploy PR on stage",
+    "Seed graph.json + .graphify_analysis.json into /app/graphify-out/",
+    "Verify UI rebuild succeeds and 403 for non-admin"
+  ]
+}

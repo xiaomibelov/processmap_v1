@@ -201,6 +201,40 @@ class AdminGraphsTests(unittest.TestCase):
         result = self.rebuild_status_fn("no-such-job", self._admin_request())
         self.assertEqual(result.status_code, 404)
 
+    def _wait_for_status(self, job_id, final_states, timeout_seconds=5):
+        import time
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            status = self.rebuild_status_fn(job_id, self._admin_request())
+            if hasattr(status, "status") and status.status in final_states:
+                return status
+            time.sleep(0.1)
+        raise AssertionError(f"timeout waiting for status in {final_states}")
+
+    def test_rebuild_fails_with_nonzero_exit_code(self):
+        from app import admin_graphs
+
+        # Create a fake render script that prints to stdout/stderr and exits 1.
+        fake_script = Path(self.tmp_name) / "fake_render.py"
+        fake_script.write_text(
+            'import sys\nprint("stdout-line")\nprint("stderr-line", file=sys.stderr)\nsys.exit(1)\n',
+            encoding="utf-8",
+        )
+
+        original_resolve = admin_graphs._resolve_render_script
+        admin_graphs._resolve_render_script = lambda: fake_script
+        try:
+            result = self.rebuild_fn(self._admin_request())
+            self.assertTrue(result.job_id)
+            status = self._wait_for_status(result.job_id, ("failed",), timeout_seconds=5)
+            self.assertEqual(status.status, "failed")
+            self.assertIn("exit code=1", "\n".join(status.log))
+            self.assertIn("stderr-line", "\n".join(status.log))
+            self.assertIn("stdout-line", "\n".join(status.log))
+            self.assertTrue(status.error)
+        finally:
+            admin_graphs._resolve_render_script = original_resolve
+
     # ── Analytics tests ───────────────────────────────────────────────────────
 
     def test_analytics_requires_snapshot(self):
