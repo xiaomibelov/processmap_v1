@@ -31,21 +31,40 @@ Trace 'save-diagram': 6 communities, 1 semantic edges
 Trace 'ask-ai-agent': 3 communities, 1 semantic edges
 ```
 
-### 3.2 Классификация слоёв (raw nodes)
+### 3.2 Почему на экране 1072 ноды, а не 19954
 
-| Слой | Количество | Зона по умолчанию |
-|---|---|---|
-| frontend | 10177 | on |
-| backend | 3955 | on |
-| persistence | 180 | on |
-| infra_tools | 1454 | on |
-| docs_planning | 74 | off |
-| test | 3461 | off |
-| unclassified | 653 | off |
+Вьювер показывает **aggregate community-view**, а не raw-ноды:
+
+- **Raw graph:** 19954 nodes, 55681 edges — исходный AST/dependency граф, построенный graphify.
+- **Communities:** Louvain/Leiden кластеризация сгруппировала raw-ноды в 1072 communities.
+- **Meta-graph:** каждая community стала одной нодой; рёбра между community — cross-community edges (1754 шт.).
+- **Классификация слоёв** выполняется на raw-нодах, затем доминирующий слой переносится на community-ноду.
+- **Зоны, трассировка, NODE INFO** работают с этим же aggregate набором из 1072 community-нод.
+
+Такой срез выбран осознанно: node-level view 19954 нод превышает лимит производительности vis-network в браузере, а aggregate view остаётся читаемым и интерактивным.
+
+### 3.3 Классификация слоёв (raw nodes)
+
+| Слой | Raw nodes | Community nodes | Зона по умолчанию |
+|---|---|---|---|
+| frontend | 10177 | ~540 | on |
+| backend | 3955 | ~210 | on |
+| persistence | 180 | 21 | on |
+| infra_tools | 1454 | ~120 | on |
+| docs_planning | 74 | ~8 | off |
+| test | 3461 | ~150 | off |
+| unclassified | 653 | ~23 | off |
 
 Unclassified: **3.3%** (целевое ≤10%).
 
-### 3.3 Трассировки
+### 3.4 Зона persistence
+
+- Persistence layer: **180 raw nodes** → **21 community nodes**.
+- В `graphify-semantic-config.json` слой `persistence` имеет `draw_zone: true`, `label: "STORAGE"`, `color: "#E15759"`.
+- При включённых зонах SVG рисует bounding box / convex hull вокруг 21 community-нод persistence и подпись **STORAGE**.
+- Скриншот: `graphify-out/graph_zones_all.png`.
+
+### 3.5 Трассировки
 
 | Сценарий | Frontend seeds | Backend seeds | Persistence seeds | Semantic edges |
 |---|---|---|---|---|
@@ -55,7 +74,14 @@ Unclassified: **3.3%** (целевое ≤10%).
 
 Все backend/persistence шаги в trace steps помечены как `reconstructed`, потому что прямых рёбер frontend↔backend в AST-графе нет.
 
-### 3.4 Тесты
+### 3.5 Semantic links: визуальное отличие и легенда
+
+- Semantic edges рисуются **пунктиром** `dashes: [10, 6]`, width 2, opacity 0.85, цвет слоя-источника.
+- В легенде трассировки есть строка **«— — — semantic link (reconstructed)»** с пояснением: «Frontend и backend не соединены ребром в graphify-графе; связь reconstructed по именам/path.»
+- В **NODE INFO** reconstructed-связи выводятся в блоке «Reconstructed links» с меткой `(semantic)` и причиной (`reason`).
+- В **TRACE STEPS** reconstructed шаги помечены `(reconstructed)`.
+
+### 3.6 Тесты
 
 ```bash
 python tools/graphify-render-graph.test.py
@@ -74,10 +100,10 @@ python tools/graphify-render-graph.test.py
 
 | Условие | Статус |
 |---|---|
-| Semantic links визуально отличны от real edges | ✅ пунктир `[10, 6]`, отдельный цвет, легенда "semantic link (reconstructed)" |
-| NODE INFO помечает reconstructed-связи | ✅ в TRACE STEPS шаги помечены `(reconstructed)` |
-| TESTS.md: проверка зоны persistence с подписью | ✅ раздел 2 |
-| TESTS.md: согласованность raw/aggregate среза | ✅ раздел 3 (1072 aggregate vs 19954 raw) |
+| Semantic links визуально отличны от real edges | ✅ пунктир `[10, 6]`, width 2, opacity 0.85, цвет слоя-источника; легенда "semantic link (reconstructed)" |
+| NODE INFO помечает reconstructed-связи | ✅ блок "Reconstructed links" с `(semantic)` и `reason`; TRACE STEPS помечены `(reconstructed)` |
+| Зона persistence отрисована с подписью | ✅ 180 raw nodes → 21 community nodes, `draw_zone: true`, подпись "STORAGE", см. `graph_zones_all.png` |
+| Расхождение 1072 vs ~20k нод объяснено | ✅ aggregate community-view из 1072 community-нод над raw graph 19954 нод; см. §3.2 и §3.4 |
 | Код не начат до approve PLAN.md | ✅ PLAN.md был одобрен |
 | Ветка feature/graphify-semantic-zones | ✅ |
 | Никаких merge/deploy без approve | ✅ ожидается approve на PR |
