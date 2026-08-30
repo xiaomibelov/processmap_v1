@@ -1,0 +1,159 @@
+{
+  "layers": [
+    {
+      "id": "frontend",
+      "label": "FRONTEND",
+      "color": "#4E79A7",
+      "rules": [
+        {"path_prefix": "p0-work/frontend/", "weight": 1.0},
+        {"path_glob": "*.tsx", "weight": 0.9},
+        {"path_glob": "*.jsx", "weight": 0.9},
+        {"path_glob": "*.ts", "weight": 0.8},
+        {"path_glob": "*.js", "weight": 0.8},
+        {"label_regex": "^(use|Page|Component|Feature|Hook|Bpmn|Canvas|Diagram|App|Sidebar|Topbar|Modal|Panel|Section|Block)", "weight": 0.6}
+      ]
+    },
+    {
+      "id": "backend",
+      "label": "BACKEND",
+      "color": "#59A14F",
+      "rules": [
+        {"path_prefix": "p0-work/backend/app/", "weight": 1.0},
+        {"path_prefix": "p0-work/backend/services/", "weight": 1.0},
+        {"path_prefix": "p0-work/backend/scripts/", "weight": 0.7},
+        {"label_regex": "^(router|handler|endpoint|service|_legacy|get_|post_|patch_|put_|delete_)", "weight": 0.4}
+      ]
+    },
+    {
+      "id": "persistence",
+      "label": "STORAGE",
+      "color": "#E15759",
+      "rules": [
+        {"path_prefix": "p0-work/backend/alembic/", "weight": 1.0},
+        {"path_glob": "*/models*.py", "weight": 0.9},
+        {"path_glob": "*/schemas*.py", "weight": 0.5},
+        {"path_prefix": "p0-work/backend/app/models", "weight": 1.0},
+        {"path_prefix": "p0-work/backend/app/schemas", "weight": 0.6},
+        {"path_prefix": "p0-work/backend/app/repositories", "weight": 0.9},
+        {"label_regex": "^(BaseModel|Session|DiagramState|Migration|Seed|sqlite|postgres|DBSession|Database|Repository|Storage)", "weight": 0.5}
+      ]
+    },
+    {
+      "id": "infra_tools",
+      "label": "INFRA & TOOLS",
+      "color": "#F28E2B",
+      "rules": [
+        {"path_prefix": "p0-work/tools/", "weight": 1.0},
+        {"path_prefix": "p0-work/deploy/", "weight": 1.0},
+        {"path_prefix": "p0-work/scripts/", "weight": 0.8},
+        {"path_prefix": ".github/", "weight": 1.0},
+        {"path_prefix": "p0-work/.github/", "weight": 1.0}
+      ]
+    },
+    {
+      "id": "docs_planning",
+      "label": "DOCS & PLANNING",
+      "color": "#B07AA1",
+      "visible_by_default": false,
+      "draw_zone": false,
+      "rules": [
+        {"path_prefix": ".planning/", "weight": 1.0},
+        {"path_prefix": "p0-work/.planning/", "weight": 1.0},
+        {"path_prefix": "p0-work/docs/", "weight": 1.0},
+        {"path_prefix": "server-backup/srv/obsidian/", "weight": 0.9},
+        {"path_prefix": "p0-work/server-backup/srv/obsidian/", "weight": 0.9}
+      ]
+    },
+    {
+      "id": "test",
+      "label": "TESTS",
+      "color": "#76B7B2",
+      "visible_by_default": false,
+      "draw_zone": false,
+      "rules": [
+        {"path_prefix": "p0-work/backend/tests/", "weight": 1.0},
+        {"path_glob": "*.test.*", "weight": 1.0},
+        {"path_glob": "*.spec.*", "weight": 1.0},
+        {"path_prefix": "p0-work/frontend/e2e/", "weight": 0.9}
+      ]
+    }
+  ],
+  "default_layer": "unclassified",
+  "tie_break": "first_match",
+  "log_conflicts": true,
+  "layer_zone_threshold": {"min_nodes": 8, "min_width": 120, "min_height": 80},
+  "scenarios": [
+    {
+      "id": "create-and-open-session",
+      "label": "Создание и открытие сессии",
+      "description": "Пользователь создаёт новую сессию процесса и открывает BPMN-редактор.",
+      "seeds": {
+        "frontend": [
+          {"label_regex": "^(useSessions|useSessionShellOrchestration|SessionPage|ProcessPage|SessionCreatePage)", "weight": 2.0},
+          {"path_glob": "**/frontend/src/features/sessions/hooks/*", "weight": 1.0},
+          {"path_glob": "**/frontend/src/app/useSession*", "weight": 1.0}
+        ],
+        "backend": [
+          {"label_regex": "^create_session(_in_project)?\\(\\)", "weight": 2.0},
+          {"path_glob": "**/backend/app/routers/explorer.py", "weight": 1.0},
+          {"path_glob": "**/backend/app/services/session_service.py", "weight": 1.0}
+        ],
+        "persistence": [
+          {"label_regex": "^Session$", "weight": 2.0},
+          {"path_glob": "**/backend/app/models.py", "weight": 1.0},
+          {"label_regex": "^(app/storage\\.py|get_storage)", "weight": 1.0}
+        ]
+      },
+      "max_depth": 3,
+      "note": "Frontend и backend не соединены ребром в graphify-графе; связь reconstructed по именам/path."
+    },
+    {
+      "id": "save-diagram",
+      "label": "Сохранение диаграммы",
+      "description": "Пользователь редактирует BPMN и нажимает Save.",
+      "seeds": {
+        "frontend": [
+          {"label_regex": "^(SaveCoordinator|apiPatchSession|saveSessionViaApi|saveSessionStart)", "weight": 2.0},
+          {"path_glob": "**/frontend/src/features/session/saveCoordinator.*", "weight": 1.0},
+          {"path_glob": "**/frontend/src/lib/api.js", "weight": 0.8}
+        ],
+        "backend": [
+          {"label_regex": "^session_bpmn_save\\(\\)", "weight": 2.0},
+          {"path_glob": "**/backend/app/routers/sessions.py", "weight": 1.0},
+          {"path_glob": "**/backend/app/services/session_service.py", "weight": 1.0}
+        ],
+        "persistence": [
+          {"label_regex": "^(app/storage\\.py|get_storage|Session)$", "weight": 2.0},
+          {"path_glob": "**/backend/app/models.py", "weight": 1.0}
+        ]
+      },
+      "max_depth": 3,
+      "note": "Frontend seed SaveCoordinator → backend session_bpmn_save: reconstructed связь; прямого ребра нет."
+    },
+    {
+      "id": "ask-ai-agent",
+      "label": "Вопрос AI-агенту в чате",
+      "description": "Пользователь пишет запрос в панель AI-агента; ответ формируется через backend action runner.",
+      "seeds": {
+        "frontend": [
+          {"label_regex": "^(AIQuestionsSection|AiQuestionsBlock|createAiQuestionPanelAdapter|ProcessmanChatFeed)", "weight": 2.0},
+          {"path_glob": "**/frontend/src/components/sidebar/AIQuestionsSection.*", "weight": 1.0},
+          {"path_glob": "**/frontend/src/components/process/interview/AiQuestionsBlock.*", "weight": 1.0},
+          {"path_glob": "**/frontend/src/features/process/bpmn/stage/ai/*", "weight": 1.0}
+        ],
+        "backend": [
+          {"label_regex": "^(run_turn|_persisted_answer_from_turn)", "weight": 2.0},
+          {"path_glob": "**/backend/app/routers/agent_chat.py", "weight": 1.0},
+          {"path_glob": "**/backend/app/agent/chat.py", "weight": 1.0}
+        ],
+        "persistence": [
+          {"label_regex": "^AgentChatIn", "weight": 2.0},
+          {"path_glob": "**/backend/app/schemas/agent_chat.py", "weight": 1.0},
+          {"path_glob": "**/backend/app/repositories/session_repo.py", "weight": 1.0}
+        ]
+      },
+      "max_depth": 3,
+      "note": "Frontend AI-ноды → backend agent_chat.py: reconstructed связь; прямого ребра нет."
+    }
+  ]
+}
