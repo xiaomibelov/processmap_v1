@@ -5,7 +5,6 @@ import os
 import re
 import subprocess
 import threading
-import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -218,35 +217,26 @@ def _rebuild_worker(snapshot_id: str) -> None:
             "--output",
             str(output_html),
         ]
-        proc = subprocess.Popen(
+        _append_log(snapshot_id, f"[{_now_iso()}] running: {' '.join(cmd)}")
+
+        proc = subprocess.run(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
             text=True,
             cwd=base_dir,
+            timeout=REBUILD_TIMEOUT_SECONDS,
         )
-        started = time.monotonic()
-        timed_out = False
-        while proc.poll() is None:
-            if time.monotonic() - started > REBUILD_TIMEOUT_SECONDS:
-                timed_out = True
-                proc.kill()
-                break
-            time.sleep(0.5)
 
-        if proc.stdout:
-            for line in proc.stdout:
-                _append_log(snapshot_id, line.rstrip())
+        for line in proc.stdout.splitlines():
+            _append_log(snapshot_id, line)
+        for line in proc.stderr.splitlines():
+            _append_log(snapshot_id, f"[stderr] {line}")
+        _append_log(snapshot_id, f"[{_now_iso()}] exit code={proc.returncode}")
 
-        if timed_out:
-            _append_log(snapshot_id, f"[{_now_iso()}] ERROR: rebuild timed out after {REBUILD_TIMEOUT_SECONDS}s")
-            _update_status(snapshot_id, "timeout", error="rebuild timed out")
-            return
-
-        rc = proc.returncode or 0
-        if rc != 0:
-            _append_log(snapshot_id, f"[{_now_iso()}] ERROR: rebuild exited with code {rc}")
-            _update_status(snapshot_id, "failed", error=f"exit code {rc}")
+        if proc.returncode != 0:
+            summary = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"exit code {proc.returncode}"
+            _append_log(snapshot_id, f"[{_now_iso()}] ERROR: rebuild failed: {summary}")
+            _update_status(snapshot_id, "failed", error=f"rebuild failed: {summary}")
             return
 
         # Copy input artifacts into the snapshot for consistency/history.
@@ -274,6 +264,11 @@ def _rebuild_worker(snapshot_id: str) -> None:
         _trim_old_snapshots()
         _append_log(snapshot_id, f"[{_now_iso()}] SUCCESS: snapshot {snapshot_id} is now current")
         _update_status(snapshot_id, "success")
+    except subprocess.TimeoutExpired as exc:
+        _append_log(snapshot_id, f"[{_now_iso()}] ERROR: rebuild timed out after {REBUILD_TIMEOUT_SECONDS}s")
+        _append_log(snapshot_id, f"[{_now_iso()}] partial stdout:\n{exc.stdout or ''}")
+        _append_log(snapshot_id, f"[{_now_iso()}] partial stderr:\n{exc.stderr or ''}")
+        _update_status(snapshot_id, "timeout", error="rebuild timed out")
     except Exception as exc:
         _append_log(snapshot_id, f"[{_now_iso()}] ERROR: {exc}")
         _update_status(snapshot_id, "failed", error=str(exc))
