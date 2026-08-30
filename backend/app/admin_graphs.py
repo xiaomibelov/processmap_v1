@@ -98,7 +98,8 @@ def list_snapshots() -> List[Dict[str, Any]]:
     if not _snapshots_dir().exists():
         return snapshots
     for entry in _snapshots_dir().iterdir():
-        if not entry.is_dir():
+        # Skip the "current" symlink and any non-directory entries.
+        if not entry.is_dir() or entry.is_symlink():
             continue
         meta = _read_meta(entry.name)
         if meta:
@@ -488,6 +489,20 @@ def compute_analytics() -> Optional[Dict[str, Any]]:
     raw_edges = analysis.get("raw_edges", 0)
     communities = analysis.get("communities", {})
 
+    # If the analysis artifact does not include raw counters, fall back to
+    # counting the actual graph.json nodes/edges (supports "links" or "edges").
+    raw_graph_path = _current_snapshot_dir()
+    raw_graph_path = raw_graph_path / "graph.json" if raw_graph_path else None
+    raw_node_count = 0
+    raw_edge_count = 0
+    if raw_graph_path and raw_graph_path.exists():
+        try:
+            raw_graph = json.loads(raw_graph_path.read_text(encoding="utf-8"))
+            raw_node_count = len(raw_graph.get("nodes", []))
+            raw_edge_count = len(raw_graph.get("links", raw_graph.get("edges", [])))
+        except Exception:
+            pass
+
     total = len(nodes)
     if total == 0:
         return None
@@ -565,8 +580,8 @@ def compute_analytics() -> Optional[Dict[str, Any]]:
     return {
         "snapshot_id": meta["id"],
         "commit_sha": meta.get("commit_sha", ""),
-        "total_nodes": raw_nodes or total,
-        "total_edges": raw_edges,
+        "total_nodes": raw_nodes or raw_node_count or total,
+        "total_edges": raw_edges or raw_edge_count,
         "community_nodes": total,
         "cross_community_edges": len(analysis.get("cross_community_edges", [])),
         "isolated_nodes": isolated_nodes,
