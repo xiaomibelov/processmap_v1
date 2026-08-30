@@ -176,19 +176,37 @@ def _append_log(snapshot_id: str, line: str) -> None:
         pass
 
 
+def _resolve_render_script() -> Optional[Path]:
+    """Locate graphify-render-graph.py across possible runtime layouts."""
+    candidates = [
+        # Canonical Docker layout: /app/tools/graphify-render-graph.py
+        Path("/app/tools/graphify-render-graph.py"),
+        # Repo root layout when backend/app is inside the repo.
+        Path(__file__).resolve().parent.parent / "tools" / "graphify-render-graph.py",
+        # Fallback: repo root is three levels up from backend/app/admin_graphs.py.
+        Path(__file__).resolve().parent.parent.parent / "tools" / "graphify-render-graph.py",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _rebuild_worker(snapshot_id: str) -> None:
     """Background worker that rebuilds the graph snapshot."""
     snapshot_path = _snapshot_dir(snapshot_id)
     base_dir = _graphs_dir()
-    script = Path(__file__).resolve().parent.parent / "tools" / "graphify-render-graph.py"
-    # Fallback: if running inside backend/app, repo root is two levels up.
-    if not script.exists():
-        script = Path(__file__).resolve().parent.parent.parent / "tools" / "graphify-render-graph.py"
+    script = _resolve_render_script()
 
     _update_status(snapshot_id, "running")
     _append_log(snapshot_id, f"[{_now_iso()}] Rebuild started for snapshot {snapshot_id}")
     _append_log(snapshot_id, f"[{_now_iso()}] graph-dir={base_dir}")
     _append_log(snapshot_id, f"[{_now_iso()}] script={script}")
+
+    if script is None:
+        _append_log(snapshot_id, f"[{_now_iso()}] ERROR: graphify-render-graph.py not found")
+        _update_status(snapshot_id, "failed", error="graphify-render-graph.py not found")
+        return
 
     output_html = snapshot_path / "graph.html"
     try:

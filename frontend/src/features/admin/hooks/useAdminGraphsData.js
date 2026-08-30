@@ -30,14 +30,22 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
       apiAdminGraphsGetAnalytics(),
     ]);
     if (!mountedRef.current) return;
-    if (snapshotsR.ok && currentR.ok && analyticsR.ok) {
+
+    // 404 from current/analytics means "no snapshot yet" — this is a normal
+    // empty state, not an error. Only snapshots list failure or 5xx is real error.
+    const currentMissing = !currentR.ok && currentR.status === 404;
+    const analyticsMissing = !analyticsR.ok && analyticsR.status === 404;
+
+    const hasRealError = !snapshotsR.ok || (!currentR.ok && !currentMissing) || (!analyticsR.ok && !analyticsMissing);
+
+    if (!hasRealError) {
       setData({
         snapshots: snapshotsR.items || [],
-        current: currentR.data || null,
-        analytics: analyticsR.data || null,
+        current: currentMissing ? null : (currentR.data || null),
+        analytics: analyticsMissing ? null : (analyticsR.data || null),
       });
     } else {
-      const firstError = [snapshotsR, currentR, analyticsR].find((r) => !r.ok);
+      const firstError = [snapshotsR, currentR, analyticsR].find((r) => !r.ok && r.status !== 404);
       setError(String(firstError?.error || "Ошибка загрузки графа"));
     }
     setLoading(false);

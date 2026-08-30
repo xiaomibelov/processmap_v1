@@ -1,5 +1,6 @@
 import AdminPageContainer from "../layout/AdminPageContainer";
 import SectionCard from "../components/common/SectionCard.jsx";
+import EmptyState from "../components/common/EmptyState.jsx";
 import GraphViewerPanel from "../components/graphs/GraphViewerPanel.jsx";
 import GraphAnalyticsPanel from "../components/graphs/GraphAnalyticsPanel.jsx";
 import GraphSnapshotsPanel from "../components/graphs/GraphSnapshotsPanel.jsx";
@@ -23,6 +24,7 @@ export default function AdminGraphsPage({ payload = {} }) {
   const snapshots = data?.snapshots || [];
   const current = data?.current || null;
   const analytics = data?.analytics || null;
+  const hasSnapshot = Boolean(current);
 
   if (loading) {
     return (
@@ -74,22 +76,40 @@ export default function AdminGraphsPage({ payload = {} }) {
         )}
       </SectionCard>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <GraphViewerPanel
-            currentSnapshot={current}
-            title={t.viewerTitle}
-            subtitle={t.viewerSubtitle}
-          />
+      {!hasSnapshot && !rebuilding ? (
+        <SectionCard title={t.viewerTitle} subtitle={t.viewerSubtitle}>
+          <div className="py-8">
+            <EmptyState title={t.emptyStateTitle} description={t.emptyStateDescription} />
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={rebuild}
+                className="rounded-xl border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              >
+                {t.rebuildBtn}
+              </button>
+            </div>
+            <p className="mt-3 text-center text-xs text-slate-500">{t.rebuildDurationHint}</p>
+          </div>
+        </SectionCard>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <GraphViewerPanel
+              currentSnapshot={current}
+              title={t.viewerTitle}
+              subtitle={t.viewerSubtitle}
+            />
+          </div>
+          <div>
+            <GraphSnapshotsPanel
+              snapshots={snapshots}
+              title={t.snapshotsTitle}
+              subtitle={t.snapshotsSubtitle}
+            />
+          </div>
         </div>
-        <div>
-          <GraphSnapshotsPanel
-            snapshots={snapshots}
-            title={t.snapshotsTitle}
-            subtitle={t.snapshotsSubtitle}
-          />
-        </div>
-      </div>
+      )}
 
       <GraphAnalyticsPanel
         analytics={analytics}
