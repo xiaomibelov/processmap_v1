@@ -16,9 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Set
 import xml.etree.ElementTree as ET
-from app.db import get_db_runtime_config, redact_database_url
-from app.models import Project, Session
-from app.session_status import derive_session_status
+from ....db import get_db_runtime_config, redact_database_url
+from ....models import Project, Session
+from ....session_status import derive_session_status
 logger = logging.getLogger(__name__)
 try:
     import psycopg
@@ -2084,7 +2084,7 @@ def _ensure_schema() -> None:
             if not _column_exists(con, "projects", "executor_user_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN executor_user_id TEXT")
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_workspace_folder ON projects(org_id, workspace_id, folder_id)")
-            from app.recipe.storage import _ensure_recipe_tables
+            from ....recipe.storage import _ensure_recipe_tables
             _ensure_recipe_tables(con)
             _maybe_migrate_legacy_files(con)
             _ensure_auth_users_backfill(con)
@@ -5569,7 +5569,7 @@ def _storage_save(
         # AGENT-2: фоновая переиндексация bpmn_xml после успешного сохранения.
         # Локальный импорт, чтобы избежать циклического импорта на старте.
         try:
-            from app.rag_tasks import index_session_bpmn_xml
+            from ....rag_tasks import index_session_bpmn_xml
 
             bpmn_xml_value = str(values.get("bpmn_xml") or "").strip()
             if bpmn_xml_value:

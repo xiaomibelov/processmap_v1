@@ -62,9 +62,12 @@ def read_storage_source() -> Tuple[List[str], ast.Module]:
     already rewritten backend/app/storage.py still uses the original monolithic
     source as input.
     """
+    # The generator must always read the original monolithic storage.py from
+    # origin/main, even when run from a feature/fix branch where storage.py has
+    # already been rewritten as a facade.
     try:
         text = subprocess.check_output(
-            ["git", "show", "HEAD:backend/app/storage.py"],
+            ["git", "show", "origin/main:backend/app/storage.py"],
             cwd=REPO_ROOT,
             text=True,
         )
@@ -314,15 +317,27 @@ def collect_used_names(node: ast.AST, module_names: Set[str]) -> Set[str]:
 
 
 def _relative_to_absolute_import(source: str) -> str:
-    """Convert 'from .X import ...' used in app.storage.py into 'from app.X import ...'.
+    """Keep relative imports as-is.
 
-    Domain modules live under app.domains.storage.<domain>, so the same relative
-    import would resolve to the wrong package. Absolute imports keep the same
-    meaning as in the original storage.py.
+    The generated modules are part of the ``app`` package tree, so relative
+    imports resolve correctly both in local pytest (cwd=backend/) and in Docker
+    when uvicorn loads ``backend.app.main:app`` from ``/app``.
     """
-    # Replace any relative import anchored at the app package. The original
-    # storage.py is at app/storage.py, so 'from .X' means 'from app.X'.
-    return source.replace("from .", "from app.")
+    return source
+
+
+_RE_DOMAIN_SINGLE_DOT_IMPORT = re.compile(r"^(?P<ws>[ \t]*)from \.(?!\.)", re.MULTILINE)
+
+
+def _fix_domain_relative_imports(source: str) -> str:
+    """Lift single-dot relative imports in a domain repository module.
+
+    Domain repositories live under ``app.domains.storage.<domain>``. A relative
+    import such as ``from .db import ...`` was written for ``app/storage.py`` and
+    must become ``from ....db import ...`` to resolve from the deeper package.
+    Cross-domain imports (``from ..X``) are left untouched.
+    """
+    return _RE_DOMAIN_SINGLE_DOT_IMPORT.sub(r"\g<ws>from ....", source)
 
 
 def get_original_header(lines: List[str], tree: ast.Module) -> str:
@@ -634,6 +649,9 @@ def generate(
         domain_top_imports = top_imports.get(domain, [])
         domain_bottom_imports = bottom_imports.get(domain, [])
         header = get_import_header(original_header)
+        # Domain modules live under app.domains.storage.<domain>, so imports
+        # anchored at app (e.g. from .db) need four leading dots.
+        header = header.replace("from .", "from ....")
         extra_top = "\n".join(f"{imp}" for imp in sorted(set(domain_top_imports)))
         if extra_top:
             header = header.rstrip() + "\n" + extra_top + "\n\n"
@@ -654,7 +672,8 @@ def generate(
             )
             body_parts.append("\n\n")
 
-        repo_path.write_text(header + "".join(body_parts).rstrip() + bottom_imports_text, encoding="utf-8")
+        repo_source = header + "".join(body_parts).rstrip() + bottom_imports_text
+        repo_path.write_text(_fix_domain_relative_imports(repo_source), encoding="utf-8")
 
     # Write domain __init__.py files.
     for domain in DOMAINS:
@@ -732,7 +751,7 @@ def rewrite_storage_facade(
     for domain in DOMAINS:
         names = sorted(public_names_by_domain.get(domain, []))
         if names:
-            public_import_lines.append(f"from app.domains.storage.{domain} import {', '.join(names)}")
+            public_import_lines.append(f"from .domains.storage.{domain} import {', '.join(names)}")
 
     # Imports of private names from domain repository modules.
     private_reexport_lines = []
@@ -740,7 +759,7 @@ def rewrite_storage_facade(
         names = sorted(private_names_by_domain.get(domain, []))
         if names:
             private_reexport_lines.append(
-                f"from app.domains.storage.{domain}.repository import {', '.join(names)}"
+                f"from .domains.storage.{domain}.repository import {', '.join(names)}"
             )
 
     class_sources = [_build_facade_classes()]
@@ -754,7 +773,7 @@ def rewrite_storage_facade(
         + "\n"
         + "\n".join(public_import_lines + private_reexport_lines)
         + "\n\n"
-        + "import app.domains.storage.compat.repository as _compat_repo\n\n"
+        + "from .domains.storage.compat import repository as _compat_repo\n\n"
         + "\n\n".join(class_sources + dependent_sources)
         + "\n"
     )

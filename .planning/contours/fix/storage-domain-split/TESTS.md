@@ -2,7 +2,7 @@
 
 ## Contract tests
 
-`backend/tests/contract/test_storage_domain_contract.py` — 34 теста:
+`backend/tests/contract/test_storage_domain_contract.py` — 35 тестов:
 
 1. `test_storage_facade_exports_public_names_from_all_domains` — каждый домен имеет public API, и хотя бы одно имя из каждого домена доступно через `app.storage`.
 2. `test_storage_facade_preserves_storage_and_projectstorage_classes` — классы `Storage`, `ProjectStorage` и фабрики `get_storage`, `get_project_storage` сохранены.
@@ -16,10 +16,12 @@
 10. `test_storage_py_compiles` — `app.storage` компилируется.
 11. `test_generator_determinism` — два запуска `tools/split_storage_domains.py` с `PYTHONHASHSEED=0` и `PYTHONHASHSEED=42` дают байт-идентичный результат.
 12. `test_backward_compat_all_top_level_names` — все 365 top-level имён из оригинального `storage.py` доступны через `app.storage`.
+13. `test_container_context_import_smoke` — импорт `backend.app.main` из корня репозитория с `PYTHONPATH=""` воспроизводит Docker-контекст uvicorn и гарантирует отсутствие absolute imports вида `from app.*`.
 
 ## Smoke-тесты
 
 - `cd backend && python -c "from app import storage; print('imports ok')"`
+- `PYTHONPATH= python -c "import backend.app.main"` — container-context smoke.
 - `python3 -m py_compile backend/app/storage.py backend/app/domains/storage/*/repository.py`
 - Backward-compat scan по всем 365 имёнам из оригинального `storage.py`: missing = 0.
 
@@ -70,7 +72,8 @@ Targeted suite (50 тестов по ключевым доменам) прохо
 
 ## Критерий приёмки
 
-- 34 contract-теста проходят.
+- 35 contract-тестов проходят.
 - Backward-compat scan: 365 имён, missing = 0.
 - `[FACADE]` cross-domain импортов через `.repository` — 0.
 - `backend/app/storage.py` содержит ≤30 строк не-re-export кода.
+- Container-context import smoke (`PYTHONPATH= python -c "import backend.app.main"`) проходит.

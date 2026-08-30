@@ -209,11 +209,32 @@ def test_generator_determinism(tmp_path):
     assert hashes_a == hashes_b, "Generator output differs across PYTHONHASHSEED values"
 
 
+def test_container_context_import_smoke():
+    """Reproduce uvicorn loading backend.app.main:app from /app in Docker.
+
+    This context does NOT have backend/ on sys.path, so absolute imports such as
+    ``from app.db import ...`` fail with ModuleNotFoundError. Relative imports
+    inside the app package must be used instead.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "PYTHONPATH": ""}
+    result = subprocess.run(
+        [sys.executable, "-c", "import backend.app.main"],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"Container-context import failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+
+
 def test_backward_compat_all_top_level_names():
     """Every top-level name defined in the original storage.py must remain importable from app.storage."""
     repo_root = Path(__file__).resolve().parents[3]
     original_source = subprocess.check_output(
-        ["git", "show", "HEAD:backend/app/storage.py"],
+        ["git", "show", "origin/main:backend/app/storage.py"],
         cwd=repo_root,
         text=True,
     )
