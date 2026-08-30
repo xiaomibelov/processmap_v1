@@ -18,21 +18,24 @@
     "CROSS_DOMAIN_TX.md": "written",
     "MISPLACED.md": "written",
     "READY_FOR_REVIEW": "set",
-    "iteration_3_fix": "test_generator_determinism sys.path fix"
+    "iteration_3_fix": "test_generator_determinism sys.path fix",
+    "iteration_4_fix": "relative imports hotfix for Docker/uvicorn container context"
   },
   "status": "execution_done",
   "phase": "READY_FOR_REVIEW",
   "test_results": {
-    "contract_tests": "34 passed (32 base + determinism + backward-compat)",
-    "contract_tests_from_backend": "34 passed",
-    "contract_tests_from_root": "34 passed",
+    "contract_tests": "35 passed (32 base + determinism + backward-compat + container-context smoke)",
+    "contract_tests_from_backend": "35 passed",
+    "contract_tests_from_root": "35 passed",
     "hang_skip_tests": "75 skipped (test_auto_create_subprocess_sessions.py 36 + test_bpmn_meta.py 39)",
-    "targeted_tests": "50 passed, 10 warnings, 2 subtests passed in 53.83s",
+    "targeted_tests": "50 passed, 10 warnings, 2 subtests passed in 53.72s",
     "save_data_guard_tests": "13 passed",
     "full_suite": "incomplete on localhost: fix ~31%, origin/main ~20%; pre-existing hang in app/metrics.py::_poll thread outside Docker Compose",
     "backward_compat": "365 top-level names from origin/main storage.py, missing = 0",
     "facade_imports": "[FACADE] cross-domain repository imports = 0",
     "facade_loc": "storage.py non-re-export code ≤ 30 lines",
-    "iteration_3_diff": "only backend/tests/contract/test_storage_domain_contract.py changed"
+    "iteration_3_diff": "only backend/tests/contract/test_storage_domain_contract.py changed",
+    "iteration_4_diff": "tools/split_storage_domains.py + backend/app/storage.py + backend/app/domains/storage/*/repository.py + backend/tests/contract/test_storage_domain_contract.py",
+    "container_context_import": "python -c 'import backend.app.main' with cwd=repo_root and PYTHONPATH='' exits 0"
   }
 }
