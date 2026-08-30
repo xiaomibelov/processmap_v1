@@ -37,6 +37,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY backend /app/backend
 RUN chmod +x /app/backend/docker-entrypoint.sh
 
+# Graphify render pipeline (feature/admin-graphs-tab): render script + config
+# must be present for /api/admin/graphs/rebuild background jobs.
+COPY tools/graphify-render-graph.py tools/graphify-semantic-config.json /app/tools/
+
 RUN mkdir -p /app/workspace/processes /app/workspace/.session_store
 
 EXPOSE 8000
