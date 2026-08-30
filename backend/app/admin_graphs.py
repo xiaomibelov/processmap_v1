@@ -280,6 +280,21 @@ def _resolve_render_script() -> Optional[Path]:
     return None
 
 
+def _resolve_semantic_config() -> Optional[Path]:
+    """Locate graphify-semantic-config.json across possible runtime layouts."""
+    candidates = [
+        # Canonical Docker layout: /app/tools/graphify-semantic-config.json
+        Path("/app/tools/graphify-semantic-config.json"),
+        # Next to the render script if it was found.
+        Path(__file__).resolve().parent.parent / "tools" / "graphify-semantic-config.json",
+        Path(__file__).resolve().parent.parent.parent / "tools" / "graphify-semantic-config.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _rebuild_worker(snapshot_id: str) -> None:
     """Background worker that rebuilds the graph snapshot."""
     snapshot_path = _snapshot_dir(snapshot_id)
@@ -574,7 +589,7 @@ def compute_analytics() -> Optional[Dict[str, Any]]:
             pass
 
     # Simpler gap detection: look at raw graph edges and map raw nodes to layers via source_file.
-    config_path = Path(__file__).resolve().parent.parent / "tools" / "graphify-semantic-config.json"
+    config_path = _resolve_semantic_config()
     layer_gaps = _compute_layer_gaps(raw_graph_path, config_path)
 
     return {
@@ -623,8 +638,10 @@ def _classify_node(node: Dict[str, Any], config: Dict[str, Any]) -> str:
     return scores.most_common(1)[0][0]
 
 
-def _compute_layer_gaps(raw_graph_path: Path, config_path: Path) -> List[Dict[str, Any]]:
+def _compute_layer_gaps(raw_graph_path: Optional[Path], config_path: Optional[Path]) -> List[Dict[str, Any]]:
     """Count real edges between raw nodes of different layers."""
+    if raw_graph_path is None or config_path is None:
+        return []
     if not raw_graph_path.exists() or not config_path.exists():
         return []
     try:
