@@ -98,7 +98,8 @@ def list_snapshots() -> List[Dict[str, Any]]:
     if not _snapshots_dir().exists():
         return snapshots
     for entry in _snapshots_dir().iterdir():
-        if not entry.is_dir():
+        # Skip the "current" symlink and any non-directory entries.
+        if not entry.is_dir() or entry.is_symlink():
             continue
         meta = _read_meta(entry.name)
         if meta:
@@ -175,6 +176,94 @@ def _append_log(snapshot_id: str, line: str) -> None:
         pass
 
 
+def _validate_graph_json(data: Dict[str, Any]) -> None:
+    """Validate the top-level contract of graph.json."""
+    if not isinstance(data.get("nodes"), list):
+        raise ValueError("graph.json must contain a 'nodes' list")
+    edges = data.get("links") if "links" in data else data.get("edges")
+    if not isinstance(edges, list):
+        raise ValueError("graph.json must contain a 'links' or 'edges' list")
+
+
+def _validate_analysis_json(data: Dict[str, Any]) -> None:
+    """Validate the top-level contract of .graphify_analysis.json.
+
+    The render pipeline only requires a 'communities' mapping. Optional
+    integer counters (raw_nodes/raw_edges) are used by analytics when present.
+    """
+    if not isinstance(data.get("communities"), dict):
+        raise ValueError(".graphify_analysis.json must contain a 'communities' object")
+    for key in ("raw_nodes", "raw_edges"):
+        value = data.get(key)
+        if value is not None and not isinstance(value, int):
+            raise ValueError(f".graphify_analysis.json field '{key}' must be an integer when present")
+
+
+def seed_snapshot_from_files(
+    graph_json_bytes: bytes,
+    analysis_json_bytes: bytes,
+    commit_sha: str = "manual",
+    commit_message: str = "uploaded via admin API",
+) -> Dict[str, Any]:
+    """Create a new snapshot from uploaded graph artifacts and render HTML.
+
+    Raises ValueError on invalid input or RuntimeError if rendering fails.
+    """
+    try:
+        graph_data = json.loads(graph_json_bytes)
+    except Exception as exc:
+        raise ValueError(f"graph.json is not valid JSON: {exc}") from exc
+    _validate_graph_json(graph_data)
+
+    try:
+        analysis_data = json.loads(analysis_json_bytes)
+    except Exception as exc:
+        raise ValueError(f".graphify_analysis.json is not valid JSON: {exc}") from exc
+    _validate_analysis_json(analysis_data)
+
+    if not _ensure_dirs():
+        raise RuntimeError("graph storage directory is not available")
+
+    base_dir = _graphs_dir()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    (base_dir / "graph.json").write_bytes(graph_json_bytes)
+    (base_dir / ".graphify_analysis.json").write_bytes(analysis_json_bytes)
+
+    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    snapshot_path = _snapshot_dir(snapshot_id)
+    snapshot_path.mkdir(parents=True, exist_ok=True)
+
+    meta = {
+        "id": snapshot_id,
+        "created_at": _now_iso(),
+        "commit_sha": commit_sha or "manual",
+        "commit_message": commit_message or "uploaded via admin API",
+        "is_current": False,
+    }
+    (snapshot_path / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    _rebuild_worker(snapshot_id)
+
+    final_meta = _read_meta(snapshot_id)
+    if final_meta is None:
+        raise RuntimeError("snapshot metadata disappeared after render")
+
+    status_path = snapshot_path / "status.json"
+    if status_path.exists():
+        try:
+            status_data = json.loads(status_path.read_text(encoding="utf-8"))
+            if status_data.get("status") == "failed":
+                raise RuntimeError(status_data.get("error", "render failed"))
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+
+    return final_meta
+
+
 def _resolve_render_script() -> Optional[Path]:
     """Locate graphify-render-graph.py across possible runtime layouts."""
     candidates = [
@@ -184,6 +273,21 @@ def _resolve_render_script() -> Optional[Path]:
         Path(__file__).resolve().parent.parent / "tools" / "graphify-render-graph.py",
         # Fallback: repo root is three levels up from backend/app/admin_graphs.py.
         Path(__file__).resolve().parent.parent.parent / "tools" / "graphify-render-graph.py",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_semantic_config() -> Optional[Path]:
+    """Locate graphify-semantic-config.json across possible runtime layouts."""
+    candidates = [
+        # Canonical Docker layout: /app/tools/graphify-semantic-config.json
+        Path("/app/tools/graphify-semantic-config.json"),
+        # Next to the render script if it was found.
+        Path(__file__).resolve().parent.parent / "tools" / "graphify-semantic-config.json",
+        Path(__file__).resolve().parent.parent.parent / "tools" / "graphify-semantic-config.json",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -400,6 +504,20 @@ def compute_analytics() -> Optional[Dict[str, Any]]:
     raw_edges = analysis.get("raw_edges", 0)
     communities = analysis.get("communities", {})
 
+    # If the analysis artifact does not include raw counters, fall back to
+    # counting the actual graph.json nodes/edges (supports "links" or "edges").
+    raw_graph_path = _current_snapshot_dir()
+    raw_graph_path = raw_graph_path / "graph.json" if raw_graph_path else None
+    raw_node_count = 0
+    raw_edge_count = 0
+    if raw_graph_path and raw_graph_path.exists():
+        try:
+            raw_graph = json.loads(raw_graph_path.read_text(encoding="utf-8"))
+            raw_node_count = len(raw_graph.get("nodes", []))
+            raw_edge_count = len(raw_graph.get("links", raw_graph.get("edges", [])))
+        except Exception:
+            pass
+
     total = len(nodes)
     if total == 0:
         return None
@@ -471,14 +589,14 @@ def compute_analytics() -> Optional[Dict[str, Any]]:
             pass
 
     # Simpler gap detection: look at raw graph edges and map raw nodes to layers via source_file.
-    config_path = Path(__file__).resolve().parent.parent / "tools" / "graphify-semantic-config.json"
+    config_path = _resolve_semantic_config()
     layer_gaps = _compute_layer_gaps(raw_graph_path, config_path)
 
     return {
         "snapshot_id": meta["id"],
         "commit_sha": meta.get("commit_sha", ""),
-        "total_nodes": raw_nodes or total,
-        "total_edges": raw_edges,
+        "total_nodes": raw_nodes or raw_node_count or total,
+        "total_edges": raw_edges or raw_edge_count,
         "community_nodes": total,
         "cross_community_edges": len(analysis.get("cross_community_edges", [])),
         "isolated_nodes": isolated_nodes,
@@ -520,8 +638,10 @@ def _classify_node(node: Dict[str, Any], config: Dict[str, Any]) -> str:
     return scores.most_common(1)[0][0]
 
 
-def _compute_layer_gaps(raw_graph_path: Path, config_path: Path) -> List[Dict[str, Any]]:
+def _compute_layer_gaps(raw_graph_path: Optional[Path], config_path: Optional[Path]) -> List[Dict[str, Any]]:
     """Count real edges between raw nodes of different layers."""
+    if raw_graph_path is None or config_path is None:
+        return []
     if not raw_graph_path.exists() or not config_path.exists():
         return []
     try:

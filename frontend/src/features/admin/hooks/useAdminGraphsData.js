@@ -5,6 +5,7 @@ import {
   apiAdminGraphsGetRebuildStatus,
   apiAdminGraphsListSnapshots,
   apiAdminGraphsRebuild,
+  apiAdminGraphsUploadSnapshot,
 } from "../../../lib/apiModules/adminApi.js";
 
 const STATUS_POLL_INTERVAL_MS = 2000;
@@ -18,6 +19,9 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
   const [rebuildError, setRebuildError] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [activeStatus, setActiveStatus] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const pollRef = useRef(null);
   const mountedRef = useRef(true);
 
@@ -128,6 +132,23 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
     return r;
   }, [pollStatus]);
 
+  const uploadSnapshot = useCallback(async (formData) => {
+    setUploading(true);
+    setUploadError("");
+    setUploadSuccess(false);
+    const r = await apiAdminGraphsUploadSnapshot(formData);
+    if (!mountedRef.current) return r;
+    if (!r.ok) {
+      setUploading(false);
+      setUploadError(String(r.error || "Не удалось загрузить снапшот"));
+      return r;
+    }
+    setUploadSuccess(true);
+    setUploading(false);
+    await load();
+    return r;
+  }, [load]);
+
   return {
     data,
     loading,
@@ -138,5 +159,9 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
     activeJobId,
     activeStatus,
     rebuild,
+    uploading,
+    uploadError,
+    uploadSuccess,
+    uploadSnapshot,
   };
 }
