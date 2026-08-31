@@ -1,0 +1,24 @@
+{
+  "contour": {
+    "type": "feature",
+    "name": "session-assignees"
+  },
+  "phase": "execution",
+  "status": "READY_FOR_REVIEW",
+  "gates": {
+    "rag_preflight": true,
+    "code_analysis": true,
+    "artifacts_written": true,
+    "user_approved": true,
+    "implementation_complete": true,
+    "tests_pass": true,
+    "openapi_updated": true
+  },
+  "notes": [
+    "Stage 2 complete: backend migration, AssignmentService, API endpoints, frontend UI, tests.",
+    "Backend tests pass: backend/tests/test_session_assignees.py.",
+    "Frontend tests pass: explorerAssigneeModel, api.sessionAssignees, workspaceSessionAssignees.source.",
+    "docs/openapi.yaml regenerated and linted.",
+    "Ready for user review/PR approval."
+  ]
+}

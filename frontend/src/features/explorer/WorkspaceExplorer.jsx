@@ -49,7 +49,16 @@ import {
   apiGetSubprocessesCount,
   apiCreateSubprocessSessions,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
+import {
+  apiDeleteProject,
+  apiDeleteSession,
+  apiGetSession,
+  apiGetSessionAssignees,
+  apiListOrgAssignableUsers,
+  apiPatchProject,
+  apiPatchSession,
+  apiReplaceSessionAssignees,
+} from "../../lib/api";
 import {
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
@@ -91,6 +100,11 @@ import {
   getExplorerAssigneeKind,
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeLabel,
+  getSessionAssignees,
+  getSessionAssigneesActionLabel,
+  getSessionAssigneesDialogTitle,
+  getVisibleSessionAssignees,
+  getSessionAssigneesTooltip,
   mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
@@ -914,6 +928,129 @@ function AssigneeDialog({
             onClick={() => submit()}
             className="primaryBtn h-8 px-3 text-sm"
             disabled={busy || loadingUsers || !selectedUserId}
+          >
+            {busy ? "…" : "Сохранить"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+
+function SessionAssigneesDialog({
+  session,
+  users,
+  loadingUsers = false,
+  usersError = "",
+  initialUserIds = [],
+  onClose,
+  onSave,
+}) {
+  const [selectedIds, setSelectedIds] = useState(() => new Set(initialUserIds));
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const title = getSessionAssigneesDialogTitle();
+  const filteredUsers = useMemo(() => filterExplorerAssignableUsers(users, query), [users, query]);
+
+  useEffect(() => {
+    setSelectedIds(new Set(initialUserIds));
+    setQuery("");
+    setError("");
+  }, [session?.id, initialUserIds.join(",")]);
+
+  const toggleUser = useCallback((userId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+    setError("");
+  }, []);
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await onSave(Array.from(selectedIds));
+      onClose();
+    } catch (e) {
+      setError(String(e?.message || e || "Не удалось сохранить исполнителей"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectedCount = selectedIds.size;
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="space-y-3">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setError("");
+          }}
+          placeholder="Найти пользователя"
+          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+          disabled={busy || loadingUsers}
+        />
+        <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-bg/60 p-1.5">
+          {loadingUsers ? (
+            <div className="px-2.5 py-3 text-sm text-muted">Загрузка пользователей...</div>
+          ) : filteredUsers.length ? (
+            filteredUsers.map((user) => {
+              const uid = assigneeMemberId(user);
+              const name = formatExplorerUserDisplay(user) || uid;
+              const email = String(user?.email || "").trim();
+              const jobTitle = String(user?.job_title || "").trim();
+              const checked = selectedIds.has(uid);
+              if (!uid) return null;
+              return (
+                <label
+                  key={uid}
+                  className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm text-fg transition-colors hover:bg-panelAlt"
+                >
+                  <input
+                    type="checkbox"
+                    name="session-assignees"
+                    className="mt-1"
+                    value={uid}
+                    checked={checked}
+                    disabled={busy}
+                    onChange={() => toggleUser(uid)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{name}</span>
+                    <span className="mt-0.5 block truncate text-[11px] text-muted">
+                      {[email, jobTitle].filter(Boolean).join(" · ") || uid}
+                    </span>
+                  </span>
+                </label>
+              );
+            })
+          ) : (
+            <div className="px-2.5 py-3 text-sm text-muted">
+              {query ? "Пользователи не найдены." : "Нет доступных пользователей для назначения."}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-between text-xs text-muted">
+          <span>{selectedCount > 0 ? `Выбрано: ${selectedCount}` : "Не выбрано ни одного исполнителя"}</span>
+        </div>
+        {usersError ? <p className="text-xs text-danger">{usersError}</p> : null}
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
+          <button
+            onClick={submit}
+            className="primaryBtn h-8 px-3 text-sm"
+            disabled={busy || loadingUsers}
           >
             {busy ? "…" : "Сохранить"}
           </button>
@@ -2197,6 +2334,7 @@ function ProjectTableSkeletonRow({ sessionColumnProfile }) {
       <td className="px-2 py-2"><div className="h-4 w-16 rounded bg-border/40" /></td>
       <td className="hidden sm:table-cell px-2 py-2"><div className="h-4 w-16 rounded bg-border/40" /></td>
       <td className="hidden md:table-cell px-2 py-2"><div className="h-4 w-20 rounded bg-border/40" /></td>
+      <td className="hidden md:table-cell px-2 py-2"><div className="h-4 w-20 rounded bg-border/40" /></td>
       <td className="px-2 py-2"><div className="h-4 w-10 rounded bg-border/40" /></td>
       {sessionColumnProfile.showDiscussionColumn ? <td className="px-2 py-2"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
       {sessionColumnProfile.showSignalColumns ? <td className="px-2 py-2"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
@@ -3249,6 +3387,40 @@ function ExplorerPane({
 
 // ─── Session Row ──────────────────────────────────────────────────────────────
 
+function SessionAssigneesCell({ session }) {
+  const { visible, overflow } = getVisibleSessionAssignees(session);
+  if (!visible.length) {
+    return <span className="text-[12.5px] text-muted/80">Не назначен</span>;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex -space-x-1.5">
+        {visible.map((user) => {
+          const name = formatExplorerUserDisplay(user);
+          return (
+            <span
+              key={getExplorerAssignableUserId(user)}
+              className="inline-flex h-[22px] w-[22px] shrink-0 select-none items-center justify-center rounded-full text-[9.5px] font-semibold tracking-[0.02em] text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-2 ring-bg"
+              style={{ backgroundColor: avatarColorFromName(name) }}
+              aria-hidden
+              title={name}
+            >
+              {initialsFromName(name)}
+            </span>
+          );
+        })}
+      </span>
+      {overflow > 0 ? (
+        <span className="text-[11px] text-muted">+{overflow}</span>
+      ) : (
+        <span className="truncate text-[11.5px] text-muted">
+          {formatExplorerUserDisplay(visible[0])}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function SessionRow({
   session,
   onOpen,
@@ -3259,14 +3431,17 @@ function SessionRow({
   canRename = false,
   canDelete = false,
   canChangeStatus = false,
+  canAssignAssignees = false,
   showSignalColumns = true,
   showDiscussionColumn = false,
+  showAssigneesColumn = false,
   notesAggregate = null,
   depth = 0,
   treeMode = false,
   isExpanded = false,
   isLoadingChildren = false,
   onToggleExpand,
+  onAssignAssignees,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -3421,7 +3596,13 @@ function SessionRow({
             ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
             : <span className="text-[11px] text-muted/65">—</span>}
         </td>
+        {showAssigneesColumn ? (
+          <td className="hidden md:table-cell px-2 py-2" title={getSessionAssigneesTooltip(session)}>
+            <SessionAssigneesCell session={session} />
+          </td>
+        ) : null}
         <td className="px-2 py-2"><DodBar percent={session.dod_percent} /></td>
+
         {showDiscussionColumn ? (
           <td className="px-2 py-2 text-center" title="Открытые обсуждения">
             <div className="flex min-w-0 justify-center">
@@ -3463,7 +3644,7 @@ function SessionRow({
                 "Открыть сессию"
               )}
             </AppRouteLink>
-            {(canRename || canDelete) ? (
+            {(canRename || canDelete || canAssignAssignees) ? (
               <div className="relative">
                 <button
                   type="button"
@@ -3478,6 +3659,11 @@ function SessionRow({
                   <ContextMenu
                     items={[
                       ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
+                      ...(canAssignAssignees ? [{
+                        label: getSessionAssigneesActionLabel(session),
+                        icon: <IcoEdit />,
+                        action: () => onAssignAssignees?.(session),
+                      }] : []),
                       ...(canDelete ? [{ separator: true }, {
                         label: "Удалить",
                         icon: <IcoTrash />,
@@ -3562,10 +3748,13 @@ function SessionTreeRows({
   canRename,
   canDelete,
   canChangeStatus,
+  canAssignAssignees,
   showSignalColumns,
   showDiscussionColumn,
+  showAssigneesColumn,
   noteAggregatesBySessionId,
   eagerTree = false,
+  onAssignAssignees,
 }) {
   const sorted = useMemo(() => sortProjectSessions(sessions, sort), [sessions, sort]);
   return sorted.map((session) => {
@@ -3592,9 +3781,12 @@ function SessionTreeRows({
           canRename={canRename}
           canDelete={canDelete}
           canChangeStatus={canChangeStatus}
+          canAssignAssignees={canAssignAssignees}
           showSignalColumns={showSignalColumns}
           showDiscussionColumn={showDiscussionColumn}
+          showAssigneesColumn={showAssigneesColumn}
           notesAggregate={noteAggregatesBySessionId?.get(sid) || null}
+          onAssignAssignees={onAssignAssignees}
         />
         {isExpanded ? (
           isLoading ? (
@@ -3639,10 +3831,13 @@ function SessionTreeRows({
               canRename={canRename}
               canDelete={canDelete}
               canChangeStatus={canChangeStatus}
+              canAssignAssignees={canAssignAssignees}
               showSignalColumns={showSignalColumns}
               showDiscussionColumn={showDiscussionColumn}
+              showAssigneesColumn={showAssigneesColumn}
               noteAggregatesBySessionId={noteAggregatesBySessionId}
               eagerTree={eagerTree}
+              onAssignAssignees={onAssignAssignees}
             />
           )
         ) : null}
@@ -3668,6 +3863,16 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [sessionSort, setSessionSort] = useState(null);
   const [activeTab, setActiveTab] = useState("sessions");
   const openingSessionIdRef = useRef("");
+  const [sessionAssigneesDialog, setSessionAssigneesDialog] = useState(null);
+  const [sessionAssigneesUsersState, setSessionAssigneesUsersState] = useState({
+    orgId: "",
+    items: [],
+    loading: false,
+    loaded: false,
+    error: "",
+  });
+  const [sessionAssigneesCurrentIds, setSessionAssigneesCurrentIds] = useState([]);
+  const [sessionAssigneesLoadingCurrent, setSessionAssigneesLoadingCurrent] = useState(false);
 
   const treeEnabled = useFeatureFlag("workspace_session_tree_view");
   const [expandedSessionIds, setExpandedSessionIds] = useState(() => new Set());
@@ -3847,6 +4052,83 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     await load();
     return true;
   }, [projectId, load, setError]);
+
+  const handleOpenSessionAssignees = useCallback((session) => {
+    setSessionAssigneesDialog(session);
+  }, []);
+
+  const handleSaveSessionAssignees = useCallback(async (userIds) => {
+    const session = sessionAssigneesDialog;
+    const sid = String(session?.id || session?.session_id || "").trim();
+    if (!sid) throw new Error("Не выбрана сессия");
+    const resp = await apiReplaceSessionAssignees(sid, userIds);
+    if (!resp?.ok) {
+      throw new Error(resp?.error || "Не удалось сохранить исполнителей");
+    }
+    handleSessionPatched(sid, { assignees: getSessionAssigneesFromIds(sessionAssigneesUsersState.items, resp.user_ids || userIds) });
+    await load();
+  }, [sessionAssigneesDialog, sessionAssigneesUsersState.items, handleSessionPatched, load]);
+
+  useEffect(() => {
+    const session = sessionAssigneesDialog;
+    const sid = String(session?.id || session?.session_id || "").trim();
+    const oid = String(activeOrgId || "").trim();
+    if (!sid || !oid) {
+      setSessionAssigneesUsersState({ orgId: "", items: [], loading: false, loaded: true, error: "" });
+      setSessionAssigneesCurrentIds([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setSessionAssigneesUsersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
+    setSessionAssigneesLoadingCurrent(true);
+    setSessionAssigneesCurrentIds(getSessionAssigneeIds(session));
+    (async () => {
+      try {
+        const [usersResp, assigneesResp] = await Promise.all([
+          Promise.race([apiListOrgAssignableUsers(oid), assigneeMembersLoadTimeout()]),
+          apiGetSessionAssignees(sid),
+        ]);
+        if (cancelled) return;
+        const normalized = normalizeExplorerAssignableUsersResponse(usersResp);
+        const currentItems = Array.isArray(assigneesResp?.items) ? assigneesResp.items : [];
+        setSessionAssigneesUsersState({
+          orgId: oid,
+          items: normalized.ok ? normalized.items : [],
+          loading: false,
+          loaded: true,
+          error: normalized.ok ? "" : (normalized.error || "Не удалось загрузить пользователей."),
+        });
+        setSessionAssigneesCurrentIds(currentItems.map((u) => u.user_id).filter(Boolean));
+      } catch (e) {
+        if (cancelled) return;
+        setSessionAssigneesUsersState({
+          orgId: oid,
+          items: [],
+          loading: false,
+          loaded: true,
+          error: "Не удалось загрузить пользователей.",
+        });
+        setSessionAssigneesCurrentIds(getSessionAssigneeIds(session));
+      } finally {
+        if (!cancelled) setSessionAssigneesLoadingCurrent(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeOrgId, sessionAssigneesDialog]);
+
+  function getSessionAssigneesFromIds(users, ids) {
+    const idSet = new Set(Array.isArray(ids) ? ids.map((id) => String(id || "").trim()).filter(Boolean) : []);
+    const matched = (Array.isArray(users) ? users : [])
+      .filter((u) => idSet.has(getExplorerAssignableUserId(u)))
+      .map((u) => ({
+        user_id: getExplorerAssignableUserId(u),
+        email: String(u?.email || "").trim(),
+        full_name: String(u?.full_name || "").trim(),
+        job_title: String(u?.job_title || "").trim(),
+        display_name: String(u?.display_name || "").trim(),
+      }));
+    return matched;
+  }
 
   const loadSessionChildren = useCallback(async (sessionId) => {
     const sid = String(sessionId || "").trim();
@@ -4149,6 +4431,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <col className="w-[154px]" />
               <col className="w-[92px]" />
               <col className="w-[96px]" />
+              <col className="w-[132px]" />
               <col className="w-[90px]" />
               {sessionColumnProfile.showDiscussionColumn ? <col className="w-[76px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[76px]" /> : null}
@@ -4170,6 +4453,9 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 </th>
                 <th className="hidden md:table-cell px-2 py-2" aria-sort={sessionSort?.key === "owner" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Owner" sortKey="owner" sort={sessionSort} onSort={handleSessionSort} />
+                </th>
+                <th className="hidden md:table-cell px-2 py-2" aria-sort={sessionSort?.key === "assignees" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Исполнители" sortKey="assignees" sort={sessionSort} onSort={handleSessionSort} />
                 </th>
                 <th className="px-2 py-2">DoD</th>
                 {sessionColumnProfile.showDiscussionColumn ? (
@@ -4228,10 +4514,13 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                       canRename={!!permissions?.canRenameSession}
                       canDelete={!!permissions?.canDeleteSession}
                       canChangeStatus={!!permissions?.canChangeStatus}
+                      canAssignAssignees={!!permissions?.canAssignSessionAssignees}
                       showSignalColumns={sessionColumnProfile.showSignalColumns}
                       showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                      showAssigneesColumn
                       noteAggregatesBySessionId={noteAggregatesBySessionId}
                       eagerTree={eagerTree}
+                      onAssignAssignees={handleOpenSessionAssignees}
                     />
                   ) : (
                     sortedSessions.map((s) => (
@@ -4251,8 +4540,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                         canRename={!!permissions?.canRenameSession}
                         canDelete={!!permissions?.canDeleteSession}
                         canChangeStatus={!!permissions?.canChangeStatus}
+                        canAssignAssignees={!!permissions?.canAssignSessionAssignees}
                         showSignalColumns={sessionColumnProfile.showSignalColumns}
                         showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                        showAssigneesColumn
+                        onAssignAssignees={handleOpenSessionAssignees}
                       />
                     ))
                   )}
@@ -4283,6 +4575,17 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             if (res.ok) load();
             return res;
           }}
+        />
+      ) : null}
+      {sessionAssigneesDialog ? (
+        <SessionAssigneesDialog
+          session={sessionAssigneesDialog}
+          users={sessionAssigneesUsersState.items}
+          loadingUsers={sessionAssigneesUsersState.loading}
+          usersError={sessionAssigneesUsersState.error}
+          initialUserIds={sessionAssigneesCurrentIds}
+          onClose={() => setSessionAssigneesDialog(null)}
+          onSave={handleSaveSessionAssignees}
         />
       ) : null}
     </div>

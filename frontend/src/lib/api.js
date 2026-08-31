@@ -540,6 +540,42 @@ export async function apiDeleteSession(sessionId) {
   return okOrError(await request(apiRoutes.sessions.item(id), { method: "DELETE" }));
 }
 
+export async function apiGetSessionAssignees(sessionId) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.assignees(id), { method: "GET" }));
+  const items = Array.isArray(r.data) ? r.data : Array.isArray(r.data?.items) ? r.data.items : [];
+  return r.ok
+    ? {
+        ok: true,
+        status: r.status,
+        items,
+        count: Number(r.data?.count || items.length || 0),
+      }
+    : r;
+}
+
+export async function apiReplaceSessionAssignees(sessionId, userIds = []) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const ids = Array.isArray(userIds)
+    ? userIds.map((u) => String(u || "").trim()).filter(Boolean)
+    : [];
+  const r = okOrError(await request(apiRoutes.sessions.assignees(id), { method: "PUT", body: { user_ids: ids } }));
+  const resultIds = Array.isArray(r.data?.user_ids)
+    ? r.data.user_ids
+    : Array.isArray(r.data)
+      ? r.data
+      : [];
+  return r.ok
+    ? {
+        ok: true,
+        status: r.status,
+        user_ids: resultIds,
+      }
+    : r;
+}
+
 export async function apiNavigateToSubprocess(sessionId, elementId, targetElementId = "") {
   const id = String(sessionId || "").trim();
   const el = String(elementId || "").trim();

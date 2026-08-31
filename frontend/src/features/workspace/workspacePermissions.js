@@ -28,6 +28,7 @@ export function buildWorkspacePermissions(roleRaw, isAdmin = false) {
     canDeleteSession: canManage,
     canDeleteProject: canManage,
     canDeleteFolder: canManage,
+    canAssignSessionAssignees: canEdit,
     canManageInvites: canManage,
     canManageUsers: canManage,
     canViewAdmin: canManage,
