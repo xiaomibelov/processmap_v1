@@ -120,7 +120,8 @@ def _legacy_load_session_scoped(
 ) -> Tuple[Optional[Session], str, Optional[Dict[str, Any]]]:
     oid = _request_active_org_id(request) if request is not None else ""
     sid = str(session_id or "").strip()
-    if not sid:
+    if not sid or sid.lower() == "none":
+        logger.warning("_legacy_load_session_scoped_invalid_session_id: session_id=%r", session_id)
         return None, oid, None
     st = get_storage()
     sess: Optional[Session] = None

@@ -4556,6 +4556,18 @@ def _create_bpmn_revision_snapshot_if_needed(
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.put("/api/sessions/{session_id}/bpmn")
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) -> Dict[str, Any]:
+    sid = str(session_id or "").strip()
+    if not sid or sid.lower() == "none":
+        logger.warning("session_bpmn_save_invalid_session_id: received session_id=%r", session_id)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_SESSION_ID",
+                "session_id": sid,
+                "message": "session_id is required and must not be the literal string 'None'",
+            },
+        )
+
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
