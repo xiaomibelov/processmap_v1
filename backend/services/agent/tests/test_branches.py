@@ -265,6 +265,42 @@ def test_doc_qa_branch_searches_current_session_first(admin_token, session_with_
     assert calls[0].args[1] == session_with_steps
 
 
+def test_structured_fact_qa_branch_uses_cheap_model_class(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    """structured_fact_qa must answer from RAG using the cheap model class."""
+    mock_route_intent_smalltalk.return_value = "structured_fact_qa"
+    with mock.patch("memory.chat.complete") as fake_complete, mock.patch("memory.chat.search_rag") as fake_rag:
+        fake_rag.return_value = {
+            "ok": True,
+            "results": [
+                {"chunk_text": "Свойство ingredient: тип string, обязательное.", "score": 0.9},
+            ],
+        }
+        fake_complete.return_value = {
+            "ok": True,
+            "status": "ok",
+            "text": "У задачи есть свойства: ingredient, equipment, duration и другие.",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "provider_id": "p1",
+            "model": "deepseek-chat",
+            "prompt_version": 1,
+            "fallback": False,
+            "cached": False,
+        }
+        c = TestClient(app)
+        r = c.post(
+            f"/sessions/{session_with_steps}/agent/chat",
+            headers=_auth(admin_token),
+            json={"message": "какие свойства у задачи"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["action"] == "structured_fact_qa"
+    assert "свойства" in body["message"]
+    fake_complete.assert_called_once()
+    assert fake_complete.call_args.kwargs.get("model_class") == "cheap"
+
+
 def test_empty_schema_smalltalk_no_json(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
     """Acceptance: empty projection + smalltalk -> human text, no raw JSON."""
     mock_projection.return_value = {

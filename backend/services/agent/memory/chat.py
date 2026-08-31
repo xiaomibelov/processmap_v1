@@ -618,6 +618,7 @@ def _run_structured_fact_qa_branch(
         session_id=session_id,
         org_id=org_id,
         max_tokens=MAX_TOKENS,
+        model_class="cheap",
     )
     usage = _usage_out(result)
     if not result.get("ok"):
@@ -961,6 +962,7 @@ def _run_structured_fact_qa_branch_stream(
         session_id=session_id,
         org_id=org_id,
         max_tokens=MAX_TOKENS,
+        model_class="cheap",
     ):
         if event_type == "token":
             delta = str(event_data.get("delta") or "")
