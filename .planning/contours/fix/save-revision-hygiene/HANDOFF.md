@@ -4,6 +4,9 @@
 **Status:** `READY_FOR_REVIEW`  
 **Branch:** `fix/save-revision-hygiene`  
 **Base:** `origin/main @ 030f086a47e88cab14732246a58f771260844e74`  
+**HEAD:** `c2cc90902c6f0d1108f6e9ab9cbb9ef99e8b8ca7`  
+**Pushed to:** `origin/fix/save-revision-hygiene`  
+**PR URL:** https://github.com/xiaomibelov/processmap_v1/pull/new/fix/save-revision-hygiene  
 **Worktree:** `/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/fix-save-revision-hygiene`  
 **Audit source:** `.planning/contours/audit/save-multi-revision-self-conflict/REPORT.md` + repro_06.har
 
@@ -36,19 +39,20 @@
 
 ```text
 branch: fix/save-revision-hygiene
-HEAD:   c8337f18ded7833b28e4f117bd5317a38671e0e8
+HEAD:   c2cc90902c6f0d1108f6e9ab9cbb9ef99e8b8ca7
 origin/main: 030f086a47e88cab14732246a58f771260844e74
+origin/fix/save-revision-hygiene: c2cc90902c6f0d1108f6e9ab9cbb9ef99e8b8ca7
 merge-base:  030f086a47e88cab14732246a58f771260844e74
 ahead-by: 2
 
 commits:
-  c8337f18 docs(planning): артефакты контура fix/save-revision-hygiene
+  c2cc9090 docs(planning): артефакты контура fix/save-revision-hygiene
   7366e783 fix(save): гигиена ревизий — no-op guard, без лишнего meta-PATCH, классификация same_tab
 
 git diff --stat 030f086a..HEAD: 16 files changed, 695 insertions(+), 32 deletions(-)
 ```
 
-Merge/push в main/deploy без явного approve не выполнялись.
+Push ветки на origin выполнён. Merge/push в main/deploy без явного approve не выполнялись.
 
 ---
 

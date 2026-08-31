@@ -7,7 +7,7 @@
   "reviewer_status": "pending",
   "branch": "fix/save-revision-hygiene",
   "base": "origin/main @ 030f086a47e88cab14732246a58f771260844e74",
-  "head": "5492a18ded7833b28e4f117bd5317a38671e0e8",
+  "head": "c2cc90902c6f0d1108f6e9ab9cbb9ef99e8b8ca7",
   "audit_source": ".planning/contours/audit/save-multi-revision-self-conflict/REPORT.md",
   "acceptance_criteria": {
     "backend_noop_guard": "passed",
