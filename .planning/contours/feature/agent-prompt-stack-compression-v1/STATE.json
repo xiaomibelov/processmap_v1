@@ -1,0 +1,91 @@
+{
+  "contour": "feature/agent-prompt-stack-compression-v1",
+  "run_id": "feature-agent-prompt-stack-compression-v1-20260831T152200Z",
+  "phase": "1",
+  "status": "EXECUTION_DONE",
+  "role": "executor",
+  "ready_for_execution": false,
+  "ready_for_review": true,
+  "blockers": [
+    "Awaiting user review/approve before PR / merge."
+  ],
+  "baseline": {
+    "repo": "processmap_v1_main_clone",
+    "worktree": "processmap_v1_main_clone-worktrees/feature-agent-prompt-stack-compression-v1",
+    "branch": "feature/agent-prompt-stack-compression-v1",
+    "head": "8f904834559993bcb86d098bc5aa7bbba133dcfd",
+    "origin_main": "8f904834559993bcb86d098bc5aa7bbba133dcfd"
+  },
+  "rag_preflight": {
+    "command": "node tools/rag/pm-rag-agent-preflight.mjs",
+    "status": "failed",
+    "reason": "Docker daemon not running; Node.js not installed on host."
+  },
+  "mirror": {
+    "script": "tools/pm-agent-mirror-report.sh",
+    "status": "unavailable",
+    "reason": "Script expects /opt/processmap-test which does not exist in this environment. Manual Obsidian mirror deferred until after approve."
+  },
+  "measurements": {
+    "baseline": {
+      "fixture": "large_schema_300_nodes",
+      "prompt_tokens_total": 25897,
+      "prompt_tokens_projection": 24745,
+      "prompt_tokens_history": 1100,
+      "prompt_tokens_user": 12,
+      "command": ".venv/bin/python scripts/measure_prompt_tokens.py --before"
+    },
+    "after": {
+      "fixture": "large_schema_300_nodes",
+      "prompt_tokens_total": 636,
+      "prompt_tokens_projection": 436,
+      "prompt_tokens_history": 157,
+      "prompt_tokens_user": 30,
+      "estimated_prompt_tokens": 514,
+      "layer_tokens": {
+        "projection": 319,
+        "history": 164,
+        "user": 31
+      },
+      "command": ".venv/bin/python scripts/measure_prompt_tokens.py --after"
+    },
+    "after_prod_like": {
+      "fixture": "large_schema_300_nodes",
+      "prompt_tokens_total": 681,
+      "prompt_tokens_projection": 436,
+      "prompt_tokens_history": 202,
+      "prompt_tokens_user": 30,
+      "estimated_prompt_tokens": 560,
+      "rag_included": true,
+      "rag_chunk_count": 3,
+      "pending_edit_included": true,
+      "history_turns": 51,
+      "layer_tokens": {
+        "projection": 319,
+        "history": 210,
+        "user": 31
+      },
+      "command": ".venv/bin/python scripts/measure_prompt_tokens.py --after-prod-like"
+    }
+  },
+  "tests": {
+    "command": "python -m pytest tests/test_prompt_builder.py tests/test_branches.py tests/test_agent_chat_contract.py tests/test_agent_stream_contract.py tests/test_context.py tests/test_agent_memory.py tests/test_memory_worker.py -q",
+    "result": "42 passed",
+    "status": "pass"
+  },
+  "revisions": [
+    "Removed provider-specific cache_control from scope; cache-hit savings not claimed.",
+    "Added explicit rule: pending-edit context is outside history budget and never trimmed.",
+    "Specified large_schema_300_nodes synthetic fixture and before-after measurement order."
+  ],
+  "artifacts": [
+    "PLAN.md",
+    "TOKEN_BUDGET.md",
+    "TESTS.md",
+    "MEASUREMENTS.md",
+    "PR.md",
+    "git-proof.md",
+    "AGENT_RUN_ID",
+    "STATE.json"
+  ]
+}
