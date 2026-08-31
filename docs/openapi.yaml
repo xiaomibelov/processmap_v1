@@ -2698,6 +2698,15 @@ components:
           type: string
       title: RagIndexAllIn
       type: object
+    RagIndexDictionariesIn:
+      properties:
+        force:
+          default: false
+          description: Reindex even if content hash matches
+          title: Force
+          type: boolean
+      title: RagIndexDictionariesIn
+      type: object
     RagIndexIn:
       properties:
         force:
@@ -2709,7 +2718,8 @@ components:
           title: Session Id
           type: string
         source_type:
-          description: '''bpmn_xml'' or ''product_action'''
+          description: '''bpmn_xml'', ''product_action'', ''property_dictionary'',
+            ''operation_catalog'', or ''glossary'''
           title: Source Type
           type: string
       required:
@@ -14032,6 +14042,41 @@ paths:
       security:
       - bearerAuth: []
       summary: Создать/выполнить index all
+      tags:
+      - rag
+      - rag
+  /api/rag/index-dictionaries:
+    post:
+      description: 'Admin/org-admin bulk index of org-level dictionaries: property_dictionary,
+        operation_catalog, glossary.'
+      operationId: rag_index_dictionaries_api_rag_index_dictionaries_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagIndexDictionariesIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Rag Index Dictionaries Api Rag Index Dictionaries
+                  Post
+                type: object
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить index dictionaries
       tags:
       - rag
       - rag
