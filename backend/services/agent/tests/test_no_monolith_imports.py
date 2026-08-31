@@ -12,6 +12,14 @@ from pathlib import Path
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
+# Исключить виртуальные окружения и кэши, которые могут появиться локально.
+_EXCLUDED_DIR_NAMES = {".venv-test", ".venv", "__pycache__", ".pytest_cache", ".git", ".hypothesis"}
+
+
+def _is_excluded_path(path: Path) -> bool:
+    return any(part in _EXCLUDED_DIR_NAMES for part in path.relative_to(SERVICE_ROOT).parts)
+
+
 # Корневые имена модулей монолита (backend/app/* импортируется как app.*).
 FORBIDDEN_ROOTS = {"app", "backend"}
 # Локальные модули сервиса (разрешены; перечислены, чтобы guard ловил и
@@ -37,6 +45,8 @@ def _iter_import_roots(tree: ast.AST):
 def test_no_monolith_imports():
     offenders = []
     for py_file in sorted(SERVICE_ROOT.rglob("*.py")):
+        if _is_excluded_path(py_file):
+            continue
         tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         for root in _iter_import_roots(tree):
             if root in FORBIDDEN_ROOTS:
@@ -49,6 +59,8 @@ def test_no_unknown_local_top_level_modules():
     stdlib = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else set()
     unknown = []
     for py_file in sorted(SERVICE_ROOT.rglob("*.py")):
+        if _is_excluded_path(py_file):
+            continue
         tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         for root in _iter_import_roots(tree):
             if root in ALLOWED_LOCAL_ROOTS or root in stdlib:
