@@ -66,6 +66,7 @@ class AdminGraphsTests(unittest.TestCase):
             admin_graphs_current_html,
             admin_graphs_current_json,
             admin_graphs_rebuild,
+            admin_graphs_rebuild_check,
             admin_graphs_rebuild_status,
             admin_graphs_analytics,
             admin_graphs_upload_snapshot,
@@ -76,6 +77,7 @@ class AdminGraphsTests(unittest.TestCase):
         self.html_fn = admin_graphs_current_html
         self.json_fn = admin_graphs_current_json
         self.rebuild_fn = admin_graphs_rebuild
+        self.rebuild_check_fn = admin_graphs_rebuild_check
         self.rebuild_status_fn = admin_graphs_rebuild_status
         self.analytics_fn = admin_graphs_analytics
         self.upload_fn = admin_graphs_upload_snapshot
@@ -116,6 +118,15 @@ class AdminGraphsTests(unittest.TestCase):
                 [org_id, user_id, role],
             )
             con.commit()
+
+    def _write_input_files(self):
+        """Place valid graph.json + .graphify_analysis.json into the graphs dir."""
+        graph = {"nodes": [{"id": "a"}], "links": []}
+        analysis = {"raw_nodes": 1, "raw_edges": 0, "communities": {"0": ["a"]}}
+        (self.graphs_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+        (self.graphs_dir / ".graphify_analysis.json").write_text(
+            json.dumps(analysis), encoding="utf-8"
+        )
 
     def _admin_request(self):
         return _DummyRequest(
@@ -207,6 +218,7 @@ class AdminGraphsTests(unittest.TestCase):
     # ── Rebuild tests ─────────────────────────────────────────────────────────
 
     def test_rebuild_starts_job(self):
+        self._write_input_files()
         result = self.rebuild_fn(self._admin_request())
         self.assertTrue(hasattr(result, "job_id"))
         self.assertTrue(result.job_id)
@@ -229,6 +241,8 @@ class AdminGraphsTests(unittest.TestCase):
     def test_rebuild_fails_with_nonzero_exit_code(self):
         from app import admin_graphs
 
+        self._write_input_files()
+
         # Create a fake render script that prints to stdout/stderr and exits 1.
         fake_script = Path(self.tmp_name) / "fake_render.py"
         fake_script.write_text(
@@ -249,6 +263,47 @@ class AdminGraphsTests(unittest.TestCase):
             self.assertTrue(status.error)
         finally:
             admin_graphs._resolve_render_script = original_resolve
+
+    def test_rebuild_without_input_returns_409(self):
+        result = self.rebuild_fn(self._admin_request())
+        self.assertEqual(result.status_code, 409)
+        body = json.loads(result.body)
+        self.assertEqual(body["error"]["code"], "missing_input")
+        self.assertIn("Отсутствуют входные файлы", body["error"]["message"])
+        self.assertIn("graph.json", body["error"]["message"])
+
+    def test_rebuild_check_endpoint_reports_missing_files(self):
+        result = self.rebuild_check_fn(self._admin_request())
+        self.assertFalse(result.ok)
+        self.assertIn("graph.json", result.missing_files)
+        self.assertIn(".graphify_analysis.json", result.missing_files)
+        self.assertIn("Отсутствуют входные файлы", result.message)
+
+    def test_rebuild_check_endpoint_ok_when_input_present(self):
+        self._write_input_files()
+        result = self.rebuild_check_fn(self._admin_request())
+        self.assertTrue(result.ok)
+        self.assertEqual(result.missing_files, [])
+        self.assertIn("Входные файлы на месте", result.message)
+
+    def test_rebuild_with_valid_input_succeeds(self):
+        self._write_input_files()
+        result = self.rebuild_fn(self._admin_request())
+        self.assertTrue(hasattr(result, "job_id"))
+        self.assertTrue(result.job_id)
+        status = self._wait_for_status(result.job_id, ("success", "failed"), timeout_seconds=5)
+        self.assertEqual(status.status, "success")
+
+    def test_rebuild_status_transitions_to_success(self):
+        self._write_input_files()
+        result = self.rebuild_fn(self._admin_request())
+        job_id = result.job_id
+        # Immediately after start the job should be pending or already running.
+        initial = self.rebuild_status_fn(job_id, self._admin_request())
+        self.assertIn(initial.status, {"pending", "running"})
+        final = self._wait_for_status(job_id, ("success", "failed"), timeout_seconds=5)
+        self.assertEqual(final.status, "success")
+        self.assertIn("exit code=0", "\n".join(final.log))
 
     # ── Analytics tests ───────────────────────────────────────────────────────
 

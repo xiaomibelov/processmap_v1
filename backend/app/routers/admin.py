@@ -66,8 +66,10 @@ from ..storage import (
 )
 from ..ai.gateway import complete
 from ..admin_graphs import (
+    RebuildInputError,
     current_snapshot,
     compute_analytics,
+    get_rebuild_input_status,
     list_snapshots,
     read_snapshot_file,
     rebuild_status,
@@ -2538,6 +2540,12 @@ class GraphRebuildStatusOut(BaseModel):
     error: Optional[str] = None
 
 
+class GraphRebuildCheckOut(BaseModel):
+    ok: bool
+    missing_files: List[str] = Field(default_factory=list)
+    message: str
+
+
 class LayerDistributionItem(BaseModel):
     layer_id: str
     label: str
@@ -2710,12 +2718,34 @@ def admin_graphs_current_json(request: Request) -> Any:
     return Response(content=data, media_type="application/json")
 
 
-@router.post("/api/admin/graphs/rebuild")
+@router.get(
+    "/api/admin/graphs/rebuild/check",
+    response_model=GraphRebuildCheckOut,
+    summary="Проверить готовность rebuild",
+    responses={403: {"description": "Forbidden"}},
+)
+def admin_graphs_rebuild_check(request: Request) -> Any:
+    err = _graphs_admin_check(request)
+    if err is not None:
+        return err
+    status = get_rebuild_input_status()
+    return GraphRebuildCheckOut(**status)
+
+
+@router.post(
+    "/api/admin/graphs/rebuild",
+    responses={
+        409: {"description": "Required input files missing; upload a snapshot first"}
+    },
+)
 def admin_graphs_rebuild(request: Request) -> Any:
     err = _graphs_admin_check(request)
     if err is not None:
         return err
-    job_id = start_rebuild()
+    try:
+        job_id = start_rebuild()
+    except RebuildInputError as exc:
+        return _legacy_main._enterprise_error(409, "missing_input", str(exc))
     status = rebuild_status(job_id) or {"status": "pending"}
     return GraphRebuildOut(job_id=job_id, status=status.get("status", "pending"))
 

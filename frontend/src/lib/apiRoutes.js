@@ -333,6 +333,7 @@ export const apiRoutes = {
     graphsSnapshotCurrentHtml: () => "/api/admin/graphs/snapshot/current/html",
     graphsSnapshotCurrentJson: () => "/api/admin/graphs/snapshot/current/json",
     graphsRebuild: () => "/api/admin/graphs/rebuild",
+    graphsRebuildCheck: () => "/api/admin/graphs/rebuild/check",
     graphsRebuildStatus: (jobId) => `/api/admin/graphs/rebuild/${encodeURIComponent(String(jobId || ""))}`,
     graphsAnalytics: () => "/api/admin/graphs/analytics",
   },

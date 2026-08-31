@@ -1443,6 +1443,24 @@ components:
       - term
       title: GlossaryAddIn
       type: object
+    GraphRebuildCheckOut:
+      properties:
+        message:
+          title: Message
+          type: string
+        missing_files:
+          items:
+            type: string
+          title: Missing Files
+          type: array
+        ok:
+          title: Ok
+          type: boolean
+      required:
+      - ok
+      - message
+      title: GraphRebuildCheckOut
+      type: object
     GroupCreateIn:
       properties:
         description:
@@ -4543,9 +4561,32 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
+        '409':
+          description: Required input files missing; upload a snapshot first
       security:
       - bearerAuth: []
       summary: Создать/выполнить rebuild
+      tags:
+      - admin
+  /api/admin/graphs/rebuild/check:
+    get:
+      description: 'Получить check. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_graphs_rebuild_check_api_admin_graphs_rebuild_check_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphRebuildCheckOut'
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: Forbidden
+      security:
+      - bearerAuth: []
+      summary: Получить check
       tags:
       - admin
   /api/admin/graphs/rebuild/{job_id}:
