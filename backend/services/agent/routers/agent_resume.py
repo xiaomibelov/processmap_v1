@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from edit import apply_edit_plan, EditApplyError, get_pending_edit, update_pending_edit_status
-from memory.chat import FEATURE as AGENT_FEATURE
+from memory.chat import EDIT_FEATURE
 from runners import monolith_client
 from schemas import AgentChatIn
 from services.auth_service import AuthError, SessionNotFound, get_session_context
@@ -139,7 +139,7 @@ def _resume_stream(
             )
         }
         final_result = complete(
-            AGENT_FEATURE,
+            EDIT_FEATURE,
             payload=final_prompt,
             user_id=user_id,
             project_id=str(session_data.get("project_id") or ""),

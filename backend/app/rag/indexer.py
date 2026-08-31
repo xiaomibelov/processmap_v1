@@ -7,7 +7,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.rag.chunker import chunk_bpmn_xml, chunk_product_actions, chunk_text
+from app.rag.chunker import (
+    chunk_bpmn_xml,
+    chunk_glossary,
+    chunk_operation_catalog,
+    chunk_product_actions,
+    chunk_property_dictionary,
+    chunk_text,
+)
 from app.rag.storage_rag import (
     delete_rag_chunks_for_doc,
     get_rag_document_by_source,
@@ -49,6 +56,12 @@ def index_document(
         chunks = chunk_bpmn_xml(str(content), metadata)
     elif source_type == "product_action":
         chunks = chunk_product_actions(content if isinstance(content, list) else [], metadata)
+    elif source_type == "property_dictionary":
+        chunks = chunk_property_dictionary(content if isinstance(content, list) else [], metadata)
+    elif source_type == "operation_catalog":
+        chunks = chunk_operation_catalog(content if isinstance(content, list) else [], metadata)
+    elif source_type == "glossary":
+        chunks = chunk_glossary(content if isinstance(content, dict) else {}, metadata)
     else:
         chunks = chunk_text(str(content), metadata)
 

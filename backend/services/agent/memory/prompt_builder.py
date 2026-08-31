@@ -1,21 +1,27 @@
-"""Compact prompt builder for PROCESSMAN chat.
+"""PromptBuilder — compressed prompts + model_class routing for PROCESSMAN.
 
-Builds token-cheap prompts by replacing the full JSON projection with:
-- schema statistics,
-- RAG-retrieved relevant elements,
-- selected-step neighborhood,
-- capped history + conversation summary,
-- stable system/reference prefix.
+Combines two contours:
+- feature/agent-model-routing-optimization-v1: decides model_class per intent.
+- feature/agent-prompt-stack-compression-v1: replaces full JSON projection with
+  compact statistics + RAG top-k + selected-step neighborhood + capped history
+  with pending-edit protection.
 
-No DB access here — callers pass loaded context/history/summary.
+Returns kwargs for gateway.complete() so chat.py stays thin.
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+from .context import AgentContext
+from .memory_store import AgentTurn
+
+
+MAX_TOKENS = 1200
+SMALLTALK_MAX_TOKENS = 400
+SCHEMA_OVERVIEW_MAX_TOKENS = 400
 
 
 @dataclass
@@ -187,7 +193,7 @@ def _select_relevant_step_ids(
     steps = _as_list(projection.get("steps"))
     edges = _as_list(projection.get("edges"))
     all_ids = _step_ids(projection)
-    selected = set()
+    selected: Set[str] = set()
 
     # RAG-retrieved elements.
     for c in rag_chunks[: config.rag_top_k]:
@@ -234,7 +240,8 @@ def _build_compact_projection(
         # Edges between selected steps only.
         selected_set = set(selected_ids)
         relevant_edges = [
-            e for e in edges if str(e.get("from") or "").strip() in selected_set and str(e.get("to") or "").strip() in selected_set
+            e for e in edges
+            if str(e.get("from") or "").strip() in selected_set and str(e.get("to") or "").strip() in selected_set
         ]
         if relevant_edges:
             lines.append("")
@@ -308,7 +315,7 @@ def _format_history(
             stale_note = " (схема с тех пор изменилась)"
         return f"{role_label}{stale_note}: {text}"
 
-    # Always include pending-edit turns verbatim.
+    # Always include pending-edit turns verbatim; they live outside history budget.
     pending_lines = [_turn_text(t) for t in pending_turns if _turn_text(t)]
     pending_text = "\n".join(pending_lines)
     pending_tokens = estimate_tokens(pending_text)
@@ -351,10 +358,64 @@ def _format_history(
 
 
 class PromptBuilder:
-    """Assemble compact prompts for processman_agent."""
+    """Build compressed prompt payload + model_class for a given intent.
+
+    Public API for chat.py is the classmethod ``build()``, which returns kwargs
+    for ``gateway.complete()``:
+        {"model_class": str, "payload": {"input": str}, "max_tokens": int,
+         "estimated_prompt_tokens": int, "layer_tokens": Dict[str, int]}
+
+    Instance methods ``build_processman_prompt()`` and
+    ``build_schema_overview_prompt()`` expose the same assembly with full
+    observability for tests/metrics.
+    """
 
     def __init__(self, config: Optional[PromptBudgetConfig] = None):
         self.config = config or PromptBudgetConfig.from_env()
+
+    @classmethod
+    def build(
+        cls,
+        intent: str,
+        ctx: AgentContext,
+        payload: Any,
+        *,
+        rag_results: Optional[List[Dict[str, Any]]] = None,
+        conversation_summary: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return kwargs for gateway.complete() for the given intent."""
+        builder = cls()
+        if intent == "schema_overview":
+            assembly = builder.build_schema_overview_prompt(ctx)
+            return {
+                "model_class": "cheap",
+                "payload": {"input": assembly.user_prompt},
+                "max_tokens": SCHEMA_OVERVIEW_MAX_TOKENS,
+                "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
+                "layer_tokens": assembly.layer_tokens,
+            }
+        if intent == "doc_qa":
+            return builder._doc_qa(ctx, payload, rag_results or [])
+
+        # smalltalk / doc_qa_fallback / unknown intents all use the free-answer prompt.
+        assembly = builder.build_processman_prompt(
+            ctx, payload, conversation_summary=conversation_summary
+        )
+        if intent == "smalltalk":
+            model_class = "cheap"
+        elif intent == "doc_qa_fallback":
+            model_class = "primary"
+        else:
+            # Conservative default for any unknown intent: primary.
+            model_class = "primary"
+        max_tokens = SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS
+        return {
+            "model_class": model_class,
+            "payload": {"input": assembly.user_prompt},
+            "max_tokens": max_tokens,
+            "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
+            "layer_tokens": assembly.layer_tokens,
+        }
 
     def build_processman_prompt(
         self,
@@ -367,7 +428,7 @@ class PromptBuilder:
         """Build compact user prompt for free-answer / smalltalk / schema_overview fallback."""
         projection_text = _trim_compact_projection(
             ctx.projection,
-            payload.selected_step_id,
+            getattr(payload, "selected_step_id", None),
             rag_chunks or [],
             self.config,
         )
@@ -382,7 +443,7 @@ class PromptBuilder:
         if history_text:
             parts.append("=== История диалога ===")
             parts.append(history_text)
-        selected = str(payload.selected_step_id or "").strip()
+        selected = str(getattr(payload, "selected_step_id", None) or "").strip()
         if selected:
             parts.append(f"Выбранный шаг: {selected}")
         parts.append(f"Сообщение пользователя: {payload.message}")
@@ -392,7 +453,11 @@ class PromptBuilder:
         layer_tokens = {
             "projection": estimate_tokens(projection_text),
             "history": history_tokens,
-            "user": estimate_tokens(f"Выбранный шаг: {selected}\n\nСообщение пользователя: {payload.message}" if selected else f"Сообщение пользователя: {payload.message}"),
+            "user": estimate_tokens(
+                f"Выбранный шаг: {selected}\n\nСообщение пользователя: {payload.message}"
+                if selected
+                else f"Сообщение пользователя: {payload.message}"
+            ),
         }
         total = sum(layer_tokens.values())
 
@@ -421,6 +486,14 @@ class PromptBuilder:
             "Кратко опиши BPMN-схему ниже на русском языке. Не более 400 токенов. Схема:\n\n"
             + projection_text,
         ]
+        if rag_chunks:
+            parts.append("Дополнительный контекст из BPMN/RAG:\n")
+            for c in rag_chunks[:5]:
+                eid = str(c.get("element_id") or "").strip()
+                name = str(c.get("element_name") or "").strip()
+                text = str(c.get("chunk_text") or "").strip()
+                header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
+                parts.append(f"{header}: {text}")
         user_prompt = "\n\n".join(parts)
         layer_tokens = {
             "projection": estimate_tokens(projection_text),
@@ -434,3 +507,31 @@ class PromptBuilder:
             estimated_prompt_tokens=sum(layer_tokens.values()),
             layer_tokens=layer_tokens,
         )
+
+    def _doc_qa(self, ctx: AgentContext, payload: Any, rag_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not rag_results:
+            # Should be handled by caller, but keep safe fallback.
+            assembly = self.build_processman_prompt(ctx, payload, conversation_summary=None)
+            return {
+                "model_class": "primary",
+                "payload": {"input": assembly.user_prompt},
+                "max_tokens": SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS,
+                "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
+                "layer_tokens": assembly.layer_tokens,
+            }
+        chunks_text = "\n---\n".join(
+            str(r.get("chunk") or r.get("text") or "").strip() for r in rag_results[:5]
+        )
+        prompt_text = (
+            "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
+            "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
+            f"Отрывки:\n{chunks_text}\n\n"
+            f"Вопрос: {payload.message}"
+        )
+        return {
+            "model_class": "cheap",
+            "payload": {"input": prompt_text},
+            "max_tokens": MAX_TOKENS,
+            "estimated_prompt_tokens": estimate_tokens(prompt_text),
+            "layer_tokens": {"projection": 0, "history": 0, "user": estimate_tokens(prompt_text)},
+        }

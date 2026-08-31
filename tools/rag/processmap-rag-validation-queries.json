@@ -72,6 +72,36 @@
       "expected_answer_summary": "Agent 3 review criteria: GSD reviewer discipline, fresh 5180 proof, real user scenario, before/after metrics, CHANGES_REQUESTED if fail.",
       "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
       "failure_explanation": ""
+    },
+    {
+      "id": "q8-property-dictionary-task-properties",
+      "query": "какие свойства у задачи",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["свойство", "задача", "Task", "property_type"],
+      "expected_sources": ["property_dictionary"],
+      "expected_answer_summary": "Свойства задачи: ingredient, equipment, container, duration, priority и т.д.",
+      "pass_criteria": "top-3 результата содержат source_type=property_dictionary и хотя бы 2 expected_terms.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q9-operation-catalog-parameters",
+      "query": "какие параметры у операции open_container",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["open_container", "container_id", "open_method"],
+      "expected_sources": ["operation_catalog"],
+      "expected_answer_summary": "Параметры операции open_container: container_id (обязательный), open_method (опциональный, default=auto).",
+      "pass_criteria": "top-3 результата содержат source_type=operation_catalog и operation_code=open_container.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q10-glossary-term",
+      "query": "что такое шокер",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["шокер", "blast_chiller_1", "камера интенсивного охлаждения"],
+      "expected_sources": ["glossary"],
+      "expected_answer_summary": "Шокер — камера интенсивного охлаждения.",
+      "pass_criteria": "top-3 результата содержат source_type=glossary и term_canon=blast_chiller_1.",
+      "failure_explanation": ""
     }
   ]
 }
