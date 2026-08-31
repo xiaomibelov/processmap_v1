@@ -32,6 +32,7 @@ from schemas import AgentChatIn, AgentChatOut
 
 from .context import AgentContext, load_context
 from .memory_store import AgentTurn, append_turn, find_turn_by_client_id, get_or_create_conversation
+from .prompt_builder import PromptBuilder
 from .schema_memory import load_schema_memory, schedule_memory_update
 
 
@@ -209,48 +210,6 @@ def route_intent(
         return _normalize_intent(str(result.get("text") or ""))
     except Exception:
         return "smalltalk"
-
-
-def _format_history_for_prompt(history: List[AgentTurn], current_digest: str) -> str:
-    lines: List[str] = []
-    for turn in history:
-        role_label = "User" if turn.role == "user" else "Assistant"
-        text = str((turn.content or {}).get("text") or "")
-        if not text:
-            continue
-        stale_note = ""
-        if turn.projection_digest and turn.projection_digest != current_digest:
-            stale_note = " (схема с тех пор изменилась)"
-        lines.append(f"{role_label}{stale_note}: {text}")
-    return "\n".join(lines)
-
-
-def _build_user_prompt(ctx: AgentContext, payload: AgentChatIn) -> str:
-    projection_text = _to_json_text(ctx.projection)
-    history_text = _format_history_for_prompt(ctx.history, ctx.digest)
-    parts = [
-        "=== BPMN-схема ===",
-        projection_text,
-    ]
-    rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
-    if rag_chunks:
-        chunk_lines = []
-        for c in rag_chunks[:5]:
-            eid = str(c.get("element_id") or "").strip()
-            name = str(c.get("element_name") or "").strip()
-            text = str(c.get("chunk_text") or "").strip()
-            header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
-            chunk_lines.append(f"{header}: {text}")
-        parts.append("=== Дополнительный контекст из BPMN/RAG ===")
-        parts.append("\n".join(chunk_lines))
-    if history_text:
-        parts.append("=== История диалога ===")
-        parts.append(history_text)
-    selected = str(payload.selected_step_id or "").strip()
-    if selected:
-        parts.append(f"Выбранный шаг: {selected}")
-    parts.append(f"Сообщение пользователя: {payload.message}")
-    return "\n\n".join(parts)
 
 
 def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
@@ -465,29 +424,16 @@ def _run_schema_overview_branch(
         )
         return out
 
-    parts = [
-        "Кратко опиши BPMN-схему ниже на русском языке. "
-        "Не более 400 токенов. Схема:\n\n"
-        f"{_to_json_text(ctx.projection)}",
-    ]
-    rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
-    if rag_chunks:
-        parts.append("Дополнительный контекст из BPMN/RAG:\n")
-        for c in rag_chunks[:5]:
-            eid = str(c.get("element_id") or "").strip()
-            name = str(c.get("element_name") or "").strip()
-            text = str(c.get("chunk_text") or "").strip()
-            header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
-            parts.append(f"{header}: {text}")
-    prompt_text = "\n\n".join(parts)
+    call_kwargs = PromptBuilder.build("schema_overview", ctx, payload)
     result = complete(
         FEATURE,
-        payload={"input": prompt_text},
+        payload=call_kwargs["payload"],
         user_id=user_id,
         project_id=str(getattr(ctx.session, "project_id", "") or ""),
         session_id=session_id,
         org_id=org_id,
-        max_tokens=SCHEMA_OVERVIEW_MAX_TOKENS,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     )
     usage = _usage_out(result)
     if not result.get("ok"):
@@ -533,26 +479,20 @@ def _run_doc_qa_branch(
 
     if not results:
         return _run_free_answer_branch(
-            payload, ctx, session_id, user_id, org_id, token, client_turn_id=client_turn_id
+            payload, ctx, session_id, user_id, org_id, token,
+            client_turn_id=client_turn_id, intent="doc_qa_fallback",
         )
 
-    chunks_text = "\n---\n".join(
-        str(r.get("chunk") or r.get("text") or "").strip() for r in results[:5]
-    )
-    prompt_text = (
-        "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
-        "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
-        f"Отрывки:\n{chunks_text}\n\n"
-        f"Вопрос: {payload.message}"
-    )
+    call_kwargs = PromptBuilder.build("doc_qa", ctx, payload, rag_results=results)
     result = complete(
         FEATURE,
-        payload={"input": prompt_text},
+        payload=call_kwargs["payload"],
         user_id=user_id,
         project_id=str(getattr(ctx.session, "project_id", "") or ""),
         session_id=session_id,
         org_id=org_id,
-        max_tokens=MAX_TOKENS,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     )
     usage = _usage_out(result)
     if not result.get("ok"):
@@ -583,17 +523,19 @@ def _run_free_answer_branch(
     token: str,
     *,
     client_turn_id: Optional[str] = None,
+    intent: str = "smalltalk",
 ) -> AgentChatOut:
     """Smalltalk / free-answer fallback. Preserves AGENT-0 action-JSON fallback."""
-    user_prompt_text = _build_user_prompt(ctx, payload)
+    call_kwargs = PromptBuilder.build(intent, ctx, payload)
     result = complete(
         FEATURE,
-        payload={"input": user_prompt_text},
+        payload=call_kwargs["payload"],
         user_id=user_id,
         project_id=str(getattr(ctx.session, "project_id", "") or ""),
         session_id=session_id,
         org_id=org_id,
-        max_tokens=SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     )
 
     usage = _usage_out(result)
@@ -1045,46 +987,18 @@ def run_turn_stream(
             yield from _finish(memory["summary"], {"cached": True}, action="schema_overview")
             return
 
-    prompt_text: Optional[str] = None
-    max_tokens_for_stream = MAX_TOKENS
     if intent == "schema_overview":
-        parts = [
-            "Кратко опиши BPMN-схему ниже на русском языке. "
-            "Не более 400 токенов. Схема:\n\n"
-            f"{_to_json_text(ctx.projection)}",
-        ]
-        rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
-        if rag_chunks:
-            parts.append("Дополнительный контекст из BPMN/RAG:\n")
-            for c in rag_chunks[:5]:
-                eid = str(c.get("element_id") or "").strip()
-                name = str(c.get("element_name") or "").strip()
-                text = str(c.get("chunk_text") or "").strip()
-                header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
-                parts.append(f"{header}: {text}")
-        prompt_text = "\n\n".join(parts)
-        max_tokens_for_stream = SCHEMA_OVERVIEW_MAX_TOKENS
         schedule_memory_update(sid, oid, ctx.digest)
-    elif intent == "doc_qa":
+
+    if intent == "doc_qa":
         try:
             results = _search_rag_prioritized(payload.message, sid, token, org_id=oid, top_k=5)
         except Exception:
             results = []
-        if results:
-            chunks_text = "\n---\n".join(str(r.get("chunk") or r.get("text") or "").strip() for r in results[:5])
-            prompt_text = (
-                "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
-                "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
-                f"Отрывки:\n{chunks_text}\n\n"
-                f"Вопрос: {payload.message}"
-            )
-        else:
-            prompt_text = _build_user_prompt(ctx, payload)
-            max_tokens_for_stream = SMALLTALK_MAX_TOKENS
+        stream_intent = "doc_qa" if results else "doc_qa_fallback"
+        call_kwargs = PromptBuilder.build(stream_intent, ctx, payload, rag_results=results or [])
     else:
-        # smalltalk / fallback
-        prompt_text = _build_user_prompt(ctx, payload)
-        max_tokens_for_stream = SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS
+        call_kwargs = PromptBuilder.build(intent, ctx, payload)
 
     collected_text = ""
     final_usage: Dict[str, Any] = {}
@@ -1092,12 +1006,13 @@ def run_turn_stream(
 
     for event_type, event_data in complete_stream(
         FEATURE,
-        payload={"input": prompt_text},
+        payload=call_kwargs["payload"],
         user_id=uid,
         project_id=project_id,
         session_id=sid,
         org_id=oid,
-        max_tokens=max_tokens_for_stream,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     ):
         if event_type == "token":
             delta = str(event_data.get("delta") or "")
