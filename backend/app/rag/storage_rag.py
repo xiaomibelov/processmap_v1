@@ -2,6 +2,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(BACKEND_DIR) not in sys.path:
@@ -108,18 +109,41 @@ def soft_delete_rag_document(org_id: str, doc_id: str) -> bool:
         return cur.rowcount > 0
 
 
-def list_rag_chunks(org_id: str, doc_id: str | None = None, limit: int = 100) -> list[dict]:
+def list_rag_chunks(
+    org_id: str,
+    doc_id: str | None = None,
+    source_type: str | None = None,
+    source_id: str | None = None,
+    limit: int | None = 100,
+) -> list[dict]:
     with _connect() as con:
         if doc_id:
-            rows = con.execute(
-                "SELECT * FROM rag_chunks WHERE org_id=? AND doc_id=? ORDER BY chunk_index LIMIT ?",
-                [org_id, doc_id, limit],
-            ).fetchall()
+            sql = "SELECT * FROM rag_chunks WHERE org_id=? AND doc_id=? ORDER BY chunk_index"
+            params: list[Any] = [org_id, doc_id]
+        elif source_type or source_id:
+            # Фильтрация по корпусу/source_id на уровне SQL, а не in-memory после LIMIT.
+            sql = """
+                SELECT c.* FROM rag_chunks c
+                JOIN rag_documents d ON c.doc_id = d.doc_id
+                WHERE c.org_id = ? AND d.org_id = ? AND d.is_active = 1
+            """
+            params = [org_id, org_id]
+            if source_type:
+                sql += " AND d.source_type = ?"
+                params.append(source_type)
+            if source_id:
+                sql += " AND d.source_id = ?"
+                params.append(source_id)
+            sql += " ORDER BY c.chunk_index"
         else:
-            rows = con.execute(
-                "SELECT * FROM rag_chunks WHERE org_id=? ORDER BY created_at LIMIT ?",
-                [org_id, limit],
-            ).fetchall()
+            sql = "SELECT * FROM rag_chunks WHERE org_id=? ORDER BY created_at"
+            params = [org_id]
+
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        rows = con.execute(sql, params).fetchall()
     if not rows:
         return []
     if hasattr(rows[0], "keys"):
