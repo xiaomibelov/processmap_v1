@@ -34,7 +34,7 @@ SECRET_KEY_VALUE = "sk-supersecret-abcdef1234567890"
 
 PROVIDER_SHAPE = {
     "id": str, "org_id": str, "name": str, "base_url": str, "model": str,
-    "priority": int, "enabled": bool, "has_api_key": bool, "key_last4": str,
+    "priority": int, "enabled": bool, "capabilities": dict, "has_api_key": bool, "key_last4": str,
     "created_by": str, "created_at": int, "updated_by": str, "updated_at": int,
 }
 PROMPT_SHAPE = {
@@ -47,10 +47,12 @@ FEATURE_SHAPE = {
 }
 USAGE_ITEM_SHAPE = {
     "day": str, "feature": str, "model": str, "calls": int,
-    "prompt_tokens": int, "completion_tokens": int, "cached_hits": int, "errors": int,
+    "prompt_tokens": int, "completion_tokens": int, "cost_usd": float,
+    "cached_hits": int, "errors": int,
 }
 USAGE_TOTALS_SHAPE = {
-    "calls": int, "prompt_tokens": int, "completion_tokens": int, "cached_hits": int, "errors": int,
+    "calls": int, "prompt_tokens": int, "completion_tokens": int, "cost_usd": float,
+    "cached_hits": int, "errors": int,
 }
 
 

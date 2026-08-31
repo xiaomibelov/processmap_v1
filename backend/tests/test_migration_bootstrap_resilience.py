@@ -93,6 +93,12 @@ class MigrationBootstrapResilienceTests(unittest.TestCase):
             con.execute("CREATE TABLE sku_binding (id TEXT, pilot_kitchen_id TEXT)")  # 007
             con.execute("INSERT INTO recipe_param_def (id, name) VALUES ('stub', 'dish_sku_id')")  # 008
             con.execute("CREATE TABLE operation_catalog (id TEXT, code TEXT, name_ru TEXT)")  # 009
+            # 023 оперирует таблицами RAG, которые обычно создаёт рантайм.
+            con.execute(
+                "CREATE TABLE rag_embeddings (id TEXT PRIMARY KEY, chunk_id TEXT,"
+                " vector_data BYTEA, model_id TEXT, created_at BIGINT)"
+            )
+            con.execute("CREATE TABLE rag_settings (id TEXT PRIMARY KEY, org_id TEXT)")
 
     @classmethod
     def tearDownClass(cls):
@@ -161,12 +167,12 @@ class MigrationBootstrapResilienceTests(unittest.TestCase):
         после бага #646) → оба прогона rc=0, второй — no-op, head=028."""
         rc1 = self._bootstrap()
         self.assertEqual(rc1, 0, "первый прогон db_bootstrap failed (010 неидемпотентна?)")
-        self.assertEqual(self._current(), "031")
+        self.assertEqual(self._current(), "033")
 
         self._force_version("009")  # stamped-down состояние снова (повторный деплой)
         rc2 = self._bootstrap()
         self.assertEqual(rc2, 0, "второй прогон db_bootstrap failed — 010 не no-op")
-        self.assertEqual(self._current(), "031")
+        self.assertEqual(self._current(), "033")
 
         with psycopg.connect(self.db_url) as con:
             cols = {
@@ -185,6 +191,32 @@ class MigrationBootstrapResilienceTests(unittest.TestCase):
         self.assertIn("derived_from_session_id", cols)
         self.assertIn("llm_providers", tables)
 
+    def test_032_seeds_models_and_pricing(self):
+        """F1: после 032 в реестре есть cheap (deepseek) и primary (opus) с ценами."""
+        rc = self._bootstrap()
+        self.assertEqual(rc, 0)
+        with psycopg.connect(self.db_url) as con:
+            rows = {
+                str(r[0]): {
+                    "model_class": str(r[1]),
+                    "cost_prompt_1k_usd": float(r[2]),
+                    "cost_completion_1k_usd": float(r[3]),
+                    "is_default": bool(r[4]),
+                }
+                for r in con.execute(
+                    "SELECT id, model_class, cost_prompt_1k_usd, cost_completion_1k_usd, is_default"
+                    " FROM llm_models WHERE id IN ('llmmodel_deepseek_chat', 'llmmodel_opus_4_6_primary')"
+                ).fetchall()
+            }
+        self.assertIn("llmmodel_deepseek_chat", rows)
+        self.assertEqual(rows["llmmodel_deepseek_chat"]["model_class"], "cheap")
+        self.assertAlmostEqual(rows["llmmodel_deepseek_chat"]["cost_prompt_1k_usd"], 0.0005)
+        self.assertAlmostEqual(rows["llmmodel_deepseek_chat"]["cost_completion_1k_usd"], 0.002)
+        self.assertFalse(rows["llmmodel_deepseek_chat"]["is_default"])
+        self.assertIn("llmmodel_opus_4_6_primary", rows)
+        self.assertEqual(rows["llmmodel_opus_4_6_primary"]["model_class"], "primary")
+        self.assertTrue(rows["llmmodel_opus_4_6_primary"]["is_default"])
+
     def test_f2_markers_detect_schema_state_with_invalid_version(self):
         """F2: невалидная alembic_version → baseline по маркерам (010 уже в
         схеме после первого прогона) → stamp ≥010, upgrade добирает остальное."""
@@ -195,7 +227,7 @@ class MigrationBootstrapResilienceTests(unittest.TestCase):
             con.execute("UPDATE alembic_version SET version_num='bogus_legacy_hash'")
         rc2 = self._bootstrap()
         self.assertEqual(rc2, 0, "db_bootstrap не вылечил невалидную версию по маркерам")
-        self.assertEqual(self._current(), "031")
+        self.assertEqual(self._current(), "033")
 
     def test_f3_head_constant_matches_db_bootstrap(self):
         """F3: ALEMBIC_HEAD в migration_state синхронен с db_bootstrap.LINEAR."""
@@ -219,7 +251,7 @@ class MigrationStateUnitTests(unittest.TestCase):
                 os.environ["DATABASE_URL"] = old
         self.assertIsNone(state.get("ok"))
         self.assertEqual(state.get("error"), "no_database_url")
-        self.assertEqual(state.get("head"), "031")
+        self.assertEqual(state.get("head"), "033")
 
 
 if __name__ == "__main__":
