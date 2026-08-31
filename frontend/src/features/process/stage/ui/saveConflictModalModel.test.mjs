@@ -97,6 +97,61 @@ test("buildSaveConflictModalView returns actor-aware copy and explicit action hi
   assert.equal("compareLabel" in view.actions, false);
 });
 
+test("classifySaveConflictActor marks matching client_id as same_tab", () => {
+  const out = classifySaveConflictActor({
+    conflictRaw: {
+      actorUserId: "user_me",
+      actorLabel: "Я",
+      clientId: "client-tab-abc-123",
+    },
+    currentUserRaw: {
+      id: "external_provider_id",
+      user_id: "user_me",
+      email: "me@example.com",
+    },
+    currentUserIdRaw: "external_provider_id",
+    currentClientIdRaw: "client-tab-abc-123",
+  });
+  assert.equal(out.kind, "same_tab");
+});
+
+test("classifySaveConflictActor marks same user with different client_id as same_user_other_tab", () => {
+  const out = classifySaveConflictActor({
+    conflictRaw: {
+      actorUserId: "user_me",
+      actorLabel: "Я",
+      clientId: "client-tab-other-456",
+    },
+    currentUserRaw: {
+      id: "external_provider_id",
+      user_id: "user_me",
+      email: "me@example.com",
+    },
+    currentUserIdRaw: "external_provider_id",
+    currentClientIdRaw: "client-tab-abc-123",
+  });
+  assert.equal(out.kind, "same_user_other_tab");
+});
+
+test("classifySaveConflictActor marks different user with client_id as other_user", () => {
+  const out = classifySaveConflictActor({
+    conflictRaw: {
+      actorUserId: "user_other",
+      actorLabel: "Анна",
+      clientId: "client-tab-other-456",
+    },
+    currentUserRaw: {
+      id: "external_provider_id",
+      user_id: "user_me",
+      email: "me@example.com",
+    },
+    currentUserIdRaw: "external_provider_id",
+    currentClientIdRaw: "client-tab-abc-123",
+  });
+  assert.equal(out.kind, "other_user");
+  assert.equal(out.actorLabel, "Анна");
+});
+
 test("buildSaveConflictModalView keeps neutral copy for fallback_unknown", () => {
   const view = buildSaveConflictModalView({
     currentUserRaw: {},

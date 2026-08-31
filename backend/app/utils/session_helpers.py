@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -32,6 +33,26 @@ def _to_non_negative_int(value: Any) -> Optional[int]:
         return v if v >= 0 else None
     except (ValueError, TypeError):
         return None
+
+
+_CLIENT_ID_HEADER = "x-pm-client-id"
+_CLIENT_ID_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
+
+
+def _normalize_client_id(value: Any) -> str:
+    text = _CLIENT_ID_RE.sub("", str(value or "").strip())
+    return text[:128]
+
+
+def _resolve_client_id_from_request(request: Request = None) -> str:
+    if request is None:
+        return ""
+    headers = request.headers or {}
+    for key in (_CLIENT_ID_HEADER, "x-pm-client-id"):
+        value = headers.get(key)
+        if value:
+            return _normalize_client_id(value)
+    return ""
 
 
 def _resolve_base_diagram_state_version(
@@ -88,6 +109,7 @@ def _build_server_last_write_payload(sess) -> Dict[str, Any]:
     return {
         "actor_user_id": str(getattr(sess, "diagram_last_write_actor_user_id", "") or ""),
         "actor_label": str(getattr(sess, "diagram_last_write_actor_label", "") or ""),
+        "client_id": str(getattr(sess, "diagram_last_write_client_id", "") or ""),
         "at": int(getattr(sess, "diagram_last_write_at", 0) or 0),
         "changed_keys": changed_keys,
     }
@@ -156,6 +178,7 @@ def _mark_diagram_truth_write(
     changed_keys: List[str],
     actor_user_id: str = "",
     actor_label: str = "",
+    client_id: str = "",
 ) -> None:
     current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
     next_version = max(0, current_version) + 1
@@ -169,6 +192,7 @@ def _mark_diagram_truth_write(
     sess.diagram_state_version = next_version
     sess.diagram_last_write_actor_user_id = str(actor_user_id or "").strip()
     sess.diagram_last_write_actor_label = str(actor_label or actor_user_id or "").strip()
+    sess.diagram_last_write_client_id = _normalize_client_id(client_id)
     sess.diagram_last_write_at = int(time.time())
     sess.diagram_last_write_changed_keys = normalized_keys
 

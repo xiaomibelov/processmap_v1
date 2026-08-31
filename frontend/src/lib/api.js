@@ -1,5 +1,6 @@
 import { isPlainObject, joinUrl } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
+import { getClientIdHeader } from "./clientId.js";
 import {
   apiRequest as request,
   fnv1aHex,
@@ -489,7 +490,7 @@ export async function apiPatchSession(sessionId, patch) {
     // eslint-disable-next-line no-console
     console.debug(`[PATCH_SESSION] start sid=${id} payloadKeys=${patchKeys.join(",") || "-"}`);
   }
-  const r = okOrError(await request(apiRoutes.sessions.item(id), { method: "PATCH", body: patch || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.item(id), { method: "PATCH", body: patch || {}, headers: getClientIdHeader() }));
   if (shouldLogBpmnTrace()) {
     const xml = String(r?.data?.bpmn_xml || "");
     // eslint-disable-next-line no-console
@@ -530,7 +531,7 @@ export async function apiChangeSessionStatus(sessionId, patch) {
 export async function apiPutSession(sessionId, body) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(apiRoutes.sessions.item(id), { method: "PUT", body: body || {} }));
+  const r = okOrError(await request(apiRoutes.sessions.item(id), { method: "PUT", body: body || {}, headers: getClientIdHeader() }));
   return r.ok ? { ok: true, status: r.status, session: r.data } : r;
 }
 
@@ -1865,7 +1866,7 @@ export async function apiRestoreBpmnVersion(sessionId, versionId, options = {}) 
   if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
     body.base_diagram_state_version = Math.round(baseDiagramStateVersion);
   }
-  const r = okOrError(await request(apiRoutes.sessions.bpmnRestore(sid, vid), { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmnRestore(sid, vid), { method: "POST", body, headers: getClientIdHeader() }));
   if (!r.ok) return r;
   const payload = r.data && typeof r.data === "object" ? r.data : {};
   const diagramStateVersion = Number(payload.diagram_state_version ?? payload.diagramStateVersion);
@@ -1925,7 +1926,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (isPlainObject(bpmnMeta)) {
     body.bpmn_meta = bpmnMeta;
   }
-  const headers = {};
+  const headers = { ...getClientIdHeader() };
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
     headers["If-Match"] = String(options.ifMatch);
   }
@@ -1949,7 +1950,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
 export async function apiDeleteBpmnXml(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "DELETE" }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "DELETE", headers: getClientIdHeader() }));
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
@@ -1964,7 +1965,7 @@ export async function apiPatchBpmnMeta(sessionId, payload = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   const body = isPlainObject(payload) ? payload : {};
-  const r = okOrError(await request(apiRoutes.sessions.bpmnMeta(sid), { method: "PATCH", body }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmnMeta(sid), { method: "PATCH", body, headers: getClientIdHeader() }));
   return r.ok ? { ok: true, status: r.status, meta: r.data || { version: 1, flow_meta: {}, node_path_meta: {} } } : r;
 }
 
@@ -1972,7 +1973,7 @@ export async function apiInferBpmnRtiers(sessionId, payload = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   const body = isPlainObject(payload) ? payload : {};
-  const r = okOrError(await request(apiRoutes.sessions.inferRtiers(sid), { method: "POST", body }));
+  const r = okOrError(await request(apiRoutes.sessions.inferRtiers(sid), { method: "POST", body, headers: getClientIdHeader() }));
   if (!r.ok) return r;
   const data = isPlainObject(r.data) ? r.data : {};
   return {

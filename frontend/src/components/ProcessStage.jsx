@@ -186,6 +186,7 @@ import BpmnVersionDiffOverlay from "../features/process/stage/ui/BpmnVersionDiff
 import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
+import { getOrCreateClientId } from "../lib/clientId.js";
 import { buildSessionPresenceView } from "../features/process/stage/ui/sessionPresenceModel";
 import useSessionPresence, { normalizeSessionPresenceUsers } from "../features/process/stage/presence/useSessionPresence";
 import {
@@ -663,6 +664,7 @@ function ProcessStage({
   const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
   const bpmnVersionDetailRequestRef = useRef(new Map());
   const metaVersionHeadSeededRef = useRef(false);
+  const clientId = useMemo(() => getOrCreateClientId(), []);
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const [bpmnFileDragActive, setBpmnFileDragActive] = useState(false);
   const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
@@ -672,6 +674,7 @@ function ProcessStage({
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
+  const sameTabAutoResolveAttemptedRef = useRef(false);
   // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
   const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
@@ -1538,14 +1541,63 @@ function ProcessStage({
     conflictRaw: saveUploadStatus?.conflict,
     currentUserRaw: user,
     currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    currentClientIdRaw: clientId,
     fallbackTextRaw: saveUploadStatus?.title || saveUploadStatus?.error,
-  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user]);
+  }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user, clientId]);
   const propertySaveConflictView = useMemo(() => buildSaveConflictModalView({
     conflictRaw: null,
     currentUserRaw: user,
     currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    currentClientIdRaw: clientId,
     fallbackTextRaw: propertySaveConflictFallback,
-  }), [propertySaveConflictFallback, toText, user]);
+  }), [propertySaveConflictFallback, toText, user, clientId]);
+
+  // P1: same-tab conflicts are caused by our own concurrent writes (e.g. a
+  // secondary meta PATCH racing with the next manual save). Auto-resolve by
+  // adopting the server base and replaying the local XML once. If replay fails,
+  // fall through to the honest modal (same_tab wording).
+  useEffect(() => {
+    if (saveUploadStatus?.state !== "conflict") {
+      sameTabAutoResolveAttemptedRef.current = false;
+      return;
+    }
+    if (saveConflictModalView?.actorMode !== "same_tab") return;
+    if (sameTabAutoResolveAttemptedRef.current) return;
+    sameTabAutoResolveAttemptedRef.current = true;
+    if (!sid || saveConflictActionBusy) return;
+    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    const serverVersion = toNonNegativeVersion(saveUploadStatus?.conflict?.serverCurrentVersion);
+    if (!localXml || serverVersion <= 0) return;
+    void (async () => {
+      setSaveConflictActionBusy(true);
+      setGenErr("");
+      try {
+        saveCoordinator.resolveConflict(sid, "overwrite");
+        const saved = await apiPutBpmnXml(sid, localXml, {
+          baseDiagramStateVersion: serverVersion,
+          sourceAction: "manual_save_same_tab_replay",
+        });
+        if (saved?.ok && saved?.diagramStateVersion) {
+          rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
+          setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+          setSaveConflictNoticeDismissed(true);
+          setInfoMsg("Сессия сохранена после синхронизации версии.");
+        }
+      } catch (error) {
+        const message = shortErr(error?.message || error || "Не удалось автоисправить same-tab конфликт.");
+        setGenErr(message);
+      } finally {
+        setSaveConflictActionBusy(false);
+      }
+    })();
+  }, [
+    saveConflictActionBusy,
+    saveConflictModalView?.actorMode,
+    saveUploadStatus?.conflict,
+    saveUploadStatus?.state,
+    sid,
+  ]);
+
   const sessionVersionReadSnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.version),
     [sessionCompanionBridgeSnapshot.version],
@@ -3833,12 +3885,14 @@ function ProcessStage({
     },
     currentUserRaw: user,
     currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    currentClientIdRaw: clientId,
     fallbackTextRaw: hybridPersist.conflictNotice?.message,
   }), [
     hybridPersist.conflictNotice?.message,
     hybridPersist.conflictNotice?.serverVersion,
     toText,
     user,
+    clientId,
   ]);
   const handleHybridConflictOverwrite = useCallback(() => {
     setSaveConflictActionBusy(true);
