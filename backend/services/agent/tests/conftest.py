@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     completion_tokens INTEGER NOT NULL DEFAULT 0,
     cached BOOLEAN NOT NULL DEFAULT 0,
+    cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
     user_id TEXT NOT NULL DEFAULT '',
     project_id TEXT NOT NULL DEFAULT '',
     session_id TEXT NOT NULL DEFAULT '',
@@ -104,6 +105,9 @@ CREATE TABLE IF NOT EXISTS llm_models (
     display_name TEXT NOT NULL DEFAULT '',
     enabled BOOLEAN NOT NULL DEFAULT 1,
     is_default BOOLEAN NOT NULL DEFAULT 0,
+    model_class TEXT NOT NULL DEFAULT 'primary',
+    cost_prompt_1k_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
+    cost_completion_1k_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
     params TEXT NOT NULL DEFAULT '{}',
     created_by TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL DEFAULT 0,
@@ -114,9 +118,10 @@ CREATE TABLE IF NOT EXISTS llm_feature_models (
     feature TEXT NOT NULL,
     org_id TEXT NOT NULL DEFAULT 'org_default',
     model_id TEXT NOT NULL,
+    model_class TEXT NOT NULL DEFAULT 'primary',
     updated_by TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(org_id, feature)
+    UNIQUE(org_id, feature, model_class)
 );
 CREATE TABLE IF NOT EXISTS agent_schema_memory (
     id TEXT PRIMARY KEY,

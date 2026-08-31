@@ -1,0 +1,35 @@
+{
+  "contour": "feature/agent-model-routing-optimization-v1",
+  "run_id": "agent-model-routing-optimization-v1-20260831T121742Z",
+  "phase": "Phase 3 ready",
+  "status": "APPROVED_FOR_DRAFT_PR",
+  "pending_user_action": "commit and open draft PR; merge only after explicit approve",
+  "worktree": "/Users/mac/agents_place/kimi_PM/server-backup/opt/processmap-test/.worktrees/agent-model-routing-optimization-v1",
+  "branch": "feature/agent-model-routing-optimization-v1",
+  "head": "8f904834559993bcb86d098bc5aa7bbba133dcfd",
+  "origin_main": "8f904834559993bcb86d098bc5aa7bbba133dcfd",
+  "rag_preflight": "SKIPPED_DOCKER_UNAVAILABLE",
+  "artifacts": [
+    "PLAN.md",
+    "MODEL_MATRIX_FINAL.md",
+    "COST_AB.md",
+    "MEASUREMENTS.md",
+    "MEASUREMENTS_AFTER.md",
+    "TESTS.md",
+    "PR.md",
+    "git-proof.md",
+    "AGENT_RUN_ID",
+    "READY_FOR_REVIEW"
+  ],
+  "verification": {
+    "pytest": "119 passed, 1 skipped, 50 warnings in 3.38s",
+    "baseline_cost_usd": 1.097631,
+    "after_cost_usd": 0.431438,
+    "savings_percent": 60.70
+  },
+  "next_steps": [
+    "User review of draft PR (PR.md)",
+    "Optional: run integration smoke tests in docker compose",
+    "On approve: push branch and open GitHub PR (no merge without second approve)"
+  ]
+}
