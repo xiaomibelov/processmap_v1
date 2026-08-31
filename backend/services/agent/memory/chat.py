@@ -244,6 +244,7 @@ def _usage_out(result: Dict[str, Any]) -> Dict[str, Any]:
         "prompt_version": int(result.get("prompt_version") or 0),
         "fallback": bool(result.get("fallback")),
         "cached": bool(result.get("cached")),
+        "cost_usd": float(result.get("cost_usd") or 0.0),
     }
 
 
@@ -980,6 +981,7 @@ def _run_structured_fact_qa_branch_stream(
                 "prompt_version": int(event_data.get("prompt_version") or 0),
                 "fallback": bool(event_data.get("fallback")),
                 "cached": False,
+                "cost_usd": float(event_data.get("cost_usd") or 0.0),
             }
 
     if stream_error is not None:
@@ -1263,6 +1265,7 @@ def run_turn_stream(
                 "prompt_version": int(event_data.get("prompt_version") or 0),
                 "fallback": bool(event_data.get("fallback")),
                 "cached": False,
+                "cost_usd": float(event_data.get("cost_usd") or 0.0),
             }
 
     if stream_error is not None:
