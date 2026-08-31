@@ -1,0 +1,26 @@
+{
+  "contour": "fix/project-kebab-menu",
+  "type": "fix",
+  "status": "ready_for_review",
+  "branch": "fix/project-kebab-menu",
+  "head": "f2a24940f59b954cf1c815458306a33e7a428179",
+  "origin_main": "06e0f093de1e57419b6c53ca4695989c5a6c1af2",
+  "created_at": "2026-08-31T09:07:05.940Z",
+  "updated_at": "2026-08-31T10:20:00.000Z",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/878",
+  "artifacts": [
+    "DIAGNOSIS.md",
+    "PATCH.md",
+    "TESTS.md",
+    "STATE.json"
+  ],
+  "tests": {
+    "e2e": {
+      "explorer-project-kebab-menu.spec.mjs": "passed"
+    },
+    "unit": {
+      "src/features/explorer/*.test.mjs": "152 passed, 1 pre-existing environment failure (SessionCreateModal.test.mjs navigator assignment under Node v22)"
+    }
+  },
+  "ready_for_review": true
+}
