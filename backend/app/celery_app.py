@@ -5,12 +5,14 @@ app = Celery("processmap", broker="redis://redis:6379/1", backend="redis://redis
 
 app.conf.beat_schedule = {
     "analytics-nightly-refresh": {
-        "task": "app.save_services.analytics_aggregator.tasks.refresh_all_workspaces_analytics_task",
+        # Канонические имена (processmap.*): строковые имена beat не зависят от
+        # import-контекста воркера (app.* vs backend.app.*).
+        "task": "processmap.analytics.refresh_all_workspaces_analytics_task",
         "schedule": crontab(hour=4, minute=30),
         "options": {"queue": "celery"},
     },
     "rag-index-nightly-refresh": {
-        "task": "app.rag_tasks.index_queued_sessions_bpmn_xml",
+        "task": "processmap.rag.index_queued_sessions_bpmn_xml",
         "schedule": crontab(hour=4, minute=30),
         "options": {"queue": "celery"},
     },

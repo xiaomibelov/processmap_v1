@@ -63,7 +63,8 @@ def _do_index_session_bpmn_xml(session_id: str, org_id: str) -> Dict[str, Any]:
     }
 
 
-@app.task(bind=True, max_retries=1, default_retry_delay=10)
+# Канонические имена: не зависят от import-контекста (app.* vs backend.app.*).
+@app.task(bind=True, max_retries=1, default_retry_delay=10, name="processmap.rag.index_session_bpmn_xml")
 def index_session_bpmn_xml(self, session_id: str, org_id: str) -> Dict[str, Any]:
     """Переиндексировать bpmn_xml сессии в RAG.
 
@@ -90,7 +91,7 @@ def index_session_bpmn_xml(self, session_id: str, org_id: str) -> Dict[str, Any]
         return {"status": "failed", "reason": str(exc), "session_id": sid}
 
 
-@app.task(bind=True, max_retries=1, default_retry_delay=60)
+@app.task(bind=True, max_retries=1, default_retry_delay=60, name="processmap.rag.index_queued_sessions_bpmn_xml")
 def index_queued_sessions_bpmn_xml(self) -> Dict[str, Any]:
     """Ночной batch-джоб: индексировать все сессии со статусом queued."""
     try:

@@ -330,7 +330,7 @@ class ProductActionSuggestionsTests(unittest.TestCase):
         self.assertIn("rag-index-nightly-refresh", beat_schedule)
         self.assertEqual(
             beat_schedule["rag-index-nightly-refresh"]["task"],
-            "app.rag_tasks.index_queued_sessions_bpmn_xml",
+            "processmap.rag.index_queued_sessions_bpmn_xml",
         )
 
 

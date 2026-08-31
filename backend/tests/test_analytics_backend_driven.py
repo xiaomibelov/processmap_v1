@@ -1341,7 +1341,7 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
 
         schedule = app.conf.beat_schedule.get("analytics-nightly-refresh")
         self.assertIsNotNone(schedule)
-        self.assertEqual(schedule["task"], "app.save_services.analytics_aggregator.tasks.refresh_all_workspaces_analytics_task")
+        self.assertEqual(schedule["task"], "processmap.analytics.refresh_all_workspaces_analytics_task")
         self.assertEqual(app.conf.timezone, "Europe/Moscow")
         cron = schedule["schedule"]
         self.assertIn(4, cron.hour)
