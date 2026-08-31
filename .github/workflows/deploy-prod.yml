@@ -25,10 +25,11 @@ jobs:
               exit 1
             fi
 
-            # Pull latest source code only, preserve server configs
-            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
-            git fetch origin main
-            git checkout origin/main -- backend frontend Dockerfile deploy \
+            # Pull latest source code only, preserve server configs.
+            # tools/ обязателен: Dockerfile (COPY tools/graphify-*) запекает его в образ;
+            # без checkout этого пути на проде остаются протухшие файлы
+            # (audit/prod-stage-divergence-409, 2026-08-30).
+            git checkout origin/main -- backend frontend Dockerfile deploy tools \
               docker-compose.yml docker-compose.prod.yml docker-compose.prod.gateway.yml \
               docker-compose.ssl.yml Dockerfile.gateway.prod
 
@@ -138,6 +139,21 @@ jobs:
               -f docker-compose.prod.gateway.yml \
               -p app \
               up -d --no-deps --force-recreate -V ${PROD_SERVICES}
+
+            # Freshness proof для не-api сервисов: каждый пересобранный контейнер обязан
+            # бежать на только что собранном образе. Проверка /version ниже покрывает
+            # только api и не заметит stale celery-worker/agent/notifications.
+            echo "[deploy-prod] non-api freshness proof (container image == freshly built)"
+            for svc in api celery-worker agent notifications frontend; do
+              expected_img="$(docker image inspect "app-${svc}:latest" --format '{{.Id}}' 2>/dev/null || echo missing)"
+              actual_img="$(docker inspect "app-${svc}-1" --format '{{.Image}}' 2>/dev/null || echo missing)"
+              echo "[deploy-prod] ${svc}: running=${actual_img} built=${expected_img}"
+              if [ "${expected_img}" = "missing" ] || [ "${actual_img}" != "${expected_img}" ]; then
+                echo "ERROR: ${svc} container is not running the freshly built image" >&2
+                exit 1
+              fi
+            done
+            echo "OK: all prod services run the freshly built images"
 
             # Post-deploy freshness proof: poll /version (api стартует не мгновенно —
             # entrypoint гонит миграции/сиды; 502 первые N секунд — норма, не fail).

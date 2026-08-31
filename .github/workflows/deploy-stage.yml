@@ -254,7 +254,11 @@ jobs:
               config --quiet
 
             echo "[deploy-stage] building images on server"
-            BUILD_SERVICES="api frontend notifications"
+            # celery-worker собирается из корневого Dockerfile (весь backend), поэтому
+            # ЛЮБОЕ изменение backend может его затронуть. Он пересобирается и
+            # пересоздаётся всегда: условный rebuild здесь — первопричина протухшего
+            # stage-воркера (audit/prod-stage-divergence-409, 2026-08-30).
+            BUILD_SERVICES="api frontend notifications celery-worker"
             if [ "${AGENT_CHANGED}" = "true" ]; then
               BUILD_SERVICES="${BUILD_SERVICES} agent"
             fi
@@ -278,7 +282,7 @@ jobs:
               rm -fsv frontend 2>/dev/null || true
             docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
-            UP_SERVICES="api frontend notifications"
+            UP_SERVICES="api frontend notifications celery-worker"
             if [ "${AGENT_CHANGED}" = "true" ]; then
               UP_SERVICES="${UP_SERVICES} agent"
             fi
@@ -288,6 +292,52 @@ jobs:
               -f docker-compose.stage.yml \
               -p processmap_stage \
               up -d --no-deps --force-recreate -V ${UP_SERVICES}
+
+            # Freshness proof для не-api сервисов: каждый задеплоенный контейнер обязан
+            # бежать на образе с тегом этого деплоя. Проверка /version покрывает только
+            # api и маскирует протухший celery-worker (audit/prod-stage-divergence-409).
+            echo "[deploy-stage] non-api freshness proof (image tag == ${DEPLOY_SHA})"
+            for svc in ${UP_SERVICES}; do
+              svc_cid="$(STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+                --env-file .env.stage \
+                -f docker-compose.yml \
+                -f docker-compose.stage.yml \
+                -p processmap_stage \
+                ps -q "${svc}")"
+              if [ -z "${svc_cid}" ]; then
+                echo "ERROR: ${svc} container is not running after deploy" >&2
+                exit 1
+              fi
+              svc_image="$(docker inspect "${svc_cid}" --format '{{.Config.Image}}')"
+              expected_image="processmap_stage-${svc}:${DEPLOY_SHA}"
+              echo "[deploy-stage] ${svc}: image=${svc_image}"
+              if [ "${svc_image}" != "${expected_image}" ]; then
+                echo "ERROR: ${svc} runs stale image ${svc_image}, expected ${expected_image}" >&2
+                exit 1
+              fi
+            done
+            echo "OK: all deployed stage services run image tag ${DEPLOY_SHA}"
+
+            echo "[deploy-stage] checking celery-worker task registration"
+            ./deploy/verify_celery_task.sh \
+              --container processmap_stage-celery-worker-1 \
+              --task index_session_bpmn_xml \
+              --retries 10 \
+              --delay 3 \
+              --timeout 10
+
+            echo "[deploy-stage] checking for 'unregistered task' errors in celery-worker logs"
+            STAGE_CELERY_LOGS="$(STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              logs celery-worker 2>&1)" || true
+            if echo "${STAGE_CELERY_LOGS}" | grep -iq "unregistered"; then
+              echo "ERROR: found 'unregistered task' in stage celery-worker logs" >&2
+              exit 1
+            fi
+            echo "OK: no 'unregistered task' errors in stage celery-worker logs"
 
             echo "[deploy-stage] new frontend mounts:"
             docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
