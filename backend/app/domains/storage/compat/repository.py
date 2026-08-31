@@ -5568,11 +5568,15 @@ def _storage_save(
         con.commit()
         # AGENT-2: фоновая переиндексация bpmn_xml после успешного сохранения.
         # Локальный импорт, чтобы избежать циклического импорта на старте.
+        # Enqueue только при реальном изменении bpmn_xml в ЭТОМ save:
+        # enqueue на каждый save, где поле физически присутствует, вместе со
+        # служебными save (rag-статусы и т.п.) образует самоподдерживающийся
+        # цикл задач (audit/prod-stage-divergence-409).
         try:
             from ....rag_tasks import index_session_bpmn_xml
 
             bpmn_xml_value = str(values.get("bpmn_xml") or "").strip()
-            if bpmn_xml_value:
+            if bpmn_xml_value and bpmn_xml_changed:
                 index_session_bpmn_xml.delay(sid, org_scope)
         except Exception as exc:
             logger.warning("save: failed to enqueue rag index task for %s: %s", sid, exc)
@@ -5585,13 +5589,51 @@ def _storage_set_rag_readiness(
     *,
     org_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    session = self.load(session_id, org_id=org_id, is_admin=True)
-    if session is None:
+    """Установить rag-статус сессии ТОЧЕЧНЫМ update только rag-колонок.
+
+    Нельзя делать load() + save() полного объекта: такой non-CAS full-row
+    upsert, загруженный до чужого коммита, откатывает diagram_state_version
+    после успешного CAS-save пользователя, оставляя orphan-снапшот в
+    bpmn_versions и ловя сессию в вечный 409 SESSION_WRITE_CONFLICT
+    (audit/prod-stage-divergence-409).
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
         return None
-    session.rag_readiness_status = str(new_status or "not_ready").strip() or "not_ready"
-    if session.rag_readiness_status == "queued":
-        session.rag_queued_at = _now_ts()
-    self.save(session, org_id=org_id, is_admin=True)
+    status = str(new_status or "not_ready").strip() or "not_ready"
+    _ensure_schema()
+    org = _scope_org_id(org_id) or _default_org_id()
+    org_clause, org_params = _org_clause(org)
+    now = _now_ts()
+    with _connect() as con:
+        row = con.execute(
+            f"SELECT id FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+            [sid, *org_params],
+        ).fetchone()
+        if not row:
+            return None
+        if status == "queued":
+            con.execute(
+                f"""
+                UPDATE sessions
+                   SET rag_readiness_status = ?,
+                       rag_queued_at = ?,
+                       updated_at = ?
+                 WHERE id = ? {org_clause}
+                """,
+                [status, now, now, sid, *org_params],
+            )
+        else:
+            con.execute(
+                f"""
+                UPDATE sessions
+                   SET rag_readiness_status = ?,
+                       updated_at = ?
+                 WHERE id = ? {org_clause}
+                """,
+                [status, now, sid, *org_params],
+            )
+        con.commit()
     return self.get_rag_readiness(session_id, org_id=org_id)
 
 
