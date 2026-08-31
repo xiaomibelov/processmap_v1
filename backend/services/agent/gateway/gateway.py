@@ -271,6 +271,7 @@ def complete_cached(
             prompt_version=int(cached_payload.get("prompt_version") or 0),
             fallback=bool(cached_payload.get("fallback")),
             json_mode_used=bool(cached_payload.get("json_mode_used")),
+            cost_usd=0.0,
         )
     result = complete(feature, payload, prompt_override=prompt_override, **kwargs)
     result["cached"] = False

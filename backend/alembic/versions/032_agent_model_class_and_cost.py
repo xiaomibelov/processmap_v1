@@ -37,15 +37,31 @@ def upgrade() -> None:
     if not _has_column("llm_models", "cost_completion_1k_usd"):
         op.add_column("llm_models", sa.Column("cost_completion_1k_usd", sa.Numeric(12, 6), nullable=False, server_default="0"))
 
-    # Existing seed from 016 becomes the cheap default.
+    # Cheap default: deepseek-chat. Idempotent upsert — works both when the
+    # 016 seed row is present and when llm_models is empty (stage drift).
     op.execute(
         """
-        UPDATE llm_models
-        SET model_class = 'cheap',
-            cost_prompt_1k_usd = 0.0005,
-            cost_completion_1k_usd = 0.002,
-            is_default = false
-        WHERE id = 'llmmodel_deepseek_chat'
+        INSERT INTO llm_models
+            (id, org_id, provider, model_name, display_name, enabled, is_default,
+             model_class, cost_prompt_1k_usd, cost_completion_1k_usd,
+             params, created_by, created_at, updated_by, updated_at)
+        VALUES
+            ('llmmodel_deepseek_chat', 'org_default', 'deepseek', 'deepseek-chat',
+             'DeepSeek Chat', true, false,
+             'cheap', 0.0005, 0.002,
+             '{}', 'migration-032', EXTRACT(EPOCH FROM NOW())::BIGINT,
+             'migration-032', EXTRACT(EPOCH FROM NOW())::BIGINT)
+        ON CONFLICT (id) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            display_name = EXCLUDED.display_name,
+            enabled = EXCLUDED.enabled,
+            is_default = EXCLUDED.is_default,
+            model_class = EXCLUDED.model_class,
+            cost_prompt_1k_usd = EXCLUDED.cost_prompt_1k_usd,
+            cost_completion_1k_usd = EXCLUDED.cost_completion_1k_usd,
+            params = EXCLUDED.params,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = EXCLUDED.updated_at
         """
     )
     # Primary default.
@@ -62,6 +78,19 @@ def upgrade() -> None:
              '{}', 'migration-032', EXTRACT(EPOCH FROM NOW())::BIGINT,
              'migration-032', EXTRACT(EPOCH FROM NOW())::BIGINT)
         ON CONFLICT (id) DO NOTHING
+        """
+    )
+
+    # Enable the deepseek seed provider if it already has a key set.
+    # Empty-key providers are filtered out by effective_providers_with_key,
+    # so this is safe to run unconditionally.
+    op.execute(
+        """
+        UPDATE llm_providers
+        SET enabled = true,
+            updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+        WHERE id = 'llmprov_deepseek_seed'
+          AND COALESCE(api_key, '') <> ''
         """
     )
 
