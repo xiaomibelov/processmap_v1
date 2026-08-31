@@ -2788,12 +2788,30 @@ components:
           type: array
       title: RolloutIn
       type: object
+    SessionAssigneesReplaceIn:
+      example:
+        user_ids:
+        - user_1
+        - user_2
+      properties:
+        user_ids:
+          items:
+            type: string
+          title: User Ids
+          type: array
+      title: SessionAssigneesReplaceIn
+      type: object
     SessionItem:
       properties:
         activity_count:
           default: 0
           title: Activity Count
           type: integer
+        assignees:
+          items:
+            type: object
+          title: Assignees
+          type: array
         attention_count:
           default: 0
           title: Attention Count
@@ -15721,6 +15739,83 @@ paths:
       security:
       - bearerAuth: []
       summary: Создать/выполнить сессию процесса
+      tags:
+      - sessions
+  /api/sessions/{session_id}/assignees:
+    get:
+      description: 'Получить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: get_session_assignees_api_sessions__session_id__assignees_get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить сессию процесса
+      tags:
+      - sessions
+    put:
+      description: 'Сохранить (replace) сессию процесса. Особенности: доступ: член
+        организации с нужной ролью (org-scope); тело валидируется схемой (422 при
+        несоответствии); 404 — ресурс не найден/вне scope.'
+      operationId: put_session_assignees_api_sessions__session_id__assignees_put
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionAssigneesReplaceIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '409':
+          description: 'Конфликт версий: ресурс изменился на сервере (см. base_diagram_state_version
+            / retry)'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Сохранить (replace) сессию процесса
       tags:
       - sessions
   /api/sessions/{session_id}/auto-pass:

@@ -128,6 +128,88 @@ def _session_presence_display_name(user_id: str, email: str = "", full_name: str
     return f"Пользователь {uid[:8]}"
 
 
+def _assignable_user_payload(row: Any) -> Dict[str, Any]:
+    uid = str(row["user_id"] or "").strip()
+    email = str(row["email"] or "").strip().lower()
+    full_name = str(row["full_name"] or "").strip()
+    job_title = str(row["job_title"] or "").strip()
+    display_name = full_name or email or uid
+    return {
+        "user_id": uid,
+        "email": email,
+        "full_name": full_name,
+        "job_title": job_title,
+        "display_name": display_name,
+    }
+
+
+def _load_session_assignees(session_ids: Iterable[str]) -> Dict[str, List[Dict[str, Any]]]:
+    """Load assignees for a set of sessions in one query."""
+    ids: List[str] = []
+    seen: Set[str] = set()
+    for raw in session_ids or []:
+        sid = str(raw or "").strip()
+        if sid and sid not in seen:
+            seen.add(sid)
+            ids.append(sid)
+    out: Dict[str, List[Dict[str, Any]]] = {sid: [] for sid in ids}
+    if not ids:
+        return out
+    placeholders = ", ".join(["?"] * len(ids))
+    sql = f"""
+        SELECT sa.session_id, sa.user_id, sa.assigned_by, sa.assigned_at,
+               u.email, u.full_name, u.job_title
+          FROM session_assignees sa
+          LEFT JOIN users u ON u.id = sa.user_id
+         WHERE sa.session_id IN ({placeholders})
+         ORDER BY sa.assigned_at ASC, sa.user_id ASC
+    """
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(sql, ids).fetchall()
+    for row in rows:
+        sid = str(row["session_id"] or "").strip()
+        if not sid:
+            continue
+        out.setdefault(sid, []).append(_assignable_user_payload(row))
+    return out
+
+
+def _replace_session_assignees(
+    session_id: str,
+    user_ids: Iterable[str],
+    *,
+    assigned_by: str,
+    assigned_at: Optional[int] = None,
+) -> List[str]:
+    """Idempotently replace assignees for a session. Returns final user_ids."""
+    sid = str(session_id or "").strip()
+    actor = str(assigned_by or "").strip()
+    now = int(assigned_at or 0) or _now_ts()
+    final_ids: List[str] = []
+    seen: Set[str] = set()
+    for raw in user_ids or []:
+        uid = str(raw or "").strip()
+        if uid and uid not in seen:
+            seen.add(uid)
+            final_ids.append(uid)
+    if not sid:
+        return final_ids
+    _ensure_schema()
+    with _connect() as con:
+        con.execute("DELETE FROM session_assignees WHERE session_id = ?", [sid])
+        if final_ids:
+            con.executemany(
+                """
+                INSERT INTO session_assignees (session_id, user_id, assigned_by, assigned_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                [(sid, uid, actor, now) for uid in final_ids],
+            )
+        con.commit()
+    return final_ids
+
+
 def _session_to_explorer_dict(s: "Session", has_children: bool = False, children_count: int = 0) -> Dict[str, Any]:
     """Convert a Session model to the explorer-friendly dict shape."""
     from ....services.bpmn_navigation import find_subprocess_elements
@@ -152,6 +234,7 @@ def _session_to_explorer_dict(s: "Session", has_children: bool = False, children
         "children_count": int(children_count),
         "activity_count": int(getattr(s, "activity_count", 0) or 0),
         "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
+        "assignees": [],
     }
 
 
@@ -476,6 +559,11 @@ def get_project_session_tree(
         if not item.get("parent_session_id"):
             roots.append(item)
 
+    if by_id:
+        assignees_by_session = _load_session_assignees(by_id.keys())
+        for sid, item in by_id.items():
+            item["assignees"] = assignees_by_session.get(sid) or []
+
     # Attach children (only if within max_depth; current implementation loads all,
     # but nesting is limited by the recursive helper below).
     def attach(parent: Dict[str, Any], depth: int) -> None:
@@ -710,6 +798,12 @@ def list_project_sessions_for_explorer(
         has_children = bool(row["has_children"]) if include_children_meta else False
         children_count = int(row["children_count"] or 0) if include_children_meta else 0
         result.append(_session_to_explorer_dict(s, has_children, children_count))
+
+    if result:
+        assignees_by_session = _load_session_assignees(item["id"] for item in result)
+        for item in result:
+            item["assignees"] = assignees_by_session.get(item["id"]) or []
+
     return result
 
 
@@ -755,6 +849,12 @@ def list_session_children(
     for row in rows:
         s = _session_row_to_model(row)
         result.append(_session_to_explorer_dict(s, bool(row["has_children"]), int(row["children_count"] or 0)))
+
+    if result:
+        assignees_by_session = _load_session_assignees(item["id"] for item in result)
+        for item in result:
+            item["assignees"] = assignees_by_session.get(item["id"]) or []
+
     return result
 
 
@@ -952,3 +1052,8 @@ from ..notes.repository import _notes_aggregate_payload
 from ..notes.repository import _personal_discussion_count_case
 from ..org_auth.repository import _default_org_id
 from ..org_auth.repository import _ensure_workspace_folder_backfill
+
+
+# Public aliases for the session assignee helpers (kept private during module load).
+load_session_assignees = _load_session_assignees
+replace_session_assignees = _replace_session_assignees

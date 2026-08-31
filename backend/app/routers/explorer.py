@@ -195,6 +195,7 @@ class SessionItem(BaseModel):
     updated_at: int = 0
     created_at: int = 0
     children: Optional[List[Any]] = None
+    assignees: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ProjectPage(BaseModel):
@@ -288,6 +289,7 @@ def _session_item_from_row(row: Dict[str, Any]) -> SessionItem:
         updated_at=row.get("updated_at", 0),
         created_at=row.get("created_at", 0),
         children=[],
+        assignees=row.get("assignees") or [],
     )
 
 
