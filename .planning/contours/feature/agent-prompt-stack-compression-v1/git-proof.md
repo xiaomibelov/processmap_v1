@@ -43,9 +43,18 @@ python -m pytest tests/test_prompt_builder.py tests/test_branches.py tests/test_
 ## Measurements
 
 ```bash
-.venv/bin/python scripts/measure_prompt_tokens.py --before  # 25 897 tokens
-.venv/bin/python scripts/measure_prompt_tokens.py --after   #   636 tokens
+.venv/bin/python scripts/measure_prompt_tokens.py --before         # 25 897 tokens
+.venv/bin/python scripts/measure_prompt_tokens.py --after          #    636 tokens
+.venv/bin/python scripts/measure_prompt_tokens.py --after-prod-like #    681 tokens (mock RAG + pending-edit)
 ```
+
+## PR
+
+Draft: https://github.com/xiaomibelov/processmap_v1/pull/880
+
+## Obsidian mirror
+
+Manual mirror: `server-backup/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/agent-prompt-stack-compression-v1.md`
 
 ## Isolation
 

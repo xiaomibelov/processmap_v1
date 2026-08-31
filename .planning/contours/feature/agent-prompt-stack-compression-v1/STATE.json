@@ -23,8 +23,13 @@
   },
   "mirror": {
     "script": "tools/pm-agent-mirror-report.sh",
-    "status": "unavailable",
-    "reason": "Script expects /opt/processmap-test which does not exist in this environment. Manual Obsidian mirror deferred until after approve."
+    "status": "manual_done",
+    "reason": "Script expects /opt/processmap-test which does not exist in this environment. Manual mirror written to server-backup/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/agent-prompt-stack-compression-v1.md.",
+    "obsidian_path": "AgentReports/feature/agent-prompt-stack-compression-v1.md"
+  },
+  "pr": {
+    "url": "https://github.com/xiaomibelov/processmap_v1/pull/880",
+    "status": "draft"
   },
   "measurements": {
     "baseline": {
