@@ -4,7 +4,7 @@
 **Status:** `READY_FOR_REVIEW`  
 **Branch:** `fix/save-revision-hygiene`  
 **Base:** `origin/main @ 030f086a47e88cab14732246a58f771260844e74`  
-**HEAD:** `2d8c4df3140bbf8b348b0e45f16af4cc4aea6b4e`  
+**HEAD:** `11a84ab2af78a61cecaf0edff5115d7819c1fe50`  
 **Pushed to:** `origin/fix/save-revision-hygiene`  
 **PR URL:** https://github.com/xiaomibelov/processmap_v1/pull/new/fix/save-revision-hygiene  
 **Worktree:** `/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/fix-save-revision-hygiene`  
@@ -39,18 +39,19 @@
 
 ```text
 branch: fix/save-revision-hygiene
-HEAD:   2d8c4df3140bbf8b348b0e45f16af4cc4aea6b4e
+HEAD:   11a84ab2af78a61cecaf0edff5115d7819c1fe50
 origin/main: 030f086a47e88cab14732246a58f771260844e74
-origin/fix/save-revision-hygiene: 2d8c4df3140bbf8b348b0e45f16af4cc4aea6b4e
+origin/fix/save-revision-hygiene: 11a84ab2af78a61cecaf0edff5115d7819c1fe50
 merge-base:  030f086a47e88cab14732246a58f771260844e74
-ahead-by: 3
+ahead-by: 4
 
 commits:
+  11a84ab2 docs(planning): поправка HEAD и git-proof в артефактах
   2d8c4df3 docs(planning): уточнение артефактов после push
   c2cc9090 docs(planning): артефакты контура fix/save-revision-hygiene
   7366e783 fix(save): гигиена ревизий — no-op guard, без лишнего meta-PATCH, классификация same_tab
 
-git diff --stat 030f086a..HEAD: 16 files changed, 704 insertions(+), 37 deletions(-)
+git diff --stat 030f086a..HEAD: 16 files changed, 713 insertions(+), 42 deletions(-)
 ```
 
 Push ветки на origin выполнён без force. Merge/push в main/deploy без явного approve не выполнялись.
