@@ -14,7 +14,8 @@ from ...storage import _connect
 logger = logging.getLogger(__name__)
 
 
-@app.task(bind=True, max_retries=1, default_retry_delay=5)
+# Канонические имена: не зависят от import-контекста (app.* vs backend.app.*).
+@app.task(bind=True, max_retries=1, default_retry_delay=5, name="processmap.analytics.refresh_session_analytics_task")
 def refresh_session_analytics_task(self, session_id: str, org_id: str):
     """Recompute session, project, and workspace analytics snapshots."""
     try:
@@ -24,7 +25,7 @@ def refresh_session_analytics_task(self, session_id: str, org_id: str):
         raise self.retry(exc=exc, countdown=5)
 
 
-@app.task(bind=True, max_retries=1, default_retry_delay=60)
+@app.task(bind=True, max_retries=1, default_retry_delay=60, name="processmap.analytics.refresh_all_workspaces_analytics_task")
 def refresh_all_workspaces_analytics_task(self):
     """Nightly refresh of analytics snapshots for all active workspaces.
 
