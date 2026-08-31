@@ -1839,7 +1839,7 @@ function ProjectRow({
           <StatusDotBadge domain="project" value={project.status} />
         </td>
         {layout.showUpdated ? <UpdatedCell node={project} /> : null}
-        <td className={`px-2 py-2.5 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
+        <td className={`px-2 py-2.5 text-right relative ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1.5">
             {layout.compact ? null : (
               <AppRouteLink
