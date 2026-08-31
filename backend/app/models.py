@@ -92,6 +92,7 @@ class Session(BaseModel):
     bpmn_meta: Dict[str, Any] = Field(default_factory=dict)
     diagram_last_write_actor_user_id: str = Field(default="", exclude=True)
     diagram_last_write_actor_label: str = Field(default="", exclude=True)
+    diagram_last_write_client_id: str = Field(default="", exclude=True)
     diagram_last_write_at: int = Field(default=0, exclude=True)
     diagram_last_write_changed_keys: List[str] = Field(default_factory=list, exclude=True)
     rag_readiness_status: str = "not_ready"

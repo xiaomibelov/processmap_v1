@@ -875,6 +875,7 @@ def _ensure_schema() -> None:
                   diagram_state_version INTEGER NOT NULL DEFAULT 0,
                   diagram_last_write_actor_user_id TEXT NOT NULL DEFAULT '',
                   diagram_last_write_actor_label TEXT NOT NULL DEFAULT '',
+                  diagram_last_write_client_id TEXT NOT NULL DEFAULT '',
                   diagram_last_write_at INTEGER NOT NULL DEFAULT 0,
                   diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]',
                   bpmn_graph_fingerprint TEXT NOT NULL DEFAULT '',
@@ -1844,6 +1845,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_at INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "sessions", "diagram_last_write_changed_keys_json"):
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]'")
+            if not _column_exists(con, "sessions", "diagram_last_write_client_id"):
+                con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_client_id TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "rag_readiness_status"):
                 con.execute("ALTER TABLE sessions ADD COLUMN rag_readiness_status TEXT NOT NULL DEFAULT 'not_ready'")
             if not _column_exists(con, "sessions", "rag_queued_at"):
@@ -3050,6 +3053,7 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "diagram_state_version": int((row["diagram_state_version"] if "diagram_state_version" in keys else 0) or 0),
         "diagram_last_write_actor_user_id": str((row["diagram_last_write_actor_user_id"] if "diagram_last_write_actor_user_id" in keys else "") or ""),
         "diagram_last_write_actor_label": str((row["diagram_last_write_actor_label"] if "diagram_last_write_actor_label" in keys else "") or ""),
+        "diagram_last_write_client_id": str((row["diagram_last_write_client_id"] if "diagram_last_write_client_id" in keys else "") or ""),
         "diagram_last_write_at": int((row["diagram_last_write_at"] if "diagram_last_write_at" in keys else 0) or 0),
         "diagram_last_write_changed_keys": _json_loads(
             (row["diagram_last_write_changed_keys_json"] if "diagram_last_write_changed_keys_json" in keys else "[]"),
@@ -4235,6 +4239,7 @@ def _storage_find_or_create_child_session(
         "diagram_state_version": int(child.diagram_state_version or 0),
         "diagram_last_write_actor_user_id": "",
         "diagram_last_write_actor_label": "",
+        "diagram_last_write_client_id": "",
         "diagram_last_write_at": 0,
         "diagram_last_write_changed_keys_json": _json_dumps([], []),
         "bpmn_graph_fingerprint": "",
@@ -4262,18 +4267,18 @@ def _storage_find_or_create_child_session(
               interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
               normalized_json, resources_json, analytics_json, ai_llm_state_json,
               bpmn_xml, bpmn_xml_version, diagram_state_version,
-              diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
-              diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
-              owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
+              diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_client_id,
+              diagram_last_write_at, diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json,
+              version, owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
               navigation_stack, parent_session_id, element_id_in_parent, activity_count, deleted_at
             ) VALUES (
               :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
               :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
               :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
               :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
-              :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
-              :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
-              :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
+              :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_client_id,
+              :diagram_last_write_at, :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json,
+              :version, :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
               :navigation_stack, :parent_session_id, :element_id_in_parent, :activity_count, :deleted_at
             )
             ON CONFLICT (org_id, project_id, parent_session_id, element_id_in_parent)
@@ -5182,6 +5187,7 @@ def _storage_patch_session_meta(
     user_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
     org_id: Optional[str] = None,
+    client_id: Optional[str] = None,
 ) -> Optional["Session"]:
     """Atomically update only bpmn_meta_json and diagram_state_version (CAS).
 
@@ -5215,6 +5221,7 @@ def _storage_patch_session_meta(
         updated_by = owner or existing_owner or ""
         actor_user_id = owner or existing_owner or ""
         actor_label = actor_user_id
+        normalized_client_id = re.sub(r"[^A-Za-z0-9_.:-]+", "", str(client_id or "").strip())[:128]
         cur = con.execute(
             """
             UPDATE sessions
@@ -5225,6 +5232,7 @@ def _storage_patch_session_meta(
                    diagram_last_write_at = ?,
                    diagram_last_write_actor_user_id = ?,
                    diagram_last_write_actor_label = ?,
+                   diagram_last_write_client_id = ?,
                    diagram_last_write_changed_keys_json = ?
              WHERE id = ?
                AND diagram_state_version = ?
@@ -5237,6 +5245,7 @@ def _storage_patch_session_meta(
                 now,
                 actor_user_id,
                 actor_label,
+                normalized_client_id,
                 _json_dumps(["bpmn_meta"], []),
                 sid,
                 base,
@@ -5347,6 +5356,7 @@ def _storage_save(
             "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
             "diagram_last_write_actor_user_id": str(getattr(s, "diagram_last_write_actor_user_id", "") or ""),
             "diagram_last_write_actor_label": str(getattr(s, "diagram_last_write_actor_label", "") or ""),
+            "diagram_last_write_client_id": str(getattr(s, "diagram_last_write_client_id", "") or ""),
             "diagram_last_write_at": int(getattr(s, "diagram_last_write_at", 0) or 0),
             "diagram_last_write_changed_keys_json": _json_dumps(getattr(s, "diagram_last_write_changed_keys", []), []),
             "bpmn_graph_fingerprint": str(getattr(s, "bpmn_graph_fingerprint", "") or ""),
@@ -5409,6 +5419,7 @@ def _storage_save(
                      diagram_state_version=:diagram_state_version,
                      diagram_last_write_actor_user_id=:diagram_last_write_actor_user_id,
                      diagram_last_write_actor_label=:diagram_last_write_actor_label,
+                     diagram_last_write_client_id=:diagram_last_write_client_id,
                      diagram_last_write_at=:diagram_last_write_at,
                      diagram_last_write_changed_keys_json=:diagram_last_write_changed_keys_json,
                      bpmn_graph_fingerprint=:bpmn_graph_fingerprint,
@@ -5456,9 +5467,9 @@ def _storage_save(
                   interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
                   normalized_json, resources_json, analytics_json, ai_llm_state_json,
                   bpmn_xml, bpmn_xml_version, diagram_state_version,
-                  diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
-                  diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
-                  owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
+                  diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_client_id,
+                  diagram_last_write_at, diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json,
+                  version, owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
                   navigation_stack, parent_session_id, element_id_in_parent, process_layer,
                   derived_from_session_id, activity_count, rag_readiness_status, rag_queued_at,
                   rag_indexed_at
@@ -5467,9 +5478,9 @@ def _storage_save(
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
                   :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
                   :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
-                  :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
-                  :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
-                  :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
+                  :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_client_id,
+                  :diagram_last_write_at, :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json,
+                  :version, :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
                   :navigation_stack, :parent_session_id, :element_id_in_parent, :process_layer,
                   :derived_from_session_id, :activity_count, :rag_readiness_status, :rag_queued_at,
                   :rag_indexed_at
@@ -5498,6 +5509,7 @@ def _storage_save(
                   diagram_state_version=excluded.diagram_state_version,
                   diagram_last_write_actor_user_id=excluded.diagram_last_write_actor_user_id,
                   diagram_last_write_actor_label=excluded.diagram_last_write_actor_label,
+                  diagram_last_write_client_id=excluded.diagram_last_write_client_id,
                   diagram_last_write_at=excluded.diagram_last_write_at,
                   diagram_last_write_changed_keys_json=excluded.diagram_last_write_changed_keys_json,
                   bpmn_graph_fingerprint=excluded.bpmn_graph_fingerprint,
