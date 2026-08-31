@@ -7,7 +7,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.rag.chunker import chunk_bpmn_xml, chunk_product_actions, chunk_text
+from app.rag.chunker import (
+    chunk_bpmn_xml,
+    chunk_glossary,
+    chunk_operation_catalog,
+    chunk_product_actions,
+    chunk_property_dictionary,
+    chunk_text,
+)
 
 
 SAMPLE_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
@@ -51,6 +58,55 @@ SAMPLE_ACTIONS = [
         "role": "оператор",
     },
 ]
+
+SAMPLE_PROPERTY_ROWS = [
+    {
+        "id": "priority",
+        "display_name": "Приоритет",
+        "property_type": "enum",
+        "applicable_to": ["Task"],
+        "value_range": {"options": ["low", "medium", "high"]},
+        "source": "bpmn_extension",
+        "editable": True,
+        "visible_in": ["properties_panel", "export"],
+        "category": "general",
+        "inheritance": "none",
+    },
+]
+
+SAMPLE_ORG_PROPERTY_ROWS = [
+    {
+        "operation_key": "cook",
+        "property_key": "temp_c",
+        "property_label": "Температура",
+        "input_mode": "number",
+        "allow_custom_value": True,
+        "required": True,
+        "options": ["180", "200"],
+    },
+]
+
+SAMPLE_OPERATIONS = [
+    {
+        "code": "open_container",
+        "name": "Open Container",
+        "name_ru": "Вскрыть контейнер",
+        "category": "container",
+        "parameter_schema": {"container_id": {"type": "string", "required": True}},
+        "allowed_outputs": [{"name": "container_opened", "type": "success"}],
+        "execution_contract": {"preconditions": ["container_closed"]},
+        "resource_requirements": {"equipment": ["container_opener"], "time_estimate_sec": 15},
+    },
+]
+
+SAMPLE_GLOSSARY = {
+    "version": 1,
+    "equipment": [
+        {"canon": "blast_chiller_1", "title": "Камера интенсивного охлаждения", "aliases": ["шокер"]},
+    ],
+    "resources": [{"canon": "water", "title": "Вода", "aliases": ["вода"]}],
+    "units": [{"canon": "kg", "title": "килограмм", "aliases": ["кг"]}],
+}
 
 
 class ChunkBpmnXmlTests(unittest.TestCase):
@@ -166,6 +222,63 @@ class ChunkTextTests(unittest.TestCase):
     def test_empty_string_returns_no_chunks(self):
         chunks = chunk_text("")
         self.assertEqual(chunks, [])
+
+
+class ChunkPropertyDictionaryTests(unittest.TestCase):
+    def test_returns_one_chunk_per_system_property(self):
+        chunks = chunk_property_dictionary(SAMPLE_PROPERTY_ROWS)
+        self.assertEqual(len(chunks), len(SAMPLE_PROPERTY_ROWS))
+
+    def test_chunk_text_contains_display_name_and_type(self):
+        chunks = chunk_property_dictionary(SAMPLE_PROPERTY_ROWS)
+        self.assertIn("Приоритет", chunks[0]["chunk_text"])
+        self.assertIn("enum", chunks[0]["chunk_text"])
+
+    def test_metadata_preserves_property_key(self):
+        chunks = chunk_property_dictionary(SAMPLE_PROPERTY_ROWS)
+        meta = json.loads(chunks[0]["metadata_json"])
+        self.assertEqual(meta["property_key"], "priority")
+        self.assertEqual(meta["source_type"], "property_dictionary")
+
+    def test_org_property_includes_options(self):
+        chunks = chunk_property_dictionary(SAMPLE_ORG_PROPERTY_ROWS)
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("Температура", chunks[0]["chunk_text"])
+        self.assertIn("180", chunks[0]["chunk_text"])
+
+
+class ChunkOperationCatalogTests(unittest.TestCase):
+    def test_returns_one_chunk_per_operation(self):
+        chunks = chunk_operation_catalog(SAMPLE_OPERATIONS)
+        self.assertEqual(len(chunks), len(SAMPLE_OPERATIONS))
+
+    def test_chunk_text_contains_code_and_parameters(self):
+        chunks = chunk_operation_catalog(SAMPLE_OPERATIONS)
+        self.assertIn("open_container", chunks[0]["chunk_text"])
+        self.assertIn("container_id", chunks[0]["chunk_text"])
+
+    def test_metadata_preserves_operation_code(self):
+        chunks = chunk_operation_catalog(SAMPLE_OPERATIONS)
+        meta = json.loads(chunks[0]["metadata_json"])
+        self.assertEqual(meta["operation_code"], "open_container")
+        self.assertEqual(meta["source_type"], "operation_catalog")
+
+
+class ChunkGlossaryTests(unittest.TestCase):
+    def test_returns_one_chunk_per_term(self):
+        chunks = chunk_glossary(SAMPLE_GLOSSARY)
+        self.assertEqual(len(chunks), 3)
+
+    def test_chunk_text_contains_title_and_aliases(self):
+        chunks = chunk_glossary(SAMPLE_GLOSSARY)
+        texts = " ".join(c["chunk_text"] for c in chunks)
+        self.assertIn("шокер", texts)
+        self.assertIn("Камера интенсивного охлаждения", texts)
+
+    def test_metadata_preserves_term_canon(self):
+        chunks = chunk_glossary(SAMPLE_GLOSSARY)
+        canons = {json.loads(c["metadata_json"]).get("term_canon") for c in chunks}
+        self.assertIn("blast_chiller_1", canons)
 
 
 if __name__ == "__main__":
