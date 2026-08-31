@@ -4,7 +4,7 @@
 **Status:** `READY_FOR_REVIEW`  
 **Branch:** `fix/save-revision-hygiene`  
 **Base:** `origin/main @ 030f086a47e88cab14732246a58f771260844e74`  
-**HEAD:** `2d8c4df3140bbf8b348b0e45f16af4cc4aea6b4e`  
+**HEAD:** `11a84ab2af78a61cecaf0edff5115d7819c1fe50`  
 **Audit source:** `.planning/contours/audit/save-multi-revision-self-conflict/REPORT.md` + repro_06.har  
 **Obsidian mirror:** `tools/pm-agent-mirror-report.sh` недоступен вне `/opt/processmap-test` — зафиксировано как infra follow-up.
 
