@@ -594,6 +594,11 @@ export async function apiAdminGraphsRebuild() {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminGraphsRebuildCheck() {
+  const r = okOrError(await request(apiRoutes.admin.graphsRebuildCheck(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminGraphsGetRebuildStatus(jobId) {
   const id = String(jobId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing job_id" };

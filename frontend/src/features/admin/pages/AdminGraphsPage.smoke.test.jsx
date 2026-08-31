@@ -49,6 +49,8 @@ const FIXTURE = {
   rebuildError: "",
   activeJobId: "",
   activeStatus: null,
+  canRebuild: true,
+  rebuildDisabledReason: "",
   rebuild: () => {},
 };
 
@@ -150,7 +152,7 @@ describe("AdminGraphsPage smoke", () => {
       rebuild: onRebuild,
     });
     expect(container.textContent).toContain("Граф ещё не собран");
-    expect(container.textContent).toContain("Первая сборка занимает");
+    expect(container.textContent).toContain("Пересборка HTML занимает");
     expect(container.textContent).toContain("Вьювер графа");
     expect(container.textContent).not.toContain("Ошибка загрузки данных");
     const button = Array.from(container.querySelectorAll("button")).find((b) =>
@@ -161,6 +163,28 @@ describe("AdminGraphsPage smoke", () => {
       button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onRebuild).toHaveBeenCalledTimes(1);
+    root.unmount();
+    cleanup();
+  });
+
+  it("disables rebuild button when input files are missing", async () => {
+    const onRebuild = vi.fn();
+    const { container, root, cleanup } = await renderPage({
+      ...FIXTURE,
+      canRebuild: false,
+      rebuildDisabledReason: "Отсутствуют входные файлы: graph.json",
+      rebuild: onRebuild,
+    });
+    const button = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent.includes("Пересобрать")
+    );
+    expect(button).not.toBeNull();
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("title")).toContain("Отсутствуют входные файлы");
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onRebuild).not.toHaveBeenCalled();
     root.unmount();
     cleanup();
   });
