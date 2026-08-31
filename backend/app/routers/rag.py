@@ -9,16 +9,18 @@ from pydantic import BaseModel, Field
 
 from ..ai.process_projection import build_process_projection, projection_digest
 from ..legacy.request_context import request_active_org_id, require_authenticated_user
+from ..glossary import load_glossary
 from ..rag.indexer import delete_document, index_document
 from ..rag.search import BM25Index
 from ..rag.storage_rag import list_rag_chunks, upsert_rag_source_status
 from ..services.org_workspace import require_org_member_for_enterprise
+from ..startup.static_mounts import GLOSSARY_SEED
 from ..storage import _connect, get_storage, get_rag_settings
 from .admin import _admin_context
 
 router = APIRouter(tags=["rag"])
 
-_ALLOWED_SOURCE_TYPES = {"bpmn_xml", "product_action"}
+_ALLOWED_SOURCE_TYPES = {"bpmn_xml", "product_action", "property_dictionary", "operation_catalog", "glossary"}
 _MAX_TOP_K = 50
 _MAX_CHUNKS_LOAD = 2000
 
@@ -94,7 +96,7 @@ def rag_search(
 
 
 class RagIndexIn(BaseModel):
-    source_type: str = Field(..., description="'bpmn_xml' or 'product_action'")
+    source_type: str = Field(..., description="'bpmn_xml', 'product_action', 'property_dictionary', 'operation_catalog', or 'glossary'")
     session_id: Optional[str] = Field(default=None)
     force: bool = Field(default=False)
 
@@ -145,34 +147,47 @@ def rag_index(inp: RagIndexIn, request: Request) -> Dict[str, Any]:
     if session is None:
         raise HTTPException(status_code=404, detail="not_found")
 
-    if source_type == "bpmn_xml":
-        content = _text(getattr(session, "bpmn_xml", ""))
-        source_version = int(getattr(session, "bpmn_xml_version", 0) or 0) or None
-    else:
-        interview = _as_dict(getattr(session, "interview", {}))
-        analysis = _as_dict(interview.get("analysis"))
-        content = _as_list(analysis.get("product_actions"))
-        source_version = None
-
     metadata = {
         "source_type": source_type,
         "source_id": session_id,
         "session_id": session_id,
         "session_title": _text(getattr(session, "title", "")),
     }
+    source_version = None
+
     if source_type == "bpmn_xml":
+        content = _text(getattr(session, "bpmn_xml", ""))
+        source_version = int(getattr(session, "bpmn_xml_version", 0) or 0) or None
         metadata["projection_digest"] = projection_digest(build_process_projection(session))
+    elif source_type == "product_action":
+        interview = _as_dict(getattr(session, "interview", {}))
+        analysis = _as_dict(interview.get("analysis"))
+        content = _as_list(analysis.get("product_actions"))
+    elif source_type == "property_dictionary":
+        content = _load_process_property_metadata_rows(org_id) + _load_org_property_dictionary_rows(org_id)
+        metadata["source_id"] = "property_dictionary"
+    elif source_type == "operation_catalog":
+        content = _load_operation_catalog_rows()
+        metadata["source_id"] = "operation_catalog"
+    elif source_type == "glossary":
+        content = load_glossary(GLOSSARY_SEED)
+        source_version = content.get("version")
+        metadata["source_id"] = "glossary"
+    else:
+        content = ""
+
+    source_id = metadata["source_id"]
 
     if inp.force:
         from ..rag.storage_rag import get_rag_document_by_source
-        existing = get_rag_document_by_source(org_id, source_type, session_id)
+        existing = get_rag_document_by_source(org_id, source_type, source_id)
         if existing:
             delete_document(org_id, existing["doc_id"])
 
     result = index_document(
         org_id=org_id,
         source_type=source_type,
-        source_id=session_id,
+        source_id=source_id,
         content=content,
         metadata=metadata,
         source_version=source_version,
@@ -291,6 +306,21 @@ class RagIndexAllIn(BaseModel):
     force: bool = Field(default=False, description="Reindex even if content hash matches")
 
 
+class RagIndexDictionariesIn(BaseModel):
+    force: bool = Field(default=False, description="Reindex even if content hash matches")
+
+
+def _json_loads(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return value
+
+
 @router.post("/api/rag/index-all")
 def rag_index_all(inp: RagIndexAllIn, request: Request) -> Dict[str, Any]:
     """Admin/org-admin bulk reindex of bpmn_xml for all sessions in an org."""
@@ -379,5 +409,181 @@ def rag_index_all(inp: RagIndexAllIn, request: Request) -> Dict[str, Any]:
         "unchanged": unchanged,
         "failed": failed,
         "chunks_created": chunks_created,
+        "results": results,
+    }
+
+
+def _load_process_property_metadata_rows(org_id: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    with _connect() as con:
+        fetched = con.execute(
+            "SELECT id, display_name, property_type, applicable_to, default_value, value_range, validation_rules, source, editable, visible_in, category, inheritance, version FROM process_property_metadata WHERE org_id IS NULL OR org_id = ? ORDER BY id",
+            [org_id],
+        ).fetchall()
+    for row in fetched:
+        rows.append({
+            "id": _text(row["id"]),
+            "display_name": _text(row["display_name"]),
+            "property_type": _text(row["property_type"]),
+            "applicable_to": _json_loads(row["applicable_to"]),
+            "default_value": row["default_value"],
+            "value_range": _json_loads(row["value_range"]),
+            "validation_rules": _json_loads(row["validation_rules"]),
+            "source": _text(row["source"]),
+            "editable": bool(row["editable"]),
+            "visible_in": _json_loads(row["visible_in"]),
+            "category": _text(row["category"]),
+            "inheritance": _text(row["inheritance"]),
+            "version": int(row["version"] or 1),
+        })
+    return rows
+
+
+def _load_operation_catalog_rows() -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    with _connect() as con:
+        fetched = con.execute(
+            "SELECT id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category FROM operation_catalog ORDER BY code",
+        ).fetchall()
+    for row in fetched:
+        rows.append({
+            "id": _text(row["id"]),
+            "code": _text(row["code"]),
+            "name": _text(row["name"]),
+            "name_ru": _text(row["name_ru"]),
+            "parameter_schema": _json_loads(row["parameter_schema"]),
+            "allowed_outputs": _json_loads(row["allowed_outputs"]),
+            "execution_contract": _json_loads(row["execution_contract"]),
+            "resource_requirements": _json_loads(row["resource_requirements"]),
+            "category": _text(row["category"]),
+        })
+    return rows
+
+
+def _load_org_property_dictionary_rows(org_id: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    with _connect() as con:
+        fetched = con.execute(
+            """
+            SELECT d.operation_key, d.property_key, d.property_label, d.input_mode, d.allow_custom_value, d.required, v.option_value
+              FROM org_property_dictionary_defs d
+              LEFT JOIN org_property_dictionary_values v
+                ON d.org_id = v.org_id
+               AND d.operation_key = v.operation_key
+               AND d.property_key = v.property_key
+               AND v.is_active = 1
+             WHERE d.org_id = ? AND d.is_active = 1
+             ORDER BY d.operation_key, d.property_key, v.sort_order
+            """,
+            [org_id],
+        ).fetchall()
+    by_property: Dict[str, Dict[str, Any]] = {}
+    for row in fetched:
+        key = f"{_text(row['operation_key'])}#{_text(row['property_key'])}"
+        if key not in by_property:
+            by_property[key] = {
+                "operation_key": _text(row["operation_key"]),
+                "property_key": _text(row["property_key"]),
+                "property_label": _text(row["property_label"]),
+                "input_mode": _text(row["input_mode"]),
+                "allow_custom_value": bool(row["allow_custom_value"]),
+                "required": bool(row["required"]),
+                "options": [],
+            }
+        option_value = _text(row["option_value"])
+        if option_value and option_value not in by_property[key]["options"]:
+            by_property[key]["options"].append(option_value)
+    return list(by_property.values())
+
+
+@router.post("/api/rag/index-dictionaries")
+def rag_index_dictionaries(inp: RagIndexDictionariesIn, request: Request) -> Dict[str, Any]:
+    """Admin/org-admin bulk index of org-level dictionaries: property_dictionary, operation_catalog, glossary."""
+    _uid, _is_admin, default_org_id, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+
+    org_id = _text(default_org_id) or request_active_org_id(request) or "org_default"
+
+    results: Dict[str, Any] = {}
+
+    # property_dictionary: system + org-level
+    property_rows = _load_process_property_metadata_rows(org_id)
+    property_rows.extend(_load_org_property_dictionary_rows(org_id))
+    if inp.force:
+        from ..rag.storage_rag import get_rag_document_by_source
+        for source_id in ("system", "org"):
+            existing = get_rag_document_by_source(org_id, "property_dictionary", source_id)
+            if existing:
+                delete_document(org_id, existing["doc_id"])
+    # Index system and org rows in one doc per source bucket to keep source_id stable.
+    system_rows = [r for r in property_rows if not r.get("operation_key")]
+    org_rows = [r for r in property_rows if r.get("operation_key")]
+    system_result = index_document(
+        org_id=org_id,
+        source_type="property_dictionary",
+        source_id="system",
+        content=system_rows,
+        metadata={"source_type": "property_dictionary", "source_id": "system"},
+        source_version=None,
+    )
+    org_result = index_document(
+        org_id=org_id,
+        source_type="property_dictionary",
+        source_id="org",
+        content=org_rows,
+        metadata={"source_type": "property_dictionary", "source_id": "org"},
+        source_version=None,
+    )
+    results["property_dictionary"] = {
+        "system": {"doc_id": system_result["doc_id"], "chunks_created": system_result["chunks_created"], "was_updated": system_result["was_updated"]},
+        "org": {"doc_id": org_result["doc_id"], "chunks_created": org_result["chunks_created"], "was_updated": org_result["was_updated"]},
+    }
+
+    # operation_catalog
+    if inp.force:
+        from ..rag.storage_rag import get_rag_document_by_source
+        existing = get_rag_document_by_source(org_id, "operation_catalog", "operation_catalog")
+        if existing:
+            delete_document(org_id, existing["doc_id"])
+    operations = _load_operation_catalog_rows()
+    operation_result = index_document(
+        org_id=org_id,
+        source_type="operation_catalog",
+        source_id="operation_catalog",
+        content=operations,
+        metadata={"source_type": "operation_catalog", "source_id": "operation_catalog"},
+        source_version=None,
+    )
+    results["operation_catalog"] = {
+        "doc_id": operation_result["doc_id"],
+        "chunks_created": operation_result["chunks_created"],
+        "was_updated": operation_result["was_updated"],
+    }
+
+    # glossary
+    if inp.force:
+        from ..rag.storage_rag import get_rag_document_by_source
+        existing = get_rag_document_by_source(org_id, "glossary", "glossary")
+        if existing:
+            delete_document(org_id, existing["doc_id"])
+    glossary = load_glossary(GLOSSARY_SEED)
+    glossary_result = index_document(
+        org_id=org_id,
+        source_type="glossary",
+        source_id="glossary",
+        content=glossary,
+        metadata={"source_type": "glossary", "source_id": "glossary"},
+        source_version=glossary.get("version"),
+    )
+    results["glossary"] = {
+        "doc_id": glossary_result["doc_id"],
+        "chunks_created": glossary_result["chunks_created"],
+        "was_updated": glossary_result["was_updated"],
+    }
+
+    return {
+        "ok": True,
+        "org_id": org_id,
         "results": results,
     }

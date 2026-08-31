@@ -43,7 +43,8 @@ ROUTER_FEATURE = "agent_router"
 ROUTER_MAX_TOKENS = 200
 SMALLTALK_MAX_TOKENS = 400
 SCHEMA_OVERVIEW_MAX_TOKENS = 400
-VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk", "edit_canvas"}
+VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk", "edit_canvas", "structured_fact_qa"}
+# NOTE: new intent structured_fact_qa maps to model_class='cheap' in agent-model-routing-optimization-v1.
 
 
 def _now_ms() -> int:
@@ -163,6 +164,10 @@ def _normalize_intent(text: Optional[str]) -> str:
         "canvas": "edit_canvas",
         "smalltalk": "smalltalk",
         "chat": "smalltalk",
+        "structuredfactqa": "structured_fact_qa",
+        "structured_fact_qa": "structured_fact_qa",
+        "factqa": "structured_fact_qa",
+        "facts": "structured_fact_qa",
     }
     return aliases.get(raw, "smalltalk")
 
@@ -574,6 +579,127 @@ def _run_doc_qa_branch(
     return out
 
 
+def _detect_structured_fact_source_type(question: str) -> str:
+    """Pick the most likely RAG corpus for a structured-fact question."""
+    q = str(question or "").lower()
+    property_hints = {"свойств", "значен", "допустим", "применим", "свойство", "поле", "атрибут"}
+    operation_hints = {"операци", "параметр", "предуслови", "постуслови", "ресурс", "выполнен"}
+    glossary_hints = {"что такое", "термин", "единица измерен", "оборудован", "ресурс"}
+    property_score = sum(1 for h in property_hints if h in q)
+    operation_score = sum(1 for h in operation_hints if h in q)
+    glossary_score = sum(1 for h in glossary_hints if h in q)
+    if glossary_score > 0 and "операци" not in q:
+        return "glossary"
+    if operation_score > property_score:
+        return "operation_catalog"
+    return "property_dictionary"
+
+
+def _search_rag_for_structured_fact(
+    question: str,
+    session_id: str,
+    token: str,
+    org_id: str,
+    source_type: str,
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Search a specific corpus, falling back to global RAG if no results."""
+    try:
+        resp = search_rag(
+            question,
+            session_id,
+            token,
+            org_id=org_id,
+            source_type=source_type,
+            top_k=top_k,
+            min_score=0.0,
+        )
+        results = list(resp.get("results") or [])
+        if results:
+            return results
+    except Exception:
+        pass
+    try:
+        resp = search_rag(
+            question,
+            session_id,
+            token,
+            org_id=org_id,
+            source_type="",
+            top_k=top_k,
+            min_score=0.0,
+        )
+        return list(resp.get("results") or [])
+    except Exception:
+        return []
+
+
+def _build_structured_fact_prompt(question: str, chunks: List[Dict[str, Any]]) -> str:
+    chunks_text = "\n---\n".join(
+        str(r.get("chunk_text") or r.get("chunk") or "").strip() for r in chunks[:5]
+    )
+    return (
+        "Ответь на вопрос пользователя на основе предоставленных фактов из справочников. "
+        "Отвечай на русском языке. Если ответа нет в фактах, скажи об этом.\n\n"
+        f"Факты:\n{chunks_text}\n\n"
+        f"Вопрос: {question}"
+    )
+
+
+def _run_structured_fact_qa_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    source_type = _detect_structured_fact_source_type(payload.message)
+    results = _search_rag_for_structured_fact(
+        payload.message,
+        session_id,
+        token,
+        org_id=org_id,
+        source_type=source_type,
+        top_k=5,
+    )
+    if not results:
+        return _run_free_answer_branch(
+            payload, ctx, session_id, user_id, org_id, token, client_turn_id=client_turn_id
+        )
+
+    prompt_text = _build_structured_fact_prompt(payload.message, results)
+    result = complete(
+        FEATURE,
+        payload={"input": prompt_text},
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=MAX_TOKENS,
+    )
+    usage = _usage_out(result)
+    if not result.get("ok"):
+        return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
+
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    _, out = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=str(result.get("text") or ""),
+        usage=usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="structured_fact_qa",
+        action_payload={"results_count": len(results), "source_type": source_type},
+        now_ms=_now_ms(),
+    )
+    return out
+
+
 def _run_free_answer_branch(
     payload: AgentChatIn,
     ctx: AgentContext,
@@ -853,6 +979,98 @@ def _run_edit_canvas_branch_stream(
     )
 
 
+def _run_structured_fact_qa_branch_stream(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    stream_id: str,
+    client_turn_id: Optional[str],
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Streaming variant of structured_fact_qa."""
+    project_id = str(getattr(ctx.session, "project_id", "") or "")
+    source_type = _detect_structured_fact_source_type(payload.message)
+    results = _search_rag_for_structured_fact(
+        payload.message,
+        session_id,
+        token,
+        org_id=org_id,
+        source_type=source_type,
+        top_k=5,
+    )
+    if not results:
+        yield from _run_free_answer_branch_stream(
+            payload, ctx, session_id, user_id, org_id, token, client_turn_id=client_turn_id
+        )
+        return
+
+    prompt_text = _build_structured_fact_prompt(payload.message, results)
+    collected_text = ""
+    final_usage: Dict[str, Any] = {}
+    stream_error: Optional[Dict[str, Any]] = None
+
+    for event_type, event_data in complete_stream(
+        FEATURE,
+        payload={"input": prompt_text},
+        user_id=user_id,
+        project_id=project_id,
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=MAX_TOKENS,
+    ):
+        if event_type == "token":
+            delta = str(event_data.get("delta") or "")
+            collected_text += delta
+            yield ("token", {"delta": delta})
+        elif event_type == "error":
+            stream_error = event_data
+            break
+        elif event_type == "usage":
+            final_usage = {
+                "prompt_tokens": int(event_data.get("usage", {}).get("prompt_tokens", 0)),
+                "completion_tokens": int(event_data.get("usage", {}).get("completion_tokens", 0)),
+                "provider_id": str(event_data.get("provider_id") or ""),
+                "model": str(event_data.get("model") or ""),
+                "prompt_version": int(event_data.get("prompt_version") or 0),
+                "fallback": bool(event_data.get("fallback")),
+                "cached": False,
+            }
+
+    if stream_error is not None:
+        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
+        _ = _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message=text,
+            usage=final_usage,
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action="structured_fact_qa",
+            action_payload={"status": "error"},
+            now_ms=_now_ms(),
+        )
+        yield ("error", {"status": stream_error.get("status"), "error": stream_error.get("error", "")})
+        return
+
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    _ = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=collected_text,
+        usage=final_usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="structured_fact_qa",
+        action_payload={"results_count": len(results), "source_type": source_type},
+        now_ms=_now_ms(),
+    )
+    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest})
+
+
 def _gateway_error_out(
     session_id: str,
     user_id: str,
@@ -944,6 +1162,9 @@ def run_turn(
     if intent == "doc_qa":
         return _run_doc_qa_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
+    if intent == "structured_fact_qa":
+        return _run_structured_fact_qa_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
+
     if intent == "suggest_next" and _step_in_projection(ctx.projection, payload.selected_step_id):
         return _run_suggest_next_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
@@ -1034,6 +1255,12 @@ def run_turn_stream(
 
     if intent == "edit_canvas":
         yield from _run_edit_canvas_branch_stream(
+            payload, ctx, sid, uid, oid, token, stream_id, client_turn_id
+        )
+        return
+
+    if intent == "structured_fact_qa":
+        yield from _run_structured_fact_qa_branch_stream(
             payload, ctx, sid, uid, oid, token, stream_id, client_turn_id
         )
         return

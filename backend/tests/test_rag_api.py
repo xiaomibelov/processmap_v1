@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import sqlite3
 import sys
@@ -57,14 +58,27 @@ class RagApiTests(unittest.TestCase):
             "RAG API Project", {}, user_id=self.user_id, org_id=self.org_id, is_admin=True
         )
         self.session_id = self._seed_session()
+        self._ensure_operation_catalog_table()
 
-        from app.routers.rag import ProductActionsRagIndexIn, RagIndexAllIn, RagIndexIn, rag_index, rag_index_all, rag_index_product_actions, rag_search
+        from app.routers.rag import (
+            ProductActionsRagIndexIn,
+            RagIndexAllIn,
+            RagIndexDictionariesIn,
+            RagIndexIn,
+            rag_index,
+            rag_index_all,
+            rag_index_dictionaries,
+            rag_index_product_actions,
+            rag_search,
+        )
         self.rag_search = rag_search
         self.rag_index = rag_index
         self.rag_index_all = rag_index_all
         self.rag_index_product_actions = rag_index_product_actions
+        self.rag_index_dictionaries = rag_index_dictionaries
         self.RagIndexIn = RagIndexIn
         self.RagIndexAllIn = RagIndexAllIn
+        self.RagIndexDictionariesIn = RagIndexDictionariesIn
         self.ProductActionsRagIndexIn = ProductActionsRagIndexIn
 
     def tearDown(self):
@@ -445,6 +459,164 @@ class RagApiTests(unittest.TestCase):
         # Обе сессии найдены поиском.
         search = self._search("Вторая сессия шаг", source_type="bpmn_xml", session_id=sid2)
         self.assertGreater(search["total"], 0)
+
+    # ── Dictionary index helpers ─────────────────────────────────────────────
+
+    def _ensure_operation_catalog_table(self):
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS operation_catalog (
+                    id TEXT PRIMARY KEY,
+                    code TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    name_ru TEXT,
+                    parameter_schema TEXT,
+                    allowed_outputs TEXT,
+                    execution_contract TEXT,
+                    resource_requirements TEXT,
+                    category TEXT
+                )
+                """
+            )
+            con.commit()
+
+    def _seed_operation_catalog(self):
+        op = {
+            "code": "open_container",
+            "name": "Open Container",
+            "name_ru": "Вскрыть контейнер",
+            "parameter_schema": {
+                "container_id": {"type": "string", "required": True},
+                "open_method": {"type": "string", "required": False, "default": "auto"},
+            },
+            "allowed_outputs": [{"name": "container_opened", "type": "success"}],
+            "execution_contract": {
+                "preconditions": ["container_closed"],
+                "postconditions": ["container_open"],
+                "checks": ["safety_check"],
+            },
+            "resource_requirements": {
+                "equipment": ["container_opener"],
+                "containers": ["target_container"],
+                "time_estimate_sec": 15,
+            },
+            "category": "container",
+        }
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO operation_catalog
+                (id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    "op_open_container",
+                    op["code"],
+                    op["name"],
+                    op["name_ru"],
+                    json.dumps(op["parameter_schema"]),
+                    json.dumps(op["allowed_outputs"]),
+                    json.dumps(op["execution_contract"]),
+                    json.dumps(op["resource_requirements"]),
+                    op["category"],
+                ],
+            )
+            con.commit()
+
+    def _index_dictionaries(self, force: bool = False):
+        inp = self.RagIndexDictionariesIn(force=force)
+        return self.rag_index_dictionaries(inp, self._req())
+
+    # ── Dictionary index endpoint ────────────────────────────────────────────
+
+    def test_index_dictionaries_creates_property_dictionary_chunks(self):
+        result = self._index_dictionaries()
+        self.assertTrue(result["ok"])
+        self.assertIn("property_dictionary", result["results"])
+        self.assertGreater(
+            result["results"]["property_dictionary"]["system"]["chunks_created"], 0
+        )
+
+    def test_index_dictionaries_creates_operation_catalog_chunks(self):
+        self._seed_operation_catalog()
+        result = self._index_dictionaries()
+        self.assertTrue(result["ok"])
+        self.assertIn("operation_catalog", result["results"])
+        self.assertGreater(result["results"]["operation_catalog"]["chunks_created"], 0)
+
+    def test_index_dictionaries_creates_glossary_chunks(self):
+        result = self._index_dictionaries()
+        self.assertTrue(result["ok"])
+        self.assertIn("glossary", result["results"])
+        self.assertGreater(result["results"]["glossary"]["chunks_created"], 0)
+
+    def test_index_dictionaries_is_idempotent(self):
+        self._seed_operation_catalog()
+        r1 = self._index_dictionaries()
+        r2 = self._index_dictionaries()
+        self.assertTrue(r1["ok"])
+        self.assertTrue(r2["ok"])
+        self.assertFalse(r2["results"]["glossary"]["was_updated"])
+        self.assertEqual(r2["results"]["glossary"]["chunks_created"], 0)
+
+    def test_index_dictionaries_force_reindexes(self):
+        self._seed_operation_catalog()
+        r1 = self._index_dictionaries()
+        r2 = self._index_dictionaries(force=True)
+        self.assertTrue(r1["ok"])
+        self.assertTrue(r2["ok"])
+        self.assertTrue(r2["results"]["property_dictionary"]["system"]["was_updated"])
+        self.assertGreater(
+            r2["results"]["property_dictionary"]["system"]["chunks_created"], 0
+        )
+
+    # ── Search source_type filters for dictionaries ──────────────────────────
+
+    def test_search_source_type_filter_property_dictionary(self):
+        self._index_dictionaries()
+        result = self._search("Ингредиент", source_type="property_dictionary")
+        self.assertGreater(result["total"], 0)
+        for r in result["results"]:
+            self.assertEqual(r["source_type"], "property_dictionary")
+
+    def test_search_source_type_filter_operation_catalog(self):
+        self._seed_operation_catalog()
+        self._index_dictionaries()
+        result = self._search("open_container", source_type="operation_catalog")
+        self.assertGreater(result["total"], 0)
+        for r in result["results"]:
+            self.assertEqual(r["source_type"], "operation_catalog")
+            self.assertEqual(r["metadata"].get("operation_code"), "open_container")
+
+    def test_search_source_type_filter_glossary(self):
+        self._index_dictionaries()
+        result = self._search("шокер", source_type="glossary")
+        self.assertGreater(result["total"], 0)
+        for r in result["results"]:
+            self.assertEqual(r["source_type"], "glossary")
+            self.assertEqual(r["metadata"].get("term_canon"), "blast_chiller_1")
+
+    def test_index_property_dictionary_via_session_endpoint_creates_chunks(self):
+        result = self._index("property_dictionary")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source_type"], "property_dictionary")
+        self.assertGreater(result["chunks_created"], 0)
+        search = self._search("Ингредиент", source_type="property_dictionary")
+        self.assertGreater(search["total"], 0)
+
+    def test_index_operation_catalog_via_session_endpoint_creates_chunks(self):
+        self._seed_operation_catalog()
+        result = self._index("operation_catalog")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source_type"], "operation_catalog")
+        self.assertGreater(result["chunks_created"], 0)
+
+    def test_index_glossary_via_session_endpoint_creates_chunks(self):
+        result = self._index("glossary")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source_type"], "glossary")
+        self.assertGreater(result["chunks_created"], 0)
 
 
 if __name__ == "__main__":
