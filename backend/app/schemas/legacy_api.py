@@ -430,3 +430,23 @@ class SubprocessNavigateOut(BaseModel):
 class SubprocessReturnOut(BaseModel):
     parent_session_id: str
     element_id_in_parent: str
+
+
+class SessionAssigneeOut(BaseModel):
+    user_id: str
+    email: str = ""
+    full_name: str = ""
+    job_title: str = ""
+    display_name: str = ""
+
+
+class SessionAssigneesReplaceIn(BaseModel):
+    user_ids: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "user_ids": ["user_1", "user_2"],
+            }
+        }
+    )

@@ -983,6 +983,19 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_stale ON session_presence(last_seen_at)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS session_assignees (
+                  session_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  assigned_by TEXT NOT NULL,
+                  assigned_at INTEGER NOT NULL,
+                  PRIMARY KEY (session_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_assignees_session ON session_assignees(session_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_assignees_user ON session_assignees(user_id)")
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS bpmn_versions (
                   id TEXT PRIMARY KEY,
                   session_id TEXT NOT NULL,

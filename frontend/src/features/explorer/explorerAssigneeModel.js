@@ -1,4 +1,5 @@
 const EMPTY_LABEL = "—";
+const MAX_VISIBLE_SESSION_ASSIGNEES = 2;
 export const EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS = 12000;
 
 function text(value) {
@@ -225,4 +226,51 @@ export function filterExplorerAssignableUsers(users, query) {
     ].map((part) => text(part).toLocaleLowerCase("ru-RU")).join(" ");
     return haystack.includes(q);
   });
+}
+
+// ─── Session assignees (many-to-many) ─────────────────────────────────────────
+
+export function getSessionAssignees(session) {
+  const list = session?.assignees;
+  if (!Array.isArray(list)) return [];
+  return list.map(normalizeAssignableUserItem).filter(Boolean);
+}
+
+export function getSessionAssigneeIds(session) {
+  return getSessionAssignees(session).map((user) => getExplorerAssignableUserId(user));
+}
+
+export function getSessionAssigneesLabel(session) {
+  const assignees = getSessionAssignees(session);
+  if (!assignees.length) return EMPTY_LABEL;
+  return assignees.map((user) => formatExplorerUserDisplay(user)).filter(Boolean).join(", ") || EMPTY_LABEL;
+}
+
+export function getSessionAssigneesTooltip(session) {
+  const assignees = getSessionAssignees(session);
+  if (!assignees.length) return "Не назначены";
+  return assignees
+    .map((user) => {
+      const name = formatExplorerUserDisplay(user);
+      const jobTitle = String(user?.job_title || user?.role || "").trim();
+      return jobTitle ? `${name} · ${jobTitle}` : name;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function getSessionAssigneesActionLabel(session) {
+  return getSessionAssignees(session).length ? "Изменить исполнителей" : "Назначить исполнителя";
+}
+
+export function getSessionAssigneesDialogTitle() {
+  return "Исполнители схемы";
+}
+
+export function getVisibleSessionAssignees(session) {
+  const assignees = getSessionAssignees(session);
+  return {
+    visible: assignees.slice(0, MAX_VISIBLE_SESSION_ASSIGNEES),
+    overflow: Math.max(0, assignees.length - MAX_VISIBLE_SESSION_ASSIGNEES),
+  };
 }

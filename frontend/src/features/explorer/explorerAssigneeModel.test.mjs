@@ -14,6 +14,13 @@ import {
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeKind,
   getExplorerBusinessAssigneeLabel,
+  getSessionAssignees,
+  getSessionAssigneeIds,
+  getSessionAssigneesActionLabel,
+  getSessionAssigneesDialogTitle,
+  getSessionAssigneesLabel,
+  getSessionAssigneesTooltip,
+  getVisibleSessionAssignees,
   mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
@@ -168,4 +175,38 @@ test("current user merge deduplicates existing members and ignores wrong org", (
     mergeExplorerAssignableCurrentUser([], currentUser, { orgId: "org_b", orgs: [{ org_id: "org_a", role: "owner" }] }),
     [],
   );
+});
+
+test("session assignees: read normalized list, ids, labels and overflow", () => {
+  const session = {
+    id: "s1",
+    assignees: [
+      { user_id: "u1", full_name: "Анна Иванова", job_title: "Аналитик" },
+      { user_id: "u2", full_name: "Борис Петров", job_title: "Технолог" },
+      { user_id: "u3", full_name: "Виктор Сидоров" },
+    ],
+  };
+
+  assert.deepEqual(getSessionAssigneeIds(session), ["u1", "u2", "u3"]);
+  assert.equal(getSessionAssigneesActionLabel(session), "Изменить исполнителей");
+  assert.equal(getSessionAssigneesDialogTitle(), "Исполнители схемы");
+  assert.equal(getSessionAssigneesLabel(session), "Анна Иванова, Борис Петров, Виктор Сидоров");
+  assert.match(getSessionAssigneesTooltip(session), /Анна Иванова · Аналитик/);
+  assert.match(getSessionAssigneesTooltip(session), /Борис Петров · Технолог/);
+
+  const { visible, overflow } = getVisibleSessionAssignees(session);
+  assert.equal(visible.length, 2);
+  assert.equal(overflow, 1);
+  assert.equal(visible[0].user_id, "u1");
+});
+
+test("session assignees: empty state renders dash and assign action", () => {
+  const session = { id: "s1" };
+
+  assert.deepEqual(getSessionAssignees(session), []);
+  assert.deepEqual(getSessionAssigneeIds(session), []);
+  assert.equal(getSessionAssigneesLabel(session), "—");
+  assert.equal(getSessionAssigneesActionLabel(session), "Назначить исполнителя");
+  assert.equal(getSessionAssigneesTooltip(session), "Не назначены");
+  assert.deepEqual(getVisibleSessionAssignees(session), { visible: [], overflow: 0 });
 });

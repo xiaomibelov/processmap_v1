@@ -22,6 +22,7 @@ from ..schemas.legacy_api import (
     NotesExtractionPreviewIn,
     NotesIn,
     OrgReportBuildIn,
+    SessionAssigneesReplaceIn,
     SessionPresenceTouchIn,
     SubprocessNavigateOut,
     SubprocessReturnOut,
@@ -292,3 +293,15 @@ def get_org_session_report_version(org_id: str, session_id: str, version_id: str
 @router.delete('/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}')
 def delete_org_session_report_version(org_id: str, session_id: str, version_id: str, request: Request, path_id: str = ''):
     return _svc.delete_org_session_report_version(org_id, session_id, version_id, request, path_id)
+
+
+@router.get('/api/sessions/{session_id}/assignees')
+def get_session_assignees(session_id: str, request: Request):
+    from ..services import session_assignment_service as _assign_svc
+    return _assign_svc.list_assignees(session_id, request)
+
+
+@router.put('/api/sessions/{session_id}/assignees')
+def put_session_assignees(session_id: str, inp: SessionAssigneesReplaceIn, request: Request):
+    from ..services import session_assignment_service as _assign_svc
+    return _assign_svc.replace_assignees(session_id, inp.user_ids, request)

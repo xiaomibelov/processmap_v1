@@ -196,6 +196,7 @@ export const apiRoutes = {
       job_id: String(options?.job_id || options?.jobId || "").trim(),
     }),
     autoPassPrecheck: (sessionId) => `/api/sessions/${encode(sessionId)}/auto-pass/precheck`,
+    assignees: (sessionId) => `/api/sessions/${encode(sessionId)}/assignees`,
     pathReports: (sessionId, pathId, stepsHash = "") => withQuery(
       `/api/sessions/${encode(sessionId)}/paths/${encode(pathId)}/reports`,
       { steps_hash: String(stepsHash || "").trim() },
