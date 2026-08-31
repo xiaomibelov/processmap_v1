@@ -19,6 +19,8 @@ export default function AdminGraphsPage({ payload = {} }) {
     rebuildError,
     activeJobId,
     activeStatus,
+    canRebuild,
+    rebuildDisabledReason,
     rebuild,
     uploading,
     uploadError,
@@ -82,7 +84,8 @@ export default function AdminGraphsPage({ payload = {} }) {
             <button
               type="button"
               onClick={rebuild}
-              disabled={rebuilding}
+              disabled={rebuilding || !canRebuild}
+              title={canRebuild ? "" : (rebuildDisabledReason || t.rebuildDisabledHint)}
               className="rounded-xl border border-slate-200 bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
             >
               {rebuilding ? t.rebuildBusy : t.rebuildBtn}
@@ -154,12 +157,18 @@ export default function AdminGraphsPage({ payload = {} }) {
               <button
                 type="button"
                 onClick={rebuild}
-                className="rounded-xl border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                disabled={!canRebuild}
+                title={canRebuild ? "" : (rebuildDisabledReason || t.rebuildDisabledHint)}
+                className="rounded-xl border border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50"
               >
                 {t.rebuildBtn}
               </button>
             </div>
-            <p className="mt-3 text-center text-xs text-slate-500">{t.rebuildDurationHint}</p>
+            {!canRebuild ? (
+              <p className="mt-3 text-center text-xs text-rose-600">{rebuildDisabledReason || t.rebuildDisabledHint}</p>
+            ) : (
+              <p className="mt-3 text-center text-xs text-slate-500">{t.rebuildDurationHint}</p>
+            )}
           </div>
         </SectionCard>
       ) : (
