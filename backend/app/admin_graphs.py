@@ -70,6 +70,48 @@ def _ensure_dirs() -> bool:
         return False
 
 
+class RebuildInputError(Exception):
+    """Raised when required graph input artifacts are missing."""
+
+
+def _missing_rebuild_input_files() -> List[str]:
+    """Return the list of missing required input file names."""
+    base_dir = _graphs_dir()
+    return [name for name in ("graph.json", ".graphify_analysis.json") if not (base_dir / name).is_file()]
+
+
+def _check_rebuild_input() -> Optional[str]:
+    """Return a human-readable message if required input files are missing.
+
+    Rebuild is a re-render of the HTML snapshot from the already-uploaded
+    graph.json + .graphify_analysis.json. Full generation of graph.json is
+    only possible outside the runtime (CI / dev machine) via upload.
+    """
+    missing = _missing_rebuild_input_files()
+    if missing:
+        return (
+            f"Отсутствуют входные файлы: {', '.join(missing)}. "
+            "Сначала загрузите снапшот через секцию «Загрузить снапшот»."
+        )
+    return None
+
+
+def get_rebuild_input_status() -> Dict[str, Any]:
+    """Return a structured status for the rebuild input guard."""
+    missing = _missing_rebuild_input_files()
+    if missing:
+        return {
+            "ok": False,
+            "missing_files": missing,
+            "message": _check_rebuild_input(),
+        }
+    return {
+        "ok": True,
+        "missing_files": [],
+        "message": "Входные файлы на месте, rebuild доступен.",
+    }
+
+
 def _is_current(snapshot_id: str) -> bool:
     link = _current_symlink()
     try:
@@ -387,7 +429,16 @@ def start_rebuild() -> str:
     """Create a new snapshot entry and kick off a background rebuild.
 
     Returns the snapshot/job id.
+
+    Raises:
+        RebuildInputError: if the required graph.json / .graphify_analysis.json
+        files are not present. The caller is expected to translate this into a
+        409 response so the UI can block the rebuild button.
     """
+    missing = _check_rebuild_input()
+    if missing:
+        raise RebuildInputError(missing)
+
     snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     if not _ensure_dirs():
         _failed_jobs[snapshot_id] = {

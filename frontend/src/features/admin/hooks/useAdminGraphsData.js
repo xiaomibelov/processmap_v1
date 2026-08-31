@@ -5,6 +5,7 @@ import {
   apiAdminGraphsGetRebuildStatus,
   apiAdminGraphsListSnapshots,
   apiAdminGraphsRebuild,
+  apiAdminGraphsRebuildCheck,
   apiAdminGraphsUploadSnapshot,
 } from "../../../lib/apiModules/adminApi.js";
 
@@ -19,21 +20,44 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
   const [rebuildError, setRebuildError] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [activeStatus, setActiveStatus] = useState(null);
+  const [canRebuild, setCanRebuild] = useState(true);
+  const [rebuildDisabledReason, setRebuildDisabledReason] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const pollRef = useRef(null);
   const mountedRef = useRef(true);
 
+  const checkRebuildInput = useCallback(async () => {
+    const r = await apiAdminGraphsRebuildCheck();
+    if (!mountedRef.current) return;
+    if (r.ok && r.data) {
+      setCanRebuild(Boolean(r.data.ok));
+      setRebuildDisabledReason(r.data.ok ? "" : String(r.data.message || ""));
+    } else {
+      setCanRebuild(false);
+      setRebuildDisabledReason(String(r.error || "Не удалось проверить готовность rebuild"));
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    const [snapshotsR, currentR, analyticsR] = await Promise.all([
+    const [snapshotsR, currentR, analyticsR, checkR] = await Promise.all([
       apiAdminGraphsListSnapshots(),
       apiAdminGraphsGetCurrentSnapshot(),
       apiAdminGraphsGetAnalytics(),
+      apiAdminGraphsRebuildCheck(),
     ]);
     if (!mountedRef.current) return;
+
+    if (checkR.ok && checkR.data) {
+      setCanRebuild(Boolean(checkR.data.ok));
+      setRebuildDisabledReason(checkR.data.ok ? "" : String(checkR.data.message || ""));
+    } else {
+      setCanRebuild(false);
+      setRebuildDisabledReason(String(checkR.error || "Не удалось проверить готовность rebuild"));
+    }
 
     // 404 from current/analytics means "no snapshot yet" — this is a normal
     // empty state, not an error. Only snapshots list failure or 5xx is real error.
@@ -118,7 +142,14 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
     if (!mountedRef.current) return r;
     if (!r.ok) {
       setRebuilding(false);
-      setRebuildError(String(r.error || "Не удалось запустить пересборку"));
+      const message = String(r.error || "Не удалось запустить пересборку");
+      setRebuildError(message);
+      // If the server rejected rebuild because input files are missing,
+      // update the local guard state so the button becomes disabled.
+      if (r.status === 409) {
+        setCanRebuild(false);
+        setRebuildDisabledReason(message);
+      }
       return r;
     }
     const jobId = String(r.data?.job_id || "").trim();
@@ -146,8 +177,9 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
     setUploadSuccess(true);
     setUploading(false);
     await load();
+    await checkRebuildInput();
     return r;
-  }, [load]);
+  }, [load, checkRebuildInput]);
 
   return {
     data,
@@ -158,6 +190,8 @@ export default function useAdminGraphsData({ enabled = true } = {}) {
     rebuildError,
     activeJobId,
     activeStatus,
+    canRebuild,
+    rebuildDisabledReason,
     rebuild,
     uploading,
     uploadError,
