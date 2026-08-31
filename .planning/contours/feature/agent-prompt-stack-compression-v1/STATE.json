@@ -2,13 +2,11 @@
   "contour": "feature/agent-prompt-stack-compression-v1",
   "run_id": "feature-agent-prompt-stack-compression-v1-20260831T152200Z",
   "phase": "1",
-  "status": "EXECUTION_DONE",
+  "status": "MERGED",
   "role": "executor",
   "ready_for_execution": false,
-  "ready_for_review": true,
-  "blockers": [
-    "Awaiting user review/approve before PR / merge."
-  ],
+  "ready_for_review": false,
+  "blockers": [],
   "baseline": {
     "repo": "processmap_v1_main_clone",
     "worktree": "processmap_v1_main_clone-worktrees/feature-agent-prompt-stack-compression-v1",
@@ -29,7 +27,9 @@
   },
   "pr": {
     "url": "https://github.com/xiaomibelov/processmap_v1/pull/880",
-    "status": "draft"
+    "status": "merged",
+    "merge_commit": "b43f41cc6776370dcb5aab885527ce3b9ae7a1e3",
+    "merged_at": "2026-08-31T16:30:47Z"
   },
   "measurements": {
     "baseline": {
