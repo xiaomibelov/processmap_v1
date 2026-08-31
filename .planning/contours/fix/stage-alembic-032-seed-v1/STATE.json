@@ -1,0 +1,23 @@
+{
+  "contour": "fix/stage-alembic-032-seed-v1",
+  "type": "fix",
+  "status": "ready_for_review",
+  "head": "ed81667b",
+  "origin_main": "ed81667b",
+  "rebased_on": "origin/main includes migration 033",
+  "deliverables": {
+    "PLAN.md": true,
+    "EXEC_REPORT.md": true,
+    "PR.md": true,
+    "READY_FOR_REVIEW": true
+  },
+  "tests": {
+    "agent_service": "133 passed, 1 skipped, 1 failed (unrelated baseline)",
+    "migration_bootstrap": "5 passed",
+    "admin_llm_api": "17 passed, 2 failed (local dev DB still on 031)"
+  },
+  "risks": [
+    "Stage ops: provider key must exist for deepseek seed auto-enable",
+    "Local admin tests need dev DB migrated to 032+033 to go fully green"
+  ]
+}

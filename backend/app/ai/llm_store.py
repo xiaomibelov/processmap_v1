@@ -605,6 +605,7 @@ def record_usage(
     prompt_tokens: int = 0,
     completion_tokens: int = 0,
     cached: bool = False,
+    cost_usd: float = 0.0,
     user_id: str = "",
     project_id: str = "",
     session_id: str = "",
@@ -616,10 +617,10 @@ def record_usage(
         con.execute(
             "INSERT INTO llm_usage"
             " (org_id, feature, model, provider_id, prompt_tokens, completion_tokens,"
-            "  cached, user_id, project_id, session_id, latency_ms, status, ts)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  cached, cost_usd, user_id, project_id, session_id, latency_ms, status, ts)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (org_id, feature, model, provider_id, int(prompt_tokens), int(completion_tokens),
-             bool(cached), user_id, project_id, session_id, int(latency_ms), status,
+             bool(cached), float(cost_usd), user_id, project_id, session_id, int(latency_ms), status,
              int(ts if ts is not None else _now())),
         )
 
@@ -677,6 +678,7 @@ def usage_aggregate(
                 " COUNT(*) AS calls,"
                 " COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,"
                 " COALESCE(SUM(completion_tokens), 0) AS completion_tokens,"
+                " COALESCE(SUM(cost_usd), 0) AS cost_usd,"
                 " COALESCE(SUM(CASE WHEN cached THEN 1 ELSE 0 END), 0) AS cached_hits,"
                 " COALESCE(SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END), 0) AS errors"
                 f" FROM llm_usage WHERE {cond}"
@@ -691,6 +693,7 @@ def usage_aggregate(
                 " COUNT(*) AS calls,"
                 " COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,"
                 " COALESCE(SUM(completion_tokens), 0) AS completion_tokens,"
+                " COALESCE(SUM(cost_usd), 0) AS cost_usd,"
                 " COALESCE(SUM(CASE WHEN cached THEN 1 ELSE 0 END), 0) AS cached_hits,"
                 " COALESCE(SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END), 0) AS errors"
                 f" FROM llm_usage WHERE {cond}"
@@ -701,11 +704,13 @@ def usage_aggregate(
     for item in items:
         for key in ("calls", "prompt_tokens", "completion_tokens", "cached_hits", "errors"):
             item[key] = int(item.get(key) or 0)
+        item["cost_usd"] = float(item.get("cost_usd") or 0.0)
         item["model"] = item.get("model") or ""
     totals = {
         "calls": sum(i["calls"] for i in items),
         "prompt_tokens": sum(i["prompt_tokens"] for i in items),
         "completion_tokens": sum(i["completion_tokens"] for i in items),
+        "cost_usd": sum(i["cost_usd"] for i in items),
         "cached_hits": sum(i["cached_hits"] for i in items),
         "errors": sum(i["errors"] for i in items),
     }
