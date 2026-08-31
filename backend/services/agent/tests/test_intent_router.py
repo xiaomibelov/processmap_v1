@@ -112,3 +112,42 @@ def test_route_intent_degrades_to_smalltalk_on_garbage_output(mock_route_intent_
         }
         intent = route_intent("hello", "digest1", "", [])
     assert intent == "smalltalk"
+
+
+def test_normalize_intent_structured_fact_qa_aliases():
+    assert _normalize_intent("structured_fact_qa") == "structured_fact_qa"
+    assert _normalize_intent("structuredfactqa") == "structured_fact_qa"
+    assert _normalize_intent("factqa") == "structured_fact_qa"
+    assert _normalize_intent("facts") == "structured_fact_qa"
+    assert _normalize_intent("STRUCTURED_FACT_QA") == "structured_fact_qa"
+
+
+def test_route_intent_classifies_structured_fact_qa(mock_route_intent_smalltalk):
+    """Regression: router must return structured_fact_qa when LLM emits it."""
+    mock_route_intent_smalltalk.side_effect = route_intent
+    with mock.patch("memory.chat.complete_cached") as fake_complete_cached:
+        fake_complete_cached.return_value = {
+            "ok": True,
+            "status": "ok",
+            "text": "structured_fact_qa",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            "provider_id": "p1",
+            "model": "m",
+            "prompt_version": 3,
+            "fallback": False,
+            "cached": False,
+        }
+        intent = route_intent(
+            "какие свойства у задачи",
+            "digest1",
+            "",
+            [],
+            user_id="u1",
+            project_id="pr1",
+            session_id="s1",
+            org_id="org_default",
+        )
+    assert intent == "structured_fact_qa"
+    fake_complete_cached.assert_called_once()
+    call_args = fake_complete_cached.call_args
+    assert call_args.args[0] == "agent_router"
