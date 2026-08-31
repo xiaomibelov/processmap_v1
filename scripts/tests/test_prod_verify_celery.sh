@@ -61,7 +61,7 @@ assert_eq() {
 }
 
 # --- case (a): task is present in output ---
-export CELERY_MOCK_RESPONSE=$'->  celery@worker: OK\n    * backend.app.tasks.render_overlay_task\n    * backend.app.save_services.analytics_aggregator.tasks.refresh_session_analytics_task\n    * backend.app.rag_tasks.index_session_bpmn_xml\n\n1 node online.'
+export CELERY_MOCK_RESPONSE=$'->  celery@worker: OK\n    * processmap.overlay.render_overlay_task\n    * processmap.analytics.refresh_session_analytics_task\n    * processmap.rag.index_session_bpmn_xml\n\n1 node online.'
 if run_check 1 0 >/dev/null 2>&1; then
   assert_eq "0" "0" "task present -> exit 0"
 else
@@ -69,7 +69,7 @@ else
 fi
 
 # --- case (b): task list returned but task missing -> immediate fail (no retry) ---
-export CELERY_MOCK_RESPONSE=$'->  celery@worker: OK\n    * backend.app.tasks.render_overlay_task\n    * backend.app.rag_tasks.index_session_bpmn_xml\n\n1 node online.'
+export CELERY_MOCK_RESPONSE=$'->  celery@worker: OK\n    * processmap.overlay.render_overlay_task\n    * processmap.rag.index_session_bpmn_xml\n\n1 node online.'
 attempts=0
 if run_check 5 0 2>/dev/null; then
   assert_eq "1" "0" "task missing -> exit 1"
@@ -83,7 +83,7 @@ assert_eq "1" "${attempts}" "task missing -> fail-fast on first attempt"
 
 # --- case (c): no nodes replied -> retry until task appears ---
 NO_NODES=$'Error: No nodes replied within time constraint.\nPlease verify that the worker is running and the broker is reachable.'
-WITH_TASK=$'->  celery@worker: OK\n    * backend.app.save_services.analytics_aggregator.tasks.refresh_session_analytics_task\n\n1 node online.'
+WITH_TASK=$'->  celery@worker: OK\n    * processmap.analytics.refresh_session_analytics_task\n\n1 node online.'
 # We need the mock to return no-nodes on first two calls and task on third.
 # Use a counter file.
 COUNTER_FILE="${TMPDIR}/counter"

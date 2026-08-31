@@ -9,7 +9,9 @@ from .overlay_cache import _enc, _k, r, render_overlay_xml
 logger = logging.getLogger(__name__)
 
 
-@app.task(bind=True, max_retries=0)
+# Каноническое имя: не зависит от import-контекста (app.* vs backend.app.*),
+# устраняет split-brain регистрации (fix/celery-task-naming-splitbrain).
+@app.task(bind=True, max_retries=0, name="processmap.overlay.render_overlay_task")
 def render_overlay_task(
     self,
     sid: str,
