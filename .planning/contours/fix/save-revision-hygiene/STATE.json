@@ -1,0 +1,24 @@
+{
+  "contour_id": "fix/save-revision-hygiene",
+  "type": "fix",
+  "phase": "ready_for_review",
+  "planner_status": "complete",
+  "worker_status": "complete",
+  "reviewer_status": "pending",
+  "branch": "fix/save-revision-hygiene",
+  "base": "origin/main @ 030f086a47e88cab14732246a58f771260844e74",
+  "head": "5492a18ded7833b28e4f117bd5317a38671e0e8",
+  "audit_source": ".planning/contours/audit/save-multi-revision-self-conflict/REPORT.md",
+  "acceptance_criteria": {
+    "backend_noop_guard": "passed",
+    "backend_cas_unchanged": "passed",
+    "backend_replay_idempotency": "passed",
+    "frontend_meta_patch_diff": "implemented",
+    "frontend_client_id_header": "implemented",
+    "frontend_same_tab_classification": "passed",
+    "openapi_drift_check": "passed",
+    "backend_existing_suites": "passed",
+    "frontend_existing_suites": "passed"
+  },
+  "next_action": "wait_for_user_approval_to_create_pr_and_merge"
+}
