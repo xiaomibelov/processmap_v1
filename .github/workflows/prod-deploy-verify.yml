@@ -85,6 +85,14 @@ jobs:
               else
                 echo "[prod-deploy-verify] ${svc} image id: ${image_id} (no buildId label; verify manually)"
               fi
+              # Hard freshness gate: the container must run the image currently tagged
+              # app-<svc>:latest (i.e. the one built by the deploy). Catches stale
+              # workers even when no buildId label is baked into the image.
+              latest_image_id=$(docker image inspect "app-${svc}:latest" --format '{{.Id}}' 2>/dev/null || echo "missing")
+              if [ "${latest_image_id}" != "missing" ] && [ "${image_id}" != "${latest_image_id}" ]; then
+                echo "ERROR: ${svc} container image ${image_id} != freshly built app-${svc}:latest ${latest_image_id}"
+                exit 1
+              fi
             done
 
             echo "=== celery-worker recent logs ==="
@@ -119,6 +127,16 @@ jobs:
             ./deploy/verify_celery_task.sh \
               --container "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
               --task "refresh_session_analytics_task" \
+              --retries 10 \
+              --delay 3 \
+              --timeout 10
+
+            echo "=== checking rag indexing task registration via celery inspect ==="
+            # app.rag_tasks появился в PR #811; протухший воркер без него — инцидент
+            # audit/prod-stage-divergence-409 (2026-08-30).
+            ./deploy/verify_celery_task.sh \
+              --container "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
+              --task "index_session_bpmn_xml" \
               --retries 10 \
               --delay 3 \
               --timeout 10
