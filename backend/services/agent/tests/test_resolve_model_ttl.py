@@ -19,6 +19,7 @@ def _reset_cache():
     llm_store._model_cache["ts"] = 0.0
     llm_store._model_cache["defaults"] = {}
     llm_store._model_cache["overrides"] = {}
+    llm_store._model_cache["costs"] = {}
 
 
 def test_resolve_model_ttl_60s():
@@ -29,8 +30,9 @@ def test_resolve_model_ttl_60s():
 
     def fake_load():
         loads.append(now["t"])
-        llm_store._model_cache["defaults"] = {"org_default": f"model_v{len(loads)}"}
+        llm_store._model_cache["defaults"] = {"org_default": {"primary": f"model_v{len(loads)}"}}
         llm_store._model_cache["overrides"] = {}
+        llm_store._model_cache["costs"] = {}
         llm_store._model_cache["ts"] = now["t"]
 
     _reset_cache()
@@ -57,8 +59,10 @@ def test_resolve_model_feature_override_wins():
     now = {"t": 1000.0}
 
     def fake_load():
-        llm_store._model_cache["defaults"] = {"org_default": "default_model"}
-        llm_store._model_cache["overrides"] = {"org_default": {"schema_assistant": "cheap_model"}}
+        llm_store._model_cache["defaults"] = {"org_default": {"primary": "default_model"}}
+        llm_store._model_cache["overrides"] = {
+            "org_default": {"schema_assistant": {"primary": "cheap_model"}}
+        }
         llm_store._model_cache["ts"] = now["t"]
 
     _reset_cache()

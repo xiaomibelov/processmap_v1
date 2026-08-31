@@ -50,7 +50,8 @@ ROUTER_FEATURE = "agent_router"
 ROUTER_MAX_TOKENS = 200
 SMALLTALK_MAX_TOKENS = 400
 SCHEMA_OVERVIEW_MAX_TOKENS = 400
-VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk", "edit_canvas"}
+VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk", "edit_canvas", "structured_fact_qa"}
+# NOTE: new intent structured_fact_qa maps to model_class='cheap' in agent-model-routing-optimization-v1.
 
 
 def _now_ms() -> int:
@@ -163,6 +164,10 @@ def _normalize_intent(text: Optional[str]) -> str:
         "canvas": "edit_canvas",
         "smalltalk": "smalltalk",
         "chat": "smalltalk",
+        "structuredfactqa": "structured_fact_qa",
+        "structured_fact_qa": "structured_fact_qa",
+        "factqa": "structured_fact_qa",
+        "facts": "structured_fact_qa",
     }
     return aliases.get(raw, "smalltalk")
 
@@ -209,30 +214,6 @@ def route_intent(
         return _normalize_intent(str(result.get("text") or ""))
     except Exception:
         return "smalltalk"
-
-
-def _build_compact_user_prompt(
-    ctx: AgentContext,
-    payload: AgentChatIn,
-    *,
-    conversation_summary: Optional[str] = None,
-) -> str:
-    """Compact prompt for smalltalk / free-answer / doc_qa fallback."""
-    builder = PromptBuilder()
-    rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
-    return builder.build_processman_prompt(
-        ctx,
-        payload,
-        rag_chunks=rag_chunks,
-        conversation_summary=conversation_summary,
-    ).user_prompt
-
-
-def _build_compact_schema_overview_prompt(ctx: AgentContext) -> str:
-    """Compact prompt for cold schema_overview generation."""
-    builder = PromptBuilder()
-    rag_chunks = list((ctx.projection or {}).get("rag_context_chunks") or [])
-    return builder.build_schema_overview_prompt(ctx, rag_chunks=rag_chunks).user_prompt
 
 
 def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
@@ -447,15 +428,16 @@ def _run_schema_overview_branch(
         )
         return out
 
-    prompt_text = _build_compact_schema_overview_prompt(ctx)
+    call_kwargs = PromptBuilder.build("schema_overview", ctx, payload)
     result = complete(
         FEATURE,
-        payload={"input": prompt_text},
+        payload=call_kwargs["payload"],
         user_id=user_id,
         project_id=str(getattr(ctx.session, "project_id", "") or ""),
         session_id=session_id,
         org_id=org_id,
-        max_tokens=SCHEMA_OVERVIEW_MAX_TOKENS,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     )
     usage = _usage_out(result)
     if not result.get("ok"):
@@ -501,18 +483,133 @@ def _run_doc_qa_branch(
 
     if not results:
         return _run_free_answer_branch(
+            payload, ctx, session_id, user_id, org_id, token,
+            client_turn_id=client_turn_id, intent="doc_qa_fallback",
+        )
+
+    call_kwargs = PromptBuilder.build("doc_qa", ctx, payload, rag_results=results)
+    result = complete(
+        FEATURE,
+        payload=call_kwargs["payload"],
+        user_id=user_id,
+        project_id=str(getattr(ctx.session, "project_id", "") or ""),
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
+    )
+    usage = _usage_out(result)
+    if not result.get("ok"):
+        return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
+
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    _, out = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=str(result.get("text") or ""),
+        usage=usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="doc_qa",
+        action_payload={"results_count": len(results)},
+        now_ms=_now_ms(),
+    )
+    return out
+
+
+def _detect_structured_fact_source_type(question: str) -> str:
+    """Pick the most likely RAG corpus for a structured-fact question."""
+    q = str(question or "").lower()
+    property_hints = {"свойств", "значен", "допустим", "применим", "свойство", "поле", "атрибут"}
+    operation_hints = {"операци", "параметр", "предуслови", "постуслови", "ресурс", "выполнен"}
+    glossary_hints = {"что такое", "термин", "единица измерен", "оборудован", "ресурс"}
+    property_score = sum(1 for h in property_hints if h in q)
+    operation_score = sum(1 for h in operation_hints if h in q)
+    glossary_score = sum(1 for h in glossary_hints if h in q)
+    if glossary_score > 0 and "операци" not in q:
+        return "glossary"
+    if operation_score > property_score:
+        return "operation_catalog"
+    return "property_dictionary"
+
+
+def _search_rag_for_structured_fact(
+    question: str,
+    session_id: str,
+    token: str,
+    org_id: str,
+    source_type: str,
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Search a specific corpus, falling back to global RAG if no results."""
+    try:
+        resp = search_rag(
+            question,
+            session_id,
+            token,
+            org_id=org_id,
+            source_type=source_type,
+            top_k=top_k,
+            min_score=0.0,
+        )
+        results = list(resp.get("results") or [])
+        if results:
+            return results
+    except Exception:
+        pass
+    try:
+        resp = search_rag(
+            question,
+            session_id,
+            token,
+            org_id=org_id,
+            source_type="",
+            top_k=top_k,
+            min_score=0.0,
+        )
+        return list(resp.get("results") or [])
+    except Exception:
+        return []
+
+
+def _build_structured_fact_prompt(question: str, chunks: List[Dict[str, Any]]) -> str:
+    chunks_text = "\n---\n".join(
+        str(r.get("chunk_text") or r.get("chunk") or "").strip() for r in chunks[:5]
+    )
+    return (
+        "Ответь на вопрос пользователя на основе предоставленных фактов из справочников. "
+        "Отвечай на русском языке. Если ответа нет в фактах, скажи об этом.\n\n"
+        f"Факты:\n{chunks_text}\n\n"
+        f"Вопрос: {question}"
+    )
+
+
+def _run_structured_fact_qa_branch(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+) -> AgentChatOut:
+    source_type = _detect_structured_fact_source_type(payload.message)
+    results = _search_rag_for_structured_fact(
+        payload.message,
+        session_id,
+        token,
+        org_id=org_id,
+        source_type=source_type,
+        top_k=5,
+    )
+    if not results:
+        return _run_free_answer_branch(
             payload, ctx, session_id, user_id, org_id, token, client_turn_id=client_turn_id
         )
 
-    chunks_text = "\n---\n".join(
-        str(r.get("chunk") or r.get("text") or "").strip() for r in results[:5]
-    )
-    prompt_text = (
-        "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
-        "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
-        f"Отрывки:\n{chunks_text}\n\n"
-        f"Вопрос: {payload.message}"
-    )
+    prompt_text = _build_structured_fact_prompt(payload.message, results)
     result = complete(
         FEATURE,
         payload={"input": prompt_text},
@@ -535,8 +632,8 @@ def _run_doc_qa_branch(
         usage=usage,
         ctx=ctx,
         client_turn_id=client_turn_id,
-        action="doc_qa",
-        action_payload={"results_count": len(results)},
+        action="structured_fact_qa",
+        action_payload={"results_count": len(results), "source_type": source_type},
         now_ms=_now_ms(),
     )
     return out
@@ -551,20 +648,20 @@ def _run_free_answer_branch(
     token: str,
     *,
     client_turn_id: Optional[str] = None,
+    intent: str = "smalltalk",
 ) -> AgentChatOut:
     """Smalltalk / free-answer fallback. Preserves AGENT-0 action-JSON fallback."""
     conversation_summary = get_conversation_summary(session_id, user_id, org_id)
-    user_prompt_text = _build_compact_user_prompt(
-        ctx, payload, conversation_summary=conversation_summary
-    )
+    call_kwargs = PromptBuilder.build(intent, ctx, payload, conversation_summary=conversation_summary)
     result = complete(
         FEATURE,
-        payload={"input": user_prompt_text},
+        payload=call_kwargs["payload"],
         user_id=user_id,
         project_id=str(getattr(ctx.session, "project_id", "") or ""),
         session_id=session_id,
         org_id=org_id,
-        max_tokens=SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     )
 
     usage = _usage_out(result)
@@ -824,6 +921,98 @@ def _run_edit_canvas_branch_stream(
     )
 
 
+def _run_structured_fact_qa_branch_stream(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    stream_id: str,
+    client_turn_id: Optional[str],
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Streaming variant of structured_fact_qa."""
+    project_id = str(getattr(ctx.session, "project_id", "") or "")
+    source_type = _detect_structured_fact_source_type(payload.message)
+    results = _search_rag_for_structured_fact(
+        payload.message,
+        session_id,
+        token,
+        org_id=org_id,
+        source_type=source_type,
+        top_k=5,
+    )
+    if not results:
+        yield from _run_free_answer_branch_stream(
+            payload, ctx, session_id, user_id, org_id, token, client_turn_id=client_turn_id
+        )
+        return
+
+    prompt_text = _build_structured_fact_prompt(payload.message, results)
+    collected_text = ""
+    final_usage: Dict[str, Any] = {}
+    stream_error: Optional[Dict[str, Any]] = None
+
+    for event_type, event_data in complete_stream(
+        FEATURE,
+        payload={"input": prompt_text},
+        user_id=user_id,
+        project_id=project_id,
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=MAX_TOKENS,
+    ):
+        if event_type == "token":
+            delta = str(event_data.get("delta") or "")
+            collected_text += delta
+            yield ("token", {"delta": delta})
+        elif event_type == "error":
+            stream_error = event_data
+            break
+        elif event_type == "usage":
+            final_usage = {
+                "prompt_tokens": int(event_data.get("usage", {}).get("prompt_tokens", 0)),
+                "completion_tokens": int(event_data.get("usage", {}).get("completion_tokens", 0)),
+                "provider_id": str(event_data.get("provider_id") or ""),
+                "model": str(event_data.get("model") or ""),
+                "prompt_version": int(event_data.get("prompt_version") or 0),
+                "fallback": bool(event_data.get("fallback")),
+                "cached": False,
+            }
+
+    if stream_error is not None:
+        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
+        _ = _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message=text,
+            usage=final_usage,
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action="structured_fact_qa",
+            action_payload={"status": "error"},
+            now_ms=_now_ms(),
+        )
+        yield ("error", {"status": stream_error.get("status"), "error": stream_error.get("error", "")})
+        return
+
+    schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
+    _ = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=collected_text,
+        usage=final_usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action="structured_fact_qa",
+        action_payload={"results_count": len(results), "source_type": source_type},
+        now_ms=_now_ms(),
+    )
+    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest})
+
+
 def _gateway_error_out(
     session_id: str,
     user_id: str,
@@ -914,6 +1103,9 @@ def run_turn(
 
     if intent == "doc_qa":
         return _run_doc_qa_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
+
+    if intent == "structured_fact_qa":
+        return _run_structured_fact_qa_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
 
     if intent == "suggest_next" and _step_in_projection(ctx.projection, payload.selected_step_id):
         return _run_suggest_next_branch(payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id)
@@ -1009,6 +1201,12 @@ def run_turn_stream(
         )
         return
 
+    if intent == "structured_fact_qa":
+        yield from _run_structured_fact_qa_branch_stream(
+            payload, ctx, sid, uid, oid, token, stream_id, client_turn_id
+        )
+        return
+
     if intent == "schema_overview":
         memory = load_schema_memory(sid, oid)
         if memory and memory.get("projection_digest") == ctx.digest and memory.get("summary"):
@@ -1018,36 +1216,20 @@ def run_turn_stream(
 
     conversation_summary = get_conversation_summary(sid, uid, oid)
 
-    prompt_text: Optional[str] = None
-    max_tokens_for_stream = MAX_TOKENS
     if intent == "schema_overview":
-        prompt_text = _build_compact_schema_overview_prompt(ctx)
-        max_tokens_for_stream = SCHEMA_OVERVIEW_MAX_TOKENS
         schedule_memory_update(sid, oid, ctx.digest)
-    elif intent == "doc_qa":
+
+    if intent == "doc_qa":
         try:
             results = _search_rag_prioritized(payload.message, sid, token, org_id=oid, top_k=5)
         except Exception:
             results = []
-        if results:
-            chunks_text = "\n---\n".join(str(r.get("chunk") or r.get("text") or "").strip() for r in results[:5])
-            prompt_text = (
-                "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
-                "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
-                f"Отрывки:\n{chunks_text}\n\n"
-                f"Вопрос: {payload.message}"
-            )
-        else:
-            prompt_text = _build_compact_user_prompt(
-                ctx, payload, conversation_summary=conversation_summary
-            )
-            max_tokens_for_stream = SMALLTALK_MAX_TOKENS
-    else:
-        # smalltalk / fallback
-        prompt_text = _build_compact_user_prompt(
-            ctx, payload, conversation_summary=conversation_summary
+        stream_intent = "doc_qa" if results else "doc_qa_fallback"
+        call_kwargs = PromptBuilder.build(
+            stream_intent, ctx, payload, rag_results=results or [], conversation_summary=conversation_summary
         )
-        max_tokens_for_stream = SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS
+    else:
+        call_kwargs = PromptBuilder.build(intent, ctx, payload, conversation_summary=conversation_summary)
 
     collected_text = ""
     final_usage: Dict[str, Any] = {}
@@ -1055,12 +1237,13 @@ def run_turn_stream(
 
     for event_type, event_data in complete_stream(
         FEATURE,
-        payload={"input": prompt_text},
+        payload=call_kwargs["payload"],
         user_id=uid,
         project_id=project_id,
         session_id=sid,
         org_id=oid,
-        max_tokens=max_tokens_for_stream,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
     ):
         if event_type == "token":
             delta = str(event_data.get("delta") or "")

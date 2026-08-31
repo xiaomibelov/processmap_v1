@@ -115,22 +115,36 @@ def complete(
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     json_mode: bool = False,
     prompt_override: Optional[Dict[str, Any]] = None,
+    model_class: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Вызов LLM через фолбэк-цепочку провайдеров. Никогда не бросает исключений."""
+    """Вызов LLM через фолбэк-цепочку провайдеров. Никогда не бросает исключений.
+
+    model_class: explicit routing class. If None, inferred from the active prompt.
+    """
     started = time.monotonic()
 
     def _finish(status: str, **extra: Any) -> Dict[str, Any]:
         latency_ms = int((time.monotonic() - started) * 1000)
+        usage = extra.get("usage") or {}
+        model = str(extra.get("model") or "")
+        cost_usd = 0.0
+        if status == "ok" and not extra.get("cached"):
+            cost_usd = llm_store.estimate_cost(
+                model,
+                int(usage.get("prompt_tokens", 0)),
+                int(usage.get("completion_tokens", 0)),
+            )
         llm_store.record_usage(
             org_id=org_id, feature=feature,
-            model=extra.get("model", "") or "",
+            model=model,
             provider_id=extra.get("provider_id", "") or "",
-            prompt_tokens=extra.get("usage", {}).get("prompt_tokens", 0),
-            completion_tokens=extra.get("usage", {}).get("completion_tokens", 0),
-            cached=False, user_id=user_id, project_id=project_id, session_id=session_id,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            cached=bool(extra.get("cached")), cost_usd=cost_usd,
+            user_id=user_id, project_id=project_id, session_id=session_id,
             latency_ms=latency_ms, status=status,
         )
-        return _result(status, latency_ms=latency_ms, **extra)
+        return _result(status, latency_ms=latency_ms, cost_usd=cost_usd, **extra)
 
     # 1. feature flag
     flag = llm_store.get_feature_flag(feature)
@@ -165,9 +179,11 @@ def complete(
             or str(provider.get("id") or "") == "env_fallback"
             or str(provider.get("org_id") or "org_default") != org_id
         )
-        # Резолв модели: реестр (override фичи → default) → provider.model (старое
-        # поведение при пустом реестре, env-фолбэк несёт свой хардкод).
-        resolved_model = llm_store.resolve_model(feature, org_id) or str(provider.get("model") or "")
+        # Резолв модели: реестр (override фичи + класс → default класса) → provider.model.
+        if model_class is not None:
+            resolved_model = llm_store.resolve_model(feature, org_id, model_class) or str(provider.get("model") or "")
+        else:
+            resolved_model = llm_store.resolve_model_for_feature(feature, org_id) or str(provider.get("model") or "")
         supports_json_mode = llm_store.provider_supports_json_mode(provider)
         json_mode_used = json_mode and supports_json_mode
         try:
@@ -290,6 +306,7 @@ def complete_stream(
     max_tokens: Optional[int] = None,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     json_mode: bool = False,
+    model_class: Optional[str] = None,
 ) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
     """Streaming LLM call through the fallback chain.
 
@@ -304,16 +321,25 @@ def complete_stream(
     def _record(status: str, **extra: Any) -> Dict[str, Any]:
         latency_ms = int((time.monotonic() - started) * 1000)
         usage = extra.get("usage", {}) or {}
+        model = str(extra.get("model") or "")
+        cost_usd = 0.0
+        if status == "ok":
+            cost_usd = llm_store.estimate_cost(
+                model,
+                int(usage.get("prompt_tokens", 0)),
+                int(usage.get("completion_tokens", 0)),
+            )
         llm_store.record_usage(
             org_id=org_id, feature=feature,
-            model=extra.get("model", "") or "",
+            model=model,
             provider_id=extra.get("provider_id", "") or "",
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
             completion_tokens=int(usage.get("completion_tokens", 0)),
-            cached=False, user_id=user_id, project_id=project_id, session_id=session_id,
+            cached=False, cost_usd=cost_usd,
+            user_id=user_id, project_id=project_id, session_id=session_id,
             latency_ms=latency_ms, status=status,
         )
-        return {"status": status, "latency_ms": latency_ms, **extra}
+        return {"status": status, "latency_ms": latency_ms, "cost_usd": cost_usd, **extra}
 
     # 1. feature flag
     flag = llm_store.get_feature_flag(feature)
@@ -356,7 +382,10 @@ def complete_stream(
             or str(provider.get("id") or "") == "env_fallback"
             or str(provider.get("org_id") or "org_default") != org_id
         )
-        resolved_model = llm_store.resolve_model(feature, org_id) or str(provider.get("model") or "")
+        if model_class is not None:
+            resolved_model = llm_store.resolve_model(feature, org_id, model_class) or str(provider.get("model") or "")
+        else:
+            resolved_model = llm_store.resolve_model_for_feature(feature, org_id) or str(provider.get("model") or "")
         supports_json_mode = llm_store.provider_supports_json_mode(provider)
         json_mode_used = json_mode and supports_json_mode
         collected_text = ""

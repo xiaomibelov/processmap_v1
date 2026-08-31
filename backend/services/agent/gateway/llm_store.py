@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from db import adapt_sql, get_conn
 
@@ -101,46 +101,79 @@ def any_enabled_provider(org_id: str = "org_default") -> bool:
 
 
 # ------------------------------------------------------------------ models
-# Резолв «какая модель работает»: per-feature override → default → None.
+# Резолв «какая модель работает»: per-feature override per model_class →
+# default per model_class → None.
 # In-process TTL-кэш 60с (0 запросов к БД на LLM-вызов), БЕЗ инвалидации при
 # write (писателей в сервисе нет) — свежесть гарантируется только TTL.
 
 _MODEL_CACHE_TTL_SEC = 60
 _model_cache_lock = threading.Lock()
-_model_cache: Dict[str, Any] = {"ts": 0.0, "defaults": {}, "overrides": {}}
+_model_cache: Dict[str, Any] = {
+    "ts": 0.0,
+    "defaults": {},      # org_id -> model_class -> model_name
+    "overrides": {},     # org_id -> feature -> model_class -> model_name
+    "costs": {},         # model_name -> (prompt_1k, completion_1k)
+}
 
 
 def _load_model_resolve_state() -> None:
-    """Перечитать default-модели и overrides всех организаций в кэш."""
-    defaults: Dict[str, str] = {}
-    overrides: Dict[str, Dict[str, str]] = {}
+    """Перечитать default-модели, overrides и цены всех организаций в кэш."""
+    defaults: Dict[str, Dict[str, str]] = {}
+    overrides: Dict[str, Dict[str, Dict[str, str]]] = {}
+    costs: Dict[str, Tuple[float, float]] = {}
     with get_conn() as con:
         cur = con.execute(
-            adapt_sql("SELECT org_id, model_name FROM llm_models WHERE is_default = true AND enabled = true")
+            adapt_sql(
+                "SELECT org_id, model_name, model_class FROM llm_models"
+                " WHERE is_default = true AND enabled = true"
+            )
         )
         for row in cur.fetchall():
-            defaults[str(dict(row)["org_id"])] = str(dict(row)["model_name"])
+            row_d = dict(row)
+            defaults.setdefault(str(row_d["org_id"]), {})[
+                str(row_d["model_class"] or "primary")
+            ] = str(row_d["model_name"])
         cur = con.execute(
             adapt_sql(
-                "SELECT fm.org_id, fm.feature, m.model_name"
+                "SELECT fm.org_id, fm.feature, fm.model_class, m.model_name"
                 " FROM llm_feature_models fm"
                 " JOIN llm_models m ON m.id = fm.model_id AND m.enabled = true"
             )
         )
         for row in cur.fetchall():
             row_d = dict(row)
-            overrides.setdefault(str(row_d["org_id"]), {})[str(row_d["feature"])] = str(row_d["model_name"])
+            org_overrides = overrides.setdefault(str(row_d["org_id"]), {})
+            feature_overrides = org_overrides.setdefault(str(row_d["feature"]), {})
+            feature_overrides[str(row_d["model_class"] or "primary")] = str(row_d["model_name"])
+        cur = con.execute(
+            adapt_sql(
+                "SELECT model_name, cost_prompt_1k_usd, cost_completion_1k_usd"
+                " FROM llm_models WHERE enabled = true"
+            )
+        )
+        for row in cur.fetchall():
+            row_d = dict(row)
+            costs[str(row_d["model_name"])] = (
+                float(row_d.get("cost_prompt_1k_usd") or 0),
+                float(row_d.get("cost_completion_1k_usd") or 0),
+            )
     _model_cache["defaults"] = defaults
     _model_cache["overrides"] = overrides
+    _model_cache["costs"] = costs
     _model_cache["ts"] = time.monotonic()
 
 
-def resolve_model(feature: str = "", org_id: str = "org_default") -> Optional[str]:
-    """model_name для вызова: override фичи → default → None (пустой реестр).
+def resolve_model(
+    feature: str = "",
+    org_id: str = "org_default",
+    model_class: str = "primary",
+) -> Optional[str]:
+    """model_name для вызова: override (feature, model_class) → default (model_class) → None.
 
-    None означает «реестр не настроен» — вызывающий код обязан откатиться на
-    provider.model / env-хардкод (обратная совместимость до миграции 016).
+    None означает «реестр не настроен для данного класса» — вызывающий код
+    откатывается на provider.model (обратная совместимость).
     """
+    mc = str(model_class or "primary").strip() or "primary"
     with _model_cache_lock:
         stale = (time.monotonic() - float(_model_cache["ts"])) > _MODEL_CACHE_TTL_SEC
         if stale:
@@ -150,11 +183,44 @@ def resolve_model(feature: str = "", org_id: str = "org_default") -> Optional[st
                 # Таблицы ещё нет (миграция не применена) — считаем реестр пустым.
                 _model_cache["defaults"] = {}
                 _model_cache["overrides"] = {}
+                _model_cache["costs"] = {}
                 _model_cache["ts"] = time.monotonic()
         org_overrides = _model_cache["overrides"].get(org_id) or {}
-        if feature and feature in org_overrides:
-            return org_overrides[feature]
-        return _model_cache["defaults"].get(org_id)
+        feature_overrides = org_overrides.get(feature) or {}
+        if feature and mc in feature_overrides:
+            return feature_overrides[mc]
+        return (_model_cache["defaults"].get(org_id) or {}).get(mc)
+
+
+def resolve_model_for_feature(feature: str, org_id: str = "org_default") -> Optional[str]:
+    """Resolve model for a feature using model_class from its active prompt.
+
+    Conservative fallback: if prompt is missing or has no model_class → 'primary'.
+    """
+    prompt = get_active_prompt(feature)
+    model_class = str((prompt or {}).get("model_class") or "primary").strip() or "primary"
+    return resolve_model(feature, org_id, model_class)
+
+
+def get_model_cost(model_name: str) -> Tuple[float, float]:
+    """Return (cost_prompt_1k_usd, cost_completion_1k_usd) for a model name."""
+    with _model_cache_lock:
+        stale = (time.monotonic() - float(_model_cache["ts"])) > _MODEL_CACHE_TTL_SEC
+        if stale:
+            try:
+                _load_model_resolve_state()
+            except Exception:
+                _model_cache["defaults"] = {}
+                _model_cache["overrides"] = {}
+                _model_cache["costs"] = {}
+                _model_cache["ts"] = time.monotonic()
+        return _model_cache["costs"].get(model_name, (0.0, 0.0))
+
+
+def estimate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Estimate USD cost from cached model prices."""
+    prompt_price, completion_price = get_model_cost(model_name)
+    return (prompt_tokens * prompt_price + completion_tokens * completion_price) / 1000.0
 
 
 # ------------------------------------------------------------------ prompts
@@ -190,6 +256,7 @@ def record_usage(
     prompt_tokens: int = 0,
     completion_tokens: int = 0,
     cached: bool = False,
+    cost_usd: float = 0.0,
     user_id: str = "",
     project_id: str = "",
     session_id: str = "",
@@ -204,11 +271,11 @@ def record_usage(
             adapt_sql(
                 "INSERT INTO llm_usage"
                 " (org_id, feature, model, provider_id, prompt_tokens, completion_tokens,"
-                "  cached, user_id, project_id, session_id, latency_ms, status, ts)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "  cached, cost_usd, user_id, project_id, session_id, latency_ms, status, ts)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
             (org_id, feature, model, provider_id, int(prompt_tokens), int(completion_tokens),
-             bool(cached), user_id, project_id, session_id, int(latency_ms), status,
+             bool(cached), float(cost_usd), user_id, project_id, session_id, int(latency_ms), status,
              int(ts if ts is not None else _now())),
         )
 
