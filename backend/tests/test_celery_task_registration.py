@@ -60,7 +60,7 @@ class CeleryTaskRegistrationTest(unittest.TestCase):
         from app.celery_app import app
         from app.save_services.analytics_aggregator import tasks  # noqa: F401
 
-        expected_name = "app.save_services.analytics_aggregator.tasks.refresh_session_analytics_task"
+        expected_name = "processmap.analytics.refresh_session_analytics_task"
         self.assertIn(expected_name, app.tasks)
         task = app.tasks[expected_name]
         self.assertEqual(task.name, expected_name)

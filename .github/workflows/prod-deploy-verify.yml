@@ -141,6 +141,21 @@ jobs:
               --delay 3 \
               --timeout 10
 
+            echo "=== checking canonical task names (processmap.*) registration ==="
+            # fix/celery-task-naming-splitbrain: все задачи обязаны регистрироваться
+            # под каноническими именами, не зависящими от import-контекста.
+            CANONICAL_TASKS="processmap.overlay.render_overlay_task processmap.analytics.refresh_session_analytics_task processmap.analytics.refresh_all_workspaces_analytics_task processmap.rag.index_session_bpmn_xml processmap.rag.index_queued_sessions_bpmn_xml"
+            REGISTERED_OUT=$(docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
+              celery -A backend.app.celery_app inspect registered --timeout 10 2>&1) || true
+            for canonical in ${CANONICAL_TASKS}; do
+              if echo "${REGISTERED_OUT}" | grep -qF "${canonical}"; then
+                echo "OK: ${canonical} registered"
+              else
+                echo "ERROR: canonical task ${canonical} NOT registered" >&2
+                exit 1
+              fi
+            done
+
             echo "=== checking api logs for 500 on /api/admin/ai/prompts ==="
             # Capture logs first to avoid SIGPIPE under pipefail when grep exits early.
             API_ALL_LOGS=$(docker compose \
