@@ -62,7 +62,11 @@ def rag_search(
     raw_min_score = min_score if isinstance(min_score, (int, float)) else None
     effective_min_score = float(raw_min_score) if raw_min_score is not None else float(settings["default_min_score"] or 0.0)
 
-    chunks = list_rag_chunks(org_id, limit=_MAX_CHUNKS_LOAD)
+    chunks = list_rag_chunks(
+        org_id,
+        source_type=source_type or None,
+        limit=None if source_type else _MAX_CHUNKS_LOAD,
+    )
 
     idx = BM25Index()
     idx.add_documents(chunks)

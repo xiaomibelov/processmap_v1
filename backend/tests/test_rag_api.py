@@ -528,6 +528,34 @@ class RagApiTests(unittest.TestCase):
         inp = self.RagIndexDictionariesIn(force=force)
         return self.rag_index_dictionaries(inp, self._req())
 
+    def _insert_raw_document_chunks(self, source_type: str, source_id: str, chunk_texts: list[str]):
+        from app.rag.storage_rag import insert_rag_chunks, upsert_rag_document
+
+        doc_id = upsert_rag_document(
+            org_id=self.org_id,
+            source_type=source_type,
+            source_id=source_id,
+            content_hash="raw",
+            content_text="raw",
+            metadata_json=json.dumps({"source_type": source_type, "source_id": source_id}),
+        )
+        chunks = [
+            {
+                "chunk_index": i,
+                "chunk_text": text,
+                "metadata_json": json.dumps({"source_type": source_type, "source_id": source_id}),
+            }
+            for i, text in enumerate(chunk_texts)
+        ]
+        insert_rag_chunks(doc_id, self.org_id, chunks)
+
+    def _seed_bpmn_flood(self, count: int = 2001):
+        self._insert_raw_document_chunks(
+            "bpmn_xml",
+            self.session_id,
+            [f"bpmn filler chunk {i} with irrelevant words" for i in range(count)],
+        )
+
     # ── Dictionary index endpoint ────────────────────────────────────────────
 
     def test_index_dictionaries_creates_property_dictionary_chunks(self):
@@ -596,6 +624,43 @@ class RagApiTests(unittest.TestCase):
         for r in result["results"]:
             self.assertEqual(r["source_type"], "glossary")
             self.assertEqual(r["metadata"].get("term_canon"), "blast_chiller_1")
+
+    def test_search_property_dictionary_after_bpmn_flood(self):
+        # Репродукция дефекта: >2000 старых bpmn-чанков перекрывают словарные.
+        self._seed_bpmn_flood(2001)
+        self._insert_raw_document_chunks(
+            "property_dictionary",
+            "system",
+            ["Свойство: ingredient (ingredient)\nТип: string\nПрименимо к: Task\nКатегория: core"],
+        )
+        result = self._search("ingredient свойство", source_type="property_dictionary")
+        self.assertGreater(result["total"], 0)
+        for r in result["results"]:
+            self.assertEqual(r["source_type"], "property_dictionary")
+
+    def test_search_operation_catalog_after_bpmn_flood(self):
+        self._seed_bpmn_flood(2001)
+        self._insert_raw_document_chunks(
+            "operation_catalog",
+            "operation_catalog",
+            ["Операция: Open Container (open_container)\nКатегория: container\nПараметры: container_id"],
+        )
+        result = self._search("open_container параметры", source_type="operation_catalog")
+        self.assertGreater(result["total"], 0)
+        for r in result["results"]:
+            self.assertEqual(r["source_type"], "operation_catalog")
+
+    def test_search_glossary_after_bpmn_flood(self):
+        self._seed_bpmn_flood(2001)
+        self._insert_raw_document_chunks(
+            "glossary",
+            "glossary",
+            ["Термин: Шокер (blast_chiller_1)\nКатегория: equipment\nСинонимы: blast chiller"],
+        )
+        result = self._search("шокер", source_type="glossary")
+        self.assertGreater(result["total"], 0)
+        for r in result["results"]:
+            self.assertEqual(r["source_type"], "glossary")
 
     def test_index_property_dictionary_via_session_endpoint_creates_chunks(self):
         result = self._index("property_dictionary")
