@@ -370,3 +370,25 @@ def delete_conversation(
             adapt_sql("DELETE FROM agent_conversations WHERE id = ? AND org_id = ? AND session_id = ? AND user_id = ?"),
             [conv_id, oid, sid, uid],
         )
+
+
+def get_conversation_summary(
+    session_id: str,
+    user_id: str,
+    org_id: str,
+) -> Optional[str]:
+    """Load existing conversation summary for (session, user) or None."""
+    _ensure_agent_schema()
+    sid = str(session_id or "").strip()
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip() or "org_default"
+    conv_id = _conversation_id(sid, uid)
+    with get_conn() as con:
+        row = con.execute(
+            adapt_sql("SELECT summary FROM agent_conversations WHERE id = ? AND org_id = ? AND session_id = ? AND user_id = ? LIMIT 1"),
+            [conv_id, oid, sid, uid],
+        ).fetchone()
+    if not row:
+        return None
+    summary = dict(row).get("summary")
+    return str(summary).strip() if summary else None

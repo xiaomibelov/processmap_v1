@@ -31,7 +31,13 @@ from runners.monolith_client import get_session as monolith_get_session, search_
 from schemas import AgentChatIn, AgentChatOut
 
 from .context import AgentContext, load_context
-from .memory_store import AgentTurn, append_turn, find_turn_by_client_id, get_or_create_conversation
+from .memory_store import (
+    AgentTurn,
+    append_turn,
+    find_turn_by_client_id,
+    get_conversation_summary,
+    get_or_create_conversation,
+)
 from .prompt_builder import PromptBuilder
 from .schema_memory import load_schema_memory, schedule_memory_update
 
@@ -52,13 +58,6 @@ def _now_ms() -> int:
     import time
 
     return int(time.time())
-
-
-def _to_json_text(value: Any) -> str:
-    try:
-        return json.dumps(value if value is not None else {}, ensure_ascii=False)
-    except Exception:
-        return "{}"
 
 
 def _search_rag_prioritized(
@@ -652,7 +651,8 @@ def _run_free_answer_branch(
     intent: str = "smalltalk",
 ) -> AgentChatOut:
     """Smalltalk / free-answer fallback. Preserves AGENT-0 action-JSON fallback."""
-    call_kwargs = PromptBuilder.build(intent, ctx, payload)
+    conversation_summary = get_conversation_summary(session_id, user_id, org_id)
+    call_kwargs = PromptBuilder.build(intent, ctx, payload, conversation_summary=conversation_summary)
     result = complete(
         FEATURE,
         payload=call_kwargs["payload"],
@@ -1214,6 +1214,8 @@ def run_turn_stream(
             yield from _finish(memory["summary"], {"cached": True}, action="schema_overview")
             return
 
+    conversation_summary = get_conversation_summary(sid, uid, oid)
+
     if intent == "schema_overview":
         schedule_memory_update(sid, oid, ctx.digest)
 
@@ -1223,9 +1225,11 @@ def run_turn_stream(
         except Exception:
             results = []
         stream_intent = "doc_qa" if results else "doc_qa_fallback"
-        call_kwargs = PromptBuilder.build(stream_intent, ctx, payload, rag_results=results or [])
+        call_kwargs = PromptBuilder.build(
+            stream_intent, ctx, payload, rag_results=results or [], conversation_summary=conversation_summary
+        )
     else:
-        call_kwargs = PromptBuilder.build(intent, ctx, payload)
+        call_kwargs = PromptBuilder.build(intent, ctx, payload, conversation_summary=conversation_summary)
 
     collected_text = ""
     final_usage: Dict[str, Any] = {}
