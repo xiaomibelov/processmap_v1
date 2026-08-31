@@ -24,6 +24,11 @@ services:
         aliases:
           - stage-gateway
 
+  celery-worker:
+    image: processmap_stage-celery-worker:${STAGE_IMAGE_TAG:-local}
+    env_file:
+      - .env.stage
+
   notifications:
     image: processmap_stage-notifications:${STAGE_IMAGE_TAG:-local}
     env_file:
