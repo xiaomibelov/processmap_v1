@@ -415,6 +415,7 @@ function normalizeBpmnVersionListItem(itemRaw) {
     sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
     sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
     sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
+    diagramStateVersion: Number(item?.diagram_state_version || item?.diagramStateVersion || 0),
     authorId: author.authorId,
     authorName: author.authorName,
     authorEmail: author.authorEmail,

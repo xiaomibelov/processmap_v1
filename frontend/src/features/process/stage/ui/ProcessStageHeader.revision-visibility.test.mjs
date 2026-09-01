@@ -19,6 +19,10 @@ test("revision badges are rendered only when session is active", () => {
   assert.equal(source.includes("Черновик новее последней версии"), false);
   assert.equal(source.includes("latestPublishedRevisionNumber"), true);
   assert.equal(source.includes("V. —"), true);
+  assert.equal(source.includes('data-testid="diagram-toolbar-version-chip"'), true);
+  assert.equal(source.includes('data-testid="diagram-toolbar-diagram-state-version-chip"'), false);
+  assert.equal(source.includes("diagramStateVersionChipLabel"), false);
+  assert.equal(source.includes("diagramStateVersionChipTitle"), false);
   assert.equal(source.includes("R0"), false);
   assert.equal(source.includes("r?"), false);
   assert.equal(source.includes("r…"), false);

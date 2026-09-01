@@ -1,0 +1,28 @@
+{
+  "contour": "fix/hide-dsv-chip-header",
+  "type": "fix",
+  "branch": "fix/hide-dsv-chip-header",
+  "head": "25f63aef",
+  "baseline": "origin/main",
+  "status": "READY_FOR_REVIEW",
+  "phase": "execution_complete",
+  "files_changed": [
+    "frontend/src/components/ProcessStage.jsx",
+    "frontend/src/features/process/stage/orchestration/buildDiagramViewModel.js",
+    "frontend/src/features/process/stage/ui/ProcessDialogs.jsx",
+    "frontend/src/features/process/stage/ui/ProcessDialogs.revision-localization.test.mjs",
+    "frontend/src/features/process/stage/ui/ProcessStageHeader.jsx",
+    "frontend/src/features/process/stage/ui/ProcessStageHeader.revision-visibility.test.mjs"
+  ],
+  "tests": {
+    "targeted_header_dialogs": "13/16 passed (3 pre-existing unrelated failures in ProcessDialogs.revision-localization)",
+    "vitest_smoke": "9/9 files passed (29/29 tests)",
+    "full_node_test": "571 top-level tests, 560 pass, 10 fail — same as clean origin/main baseline"
+  },
+  "risks": [
+    "No runtime/backend changes.",
+    "Conflict modal still driven by saveUploadStatus/saveConflictActions, not by removed chip.",
+    "presence/upload badges untouched."
+  ],
+  "next": "user_approval_for_push_pr"
+}
