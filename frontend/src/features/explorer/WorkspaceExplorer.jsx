@@ -1725,7 +1725,7 @@ function FolderRow({
           >
             ···
           </button>
-          {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />
+          {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
         </td>
       </tr>
       {renaming && canEdit && (
