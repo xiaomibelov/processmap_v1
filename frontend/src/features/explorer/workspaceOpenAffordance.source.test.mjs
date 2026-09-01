@@ -15,8 +15,8 @@ function between(start, end) {
 test("project rows have explicit project-open affordances in action column", () => {
   const projectRow = between("function ProjectRow(", "function InlineLoadingRow(");
   assert.doesNotMatch(projectRow, /<span>Открыть проект<\/span>/);
-  assert.match(projectRow, />\s*Открыть проект\s*<\/AppRouteLink>/);
-  assert.match(projectRow, /<EntityTypePill type="project" \/>/);
+  assert.match(projectRow, />\s*Открыть →\s*<\/AppRouteLink>/);
+  assert.match(projectRow, /<TypeTag type="project" \/>/);
 });
 
 test("session row open CTA lives in dedicated action column", () => {
