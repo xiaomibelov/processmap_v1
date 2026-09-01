@@ -5,6 +5,7 @@ import {
   EXPLORER_LAYOUT_COMPACT_MAX,
   EXPLORER_LAYOUT_FULL_MIN,
   EXPLORER_LAYOUT_NO_UPDATED_MIN,
+  EXPLORER_LAYOUT_NO_ASSIGNEE_MIN,
   EXPLORER_NAME_MIN_WIDTH,
   buildExplorerRowMeta,
   explorerMarqueeMotion,
@@ -13,28 +14,35 @@ import {
   isExplorerTextTruncated,
 } from "./explorerColumnVisibility.js";
 
-test("full layout at/above 1044 and for unknown width (first frame before RO)", () => {
+// projects-table-ux: тип сущности визуально находится в ячейке «Название»,
+// отдельной колонки «Тип» в шапке нет.
+test("full layout at/above threshold and for unknown width (first frame before RO)", () => {
   for (const w of [0, -10, NaN, Infinity, EXPLORER_LAYOUT_FULL_MIN, 1440]) {
     const l = getExplorerColumnLayout(w);
     assert.equal(l.compact, false, `w=${w}`);
     assert.equal(l.showUpdated, true, `w=${w}`);
     assert.equal(l.showAssignee, true, `w=${w}`);
     assert.equal(l.showComposition, true, `w=${w}`);
-    assert.equal(l.showType, true, `w=${w}`);
+    assert.equal(l.showType, false, `w=${w}`);
     assert.equal(l.nameMinWidth, EXPLORER_NAME_MIN_WIDTH);
   }
 });
 
-test("hide order: Обновлено first, then Ответственный; Название/Статус never hidden", () => {
-  const l1 = getExplorerColumnLayout(EXPLORER_LAYOUT_FULL_MIN - 1); // 1043
+test("hide order: Обновлено first, then Ответственный, then Состав; Название/Статус never hidden", () => {
+  const l1 = getExplorerColumnLayout(EXPLORER_LAYOUT_FULL_MIN - 1);
   assert.deepEqual(
     [l1.showUpdated, l1.showAssignee, l1.showComposition, l1.showType, l1.compact],
-    [false, true, true, true, false],
+    [false, true, true, false, false],
   );
-  const l2 = getExplorerColumnLayout(EXPLORER_LAYOUT_NO_UPDATED_MIN - 1); // 853
+  const l2 = getExplorerColumnLayout(EXPLORER_LAYOUT_NO_UPDATED_MIN - 1);
   assert.deepEqual(
     [l2.showUpdated, l2.showAssignee, l2.showComposition, l2.showType, l2.compact],
-    [false, false, true, true, false],
+    [false, false, true, false, false],
+  );
+  const l2b = getExplorerColumnLayout(EXPLORER_LAYOUT_NO_ASSIGNEE_MIN - 1);
+  assert.deepEqual(
+    [l2b.showUpdated, l2b.showAssignee, l2b.showComposition, l2b.showType, l2b.compact],
+    [false, false, false, false, false],
   );
   const l3 = getExplorerColumnLayout(EXPLORER_LAYOUT_COMPACT_MAX + 1); // 680
   assert.equal(l3.compact, false);
@@ -58,12 +66,12 @@ test("signal columns shift upper thresholds by +72 (tree профиль сейч
 });
 
 test("visible column count drives colSpan of inline rows", () => {
-  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(1440)), 7);
-  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(1000)), 6);
-  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(800)), 5);
+  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(1440)), 6);
+  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(1000)), 5);
+  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(800)), 4);
   assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(500)), 3);
-  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(1440), { signalColumns: true }), 9);
-  assert.equal(explorerVisibleColumnCount(null), 7); // default safe
+  assert.equal(explorerVisibleColumnCount(getExplorerColumnLayout(1440), { signalColumns: true }), 8);
+  assert.equal(explorerVisibleColumnCount(null), 6); // default safe
 });
 
 test("isExplorerTextTruncated: scrollWidth > clientWidth (+1px субпиксельный запас)", () => {
@@ -103,9 +111,9 @@ test("buildExplorerRowMeta: состав · ответственный · обн
   };
   assert.equal(buildExplorerRowMeta(project, "project"), "3/3 · Мария · только что");
 
-  // без ответственного — «Не назначен»; без дат — часть опущена
+  // без ответственного — часть опущена; без дат — часть опущена
   const bare = { sessions_count: 0 };
-  assert.equal(buildExplorerRowMeta(bare, "project"), "0/0 · Не назначен");
+  assert.equal(buildExplorerRowMeta(bare, "project"), "0/0");
 
   // session: состава и ответственного нет — только «обновлено»
   const session = { updated_at: nowSec - 120 };

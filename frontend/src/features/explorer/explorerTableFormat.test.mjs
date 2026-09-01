@@ -10,6 +10,7 @@ import {
   pluralizeRu,
   sessionsCounterText,
   sessionsProgressPercent,
+  sessionsTooltipText,
   workspaceSectionCounterText,
 } from "./explorerTableFormat.js";
 
@@ -69,6 +70,12 @@ test("sessionsProgressPercent computes fill percent clamped 0..100", () => {
   assert.equal(sessionsProgressPercent(5, 0), 0);
   assert.equal(sessionsProgressPercent(9, 4), 100);
   assert.equal(sessionsProgressPercent(-1, 10), 0);
+});
+
+test("sessionsTooltipText includes percent", () => {
+  assert.equal(sessionsTooltipText(12, 56), "Заполнено 12 из 56 узлов процесса (21%)");
+  assert.equal(sessionsTooltipText(0, 0), "Заполнено 0 из 0 узлов процесса (0%)");
+  assert.equal(sessionsTooltipText(5, 10), "Заполнено 5 из 10 узлов процесса (50%)");
 });
 
 test("formatRelativeTime matches legacy ts() ladder", () => {
