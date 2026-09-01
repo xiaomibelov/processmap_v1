@@ -35,6 +35,6 @@ test("workspace root create copy is section while nested copy remains folder", (
 
 test("ExplorerPane uses display-only section labels without changing backend creation payload", () => {
   assert.match(explorerSource, /folderDisplayLabel\(\{\s*folder,\s*depth,\s*currentFolderId\s*\}\)/);
-  assert.match(explorerSource, /<EntityTypePill type="folder" label=\{folderLabel\} \/>/);
+  assert.match(explorerSource, /<TypeTag type=\{depth === 0 && !folder\.parent_id \? "section" : "folder"\} label=\{folderLabel\} \/>/);
   assert.match(explorerSource, /apiCreateFolder\(workspaceId,\s*\{\s*name,\s*parent_id:\s*folderId\s*\|\|\s*""\s*\}\)/);
 });

@@ -22,6 +22,7 @@ import {
   USER_PREFERENCES_QUERY_KEY,
   createExplorerTreeSaver,
   expandedIdsFromMap,
+  expandedIdsFromPreferences,
   fetchUserPreferences,
 } from "./explorerTreePersistence.js";
 import SessionCreateModal from "./SessionCreateModal.jsx";
@@ -49,7 +50,15 @@ import {
   apiGetSubprocessesCount,
   apiCreateSubprocessSessions,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
+import {
+  apiDeleteProject,
+  apiDeleteSession,
+  apiGetSession,
+  apiListOrgAssignableUsers,
+  apiPatchProject,
+  apiPatchSession,
+  apiReplaceSessionAssignees,
+} from "../../lib/api";
 import {
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
@@ -91,6 +100,11 @@ import {
   getExplorerAssigneeKind,
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeLabel,
+  getSessionAssignees,
+  getSessionAssigneeIds,
+  getSessionAssigneesActionLabel,
+  getSessionAssigneesDialogTitle,
+  getVisibleSessionAssignees,
   mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
@@ -635,6 +649,67 @@ function AssigneeCell({ item, onAssign, canAssign = false }) {
   );
 }
 
+function SessionAssigneeCell({ session, onAssign, canAssign = false }) {
+  const assignees = getSessionAssignees(session);
+  const primary = assignees[0] || null;
+  const { visible, overflow } = getVisibleSessionAssignees(session);
+  const fullName = primary ? formatExplorerUserDisplay(primary) : "";
+  if (!fullName) {
+    if (!canAssign) return <span className="text-[12.5px] text-muted/80" />;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onAssign?.(session); }}
+        className="explorer-assign-trigger text-[11.5px] text-muted hover:text-accent rounded px-1.5 py-0.5 hover:bg-accentSoft"
+        title="Назначить исполнителя"
+      >
+        + Назначить
+      </button>
+    );
+  }
+  const tooltip = getSessionAssigneesTooltip(session);
+  const content = (
+    <>
+      {visible.map((user) => {
+        const name = formatExplorerUserDisplay(user);
+        return (
+          <span
+            key={getExplorerAssignableUserId(user) || name}
+            className="inline-flex h-[22px] w-[22px] shrink-0 select-none items-center justify-center rounded-full text-[10px] font-semibold tracking-[0.02em] text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)]"
+            style={{ backgroundColor: avatarColorFromName(name) }}
+            aria-hidden
+          >
+            {initialsFromName(name)}
+          </span>
+        );
+      })}
+      {overflow > 0 ? (
+        <span className="inline-flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full border border-border bg-panelAlt text-[10px] font-medium text-muted">
+          +{overflow}
+        </span>
+      ) : null}
+      <span className="truncate text-[12px] text-muted">{firstName(fullName)}{overflow > 0 ? ` +${overflow}` : ""}</span>
+    </>
+  );
+  if (!canAssign) {
+    return (
+      <span className="flex min-w-0 items-center gap-1.5" title={tooltip}>
+        {content}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onAssign?.(session); }}
+      className="flex min-w-0 items-center gap-1.5 text-left rounded px-1 py-0.5 hover:bg-accentSoft transition-colors"
+      title={tooltip}
+    >
+      {content}
+    </button>
+  );
+}
+
 function CompositionCell({ item }) {
   const isFolder = String(item?.type || "").trim().toLowerCase() === "folder";
   const isSession = String(item?.type || "").trim().toLowerCase() === "session";
@@ -857,24 +932,34 @@ function assigneeMembersLoadTimeout() {
 function AssigneeDialog({
   item,
   folderLabel = "Папка",
+  kind = "",
   users,
   loadingUsers = false,
   usersError = "",
   onClose,
   onSave,
 }) {
-  const [selectedUserId, setSelectedUserId] = useState(getExplorerAssigneeId(item));
+  const isSessionAssignees = kind === "session_assignees";
+  const initialSelectedId = isSessionAssignees
+    ? (getSessionAssigneeIds(item)[0] || "")
+    : getExplorerAssigneeId(item);
+  const [selectedUserId, setSelectedUserId] = useState(initialSelectedId);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const title = getExplorerAssigneeDialogTitle(item, { folderLabel });
+  const title = isSessionAssignees
+    ? getSessionAssigneesDialogTitle()
+    : getExplorerAssigneeDialogTitle(item, { folderLabel });
   const filteredUsers = useMemo(() => filterExplorerAssignableUsers(users, query), [users, query]);
+  const currentAssignedId = isSessionAssignees
+    ? (getSessionAssigneeIds(item)[0] || "")
+    : getExplorerAssigneeId(item);
 
   useEffect(() => {
-    setSelectedUserId(getExplorerAssigneeId(item));
+    setSelectedUserId(isSessionAssignees ? (getSessionAssigneeIds(item)[0] || "") : getExplorerAssigneeId(item));
     setQuery("");
     setError("");
-  }, [item]);
+  }, [item, isSessionAssignees]);
 
   const submit = async (userId = selectedUserId) => {
     setBusy(true);
@@ -952,7 +1037,7 @@ function AssigneeDialog({
           <button
             onClick={() => submit(null)}
             className="secondaryBtn h-8 px-3 text-sm"
-            disabled={busy || loadingUsers || (!getExplorerAssigneeId(item) && !selectedUserId)}
+            disabled={busy || loadingUsers || (!currentAssignedId && !selectedUserId)}
           >
             Очистить
           </button>
@@ -1661,9 +1746,9 @@ function FolderRow({
 
   return (
     <>
-      <tr className="group hover:bg-accentSoft/30 transition-colors">
+      <tr className="group hover:bg-accentSoft/30 transition-colors" data-depth={depth}>
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8}px` }}>
+          <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
             <TreeGuides depth={depth} />
             {expandable ? (
               <button
@@ -1811,6 +1896,7 @@ function ProjectRow({
       <tr
         className={`group transition-colors ${fileDragOver ? "bg-accentSoft/40 outline-2 outline-dashed outline-accent/70 outline-offset-[-2px]" : "hover:bg-accentSoft/30"}`}
         data-testid={`project-row-${String(project?.id || "")}`}
+        data-depth={depth}
         onDragOver={(e) => {
           if (e.dataTransfer?.types?.includes?.("Files")) {
             e.preventDefault();
@@ -1831,7 +1917,7 @@ function ProjectRow({
         }}
       >
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8}px` }}>
+          <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
             <TreeGuides depth={depth} />
             {expandable ? (
               <button
@@ -1937,9 +2023,8 @@ function ProjectRow({
 
 // ─── P2 [Б]: Session rows под раскрытым проектом (3-й уровень дерева) ────────
 
-function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange, columnLayout }) {
+function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange, columnLayout, canAssign = false, onAssign }) {
   const layout = columnLayout || getExplorerColumnLayout(0);
-  const leftPadding = 8 + depth * 18;
   const isSubprocess = Boolean(session?.is_subprocess) || Boolean(session?.parent_session_id);
   const sessionHref = buildAppWorkspaceHref({
     projectId: session?.project_id || project?.id,
@@ -1963,9 +2048,8 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
   return (
     <tr className={`explorer-row-leaf group transition-colors ${isSubprocess ? "opacity-90 cursor-default" : "cursor-pointer hover:bg-accentSoft/30"}`} onClick={handleRowOpen}>
       <td className="px-2 text-[12.5px] font-medium text-fg/90">
-        <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8}px` }}>
-          <TreeGuides depth={depth} isLast />
-          <span className="inline-flex h-5 w-5 shrink-0" aria-hidden />
+        <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8 + depth * 18}px` }}>
+          <TreeGuides depth={depth + 1} isLast />
           <IcoSession className={`shrink-0 h-4 w-4 ${isSubprocess ? "text-muted/60" : "text-muted"}`} />
           {isSubprocess ? (
             <a
@@ -1988,7 +2072,11 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
         </div>
       </td>
       {layout.showComposition ? <td className="px-2" /> : null}
-      {layout.showAssignee ? <td className="px-2" /> : null}
+      {layout.showAssignee ? (
+        <td className="px-2" onClick={(e) => e.stopPropagation()}>
+          <SessionAssigneeCell session={session} onAssign={onAssign} canAssign={canAssign} />
+        </td>
+      ) : null}
       {showSignalColumns ? <td className="px-2" /> : null}
       {showSignalColumns ? <td className="px-2" /> : null}
       <td className="px-2">
@@ -2020,6 +2108,8 @@ function ProjectSessionsRows({
   onSessionStatusChange,
   columnLayout,
   statusFilter = "all",
+  canAssign = false,
+  onAssign,
 }) {
   const projectId = String(project?.id || "").trim();
   const sessionsQuery = useQuery({
@@ -2084,6 +2174,8 @@ function ProjectSessionsRows({
       onOpen={openSession}
       onStatusChange={onSessionStatusChange}
       columnLayout={columnLayout}
+      canAssign={canAssign}
+      onAssign={onAssign}
     />
   ));
 }
@@ -2346,13 +2438,14 @@ function ExplorerPane({
     if (prefsQuery.data) treeSaverRef.current.attach(prefsQuery.data);
   }, [prefsQuery.data]);
 
+  const contextExpandedByFolder = treeStateByContext[contextKey]?.expandedByFolder;
   const mergedExpandedByFolder = useMemo(
     () => ({
       ...(persistedExpandedRef.current[String(workspaceId || "").trim()] || {}),
-      ...treeStateByContext[contextKey]?.expandedByFolder,
+      ...(contextExpandedByFolder || {}),
     }),
     // persistTick — пересчёт после применения серверного снапшота (ref не триггерит render)
-    [workspaceId, contextKey, treeStateByContext, persistTick],
+    [workspaceId, contextKey, contextExpandedByFolder, persistTick],
   );
 
   const treeState = treeStateByContext[contextKey] || {
@@ -2758,8 +2851,40 @@ function ExplorerPane({
       setMoveNotice(normalizedUserId ? "Исполнитель назначен." : "Назначение очищено.");
       return;
     }
+    if (kind === "session_assignees") {
+      const sessionId = String(item?.id || item?.session_id || "").trim();
+      const projectId = String(item?.project_id || "").trim();
+      if (!sessionId) throw new Error("Не удалось определить сессию");
+      const targetUser = normalizedUserId
+        ? assigneeMembersState.items.find((u) => getExplorerAssignableUserId(u) === normalizedUserId) || null
+        : null;
+      const nextAssignees = targetUser ? [targetUser] : [];
+      const queryKey = projectSessionsQueryKey(projectId);
+      const previousSessions = queryClient.getQueryData(queryKey);
+      if (previousSessions) {
+        queryClient.setQueryData(queryKey, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map((s) => {
+            const sid = String(s?.id || s?.session_id || "").trim();
+            if (sid !== sessionId) return s;
+            return { ...s, assignees: nextAssignees };
+          });
+        });
+      }
+      try {
+        const resp = await apiReplaceSessionAssignees(sessionId, normalizedUserId ? [normalizedUserId] : []);
+        if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителей схемы");
+        setMoveNotice(normalizedUserId ? "Исполнитель схемы назначен." : "Назначение очищено.");
+      } catch (e) {
+        if (previousSessions) {
+          queryClient.setQueryData(queryKey, previousSessions);
+        }
+        throw e;
+      }
+      return;
+    }
     throw new Error("Назначение недоступно для этого элемента");
-  }, [load, workspaceId]);
+  }, [load, workspaceId, queryClient, assigneeMembersState.items]);
 
   const handleFolderContextStatusChange = useCallback(async (folder, nextStatus) => {
     const normalizedStatus = normalizeExplorerContextStatus(nextStatus);
@@ -2823,18 +2948,16 @@ function ExplorerPane({
   const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
     const fid = String(targetFolderId || "").trim();
     if (!workspaceId || !fid) return;
-    const alreadyLoaded = Array.isArray(treeState.childItemsByFolder?.[fid]);
-    const alreadyLoading = Boolean(treeState.loadingByFolder?.[fid]) || inFlightFolderLoadsRef.current.has(fid);
-    if (alreadyLoaded || alreadyLoading) return;
+    if (inFlightFolderLoadsRef.current.has(fid)) return;
+    if (Array.isArray(treeState.childItemsByFolder?.[fid])) return;
+    if (treeState.loadingByFolder?.[fid]) return;
 
     inFlightFolderLoadsRef.current.add(fid);
-    setTreeStateForContext((prev) => {
-      return {
-        ...prev,
-        loadingByFolder: { ...prev.loadingByFolder, [fid]: true },
-        loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: "" },
-      };
-    });
+    setTreeStateForContext((prev) => ({
+      ...prev,
+      loadingByFolder: { ...prev.loadingByFolder, [fid]: true },
+      loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: "" },
+    }));
     try {
       const resp = await apiGetExplorerPage(workspaceId, fid);
       if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки вложенной папки");
@@ -2896,6 +3019,20 @@ function ExplorerPane({
       expandedIdsFromMap({ ...mergedExpandedByFolder, [pid]: nextExpanded }),
     );
   }, [mergedExpandedByFolder, workspaceId, setTreeStateForContext]);
+
+  // projects-table-ux-polish: при восстановлении раскрытого состояния из
+  // preferences подгружаем child-items один раз для каждого снапшота
+  // preferences. Явные toggle'ы уже триггерят ensureFolderChildrenLoaded сами.
+  const initialPrefsLoadedRef = useRef({ workspaceId: "", version: null });
+  useEffect(() => {
+    if (!workspaceId || !prefsQuery.data) return;
+    const prefsVersion = Number(prefsQuery.data.version || 0);
+    const last = initialPrefsLoadedRef.current;
+    if (last.workspaceId === workspaceId && last.version === prefsVersion) return;
+    const expandedIds = expandedIdsFromPreferences(prefsQuery.data.preferences, workspaceId);
+    initialPrefsLoadedRef.current = { workspaceId, version: prefsVersion };
+    expandedIds.forEach((fid) => ensureFolderChildrenLoaded(fid));
+  }, [workspaceId, prefsQuery.data, ensureFolderChildrenLoaded]);
 
   const handleOpenSearchResult = useCallback((result) => {
     const target = result?.target || {};
@@ -3254,6 +3391,15 @@ function ExplorerPane({
                       onSessionStatusChange={handleTreeSessionStatusChange}
                       columnLayout={explorerColumnLayout}
                       statusFilter={statusFilter}
+                      canAssign={!!permissions?.canAssignSessionAssignees}
+                      onAssign={(targetSession) => {
+                        setMoveNotice("");
+                        setAssigneeDialog({
+                          item: targetSession,
+                          kind: "session_assignees",
+                          folderLabel: "",
+                        });
+                      }}
                     />
                   );
                 }
@@ -3397,6 +3543,7 @@ function ExplorerPane({
         <AssigneeDialog
           item={assigneeDialog.item}
           folderLabel={assigneeDialog.folderLabel}
+          kind={assigneeDialog.kind || ""}
           users={assigneeDialog.kind === "responsible" ? responsibleAssigneeUsers : assigneeMembersState.items}
           loadingUsers={assigneeMembersState.loading}
           usersError={assigneeMembersState.error}

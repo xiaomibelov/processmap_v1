@@ -31,16 +31,19 @@ test("P4 [А]: header hidden in compact; columns hidden by priority flags", () =
   assert.doesNotMatch(paneSource, /showName|showStatus\s*\?/);
 });
 
-test("P4 [А]: marquee applied to name cells of all three tree row types", () => {
+test("P4 [А]: marquee applied to name cells of all tree row types", () => {
   const folderRow = between("function FolderRow(", "// ─── Project Row");
   const projectRow = between("function ProjectRow(", "// ─── P2 [Б]");
   const sessionRow = between("function SessionTreeRow(", "// Строки сессий раскрытого проекта");
   for (const [name, src] of [["folder", folderRow], ["project", projectRow], ["session", sessionRow]]) {
     assert.match(src, /<ExplorerMarqueeText /, name);
-    assert.match(src, /explorer-row-meta/, name);
-    assert.match(src, /buildExplorerRowMeta/, name);
     assert.match(src, /layout\.compact/, name);
   }
+  // Контейнерные строки имеют meta-строку; листовые (сессии) — нет.
+  assert.match(folderRow, /explorer-row-meta/);
+  assert.match(folderRow, /buildExplorerRowMeta/);
+  assert.match(projectRow, /explorer-row-meta/);
+  assert.match(projectRow, /buildExplorerRowMeta/);
   // marquee-контракт: прокрутка только при реальном обрезании
   const marquee = between("function ExplorerMarqueeText(", "function StatusDotBadge(");
   assert.match(marquee, /isExplorerTextTruncated\(inner\.scrollWidth, outer\.clientWidth\)/);

@@ -67,27 +67,39 @@
   align-self: stretch;
   width: 22px;
   flex-shrink: 0;
+  display: block;
 }
 
 .explorer-guide::before {
   content: "";
   position: absolute;
-  left: 9px;
+  left: 10px;
   top: 0;
   bottom: 0;
   border-left: 1px solid var(--c-border-strong);
   opacity: 0.45;
+  z-index: 1;
+}
+
+/* projects-table-ux-polish: колено листовой строки.
+   Ширина = уровень (22px) + шеврон (20px) + gap (8px),
+   чтобы горизонталь доходила до иконки сессии. */
+.explorer-guide-last {
+  width: 50px;
 }
 
 .explorer-guide-last::before {
-  left: 9px;
-  top: -1px;
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 0;
+  right: 0;
   bottom: 50%;
-  width: 11px;
   border-left: 1px solid var(--c-border-strong);
   border-bottom: 1px solid var(--c-border-strong);
-  border-radius: 0 0 0 5px;
+  border-radius: 0 0 0 3px;
   opacity: 0.55;
+  z-index: 1;
 }
 
 .explorer-row-leaf td {
@@ -105,6 +117,23 @@
   top: 0;
   z-index: 10;
   background: hsl(var(--panel));
+}
+
+/* projects-table-ux-polish: временный debug-оверлей для ревью.
+   Добавьте класс .explorer-debug-grid к <table>, чтобы подсветить
+   гайды и границы строк. В финальный код не коммитить. */
+.explorer-debug-grid .explorer-guide::before,
+.explorer-debug-grid .explorer-guide-last::before {
+  border-color: #ef4444;
+  opacity: 1;
+}
+
+.explorer-debug-grid td {
+  outline: 1px dashed rgba(59, 130, 246, 0.5);
+}
+
+.explorer-debug-grid tr {
+  outline: 1px dotted rgba(16, 185, 129, 0.4);
 }
 
 .explorer-assign-trigger {
