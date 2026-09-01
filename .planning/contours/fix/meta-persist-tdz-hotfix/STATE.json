@@ -4,7 +4,7 @@
   "status": "READY_FOR_REVIEW",
   "branch": "fix/meta-persist-tdz-hotfix",
   "base": "origin/main @ 1f91b1c684afc19114233c3a0e71d214a7938831",
-  "head": "1b383b9f21bfa65a9450e1edcee60fcafcafbc10",
+  "head": "a89b9d261a654ffe9b676662c03f35c54fe129f6",
   "workspace": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/fix-meta-persist-tdz-hotfix",
   "deliverables": [
     "frontend/src/features/process/stage/controllers/useSessionMetaPersist.js",

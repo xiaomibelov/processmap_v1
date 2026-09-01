@@ -5,7 +5,7 @@
 **Branch:** `fix/meta-persist-tdz-hotfix`  
 **Remote:** `git@github.com:xiaomibelov/processmap_v1.git`  
 **Base:** `origin/main @ 1f91b1c684afc19114233c3a0e71d214a7938831`  
-**HEAD:** `fix/meta-persist-tdz-hotfix @ 1b383b9f21bfa65a9450e1edcee60fcafcafbc10`  
+**HEAD:** `fix/meta-persist-tdz-hotfix @ a89b9d261a654ffe9b676662c03f35c54fe129f6`  
 **Workspace:** `/Users/mac/agents_place/kimi_PM/p0-work-worktrees/fix-meta-persist-tdz-hotfix`  
 **Prod commit (untouched):** `8f904834` — verified via `/version`, not in scope.
 
