@@ -85,10 +85,6 @@ export default function ProcessStageHeader({ view = {} }) {
     handleDrawioImportFile,
     topPanelsView,
     sessionPresenceView,
-    diagramStateVersion,
-    diagramStateConflict,
-    diagramStateConflictServerVersion,
-    diagramStateConflictActorLabel,
     featureFlags,
     tobeEntry,
     modeSwitch, // UXF addendum-3: сегмент «Схема | TO BE» справа от вкладки Diagram
@@ -103,21 +99,6 @@ export default function ProcessStageHeader({ view = {} }) {
   const versionChipTitle = resolvedVersionNumber > 0
     ? `Текущая версия: ${resolvedVersionNumber}`
     : (publishedRevisionBadge.title || "Версия пока не создана.");
-  const localDiagramStateVersion = Number.isFinite(Number(diagramStateVersion))
-    ? Math.max(0, Number(diagramStateVersion))
-    : 0;
-  const serverVersion = Number.isFinite(Number(diagramStateConflictServerVersion))
-    ? Math.max(0, Number(diagramStateConflictServerVersion))
-    : 0;
-  const isDiagramStateConflict = diagramStateConflict === true
-    || toText(saveUploadStatus?.state) === "conflict"
-    || (serverVersion > 0 && serverVersion > localDiagramStateVersion);
-  const diagramStateVersionChipLabel = localDiagramStateVersion > 0
-    ? `Rev. ${localDiagramStateVersion}`
-    : "Rev. —";
-  const diagramStateVersionChipTitle = isDiagramStateConflict && serverVersion > localDiagramStateVersion
-    ? `Текущая версия диаграммы: ${localDiagramStateVersion}. Есть более новая версия: ${serverVersion} от ${toText(diagramStateConflictActorLabel) || "другого пользователя"}.`
-    : `Текущая версия диаграммы: ${localDiagramStateVersion}`;
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
   const uploadStatusState = toText(saveUploadStatus?.state);
@@ -143,10 +124,10 @@ export default function ProcessStageHeader({ view = {} }) {
         <div className="flex items-center gap-2">
           {hasSession ? (
             <>
-              {/* B1: пара «Сохранить · Rev» — единый паттерн иконка+счётчик */}
+              {/* B1: действие «Сохранить» — иконка с тултипом */}
               <span
                 className="headerActionPair flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-panel2/40 py-0.5 pl-0.5 pr-2"
-                title={`Сохранить · ревизия ${localDiagramStateVersion > 0 ? localDiagramStateVersion : "—"}`}
+                title="Сохранить сессию"
                 data-testid="diagram-toolbar-save-pair"
               >
                 <button
@@ -159,13 +140,6 @@ export default function ProcessStageHeader({ view = {} }) {
                 >
                   <SaveIcon className="h-4 w-4" />
                 </button>
-                <span
-                  className={`whitespace-nowrap text-[11px] font-semibold leading-none ${isDiagramStateConflict ? "text-danger animate-pulse" : "text-muted"}`}
-                  data-testid="diagram-toolbar-diagram-state-version-chip"
-                  title={diagramStateVersionChipTitle}
-                >
-                  {diagramStateVersionChipLabel}
-                </span>
               </span>
               {/* B1: пара «Новая версия · V» — тот же паттерн */}
               <span

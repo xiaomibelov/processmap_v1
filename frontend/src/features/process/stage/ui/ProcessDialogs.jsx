@@ -367,6 +367,17 @@ export default function ProcessDialogs({ view = {} }) {
                       <div className="mb-1 text-xs text-muted">
                         хэш: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · размер: {Number(item?.len || String(item?.xml || "").length)}
                       </div>
+                      <div className="mb-1 text-xs text-muted">
+                        состояние диаграммы (dsv):{" "}
+                        <span
+                          className="font-mono text-fg"
+                          data-testid="bpmn-version-diagram-state-version"
+                        >
+                          {Number(item?.diagramStateVersion || 0) > 0
+                            ? Number(item.diagramStateVersion)
+                            : "—"}
+                        </span>
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         <button
                           type="button"

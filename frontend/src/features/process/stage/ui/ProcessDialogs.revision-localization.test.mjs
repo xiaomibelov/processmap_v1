@@ -57,3 +57,10 @@ test("revision dialogs use server-backed user-facing count for partial windows",
   assert.equal(source.includes("Пользовательские версии: {userFacingVersionsCount}"), true);
   assert.equal(source.includes("meaningfulCountRaw: userFacingVersionsCount"), true);
 });
+
+test("revision dialogs expose technical diagram_state_version inside history item", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessDialogs.jsx"), "utf8");
+  assert.equal(source.includes("diagramStateVersion"), true);
+  assert.equal(source.includes('data-testid="bpmn-version-diagram-state-version"'), true);
+  assert.equal(source.includes("состояние диаграммы (dsv):"), true);
+});
