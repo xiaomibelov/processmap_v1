@@ -271,8 +271,10 @@ $ git diff --stat
 - Stage verify после merge требует отдельного approve.
 - Prod не затронут.
 
+**PR:** https://github.com/xiaomibelov/processmap_v1/pull/888
+
 **Следующие шаги (требуют approve пользователя):**
-1. Review PR.
+1. Review PR #888.
 2. Merge в `main`.
 3. Stage verify по §4.
 4. Prod deploy — только явное решение владельца.
