@@ -94,6 +94,21 @@ export default function useSessionMetaPersist({
     normalizeHybridV2Doc,
   ]);
 
+  const syncPersistedRefs = useCallback((metaRaw) => {
+    const meta = normalizeBoundaryMeta(metaRaw);
+    hybridLayerPersistedMapRef.current = normalizeHybridLayerMap(meta.hybrid_layer_by_element_id);
+    hybridV2PersistedDocRef.current = normalizeHybridV2Doc(meta.hybrid_v2);
+    drawioPersistedMetaRef.current = normalizeDrawioMeta(meta.drawio);
+  }, [
+    drawioPersistedMetaRef,
+    hybridLayerPersistedMapRef,
+    hybridV2PersistedDocRef,
+    normalizeBoundaryMeta,
+    normalizeDrawioMeta,
+    normalizeHybridLayerMap,
+    normalizeHybridV2Doc,
+  ]);
+
   const onSessionSyncWithPersistedRefs = useCallback((envelope) => {
     const source = String(envelope?._sync_source || "");
     if (
@@ -120,21 +135,6 @@ export default function useSessionMetaPersist({
     shortErr,
     setGenErr,
   });
-
-  const syncPersistedRefs = useCallback((metaRaw) => {
-    const meta = normalizeBoundaryMeta(metaRaw);
-    hybridLayerPersistedMapRef.current = normalizeHybridLayerMap(meta.hybrid_layer_by_element_id);
-    hybridV2PersistedDocRef.current = normalizeHybridV2Doc(meta.hybrid_v2);
-    drawioPersistedMetaRef.current = normalizeDrawioMeta(meta.drawio);
-  }, [
-    drawioPersistedMetaRef,
-    hybridLayerPersistedMapRef,
-    hybridV2PersistedDocRef,
-    normalizeBoundaryMeta,
-    normalizeDrawioMeta,
-    normalizeHybridLayerMap,
-    normalizeHybridV2Doc,
-  ]);
 
   const persistBpmnMeta = useCallback(async (nextRaw, options = {}) => {
     const source = String(options?.source || "bpmn_meta_save");

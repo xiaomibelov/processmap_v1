@@ -1,0 +1,29 @@
+{
+  "contour": "fix/meta-persist-tdz-hotfix",
+  "type": "fix",
+  "status": "READY_FOR_REVIEW",
+  "branch": "fix/meta-persist-tdz-hotfix",
+  "base": "origin/main @ 1f91b1c684afc19114233c3a0e71d214a7938831",
+  "head": "1b383b9f21bfa65a9450e1edcee60fcafcafbc10",
+  "workspace": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/fix-meta-persist-tdz-hotfix",
+  "deliverables": [
+    "frontend/src/features/process/stage/controllers/useSessionMetaPersist.js",
+    "frontend/src/features/process/stage/controllers/useSessionMetaPersist.smoke.test.jsx",
+    ".planning/contours/fix/meta-persist-tdz-hotfix/EXEC_REPORT.md",
+    ".planning/contours/fix/meta-persist-tdz-hotfix/STATE.json"
+  ],
+  "test_results": {
+    "target_suites": "41 passed, 0 failed",
+    "full_node_test": "3219 tests, 3132 pass, 82 fail (pre-existing on origin/main)",
+    "vitest_smoke": "9 files, 29 tests passed",
+    "vite_build": "success"
+  },
+  "next_steps": [
+    "Review PR",
+    "Merge to main on user approval",
+    "Stage verify: process page opens, clean console, 1 click = 1 revision"
+  ],
+  "risks": [
+    "ESLint no-use-before-define not configured in frontend; follow-up required."
+  ]
+}
