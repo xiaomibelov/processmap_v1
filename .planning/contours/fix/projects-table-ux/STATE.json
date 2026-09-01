@@ -1,0 +1,18 @@
+{
+  "contour": "fix/projects-table-ux",
+  "role": "executor",
+  "status": "ready_for_review",
+  "workspace": "/Users/mac/agents_place/kimi_PM/Kimi_Agent_UI_ логика и дизайн/processmap_v1",
+  "artifacts": {
+    "PLAN.md": "done",
+    "EXEC_REPORT.md": "done",
+    "UI.md": "done",
+    "TESTS.md": "done",
+    "PR.md": "done",
+    "STATE.json": "done"
+  },
+  "notes": [
+    "Unit tests updated but not run: node/npm unavailable in environment.",
+    "Obsidian mirror skipped: /opt/processmap-test not present."
+  ]
+}

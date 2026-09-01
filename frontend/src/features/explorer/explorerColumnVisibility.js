@@ -27,13 +27,15 @@ import {
   formatExplorerUserDisplay,
 } from "./explorerAssigneeModel.js";
 
-// Сетка ширин (ТЗ п.8): Название min 260 (flex) + Тип 88 + Состав 210 +
-// Ответственный 176 + Статус 88 + Обновлено 190 + Действия 32 = 1044
-// (+72 с сигнальными колонками).
-export const EXPLORER_LAYOUT_FULL_MIN = 1044;
-export const EXPLORER_LAYOUT_NO_UPDATED_MIN = 854; // FULL_MIN − 190 («Обновлено»)
+// projects-table-ux: тип сущности визуально находится в ячейке «Название»,
+// поэтому колонка «Тип» в шапке убрана. Состав заголовков:
+// Название min 320 (flex) + Состав 210 + Ответственный 176 + Статус 88 +
+// Обновлено 190 + Действия 88 = 1072 (+72 с сигнальными колонками).
+export const EXPLORER_LAYOUT_FULL_MIN = 1072;
+export const EXPLORER_LAYOUT_NO_UPDATED_MIN = 882; // FULL_MIN − 190 («Обновлено»)
+export const EXPLORER_LAYOUT_NO_ASSIGNEE_MIN = 706; // NO_UPDATED_MIN − 176 («Ответственный»)
 export const EXPLORER_LAYOUT_COMPACT_MAX = 679; // <680 — двухстрочные строки
-export const EXPLORER_NAME_MIN_WIDTH = 260;
+export const EXPLORER_NAME_MIN_WIDTH = 320;
 const SIGNAL_COLUMNS_EXTRA = 72; // 2 × 36px (⚠/📋), tree-профиль сейчас без них
 
 /**
@@ -46,9 +48,11 @@ export function getExplorerColumnLayout(widthRaw, { signalColumns = false } = {}
   const extra = signalColumns ? SIGNAL_COLUMNS_EXTRA : 0;
   const fullMin = EXPLORER_LAYOUT_FULL_MIN + extra;
   const noUpdatedMin = EXPLORER_LAYOUT_NO_UPDATED_MIN + extra;
+  const noAssigneeMin = EXPLORER_LAYOUT_NO_ASSIGNEE_MIN + extra;
+  // projects-table-ux: тип всегда рисуется внутри ячейки «Название».
   const full = {
     compact: false,
-    showType: true,
+    showType: false,
     showComposition: true,
     showAssignee: true,
     showUpdated: true,
@@ -56,7 +60,7 @@ export function getExplorerColumnLayout(widthRaw, { signalColumns = false } = {}
   };
   if (!Number.isFinite(width) || width <= 0 || width >= fullMin) return full;
   if (width <= EXPLORER_LAYOUT_COMPACT_MAX) {
-    // compact: колонки Тип/Состав/Ответственный/Обновлено уходят в мета-строку.
+    // compact: колонки Состав/Ответственный/Обновлено уходят в мета-строку.
     return {
       compact: true,
       showType: false,
@@ -69,7 +73,10 @@ export function getExplorerColumnLayout(widthRaw, { signalColumns = false } = {}
   if (width >= noUpdatedMin) {
     return { ...full, showUpdated: false };
   }
-  return { ...full, showUpdated: false, showAssignee: false };
+  if (width >= noAssigneeMin) {
+    return { ...full, showUpdated: false, showAssignee: false };
+  }
+  return { ...full, showUpdated: false, showAssignee: false, showComposition: false };
 }
 
 /** Число видимых колонок (для colSpan строк loading/empty/error). */
@@ -77,7 +84,7 @@ export function explorerVisibleColumnCount(layout, { signalColumns = false } = {
   const l = layout && typeof layout === "object" ? layout : getExplorerColumnLayout(0);
   let n = 3; // Название + Статус + действия — всегда
   if (!l.compact) {
-    if (l.showType) n += 1;
+    // projects-table-ux: тип визуально внутри «Название», в шапке отдельной колонки нет.
     if (l.showComposition) n += 1;
     if (l.showAssignee) n += 1;
     if (signalColumns) n += 2;
@@ -131,7 +138,7 @@ export function buildExplorerRowMeta(item, kind) {
   // у session-строк колонки «Ответственный» нет вовсе — в мета не добавляем.
   if (kind !== "session") {
     const assigneeFull = formatExplorerUserDisplay(getExplorerBusinessAssignee(item));
-    parts.push(assigneeFull ? firstName(assigneeFull) : "Не назначен");
+    if (assigneeFull) parts.push(firstName(assigneeFull));
   }
   const rel = formatRelativeTime(item?.rollup_activity_at || item?.updated_at);
   if (rel) parts.push(rel);
