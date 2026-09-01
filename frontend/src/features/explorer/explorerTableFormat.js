@@ -59,7 +59,8 @@ export function sessionsProgressPercent(done, total) {
 export function sessionsTooltipText(done, total) {
   const d = Math.max(0, Math.floor(Number(done) || 0));
   const t = Math.max(0, Math.floor(Number(total) || 0));
-  return `Сессий: ${d} из ${t}`;
+  const pct = t > 0 ? Math.round((d / t) * 100) : 0;
+  return `Заполнено ${d} из ${t} узлов процесса (${pct}%)`;
 }
 
 export function formatRelativeTime(epoch) {
