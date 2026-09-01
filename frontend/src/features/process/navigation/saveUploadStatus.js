@@ -60,6 +60,7 @@ function normalizeConflictPayload(raw = null) {
   const lastWrite = asObject(value.server_last_write || value.serverLastWrite);
   const actorUserId = toText(lastWrite.actor_user_id || lastWrite.actorUserId);
   const actorLabel = toText(lastWrite.actor_label || lastWrite.actorLabel || lastWrite.actor_user_id || lastWrite.actorUserId);
+  const clientId = toText(lastWrite.client_id || lastWrite.clientId);
   const at = toNumber(lastWrite.at, 0);
   const changedKeys = asArray(lastWrite.changed_keys || lastWrite.changedKeys)
     .map((item) => toText(item))
@@ -72,6 +73,7 @@ function normalizeConflictPayload(raw = null) {
     serverCurrentVersion,
     actorUserId,
     actorLabel,
+    clientId,
     at,
     changedKeys,
   };

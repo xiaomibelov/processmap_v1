@@ -94,6 +94,20 @@ export default function useSessionMetaPersist({
     normalizeHybridV2Doc,
   ]);
 
+  const onSessionSyncWithPersistedRefs = useCallback((envelope) => {
+    const source = String(envelope?._sync_source || "");
+    if (
+      source.includes("put_bpmn")
+      || source.includes("bpmn_save")
+      || source.includes("save_conflict_refresh")
+      || source.includes("session_patch")
+      || source.includes("meta_patch")
+    ) {
+      syncPersistedRefs(envelope?.bpmn_meta || {});
+    }
+    onSessionSync?.(envelope);
+  }, [onSessionSync, syncPersistedRefs]);
+
   const writeGateway = useSessionMetaWriteGateway({
     sid,
     isLocal,
@@ -102,7 +116,7 @@ export default function useSessionMetaPersist({
     getPersistedMeta: buildMetaSnapshot,
     getBaseDiagramStateVersion,
     rememberDiagramStateVersion,
-    onSessionSync,
+    onSessionSync: onSessionSyncWithPersistedRefs,
     shortErr,
     setGenErr,
   });
