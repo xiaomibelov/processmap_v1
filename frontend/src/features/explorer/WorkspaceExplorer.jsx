@@ -49,16 +49,7 @@ import {
   apiGetSubprocessesCount,
   apiCreateSubprocessSessions,
 } from "./explorerApi.js";
-import {
-  apiDeleteProject,
-  apiDeleteSession,
-  apiGetSession,
-  apiGetSessionAssignees,
-  apiListOrgAssignableUsers,
-  apiPatchProject,
-  apiPatchSession,
-  apiReplaceSessionAssignees,
-} from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
@@ -100,11 +91,6 @@ import {
   getExplorerAssigneeKind,
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeLabel,
-  getSessionAssignees,
-  getSessionAssigneesActionLabel,
-  getSessionAssigneesDialogTitle,
-  getVisibleSessionAssignees,
-  getSessionAssigneesTooltip,
   mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
@@ -363,6 +349,22 @@ const EXPLORER_COLUMN_PROFILES = {
   },
 };
 
+function TypeTag({ type, label = "" }) {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized === "section") {
+    return <span className="explorer-type-tag explorer-type-tag-section">{label || "Раздел"}</span>;
+  }
+  if (normalized === "folder") {
+    return <span className="explorer-type-tag explorer-type-tag-folder">{label || "Папка"}</span>;
+  }
+  if (normalized === "project") {
+    return <span className="explorer-type-tag explorer-type-tag-project">{label || "Проект"}</span>;
+  }
+  return null;
+}
+
+// projects-table-ux: сохраняем EntityTypePill для обратной совместимости
+// в поисковых результатах и других местах (session и др.).
 function EntityTypePill({ type, label = "" }) {
   const normalized = String(type || "").trim().toLowerCase();
   if (normalized === "folder") {
@@ -375,6 +377,22 @@ function EntityTypePill({ type, label = "" }) {
     return <span className="inline-flex items-center rounded-full border border-emerald-300/65 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Сессия</span>;
   }
   return <span className="inline-flex items-center rounded-full border border-border/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg/70">—</span>;
+}
+
+// projects-table-ux: вертикальные guide-линии дерева + колено к листовой строке.
+function TreeGuides({ depth, isLast = false }) {
+  if (depth <= 0) return null;
+  return (
+    <span className="indent inline-flex items-stretch self-stretch flex-shrink-0">
+      {Array.from({ length: depth }, (_, i) => (
+        <span
+          key={i}
+          className={`explorer-guide ${i === depth - 1 && isLast ? "explorer-guide-last" : ""}`}
+          aria-hidden
+        />
+      ))}
+    </span>
+  );
 }
 
 function SortHeader({ label, sortKey, sort, onSort, align = "left", title = "" }) {
@@ -585,11 +603,21 @@ function ConfirmModal({ title, message, actionLabel = "Удалить", danger =
   );
 }
 
-function AssigneeCell({ item }) {
+function AssigneeCell({ item, onAssign, canAssign = false }) {
   const user = getExplorerBusinessAssignee(item);
   const fullName = formatExplorerUserDisplay(user);
   if (!fullName) {
-    return <span className="text-[12.5px] text-muted/80">Не назначен</span>;
+    if (!canAssign) return <span className="text-[12.5px] text-muted/80" />;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onAssign?.(item); }}
+        className="explorer-assign-trigger text-[11.5px] text-muted hover:text-accent rounded px-1.5 py-0.5 hover:bg-accentSoft"
+        title="Назначить ответственного"
+      >
+        + Назначить
+      </button>
+    );
   }
   const jobTitle = String(user?.job_title || user?.role || "").trim();
   const tooltip = jobTitle ? `${fullName} · ${jobTitle}` : fullName;
@@ -609,6 +637,8 @@ function AssigneeCell({ item }) {
 
 function CompositionCell({ item }) {
   const isFolder = String(item?.type || "").trim().toLowerCase() === "folder";
+  const isSession = String(item?.type || "").trim().toLowerCase() === "session";
+  if (isSession) return <span className="text-[12px] text-muted/60" />;
   // Знаменатель прогресса — только «активные» сессии (без архивных/удалённых).
   // Fallback на общий sessions_count для старых ответов API без trackable-полей.
   const total = isFolder
@@ -616,22 +646,24 @@ function CompositionCell({ item }) {
     : (item?.trackable_sessions_count ?? item?.descendant_sessions_count ?? item?.sessions_count);
   const done = isFolder ? item?.descendant_done_sessions_count : item?.done_sessions_count;
   const pct = sessionsProgressPercent(done, total);
+  const fillClass = pct === 0
+    ? "bg-transparent"
+    : pct <= 30
+      ? "bg-warning"
+      : "bg-success";
   return (
-    <div className="flex min-w-0 items-center gap-3 text-[12.5px] text-muted">
-      {isFolder ? (
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title="Проектов в разделе">
-          <IcoFolder className="h-3.5 w-3.5 shrink-0 text-muted/70" />
-          <span className="font-semibold tabular-nums text-fg">{compositionProjectsText(item?.descendant_projects_count)}</span>
-        </span>
+    <div className="flex min-w-0 flex-col gap-0.5 text-[11.5px] text-muted">
+      {isFolder && item?.descendant_projects_count != null ? (
+        <span className="whitespace-nowrap">{compositionProjectsText(item.descendant_projects_count)}</span>
       ) : null}
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={sessionsTooltipText(done, total)}>
-        <span className="inline-block h-1 w-11 shrink-0 overflow-hidden rounded-full bg-border">
+      <span className="inline-flex items-center gap-2 whitespace-nowrap" title={sessionsTooltipText(done, total)}>
+        <span className="inline-block h-1 w-16 shrink-0 overflow-hidden rounded-full bg-border">
           <span
-            className="block h-full rounded-full bg-emerald-600 transition-[width] duration-300"
+            className={`block h-full rounded-full transition-[width] duration-300 ${fillClass}`}
             style={{ width: `${pct}%` }}
           />
         </span>
-        <span className="font-mono text-[11.5px] tabular-nums">{sessionsCounterText(done, total)}</span>
+        <span className="tabular-nums">{sessionsCounterText(done, total)}</span>
       </span>
     </div>
   );
@@ -646,9 +678,9 @@ function UpdatedCell({ node }) {
   const title = [abs, hasLabel ? label : ""].filter(Boolean).join(" · ");
   return (
     <td className="px-2 py-2.5" title={title || undefined}>
-      <div className="flex min-w-0 items-baseline gap-1.5">
-        <span className="whitespace-nowrap text-[12.5px] font-semibold tabular-nums text-fg">{rel || "—"}</span>
-        {hasLabel ? <span className="truncate text-xs text-muted/90">{label}</span> : null}
+      <div className="flex min-w-0 flex-col gap-px">
+        <span className="whitespace-nowrap text-[12.5px] tabular-nums text-fg">{rel || "—"}</span>
+        {hasLabel ? <span className="truncate text-[11px] text-muted/80">{label}</span> : null}
       </div>
     </td>
   );
@@ -928,129 +960,6 @@ function AssigneeDialog({
             onClick={() => submit()}
             className="primaryBtn h-8 px-3 text-sm"
             disabled={busy || loadingUsers || !selectedUserId}
-          >
-            {busy ? "…" : "Сохранить"}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-
-
-function SessionAssigneesDialog({
-  session,
-  users,
-  loadingUsers = false,
-  usersError = "",
-  initialUserIds = [],
-  onClose,
-  onSave,
-}) {
-  const [selectedIds, setSelectedIds] = useState(() => new Set(initialUserIds));
-  const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const title = getSessionAssigneesDialogTitle();
-  const filteredUsers = useMemo(() => filterExplorerAssignableUsers(users, query), [users, query]);
-
-  useEffect(() => {
-    setSelectedIds(new Set(initialUserIds));
-    setQuery("");
-    setError("");
-  }, [session?.id, initialUserIds.join(",")]);
-
-  const toggleUser = useCallback((userId) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
-    setError("");
-  }, []);
-
-  const submit = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await onSave(Array.from(selectedIds));
-      onClose();
-    } catch (e) {
-      setError(String(e?.message || e || "Не удалось сохранить исполнителей"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const selectedCount = selectedIds.size;
-
-  return (
-    <Modal title={title} onClose={onClose}>
-      <div className="space-y-3">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setError("");
-          }}
-          placeholder="Найти пользователя"
-          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
-          disabled={busy || loadingUsers}
-        />
-        <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-bg/60 p-1.5">
-          {loadingUsers ? (
-            <div className="px-2.5 py-3 text-sm text-muted">Загрузка пользователей...</div>
-          ) : filteredUsers.length ? (
-            filteredUsers.map((user) => {
-              const uid = assigneeMemberId(user);
-              const name = formatExplorerUserDisplay(user) || uid;
-              const email = String(user?.email || "").trim();
-              const jobTitle = String(user?.job_title || "").trim();
-              const checked = selectedIds.has(uid);
-              if (!uid) return null;
-              return (
-                <label
-                  key={uid}
-                  className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm text-fg transition-colors hover:bg-panelAlt"
-                >
-                  <input
-                    type="checkbox"
-                    name="session-assignees"
-                    className="mt-1"
-                    value={uid}
-                    checked={checked}
-                    disabled={busy}
-                    onChange={() => toggleUser(uid)}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{name}</span>
-                    <span className="mt-0.5 block truncate text-[11px] text-muted">
-                      {[email, jobTitle].filter(Boolean).join(" · ") || uid}
-                    </span>
-                  </span>
-                </label>
-              );
-            })
-          ) : (
-            <div className="px-2.5 py-3 text-sm text-muted">
-              {query ? "Пользователи не найдены." : "Нет доступных пользователей для назначения."}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-between text-xs text-muted">
-          <span>{selectedCount > 0 ? `Выбрано: ${selectedCount}` : "Не выбрано ни одного исполнителя"}</span>
-        </div>
-        {usersError ? <p className="text-xs text-danger">{usersError}</p> : null}
-        {error ? <p className="text-xs text-danger">{error}</p> : null}
-        <div className="flex flex-wrap justify-end gap-2">
-          <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
-          <button
-            onClick={submit}
-            className="primaryBtn h-8 px-3 text-sm"
-            disabled={busy || loadingUsers}
           >
             {busy ? "…" : "Сохранить"}
           </button>
@@ -1754,12 +1663,13 @@ function FolderRow({
     <>
       <tr className="group hover:bg-accentSoft/30 transition-colors">
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
+          <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8}px` }}>
+            <TreeGuides depth={depth} />
             {expandable ? (
               <button
                 type="button"
                 onClick={() => onToggleExpand(folder)}
-                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${loading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
+                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 hover:bg-border/50 ${loading ? "cursor-wait" : ""}`}
                 disabled={loading}
                 title={expanded ? `Скрыть вложенные элементы ${folderLabelGenitive}` : `Показать вложенные элементы ${folderLabelGenitive}`}
                 aria-label={expanded ? `Скрыть вложенные элементы ${folderLabelGenitive} ${folder.name}` : `Показать вложенные элементы ${folderLabelGenitive} ${folder.name}`}
@@ -1772,7 +1682,7 @@ function FolderRow({
                 )}
               </button>
             ) : (
-              <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+              <span className="inline-flex h-5 w-5 shrink-0" aria-hidden />
             )}
             <IcoFolder className="shrink-0 text-accent/80" />
             <button
@@ -1783,16 +1693,14 @@ function FolderRow({
             >
               <ExplorerMarqueeText text={folder.name} />
             </button>
+            <TypeTag type={depth === 0 && !folder.parent_id ? "section" : "folder"} label={folderLabel} />
           </div>
           {layout.compact ? (
-            <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(folder, "folder")}</div>
+            <div className="explorer-row-meta" style={{ paddingLeft: `${8 + depth * 22 + 20}px` }}>{buildExplorerRowMeta(folder, "folder")}</div>
           ) : null}
         </td>
-        {layout.showType ? (
-          <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" label={folderLabel} /></td>
-        ) : null}
         {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={folder} /></td> : null}
-        {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={folder} /></td> : null}
+        {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={folder} onAssign={(item) => onAssign?.(item, folderLabel)} canAssign={canEdit} /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -1811,13 +1719,13 @@ function FolderRow({
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+            className="text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
             title={`Действия с ${folderLabelInstrumental}`}
             aria-label={`Действия с ${folderLabelInstrumental}`}
           >
             ···
           </button>
-          {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
+          {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />
         </td>
       </tr>
       {renaming && canEdit && (
@@ -1923,12 +1831,13 @@ function ProjectRow({
         }}
       >
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
+          <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8}px` }}>
+            <TreeGuides depth={depth} />
             {expandable ? (
               <button
                 type="button"
                 onClick={() => onToggleExpand?.(project)}
-                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${sessionsLoading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
+                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 hover:bg-border/50 ${sessionsLoading ? "cursor-wait" : ""}`}
                 disabled={sessionsLoading}
                 title={expanded ? "Скрыть сессии проекта" : "Показать сессии проекта"}
                 aria-label={expanded ? `Скрыть сессии проекта ${project.name}` : `Показать сессии проекта ${project.name}`}
@@ -1941,7 +1850,7 @@ function ProjectRow({
                 )}
               </button>
             ) : (
-              <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
+              <span className="inline-flex h-5 w-5 shrink-0" aria-hidden />
             )}
             <IcoProject className="shrink-0 text-accent" />
             <AppRouteLink
@@ -1952,12 +1861,13 @@ function ProjectRow({
             >
               <ExplorerMarqueeText text={project.name} className="hover:underline" />
             </AppRouteLink>
+            <TypeTag type="project" />
           </div>
           {layout.compact ? (
-            <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(project, "project")}</div>
+            <div className="explorer-row-meta" style={{ paddingLeft: `${8 + depth * 22 + 20}px` }}>{buildExplorerRowMeta(project, "project")}</div>
           ) : null}
           {uploadState && uploadState.stage && uploadState.stage !== "done" ? (
-            <div className="mt-0.5 text-[11px]" style={{ paddingLeft: `${leftPadding + 32}px` }}>
+            <div className="mt-0.5 text-[11px]" style={{ paddingLeft: `${8 + depth * 22 + 20}px` }}>
               <PendingUploadStageLabel
                 upload={{ ...uploadState, tempId: String(project?.id || "") }}
                 onRetry={() => onUploadRetry?.(String(project?.id || ""))}
@@ -1965,31 +1875,28 @@ function ProjectRow({
             </div>
           ) : null}
         </td>
-        {layout.showType ? (
-          <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="project" /></td>
-        ) : null}
         {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={project} /></td> : null}
-        {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={project} /></td> : null}
+        {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={project} onAssign={onAssign} canAssign={canAssign} /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
         <td className="px-2 py-2.5">
           <StatusDotBadge domain="project" value={project.status} />
         </td>
         {layout.showUpdated ? <UpdatedCell node={project} /> : null}
-        <td className={`px-2 py-2.5 text-right relative ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
+        <td className={`px-2 py-2.5 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1.5">
             {layout.compact ? null : (
               <AppRouteLink
-                className="secondaryBtn h-7 min-h-0 px-2 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg"
+                className="text-[12px] font-medium text-accent hover:text-accentHover whitespace-nowrap rounded px-1.5 py-0.5 transition-colors hover:bg-accentSoft"
                 href={projectHref}
                 onNavigate={() => onClick(project)}
               >
-                Открыть проект
+                Открыть →
               </AppRouteLink>
             )}
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="opacity-55 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+              className="text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
               title="Действия с проектом"
               aria-label="Действия с проектом"
             >···</button>
@@ -2054,11 +1961,12 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
     onOpen?.(session);
   }
   return (
-    <tr className={`group transition-colors ${isSubprocess ? "opacity-90 cursor-default" : "cursor-pointer hover:bg-accentSoft/30"}`} onClick={handleRowOpen}>
-      <td className="px-2 py-2 text-sm font-medium text-fg">
-        <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${leftPadding}px` }}>
-          <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
-          <IcoSession className={`shrink-0 ${isSubprocess ? "text-muted/60" : "text-muted"}`} />
+    <tr className={`explorer-row-leaf group transition-colors ${isSubprocess ? "opacity-90 cursor-default" : "cursor-pointer hover:bg-accentSoft/30"}`} onClick={handleRowOpen}>
+      <td className="px-2 text-[12.5px] font-medium text-fg/90">
+        <div className="explorer-name-stack flex min-w-0 items-center gap-2" style={{ paddingLeft: `${8}px` }}>
+          <TreeGuides depth={depth} isLast />
+          <span className="inline-flex h-5 w-5 shrink-0" aria-hidden />
+          <IcoSession className={`shrink-0 h-4 w-4 ${isSubprocess ? "text-muted/60" : "text-muted"}`} />
           {isSubprocess ? (
             <a
               className="block min-w-0 flex-1 text-left text-fg/70"
@@ -2078,16 +1986,12 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
             </AppRouteLink>
           )}
         </div>
-        {layout.compact ? (
-          <div className="explorer-row-meta" style={{ paddingLeft: `${leftPadding + 32}px` }}>{buildExplorerRowMeta(session, "session")}</div>
-        ) : null}
       </td>
-      {layout.showType ? <td className="px-2 py-2 text-xs text-muted">—</td> : null}
-      {layout.showComposition ? <td className="px-2 py-2" /> : null}
-      {layout.showAssignee ? <td className="px-2 py-2" /> : null}
-      {showSignalColumns ? <td className="px-2 py-2" /> : null}
-      {showSignalColumns ? <td className="px-2 py-2" /> : null}
-      <td className="px-2 py-2">
+      {layout.showComposition ? <td className="px-2" /> : null}
+      {layout.showAssignee ? <td className="px-2" /> : null}
+      {showSignalColumns ? <td className="px-2" /> : null}
+      {showSignalColumns ? <td className="px-2" /> : null}
+      <td className="px-2">
         <StatusPopoverControl
           domain="session"
           value={session.status}
@@ -2096,17 +2000,7 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
         />
       </td>
       {layout.showUpdated ? <UpdatedCell node={session} /> : null}
-      <td className={`px-2 py-2 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
-        {!layout.compact && !isSubprocess ? (
-          <AppRouteLink
-            className="secondaryBtn h-7 min-h-0 px-2 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg opacity-0 group-hover:opacity-100"
-            href={sessionHref}
-            onNavigate={() => onOpen?.(session)}
-          >
-            Открыть
-          </AppRouteLink>
-        ) : null}
-      </td>
+      <td className={`px-2 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()} />
     </tr>
   );
 }
@@ -2125,13 +2019,24 @@ function ProjectSessionsRows({
   onOpenSession,
   onSessionStatusChange,
   columnLayout,
+  statusFilter = "all",
 }) {
   const projectId = String(project?.id || "").trim();
   const sessionsQuery = useQuery({
     ...projectSessionsQueryOptions(workspaceId, projectId),
     enabled: Boolean(workspaceId) && Boolean(projectId),
   });
-  const sessions = Array.isArray(sessionsQuery.data) ? sessionsQuery.data : [];
+  const rawSessions = Array.isArray(sessionsQuery.data) ? sessionsQuery.data : [];
+  const sessions = useMemo(() => {
+    if (statusFilter === "all") return rawSessions;
+    return rawSessions.filter((session) => {
+      const status = String(session?.status || "").trim().toLowerCase();
+      if (statusFilter === "active") return status === "in_progress";
+      if (statusFilter === "done") return status === "ready" || status === "done";
+      if (statusFilter === "draft") return status === "draft";
+      return false;
+    });
+  }, [rawSessions, statusFilter]);
   const projectContext = {
     projectId,
     workspaceId,
@@ -2314,7 +2219,6 @@ function ExplorerTableSkeletonRow({ columnLayout, treeColumnProfile }) {
           <div className="h-4 w-full max-w-[260px] rounded bg-border/40" />
         </div>
       </td>
-      {columnLayout.showType ? <td className="px-2 py-2.5"><div className="h-4 w-10 rounded bg-border/40" /></td> : null}
       {columnLayout.showComposition ? <td className="px-2 py-2.5"><div className="h-4 w-24 rounded bg-border/40" /></td> : null}
       {columnLayout.showAssignee ? <td className="px-2 py-2.5"><div className="h-4 w-20 rounded bg-border/40" /></td> : null}
       {treeColumnProfile.showSignalColumns ? <td className="px-2 py-2.5"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
@@ -2333,7 +2237,6 @@ function ProjectTableSkeletonRow({ sessionColumnProfile }) {
       <td className="px-2 py-2"><div className="h-4 w-full max-w-[260px] rounded bg-border/40" /></td>
       <td className="px-2 py-2"><div className="h-4 w-16 rounded bg-border/40" /></td>
       <td className="hidden sm:table-cell px-2 py-2"><div className="h-4 w-16 rounded bg-border/40" /></td>
-      <td className="hidden md:table-cell px-2 py-2"><div className="h-4 w-20 rounded bg-border/40" /></td>
       <td className="hidden md:table-cell px-2 py-2"><div className="h-4 w-20 rounded bg-border/40" /></td>
       <td className="px-2 py-2"><div className="h-4 w-10 rounded bg-border/40" /></td>
       {sessionColumnProfile.showDiscussionColumn ? <td className="px-2 py-2"><div className="mx-auto h-4 w-4 rounded bg-border/40" /></td> : null}
@@ -2405,6 +2308,7 @@ function ExplorerPane({
     model: null,
   });
   const [explorerSort, setExplorerSort] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const [activeTab, setActiveTab] = useState("projects");
   const inFlightFolderLoadsRef = useRef(new Set());
@@ -2595,28 +2499,115 @@ function ExplorerPane({
     }
   }, [projectUploads, queryClient, load, updateProjectUpload, clearProjectUpload]);
 
-  const sortedRootItems = useMemo(
-    () => sortExplorerItems(rootItems, explorerSort, { isRoot: !folderId }),
-    [rootItems, explorerSort, folderId],
-  );
-  const sortedChildItemsByFolder = useMemo(
-    () => sortExplorerChildItemsByFolder(treeState.childItemsByFolder, explorerSort),
-    [treeState.childItemsByFolder, explorerSort],
-  );
   const handleExplorerSort = useCallback((key) => {
     setExplorerSort((prev) => toggleExplorerSort(prev, key));
   }, []);
 
+  // projects-table-ux: фильтр-чипы по статусам (Все / Активен / Готово / Черновик / AS IS).
+  const statusFilteredItems = useMemo(() => {
+    if (statusFilter === "all") return { rootItems, childItemsByFolder: treeState.childItemsByFolder };
+
+    function itemStatusMatches(item) {
+      const type = String(item?.type || "").trim().toLowerCase();
+      const status = String(
+        type === "folder" ? item?.context_status : item?.status
+      ).trim().toLowerCase();
+      if (statusFilter === "active") {
+        return status === "active" || status === "in_progress";
+      }
+      if (statusFilter === "done") {
+        return status === "ready" || status === "done" || status === "completed";
+      }
+      if (statusFilter === "draft") {
+        return status === "draft";
+      }
+      if (statusFilter === "as_is") {
+        return status === "as_is";
+      }
+      return false;
+    }
+
+    const keepRoot = new Set();
+    const keepChild = new Map(); // folderId -> Set<itemId>
+
+    // Сессии не в childItemsByFolder, они загружаются отдельно через ProjectSessionsRows.
+    // Фильтр применяется только к разделам/папкам/проектам, загруженным в explorer.
+    function markRoot(item) {
+      const id = String(item?.id || "").trim();
+      if (!id || keepRoot.has(id)) return;
+      keepRoot.add(id);
+      const pid = String(item?.parent_id || "").trim();
+      if (pid) {
+        const parent = rootItems.find((r) => String(r?.id || "").trim() === pid);
+        if (parent) markRoot(parent);
+      }
+    }
+
+    function markChild(item, folderId) {
+      const id = String(item?.id || "").trim();
+      if (!id) return;
+      if (!keepChild.has(folderId)) keepChild.set(folderId, new Set());
+      if (keepChild.get(folderId).has(id)) return;
+      keepChild.get(folderId).add(id);
+      const pid = String(item?.parent_id || "").trim();
+      if (pid) {
+        const siblings = treeState.childItemsByFolder[folderId] || [];
+        const parent = siblings.find((r) => String(r?.id || "").trim() === pid);
+        if (parent) markChild(parent, folderId);
+      }
+    }
+
+    rootItems.forEach((item) => {
+      if (itemStatusMatches(item)) markRoot(item);
+    });
+
+    Object.entries(treeState.childItemsByFolder).forEach(([folderId, items]) => {
+      items.forEach((item) => {
+        if (itemStatusMatches(item)) markChild(item, folderId);
+      });
+    });
+
+    return {
+      rootItems: rootItems.filter((item) => keepRoot.has(String(item?.id || "").trim())),
+      childItemsByFolder: Object.fromEntries(
+        Object.entries(treeState.childItemsByFolder).map(([folderId, items]) => [
+          folderId,
+          items.filter((item) => keepChild.get(folderId)?.has(String(item?.id || "").trim())),
+        ]),
+      ),
+    };
+  }, [rootItems, treeState.childItemsByFolder, statusFilter]);
+
+  const sortedRootItems = useMemo(
+    () => sortExplorerItems(statusFilteredItems.rootItems, explorerSort, { isRoot: !folderId }),
+    [statusFilteredItems.rootItems, explorerSort, folderId],
+  );
+  const sortedChildItemsByFolder = useMemo(
+    () => sortExplorerChildItemsByFolder(statusFilteredItems.childItemsByFolder, explorerSort),
+    [statusFilteredItems.childItemsByFolder, explorerSort],
+  );
+
+  const effectiveExpandedByFolder = useMemo(() => {
+    if (statusFilter === "all") return mergedExpandedByFolder;
+    // projects-table-ux: при активном фильтре статусов игнорируем свёрнутость —
+    // показываем все совпадающие узлы и их предков.
+    const allIds = new Set([
+      ...sortedRootItems.map((i) => String(i?.id || "").trim()).filter(Boolean),
+      ...Object.values(sortedChildItemsByFolder).flat().map((i) => String(i?.id || "").trim()).filter(Boolean),
+    ]);
+    return Object.fromEntries(Array.from(allIds).map((id) => [id, true]));
+  }, [mergedExpandedByFolder, sortedRootItems, sortedChildItemsByFolder, statusFilter]);
+
   const visibleRows = useMemo(
     () => buildVisibleRows({
       rootItems: sortedRootItems,
-      expandedByFolder: mergedExpandedByFolder,
+      expandedByFolder: effectiveExpandedByFolder,
       childItemsByFolder: sortedChildItemsByFolder,
       loadingByFolder: treeState.loadingByFolder,
       loadErrorByFolder: treeState.loadErrorByFolder,
       preserveItemOrder: Boolean(explorerSort),
     }),
-    [sortedRootItems, mergedExpandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
+    [sortedRootItems, effectiveExpandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
   const inlineColSpan = explorerVisibleColumnCount(explorerColumnLayout, { signalColumns: treeColumnProfile.showSignalColumns });
   const searchIndex = useMemo(
@@ -3010,6 +3001,43 @@ function ExplorerPane({
   const explorerIsLoadingPage = pageQuery.isFetching && !page;
   const showExplorerSkeleton = useDelayedSkeleton(explorerIsLoadingPage);
 
+  // projects-table-ux: фильтр-чипы по статусам в таблице «Проекты».
+  const statusFilterOptions = [
+    { key: "all", label: "Все" },
+    { key: "active", label: "Активен", dotClass: "bg-accent" },
+    { key: "done", label: "Готово", dotClass: "bg-success" },
+    { key: "draft", label: "Черновик", dotClass: "bg-slate-400" },
+    { key: "as_is", label: "AS IS", dotClass: "bg-slate-400" },
+  ];
+  const statusFilterChips = (
+    <div className="flex items-center gap-2 px-5 py-2 border-b border-border bg-panel flex-shrink-0">
+      {statusFilterOptions.map((option) => {
+        const active = statusFilter === option.key;
+        return (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => setStatusFilter(option.key)}
+            className={`inline-flex items-center gap-1.5 h-[26px] px-3 rounded-full text-[12px] font-medium border transition-colors ${
+              active
+                ? "bg-fg text-white border-fg"
+                : "bg-panel border-border text-fg/85 hover:border-border-strong hover:bg-bg"
+            }`}
+            aria-pressed={active}
+          >
+            {option.dotClass ? (
+              <span className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white" : option.dotClass}`} aria-hidden />
+            ) : null}
+            {option.label}
+          </button>
+        );
+      })}
+      <span className="ml-auto text-[11px] text-muted">
+        {visibleRows.filter((r) => r.rowType === "folder" || r.rowType === "project").length} элементов
+      </span>
+    </div>
+  );
+
   const explorerHeader = (
       <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
         {/* Часть А-2 (nav-zone): левая зона = ширине сайдбара (табы),
@@ -3096,70 +3124,63 @@ function ExplorerPane({
       ) : visibleSearchModel.active ? (
         <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
       ) : !isEmpty ? (
-        // Сетка ширин таблицы «Проекты» (ТЗ п.8): «Название» — единственная
-        // колонка с гарантированным min-width (≥260px) и flex-растяжением;
-        // остальные колонки фиксированы: Тип 88 + Состав 210 + Ответственный 176
-        // + Статус 88 + Обновлено 190 + Действия 32 = 784 (+72 с сигнальными).
-        // P4 [А]: временный горизонтальный скролл <1044px ЗАМЕНЁН адаптивом по
-        // ширине контейнера (ResizeObserver + getExplorerColumnLayout): колонки
-        // скрываются по приоритету Обновлено → Ответственный → Состав; <680px —
-        // двухстрочные строки без шапки. Горизонтального скролла нет нигде.
-        <div
-          className="flex-1 overflow-auto"
-          ref={explorerTableContainerCallbackRef}
-          data-testid="explorer-table-container"
-          data-layout-width={explorerTableWidth}
-          data-layout-compact={explorerColumnLayout.compact ? "1" : "0"}
-        >
-          <table
-            className="w-full table-fixed text-left border-collapse"
+        <>
+          {statusFilterChips}
+          {/* projects-table-ux: сетка ширин таблицы «Проекты». Тип сущности
+              визуально находится в ячейке «Название», отдельной колонки «Тип»
+              в шапке нет. Колонки: Название (min 320, flex) + Состав 210 +
+              Ответственный 176 + Статус 88 + Обновлено 190 + Действия 88.
+              Sticky-заголовок при скролле. */}
+          <div
+            className="flex-1 overflow-auto"
+            ref={explorerTableContainerCallbackRef}
+            data-testid="explorer-table-container"
+            data-layout-width={explorerTableWidth}
+            data-layout-compact={explorerColumnLayout.compact ? "1" : "0"}
           >
-            <colgroup>
-              <col style={explorerColumnLayout.compact ? undefined : { minWidth: explorerColumnLayout.nameMinWidth }} />
-              {explorerColumnLayout.showType ? <col className="w-[88px]" /> : null}
-              {explorerColumnLayout.showComposition ? <col className="w-[210px]" /> : null}
-              {explorerColumnLayout.showAssignee ? <col className="w-[176px]" /> : null}
-              {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
-              {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
-              <col className="w-[88px]" />
-              {explorerColumnLayout.showUpdated ? <col className="w-[190px]" /> : null}
-              <col className={explorerColumnLayout.compact ? "w-8" : "w-[88px]"} />
-            </colgroup>
-            {explorerColumnLayout.compact ? null : (
-            <thead>
-              <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
-                <th className="px-2 py-2" aria-sort={explorerSort?.key === "name" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Название" sortKey="name" sort={explorerSort} onSort={handleExplorerSort} />
-                </th>
-                {explorerColumnLayout.showType ? (
-                <th className="px-2 py-2" aria-sort={explorerSort?.key === "type" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Тип" sortKey="type" sort={explorerSort} onSort={handleExplorerSort} />
-                </th>
-                ) : null}
-                {explorerColumnLayout.showComposition ? (
-                <th className="px-2 py-2" title={contextHeaderTitle}>
-                  Состав
-                </th>
-                ) : null}
-                {explorerColumnLayout.showAssignee ? (
-                <th className="px-2 py-2" aria-sort={explorerSort?.key === "assignee" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Ответственный / Исполнитель" sortKey="assignee" sort={explorerSort} onSort={handleExplorerSort} title="Сортирует разделы и папки по ответственному, проекты — по исполнителю." />
-                </th>
-                ) : null}
-                {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
-                {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
-                <th className="px-2 py-2" aria-sort={explorerSort?.key === "status" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Статус" sortKey="status" sort={explorerSort} onSort={handleExplorerSort} />
-                </th>
-                {explorerColumnLayout.showUpdated ? (
-                <th className="px-2 py-2" aria-sort={explorerSort?.key === "updatedAt" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Обновлено" sortKey="updatedAt" sort={explorerSort} onSort={handleExplorerSort} />
-                </th>
-                ) : null}
-                <th className="px-2 py-2 w-8" />
-              </tr>
-            </thead>
-            )}
+            <table
+              className="explorer-sticky-head w-full table-fixed text-left border-collapse"
+            >
+              <colgroup>
+                <col style={explorerColumnLayout.compact ? undefined : { minWidth: explorerColumnLayout.nameMinWidth }} />
+                {explorerColumnLayout.showComposition ? <col className="w-[210px]" /> : null}
+                {explorerColumnLayout.showAssignee ? <col className="w-[176px]" /> : null}
+                {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
+                {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
+                <col className="w-[88px]" />
+                {explorerColumnLayout.showUpdated ? <col className="w-[190px]" /> : null}
+                <col className={explorerColumnLayout.compact ? "w-8" : "w-[88px]"} />
+              </colgroup>
+              {explorerColumnLayout.compact ? null : (
+              <thead>
+                <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
+                  <th className="px-2 py-2" aria-sort={explorerSort?.key === "name" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <SortHeader label="Название" sortKey="name" sort={explorerSort} onSort={handleExplorerSort} />
+                  </th>
+                  {explorerColumnLayout.showComposition ? (
+                  <th className="px-2 py-2" title={contextHeaderTitle}>
+                    Состав
+                  </th>
+                  ) : null}
+                  {explorerColumnLayout.showAssignee ? (
+                  <th className="px-2 py-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-fg/65">Ответственный / Исполнитель</span>
+                  </th>
+                  ) : null}
+                  {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
+                  {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
+                  <th className="px-2 py-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-fg/65">Статус</span>
+                  </th>
+                  {explorerColumnLayout.showUpdated ? (
+                  <th className="px-2 py-2" aria-sort={explorerSort?.key === "updatedAt" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <SortHeader label="Обновлено" sortKey="updatedAt" sort={explorerSort} onSort={handleExplorerSort} />
+                  </th>
+                  ) : null}
+                  <th className="px-2 py-2 w-8" />
+                </tr>
+              </thead>
+              )}
             <tbody className="divide-y divide-border/65">
               {showExplorerSkeleton ? (
                 Array.from({ length: 6 }).map((_, i) => (
@@ -3232,6 +3253,7 @@ function ExplorerPane({
                       onOpenSession={onOpenSession}
                       onSessionStatusChange={handleTreeSessionStatusChange}
                       columnLayout={explorerColumnLayout}
+                      statusFilter={statusFilter}
                     />
                   );
                 }
@@ -3272,6 +3294,7 @@ function ExplorerPane({
             </tbody>
           </table>
         </div>
+      </>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
           <IcoFolder className="w-12 h-12 text-muted/30" />
@@ -3387,40 +3410,6 @@ function ExplorerPane({
 
 // ─── Session Row ──────────────────────────────────────────────────────────────
 
-function SessionAssigneesCell({ session }) {
-  const { visible, overflow } = getVisibleSessionAssignees(session);
-  if (!visible.length) {
-    return <span className="text-[12.5px] text-muted/80">Не назначен</span>;
-  }
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span className="flex -space-x-1.5">
-        {visible.map((user) => {
-          const name = formatExplorerUserDisplay(user);
-          return (
-            <span
-              key={getExplorerAssignableUserId(user)}
-              className="inline-flex h-[22px] w-[22px] shrink-0 select-none items-center justify-center rounded-full text-[9.5px] font-semibold tracking-[0.02em] text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] ring-2 ring-bg"
-              style={{ backgroundColor: avatarColorFromName(name) }}
-              aria-hidden
-              title={name}
-            >
-              {initialsFromName(name)}
-            </span>
-          );
-        })}
-      </span>
-      {overflow > 0 ? (
-        <span className="text-[11px] text-muted">+{overflow}</span>
-      ) : (
-        <span className="truncate text-[11.5px] text-muted">
-          {formatExplorerUserDisplay(visible[0])}
-        </span>
-      )}
-    </span>
-  );
-}
-
 function SessionRow({
   session,
   onOpen,
@@ -3431,17 +3420,14 @@ function SessionRow({
   canRename = false,
   canDelete = false,
   canChangeStatus = false,
-  canAssignAssignees = false,
   showSignalColumns = true,
   showDiscussionColumn = false,
-  showAssigneesColumn = false,
   notesAggregate = null,
   depth = 0,
   treeMode = false,
   isExpanded = false,
   isLoadingChildren = false,
   onToggleExpand,
-  onAssignAssignees,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -3596,13 +3582,7 @@ function SessionRow({
             ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
             : <span className="text-[11px] text-muted/65">—</span>}
         </td>
-        {showAssigneesColumn ? (
-          <td className="hidden md:table-cell px-2 py-2" title={getSessionAssigneesTooltip(session)}>
-            <SessionAssigneesCell session={session} />
-          </td>
-        ) : null}
         <td className="px-2 py-2"><DodBar percent={session.dod_percent} /></td>
-
         {showDiscussionColumn ? (
           <td className="px-2 py-2 text-center" title="Открытые обсуждения">
             <div className="flex min-w-0 justify-center">
@@ -3644,7 +3624,7 @@ function SessionRow({
                 "Открыть сессию"
               )}
             </AppRouteLink>
-            {(canRename || canDelete || canAssignAssignees) ? (
+            {(canRename || canDelete) ? (
               <div className="relative">
                 <button
                   type="button"
@@ -3659,11 +3639,6 @@ function SessionRow({
                   <ContextMenu
                     items={[
                       ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
-                      ...(canAssignAssignees ? [{
-                        label: getSessionAssigneesActionLabel(session),
-                        icon: <IcoEdit />,
-                        action: () => onAssignAssignees?.(session),
-                      }] : []),
                       ...(canDelete ? [{ separator: true }, {
                         label: "Удалить",
                         icon: <IcoTrash />,
@@ -3748,13 +3723,10 @@ function SessionTreeRows({
   canRename,
   canDelete,
   canChangeStatus,
-  canAssignAssignees,
   showSignalColumns,
   showDiscussionColumn,
-  showAssigneesColumn,
   noteAggregatesBySessionId,
   eagerTree = false,
-  onAssignAssignees,
 }) {
   const sorted = useMemo(() => sortProjectSessions(sessions, sort), [sessions, sort]);
   return sorted.map((session) => {
@@ -3781,12 +3753,9 @@ function SessionTreeRows({
           canRename={canRename}
           canDelete={canDelete}
           canChangeStatus={canChangeStatus}
-          canAssignAssignees={canAssignAssignees}
           showSignalColumns={showSignalColumns}
           showDiscussionColumn={showDiscussionColumn}
-          showAssigneesColumn={showAssigneesColumn}
           notesAggregate={noteAggregatesBySessionId?.get(sid) || null}
-          onAssignAssignees={onAssignAssignees}
         />
         {isExpanded ? (
           isLoading ? (
@@ -3831,13 +3800,10 @@ function SessionTreeRows({
               canRename={canRename}
               canDelete={canDelete}
               canChangeStatus={canChangeStatus}
-              canAssignAssignees={canAssignAssignees}
               showSignalColumns={showSignalColumns}
               showDiscussionColumn={showDiscussionColumn}
-              showAssigneesColumn={showAssigneesColumn}
               noteAggregatesBySessionId={noteAggregatesBySessionId}
               eagerTree={eagerTree}
-              onAssignAssignees={onAssignAssignees}
             />
           )
         ) : null}
@@ -3863,16 +3829,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [sessionSort, setSessionSort] = useState(null);
   const [activeTab, setActiveTab] = useState("sessions");
   const openingSessionIdRef = useRef("");
-  const [sessionAssigneesDialog, setSessionAssigneesDialog] = useState(null);
-  const [sessionAssigneesUsersState, setSessionAssigneesUsersState] = useState({
-    orgId: "",
-    items: [],
-    loading: false,
-    loaded: false,
-    error: "",
-  });
-  const [sessionAssigneesCurrentIds, setSessionAssigneesCurrentIds] = useState([]);
-  const [sessionAssigneesLoadingCurrent, setSessionAssigneesLoadingCurrent] = useState(false);
 
   const treeEnabled = useFeatureFlag("workspace_session_tree_view");
   const [expandedSessionIds, setExpandedSessionIds] = useState(() => new Set());
@@ -4052,83 +4008,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     await load();
     return true;
   }, [projectId, load, setError]);
-
-  const handleOpenSessionAssignees = useCallback((session) => {
-    setSessionAssigneesDialog(session);
-  }, []);
-
-  const handleSaveSessionAssignees = useCallback(async (userIds) => {
-    const session = sessionAssigneesDialog;
-    const sid = String(session?.id || session?.session_id || "").trim();
-    if (!sid) throw new Error("Не выбрана сессия");
-    const resp = await apiReplaceSessionAssignees(sid, userIds);
-    if (!resp?.ok) {
-      throw new Error(resp?.error || "Не удалось сохранить исполнителей");
-    }
-    handleSessionPatched(sid, { assignees: getSessionAssigneesFromIds(sessionAssigneesUsersState.items, resp.user_ids || userIds) });
-    await load();
-  }, [sessionAssigneesDialog, sessionAssigneesUsersState.items, handleSessionPatched, load]);
-
-  useEffect(() => {
-    const session = sessionAssigneesDialog;
-    const sid = String(session?.id || session?.session_id || "").trim();
-    const oid = String(activeOrgId || "").trim();
-    if (!sid || !oid) {
-      setSessionAssigneesUsersState({ orgId: "", items: [], loading: false, loaded: true, error: "" });
-      setSessionAssigneesCurrentIds([]);
-      return undefined;
-    }
-    let cancelled = false;
-    setSessionAssigneesUsersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
-    setSessionAssigneesLoadingCurrent(true);
-    setSessionAssigneesCurrentIds(getSessionAssigneeIds(session));
-    (async () => {
-      try {
-        const [usersResp, assigneesResp] = await Promise.all([
-          Promise.race([apiListOrgAssignableUsers(oid), assigneeMembersLoadTimeout()]),
-          apiGetSessionAssignees(sid),
-        ]);
-        if (cancelled) return;
-        const normalized = normalizeExplorerAssignableUsersResponse(usersResp);
-        const currentItems = Array.isArray(assigneesResp?.items) ? assigneesResp.items : [];
-        setSessionAssigneesUsersState({
-          orgId: oid,
-          items: normalized.ok ? normalized.items : [],
-          loading: false,
-          loaded: true,
-          error: normalized.ok ? "" : (normalized.error || "Не удалось загрузить пользователей."),
-        });
-        setSessionAssigneesCurrentIds(currentItems.map((u) => u.user_id).filter(Boolean));
-      } catch (e) {
-        if (cancelled) return;
-        setSessionAssigneesUsersState({
-          orgId: oid,
-          items: [],
-          loading: false,
-          loaded: true,
-          error: "Не удалось загрузить пользователей.",
-        });
-        setSessionAssigneesCurrentIds(getSessionAssigneeIds(session));
-      } finally {
-        if (!cancelled) setSessionAssigneesLoadingCurrent(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeOrgId, sessionAssigneesDialog]);
-
-  function getSessionAssigneesFromIds(users, ids) {
-    const idSet = new Set(Array.isArray(ids) ? ids.map((id) => String(id || "").trim()).filter(Boolean) : []);
-    const matched = (Array.isArray(users) ? users : [])
-      .filter((u) => idSet.has(getExplorerAssignableUserId(u)))
-      .map((u) => ({
-        user_id: getExplorerAssignableUserId(u),
-        email: String(u?.email || "").trim(),
-        full_name: String(u?.full_name || "").trim(),
-        job_title: String(u?.job_title || "").trim(),
-        display_name: String(u?.display_name || "").trim(),
-      }));
-    return matched;
-  }
 
   const loadSessionChildren = useCallback(async (sessionId) => {
     const sid = String(sessionId || "").trim();
@@ -4431,7 +4310,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <col className="w-[154px]" />
               <col className="w-[92px]" />
               <col className="w-[96px]" />
-              <col className="w-[132px]" />
               <col className="w-[90px]" />
               {sessionColumnProfile.showDiscussionColumn ? <col className="w-[76px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[76px]" /> : null}
@@ -4453,9 +4331,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 </th>
                 <th className="hidden md:table-cell px-2 py-2" aria-sort={sessionSort?.key === "owner" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Owner" sortKey="owner" sort={sessionSort} onSort={handleSessionSort} />
-                </th>
-                <th className="hidden md:table-cell px-2 py-2" aria-sort={sessionSort?.key === "assignees" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Исполнители" sortKey="assignees" sort={sessionSort} onSort={handleSessionSort} />
                 </th>
                 <th className="px-2 py-2">DoD</th>
                 {sessionColumnProfile.showDiscussionColumn ? (
@@ -4514,13 +4389,10 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                       canRename={!!permissions?.canRenameSession}
                       canDelete={!!permissions?.canDeleteSession}
                       canChangeStatus={!!permissions?.canChangeStatus}
-                      canAssignAssignees={!!permissions?.canAssignSessionAssignees}
                       showSignalColumns={sessionColumnProfile.showSignalColumns}
                       showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
-                      showAssigneesColumn
                       noteAggregatesBySessionId={noteAggregatesBySessionId}
                       eagerTree={eagerTree}
-                      onAssignAssignees={handleOpenSessionAssignees}
                     />
                   ) : (
                     sortedSessions.map((s) => (
@@ -4540,11 +4412,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                         canRename={!!permissions?.canRenameSession}
                         canDelete={!!permissions?.canDeleteSession}
                         canChangeStatus={!!permissions?.canChangeStatus}
-                        canAssignAssignees={!!permissions?.canAssignSessionAssignees}
                         showSignalColumns={sessionColumnProfile.showSignalColumns}
                         showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
-                        showAssigneesColumn
-                        onAssignAssignees={handleOpenSessionAssignees}
                       />
                     ))
                   )}
@@ -4575,17 +4444,6 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             if (res.ok) load();
             return res;
           }}
-        />
-      ) : null}
-      {sessionAssigneesDialog ? (
-        <SessionAssigneesDialog
-          session={sessionAssigneesDialog}
-          users={sessionAssigneesUsersState.items}
-          loadingUsers={sessionAssigneesUsersState.loading}
-          usersError={sessionAssigneesUsersState.error}
-          initialUserIds={sessionAssigneesCurrentIds}
-          onClose={() => setSessionAssigneesDialog(null)}
-          onSave={handleSaveSessionAssignees}
         />
       ) : null}
     </div>
