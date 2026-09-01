@@ -246,6 +246,7 @@ from .utils.session_helpers import (
     _require_diagram_cas_or_409,
     _resolve_actor_context,
     _resolve_base_diagram_state_version,
+    _resolve_client_id_from_request,
     _save_session_with_cas,
     raise_session_not_found,
 )
@@ -4018,6 +4019,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Requ
     user = _request_auth_user(request) if request is not None else {}
     actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     actor_label = _resolve_actor_label_from_user(user, actor_user_id)
+    client_id = _resolve_client_id_from_request(request)
 
     has_xml = bool(str(getattr(s, "bpmn_xml", "") or "").strip())
     flow_ctx = _collect_sequence_flow_meta(str(getattr(s, "bpmn_xml", "") or ""))
@@ -4277,6 +4279,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Requ
             changed_keys=["bpmn_meta"],
             actor_user_id=actor_user_id,
             actor_label=actor_label,
+            client_id=client_id,
         )
         st.save(s)
     return normalized
@@ -4299,6 +4302,7 @@ def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request:
     user = _request_auth_user(request) if request is not None else {}
     actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     actor_label = _resolve_actor_label_from_user(user, actor_user_id)
+    client_id = _resolve_client_id_from_request(request)
 
     merged = _infer_and_merge_rtiers(
         sess=s,
@@ -4316,6 +4320,7 @@ def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request:
             changed_keys=["bpmn_meta"],
             actor_user_id=actor_user_id,
             actor_label=actor_label,
+            client_id=client_id,
         )
         st.save(s)
     return {"meta": normalized_meta, "inference": inference}
@@ -4590,6 +4595,8 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         payload=inp.model_dump(exclude_unset=True),
     )
 
+    client_id = _resolve_client_id_from_request(request)
+
     lock = acquire_session_lock(session_id, ttl_ms=15000)
     if not lock.acquired:
         raise HTTPException(status_code=423, detail="Session is being updated, retry")
@@ -4599,22 +4606,48 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
         if not s:
             raise_session_not_found(session_id)
+        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
+        current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
+        previous_meta = getattr(s, "bpmn_meta", {}) or {}
+        bpmn_version_snapshot = None
+
+        flow_ctx = _collect_sequence_flow_meta(xml)
+        normalized_meta, auto_pass_state_write_requested = _merge_and_normalize_bpmn_meta(
+            previous_meta,
+            inp.bpmn_meta,
+            xml,
+            flow_ctx,
+        )
+
+        # No-op guard: do not create a revision when neither XML nor normalized
+        # meta changed. Also treat an idempotent replay (identical content,
+        # base <= current) as a success instead of 409.
+        previous_normalized_meta = _normalize_bpmn_meta(
+            previous_meta,
+            allowed_flow_ids=flow_ctx.get("flow_ids") if xml else None,
+            allowed_node_ids=flow_ctx.get("node_ids") if xml else None,
+        )
+        xml_unchanged = previous_xml == xml
+        meta_unchanged = normalized_meta == previous_normalized_meta
+        client_base = int(client_base_diagram_state_version or 0)
+        if xml_unchanged and meta_unchanged and client_base <= current_diagram_state_version:
+            return {
+                "ok": True,
+                "session_id": s.id,
+                "bytes": len(xml),
+                "version": int(getattr(s, "bpmn_xml_version", 0) or 0),
+                "diagram_state_version": current_diagram_state_version,
+                "parent_session_id": str(getattr(s, "parent_session_id", "") or "").strip(),
+                "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or "").strip(),
+                "parent_synced": False,
+                "changed_keys": [],
+            }
+
         _require_diagram_cas_or_409(
             sess=s,
             session_id=session_id,
             request=request,
             client_base_version=client_base_diagram_state_version,
-        )
-        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
-        current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
-        bpmn_version_snapshot = None
-
-        flow_ctx = _collect_sequence_flow_meta(xml)
-        normalized_meta, auto_pass_state_write_requested = _merge_and_normalize_bpmn_meta(
-            getattr(s, "bpmn_meta", {}),
-            inp.bpmn_meta,
-            xml,
-            flow_ctx,
         )
         s.bpmn_xml = xml
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
@@ -4622,13 +4655,14 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
         s.bpmn_meta = normalized_meta
         changed_keys = ["bpmn_meta"]
-        if previous_xml != xml:
+        if not xml_unchanged:
             changed_keys.insert(0, "bpmn_xml")
         _mark_diagram_truth_write(
             s,
             changed_keys=changed_keys,
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
+            client_id=client_id,
         )
         bpmn_version_snapshot = _plan_bpmn_revision_snapshot_if_needed(
             storage=st,
@@ -4667,6 +4701,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
                             changed_keys=["bpmn_xml"],
                             actor_user_id=user_id,
                             actor_label=_resolve_actor_label_from_user(user, user_id),
+                            client_id=client_id,
                         )
                         st.save(parent, user_id=user_id, org_id=oid_locked, is_admin=True)
                         _invalidate_session_caches(
@@ -4915,6 +4950,7 @@ def session_bpmn_restore(
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     effective_is_admin = is_admin or request is None
+    client_id = _resolve_client_id_from_request(request)
 
     sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess_pre:
@@ -4999,6 +5035,7 @@ def session_bpmn_restore(
             changed_keys=changed_keys,
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
+            client_id=client_id,
         )
         restored_snapshot = _plan_bpmn_revision_snapshot_if_needed(
             storage=st,
@@ -5081,6 +5118,7 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
     user = _request_auth_user(request) if request is not None else {}
     actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     actor_label = _resolve_actor_label_from_user(user, actor_user_id)
+    client_id = _resolve_client_id_from_request(request)
     previous_xml = str(getattr(s, "bpmn_xml", "") or "")
     current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
     cleared_snapshot: Optional[Dict[str, Any]] = None
@@ -5108,6 +5146,7 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
         changed_keys=["bpmn_xml", "bpmn_meta"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=client_id,
     )
     _save_session_with_cas(
         st,

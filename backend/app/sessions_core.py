@@ -76,6 +76,7 @@ from .utils.session_helpers import (
     _mark_diagram_truth_write,
     _require_diagram_cas_or_409,
     _resolve_base_diagram_state_version,
+    _resolve_client_id_from_request,
     _save_session_with_cas,
     raise_session_not_found,
 )
@@ -458,6 +459,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     import app._legacy_main as _lm
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    client_id = _resolve_client_id_from_request(request)
     st = get_storage()
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
@@ -530,6 +532,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         changed_keys=list(_lm._DIAGRAM_TRUTH_PUT_CHANGED_KEYS),
         actor_user_id=user_id,
         actor_label=_resolve_actor_label_from_user(user, user_id),
+        client_id=client_id,
     )
     # SQL-CAS (audit P2): PUT /sessions races with PUT /bpmn on the same row;
     # a lost race must surface 409 instead of silently dropping one of the writes.

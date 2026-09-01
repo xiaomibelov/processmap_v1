@@ -78,10 +78,24 @@ export function classifySaveConflictActor({
   conflictRaw = null,
   currentUserRaw = null,
   currentUserIdRaw = "",
+  currentClientIdRaw = "",
 } = {}) {
   const conflict = conflictRaw && typeof conflictRaw === "object" ? conflictRaw : {};
   const actorUserId = toText(conflict.actorUserId || conflict.actor_user_id);
   const actorLabel = toText(conflict.actorLabel || conflict.actor_label || actorUserId);
+  const serverClientId = toText(conflict.clientId || conflict.client_id);
+  const currentClientId = toText(currentClientIdRaw);
+  if (
+    currentClientId
+    && serverClientId
+    && normalizeIdentity(currentClientId) === normalizeIdentity(serverClientId)
+  ) {
+    return {
+      kind: "same_tab",
+      actorUserId,
+      actorLabel,
+    };
+  }
   const actorIdentitySet = resolveConflictActorIdentitySet(conflict);
   const currentIdentitySet = resolveCurrentIdentitySet({
     currentUserRaw,
@@ -116,6 +130,7 @@ export function buildSaveConflictModalView({
   conflictRaw = null,
   currentUserRaw = null,
   currentUserIdRaw = "",
+  currentClientIdRaw = "",
   fallbackTextRaw = "",
 } = {}) {
   const conflict = conflictRaw && typeof conflictRaw === "object" ? conflictRaw : {};
@@ -123,18 +138,23 @@ export function buildSaveConflictModalView({
     conflictRaw: conflict,
     currentUserRaw,
     currentUserIdRaw,
+    currentClientIdRaw,
   });
   const fallbackText = toText(fallbackTextRaw);
   const title = actorMode.kind === "other_user"
     ? "Сессию изменил другой пользователь"
     : (actorMode.kind === "same_user_other_tab"
       ? "Сессия уже обновлена в другой вашей вкладке"
-      : "Конфликт версии сессии");
+      : (actorMode.kind === "same_tab"
+        ? "Сессия обновлена в этой же вкладке"
+        : "Конфликт версии сессии"));
   const lead = actorMode.kind === "other_user"
     ? "Ваше сохранение остановлено, чтобы не перезаписать изменения другого пользователя."
     : (actorMode.kind === "same_user_other_tab"
       ? "Ваше сохранение остановлено, потому что сервер уже содержит более новую версию из вашего другого контекста."
-      : "Сервер отклонил сохранение, потому что версия сессии изменилась.");
+      : (actorMode.kind === "same_tab"
+        ? "Сервер отклонил сохранение, потому что вкладка уже записала более новую версию. Автоматическое исправление невозможно."
+        : "Сервер отклонил сохранение, потому что версия сессии изменилась."));
   const serverVersion = formatVersionForLabel(conflict.serverCurrentVersion);
   const clientVersion = formatVersionForLabel(conflict.clientBaseVersion);
   const actorLabel = toText(actorMode.actorLabel);

@@ -1,0 +1,22 @@
+{
+  "contour_id": "release/save-revision-hygiene-verify",
+  "type": "release",
+  "phase": "pre_gate_blocked",
+  "planner_status": "complete",
+  "worker_status": "blocked",
+  "reviewer_status": "pending",
+  "fix_branch": "fix/save-revision-hygiene",
+  "fix_head": "be3b5cab1189498131d02f2c1362ffefac9b4666",
+  "origin_main": "030f086a47e88cab14732246a58f771260844e74",
+  "pr_number": null,
+  "pr_url": null,
+  "merge_commit": null,
+  "pre_gate": {
+    "pr_merged": false,
+    "merge_commit_in_main": false,
+    "ci_green": false,
+    "github_pr_exists": false
+  },
+  "next_action": "wait_for_user_approval_to_create_and_merge_pr",
+  "blocker": "PR fix/save-revision-hygiene not merged into origin/main; no PR found on GitHub"
+}
