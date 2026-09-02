@@ -1,16 +1,19 @@
 {
   "contour": "fix/session-assignees-hotfix",
-  "status": "ready_for_review_with_visual_smoke_gaps",
-  "branch": "fix/session-assignees-hotfix",
+  "round": 2,
+  "status": "ready_for_review_with_visual_screenshot_gap",
+  "branch": "fix/session-assignees-round2",
   "base": "origin/main",
   "verified": {
-    "frontend_source_tests": "29 passed",
+    "stage_reproduction": "non-empty PUT /api/sessions/ddc8a44ade/assignees returned 500 req_fe96e556e303 before fix",
+    "frontend_format_visibility_tests": "19 passed",
+    "frontend_source_model_api_tests": "27 passed",
+    "backend_assignees_tests": "18 passed",
     "frontend_lint": "passed",
     "workspace_explorer_smoke": "1 passed",
-    "frontend_build": "passed",
-    "backend_assignees_tests": "17 passed"
+    "frontend_build": "passed"
   },
   "blocked": {
-    "screenshots": "Playwright MCP busy; Docker Playwright image pull retried and was stopped"
+    "screenshots": "No controlled browser available in this environment for round2 before/after screenshots"
   }
 }

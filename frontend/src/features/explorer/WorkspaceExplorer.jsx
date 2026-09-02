@@ -732,6 +732,9 @@ function CompositionCell({ item }) {
       {isFolder && item?.descendant_projects_count != null ? (
         <span className="whitespace-nowrap">{compositionProjectsText(item.descendant_projects_count)}</span>
       ) : null}
+      {!isFolder ? (
+        <span className="whitespace-nowrap">{compositionSessionsText(item?.sessions_count)}</span>
+      ) : null}
       <span className="inline-flex items-center gap-2 whitespace-nowrap" title={sessionsTooltipText(done, total)}>
         <span className="inline-block h-1 w-16 shrink-0 overflow-hidden rounded-full bg-border">
           <span
@@ -3980,6 +3983,8 @@ function SessionTreeRows({
               showDiscussionColumn={showDiscussionColumn}
               noteAggregatesBySessionId={noteAggregatesBySessionId}
               eagerTree={eagerTree}
+              canAssign={canAssign}
+              onAssign={onAssign}
             />
           )
         ) : null}
@@ -4068,6 +4073,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     if (!treeEnabled) return;
     setSessionChildrenCache({});
   }, [projectSessionsQuery.data, treeEnabled]);
+
+  const patchSessionAssigneesInList = useCallback((list, sessionId, nextAssignees) => {
+    if (!Array.isArray(list)) return list;
+    return list.map((s) => {
+      const sid = String(s?.id || s?.session_id || "").trim();
+      return sid === sessionId ? { ...s, assignees: nextAssignees } : s;
+    });
+  }, []);
 
   useEffect(() => {
     if (!assigneeDialog) return undefined;
@@ -4164,15 +4177,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     const queryKey = projectSessionsQueryKey(projectId);
     const previousSessions = queryClient.getQueryData(queryKey);
     const previousPage = page;
-    const patchSessions = (list) => {
-      if (!Array.isArray(list)) return list;
-      return list.map((s) => {
-        const sid = String(s?.id || s?.session_id || "").trim();
-        return sid === sessionId ? { ...s, assignees: nextAssignees } : s;
-      });
-    };
+    const previousChildrenCache = sessionChildrenCache;
+    const patchSessions = (list) => patchSessionAssigneesInList(list, sessionId, nextAssignees);
+    const patchChildrenCache = (cache) => Object.fromEntries(
+      Object.entries(cache || {}).map(([parentId, list]) => [parentId, patchSessions(list)]),
+    );
     queryClient.setQueryData(queryKey, patchSessions);
     setPage((prev) => (prev && Array.isArray(prev.sessions) ? { ...prev, sessions: patchSessions(prev.sessions) } : prev));
+    setSessionChildrenCache((prev) => patchChildrenCache(prev));
     try {
       const resp = await apiReplaceSessionAssignees(sessionId, normalizedUserIds);
       if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителей схемы");
@@ -4180,9 +4192,10 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       console.warn("[WorkspaceExplorer] failed to save session assignees", e);
       if (previousSessions) queryClient.setQueryData(queryKey, previousSessions);
       setPage(previousPage);
+      setSessionChildrenCache(previousChildrenCache);
       throw e;
     }
-  }, [assigneeMembersState.items, page, projectId, queryClient]);
+  }, [assigneeMembersState.items, page, projectId, queryClient, sessionChildrenCache, patchSessionAssigneesInList]);
   const sessionTableDropZoneProps = {
     "data-testid": "project-sessions-dropzone",
     onDragOver: (e) => {
