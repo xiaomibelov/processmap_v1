@@ -51,6 +51,28 @@ test("apiGetSessionAssignees: accepts plain array response", async () => {
   }
 });
 
+test("apiGetSessionAssignees: returns empty items and warns when endpoint fails", async () => {
+  const prevFetch = globalThis.fetch;
+  const prevWarn = console.warn;
+  const warnings = [];
+  try {
+    globalThis.fetch = async () => jsonResponse({ detail: "boom" }, 500);
+    console.warn = (...args) => warnings.push(args);
+
+    const out = await apiGetSessionAssignees("sess_1");
+
+    assert.equal(out.ok, false);
+    assert.equal(out.status, 500);
+    assert.deepEqual(out.items, []);
+    assert.equal(out.count, 0);
+    assert.equal(warnings.length, 1);
+    assert.match(String(warnings[0][0]), /failed to load session assignees/);
+  } finally {
+    globalThis.fetch = prevFetch;
+    console.warn = prevWarn;
+  }
+});
+
 test("apiReplaceSessionAssignees: PUTs idempotent user_ids list and returns normalized ids", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
