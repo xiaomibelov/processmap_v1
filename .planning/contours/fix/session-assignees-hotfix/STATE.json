@@ -1,0 +1,16 @@
+{
+  "contour": "fix/session-assignees-hotfix",
+  "status": "ready_for_review_with_visual_smoke_gaps",
+  "branch": "fix/session-assignees-hotfix",
+  "base": "origin/main",
+  "verified": {
+    "frontend_source_tests": "29 passed",
+    "frontend_lint": "passed",
+    "workspace_explorer_smoke": "1 passed",
+    "frontend_build": "passed",
+    "backend_assignees_tests": "17 passed"
+  },
+  "blocked": {
+    "screenshots": "Playwright MCP busy; Docker Playwright image pull retried and was stopped"
+  }
+}

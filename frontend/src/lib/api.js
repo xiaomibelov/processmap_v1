@@ -545,15 +545,17 @@ export async function apiGetSessionAssignees(sessionId) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
   const r = okOrError(await request(apiRoutes.sessions.assignees(id), { method: "GET" }));
+  if (!r.ok) {
+    console.warn("[api] failed to load session assignees", { sessionId: id, status: r.status, error: r.error });
+    return { ...r, items: [], count: 0 };
+  }
   const items = Array.isArray(r.data) ? r.data : Array.isArray(r.data?.items) ? r.data.items : [];
-  return r.ok
-    ? {
-        ok: true,
-        status: r.status,
-        items,
-        count: Number(r.data?.count || items.length || 0),
-      }
-    : r;
+  return {
+    ok: true,
+    status: r.status,
+    items,
+    count: Number(r.data?.count || items.length || 0),
+  };
 }
 
 export async function apiReplaceSessionAssignees(sessionId, userIds = []) {

@@ -232,8 +232,23 @@ export function filterExplorerAssignableUsers(users, query) {
 
 export function getSessionAssignees(session) {
   const list = session?.assignees;
-  if (!Array.isArray(list)) return [];
-  return list.map(normalizeAssignableUserItem).filter(Boolean);
+  if (Array.isArray(list)) return list.map(normalizeAssignableUserItem).filter(Boolean);
+
+  const legacyUser = session?.assignee_user || session?.assignee || session?.assigneeUser || null;
+  const legacyUserId = text(
+    session?.assignee_user_id
+      || session?.assignee_id
+      || session?.assigneeUserId
+      || getExplorerAssignableUserId(legacyUser),
+  );
+  if (!legacyUserId && !legacyUser) return [];
+  return [normalizeAssignableUserItem({
+    ...(legacyUser && typeof legacyUser === "object" ? legacyUser : {}),
+    user_id: legacyUserId,
+    full_name: session?.assignee_full_name || session?.assignee_name,
+    email: session?.assignee_email,
+    job_title: session?.assignee_job_title,
+  })].filter(Boolean);
 }
 
 export function getSessionAssigneeIds(session) {

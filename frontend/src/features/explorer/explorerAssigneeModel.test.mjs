@@ -210,3 +210,16 @@ test("session assignees: empty state renders dash and assign action", () => {
   assert.equal(getSessionAssigneesTooltip(session), "Не назначены");
   assert.deepEqual(getVisibleSessionAssignees(session), { visible: [], overflow: 0 });
 });
+
+test("session assignees: legacy single assignee is normalized to one-item list", () => {
+  const session = {
+    id: "s1",
+    assignee_user_id: "u_legacy",
+    assignee_full_name: "Legacy Executor",
+    assignee_email: "legacy@example.test",
+  };
+
+  assert.deepEqual(getSessionAssigneeIds(session), ["u_legacy"]);
+  assert.equal(getSessionAssigneesLabel(session), "Legacy Executor");
+  assert.equal(getSessionAssignees(session)[0].email, "legacy@example.test");
+});
