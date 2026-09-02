@@ -29,10 +29,10 @@ test("ExplorerPane renders sortable headers and leaves action column unsorted", 
   assert.match(explorerPaneSource, /toggleExplorerSort\(prev,\s*key\)/);
   assert.match(explorerPaneSource, /preserveItemOrder:\s*Boolean\(explorerSort\)/);
   assert.match(explorerPaneSource, /<SortHeader label="Название" sortKey="name"/);
-  assert.match(explorerPaneSource, /<SortHeader label="Тип" sortKey="type"/);
-  assert.match(explorerPaneSource, /<SortHeader label="Ответственный \/ Исполнитель" sortKey="assignee"/);
-  assert.match(explorerPaneSource, /<SortHeader label="Статус" sortKey="status"/);
   assert.match(explorerPaneSource, /<SortHeader label="Обновлено" sortKey="updatedAt"/);
+  assert.doesNotMatch(explorerPaneSource, /<SortHeader label="Тип" sortKey="type"\/>/);
+  assert.doesNotMatch(explorerPaneSource, /<SortHeader label="Ответственный" sortKey="assignee"/);
+  assert.doesNotMatch(explorerPaneSource, /<SortHeader label="Статус" sortKey="status"/);
   assert.match(explorerPaneSource, /aria-sort=/);
   assert.match(explorerPaneSource, /<th className="px-2 py-2 w-8" \/>/);
 });

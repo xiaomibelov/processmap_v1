@@ -19,8 +19,8 @@ test("Explorer renders type-aware assignee column and removes project owner from
   const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
 
   assert.match(explorerPaneSource, /Ответственный \/ Исполнитель/);
-  assert.match(folderRowSource, /<AssigneeCell item=\{folder\} \/>/);
-  assert.match(projectRowSource, /<AssigneeCell item=\{project\} \/>/);
+  assert.match(folderRowSource, /<AssigneeCell item=\{folder\}[\s\S]*\/>/);
+  assert.match(projectRowSource, /<AssigneeCell item=\{project\}[\s\S]*\/>/);
   assert.doesNotMatch(projectRowSource, /Owner:\s*\{project\.owner\.name \|\| project\.owner\.id\}/);
   assert.doesNotMatch(projectRowSource, /project\.owner\.id/);
 });
