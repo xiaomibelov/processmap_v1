@@ -1,10 +1,9 @@
 /**
  * P1 [А]: персистентность свернутости дерева explorer через Preferences API.
  *
- * Контракт (PHASE2_USER_PREFERENCES_CONTRACT.md): ключ `explorer.tree.collapsed`,
- * значение Record<workspaceId, string[]>. УТОЧНЕНИЕ семантики: дефолт дерева в UI —
- * «всё свёрнуто», поэтому массив хранит ID ЯВНО РАСКРЫТЫХ пользователем узлов
- * (collapsed-ids при дефолте «свёрнуто» были бы избыточны).
+ * Контракт: ключ `explorer.tree.expanded`, значение
+ * Record<orgId::workspaceId, string[]>. Legacy `explorer.tree.collapsed`
+ * читается для обратной совместимости: исторически он тоже хранил expanded ids.
  *
  * Модуль чистый (без React): маппинг + saver с debounce, base_version и
  * 409 → last-write-wins. Сеть/401 — graceful degradation (in-memory).
@@ -14,6 +13,7 @@ import { apiRequest } from "../../lib/api.js";
 
 export const USER_PREFERENCES_QUERY_KEY = ["user-preferences"];
 export const EXPLORER_TREE_COLLAPSED_KEY = "explorer.tree.collapsed";
+export const EXPLORER_TREE_EXPANDED_KEY = "explorer.tree.expanded";
 export const TREE_SAVE_DEBOUNCE_MS = 500;
 
 export async function fetchUserPreferences() {
@@ -29,24 +29,59 @@ export async function patchUserPreferences({ baseVersion, set, unset }) {
   });
 }
 
-/** Явно раскрытые узлы workspace из preferences-документа. */
-export function expandedIdsFromPreferences(preferences, workspaceId) {
+export function treeScopeKey(orgId, workspaceId) {
   const ws = String(workspaceId || "").trim();
-  if (!ws) return [];
-  const collapsed = preferences?.[EXPLORER_TREE_COLLAPSED_KEY];
-  const ids = collapsed?.[ws];
+  if (!ws) return "";
+  const org = String(orgId || "").trim();
+  return org ? `${org}::${ws}` : ws;
+}
+
+function normalizedExpandedIds(ids) {
   if (!Array.isArray(ids)) return [];
   return [...new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))];
 }
 
-/** Новый collapsed-map с заменённым списком раскрытых ids для workspace. */
-export function treeCollapsedWithExpandedIds(collapsedValue, workspaceId, expandedIds) {
+function treeStateValue(preferences, key) {
+  const value = preferences?.[key];
+  return value && typeof value === "object" ? value : {};
+}
+
+/** Явно раскрытые узлы workspace из preferences-документа. */
+export function expandedIdsFromPreferences(preferences, workspaceId, orgId = "") {
   const ws = String(workspaceId || "").trim();
-  const next = { ...(collapsedValue && typeof collapsedValue === "object" ? collapsedValue : {}) };
-  const ids = [...new Set((expandedIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
-  if (ids.length) next[ws] = ids;
-  else delete next[ws];
+  if (!ws) return [];
+  const scoped = treeScopeKey(orgId, ws);
+  const expanded = treeStateValue(preferences, EXPLORER_TREE_EXPANDED_KEY);
+  const legacyCollapsed = treeStateValue(preferences, EXPLORER_TREE_COLLAPSED_KEY);
+  return normalizedExpandedIds(
+    expanded[scoped]
+      || expanded[ws]
+      || legacyCollapsed[scoped]
+      || legacyCollapsed[ws]
+      || [],
+  );
+}
+
+/** Новый expanded-map с заменённым списком раскрытых ids для org/workspace scope. */
+export function treeExpandedWithExpandedIds(expandedValue, workspaceId, expandedIds, orgId = "") {
+  const scope = treeScopeKey(orgId, workspaceId);
+  const legacyScope = String(workspaceId || "").trim();
+  const next = { ...(expandedValue && typeof expandedValue === "object" ? expandedValue : {}) };
+  if (!scope) return next;
+  const ids = normalizedExpandedIds(expandedIds);
+  if (legacyScope && legacyScope !== scope) delete next[legacyScope];
+  if (ids.length) next[scope] = ids;
+  else delete next[scope];
   return next;
+}
+
+/** Legacy alias kept for older tests/callers. */
+export function treeCollapsedWithExpandedIds(collapsedValue, workspaceId, expandedIds, orgId = "") {
+  return treeExpandedWithExpandedIds(collapsedValue, workspaceId, expandedIds, orgId);
+}
+
+export function expandedMapFromPreferences(preferences, workspaceId, orgId = "") {
+  return Object.fromEntries(expandedIdsFromPreferences(preferences, workspaceId, orgId).map((id) => [id, true]));
 }
 
 /** Из merged expanded-map {fid: bool} — список раскрытых ids для сохранения. */
@@ -57,7 +92,7 @@ export function expandedIdsFromMap(expandedMap) {
 /**
  * Debounced saver с optimistic concurrency.
  * - attach(doc): инициализация version/currentValue из GET-снапшота.
- * - schedule(workspaceId, expandedIds): debounce PATCH set{explorer.tree.collapsed}.
+ * - schedule(workspaceId, expandedIds, orgId): debounce PATCH set{explorer.tree.expanded}.
  * - 409 → onSnapshot(снапшот из тела) + повтор с новой version (LWW).
  * - Ошибки сети → молча остаёмся на in-memory (возврат false).
  */
@@ -71,7 +106,8 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
   function attach(doc) {
     if (!doc) return;
     version = Number(doc.version || 0);
-    const stored = doc.preferences?.[EXPLORER_TREE_COLLAPSED_KEY];
+    const stored = doc.preferences?.[EXPLORER_TREE_EXPANDED_KEY]
+      || doc.preferences?.[EXPLORER_TREE_COLLAPSED_KEY];
     desiredValue = stored && typeof stored === "object" ? { ...stored } : {};
     dirty = false;
     onSnapshot?.(doc);
@@ -86,7 +122,7 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
     try {
       const resp = await patchFn({
         baseVersion: sendVersion,
-        set: { [EXPLORER_TREE_COLLAPSED_KEY]: sendValue },
+        set: { [EXPLORER_TREE_EXPANDED_KEY]: sendValue },
       });
       if (resp?.ok) {
         version = Number(resp.data?.version ?? sendVersion + 1);
@@ -114,9 +150,9 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
     timer = setTimeout(() => { timer = null; void flush(); }, debounceMs);
   }
 
-  function schedule(workspaceId, expandedIds) {
+  function schedule(workspaceId, expandedIds, orgId = "") {
     if (version === null) return false;
-    desiredValue = treeCollapsedWithExpandedIds(desiredValue, workspaceId, expandedIds);
+    desiredValue = treeExpandedWithExpandedIds(desiredValue, workspaceId, expandedIds, orgId);
     dirty = true;
     scheduleFlush();
     return true;

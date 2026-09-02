@@ -84,6 +84,14 @@ class UsersPreferencesTest(unittest.TestCase):
         })
         self.assertEqual(resp3["preferences"]["explorer.tree.collapsed"], {"ws_main": ["f2"]})
 
+    def test_patch_accepts_expanded_tree_state_scoped_by_org_workspace(self):
+        resp = self._patch({
+            "base_version": 0,
+            "set": {"explorer.tree.expanded": {"org_a::ws_main": ["f1", "p2"]}},
+        })
+        self.assertEqual(resp["version"], 1)
+        self.assertEqual(resp["preferences"]["explorer.tree.expanded"], {"org_a::ws_main": ["f1", "p2"]})
+
     def test_patch_null_and_unset_remove_keys(self):
         self._patch({"base_version": 0, "set": {"explorer.density": "compact", "explorer.columns": {"dod": True}}})
         resp = self._patch({"base_version": 1, "set": {"explorer.density": None}})
@@ -116,8 +124,10 @@ class UsersPreferencesTest(unittest.TestCase):
         too_many = {"ws1": [f"f{i}" for i in range(501)]}
         resp2 = self._patch({"base_version": 0, "set": {"explorer.tree.collapsed": too_many}})
         self.assertEqual(getattr(resp2, "status_code", None), 422)
-        resp3 = self._patch({"base_version": 0, "set": {"explorer.density": "wide"}})
+        resp3 = self._patch({"base_version": 0, "set": {"explorer.tree.expanded": too_many}})
         self.assertEqual(getattr(resp3, "status_code", None), 422)
+        resp4 = self._patch({"base_version": 0, "set": {"explorer.density": "wide"}})
+        self.assertEqual(getattr(resp4, "status_code", None), 422)
 
     def test_per_org_isolation(self):
         self._patch({"base_version": 0, "set": {"explorer.density": "compact"}}, org_id=self.org_a)

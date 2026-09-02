@@ -278,6 +278,18 @@ class _PgCompatConnection:
             rowcount = int(cur.rowcount or 0)
             return _PgResult([], rowcount=rowcount)
 
+    def executemany(self, query: str, seq_of_params: Iterable[Any]) -> _PgResult:
+        rowcount = 0
+        with self._conn.cursor() as cur:
+            for params in seq_of_params or []:
+                sql, bound = _translate_sql_for_postgres(query, params)
+                cur.execute(sql, bound)
+                try:
+                    rowcount += max(0, int(cur.rowcount or 0))
+                except Exception:
+                    pass
+        return _PgResult([], rowcount=rowcount)
+
 
 class _PgResult:
     __slots__ = ("_rows", "_offset", "rowcount")
