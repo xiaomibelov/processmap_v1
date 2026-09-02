@@ -101,6 +101,18 @@ class SessionAssigneesApiTests(unittest.TestCase):
         self.assertIsInstance(payload, list)
         self.assertEqual({row["user_id"] for row in payload}, {self.assignee_a_id, self.assignee_b_id})
 
+        clear_resp = self.client.put(
+            f"/api/sessions/{self.session_id}/assignees",
+            headers=self._auth(),
+            json={"user_ids": []},
+        )
+        self.assertEqual(clear_resp.status_code, 200, clear_resp.text)
+        self.assertEqual(clear_resp.json()["user_ids"], [])
+
+        get_after_clear = self.client.get(f"/api/sessions/{self.session_id}/assignees", headers=self._auth())
+        self.assertEqual(get_after_clear.status_code, 200, get_after_clear.text)
+        self.assertEqual(get_after_clear.json(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
