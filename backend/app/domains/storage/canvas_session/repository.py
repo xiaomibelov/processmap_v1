@@ -175,11 +175,27 @@ def _load_session_assignees(session_ids: Iterable[str]) -> Dict[str, List[Dict[s
     return out
 
 
+def _table_columns(con: Any, table: str) -> Set[str]:
+    try:
+        rows = con.execute(f"PRAGMA table_info({table})").fetchall()
+    except Exception:
+        logger.exception("failed to inspect table columns for %s", table)
+        return set()
+    columns: Set[str] = set()
+    for row in rows:
+        name = str(_row_value(row, "name", 1) or "").strip()
+        if name:
+            columns.add(name)
+    return columns
+
+
 def _replace_session_assignees(
     session_id: str,
     user_ids: Iterable[str],
     *,
     assigned_by: str,
+    org_id: str = "",
+    project_id: str = "",
     assigned_at: Optional[int] = None,
 ) -> List[str]:
     """Idempotently replace assignees for a session. Returns final user_ids."""
@@ -199,12 +215,34 @@ def _replace_session_assignees(
     with _connect() as con:
         con.execute("DELETE FROM session_assignees WHERE session_id = ?", [sid])
         if final_ids:
+            columns = _table_columns(con, "session_assignees")
+            insert_columns = ["session_id", "user_id"]
+            value_builders = [
+                lambda uid: sid,
+                lambda uid: uid,
+            ]
+            optional_values = {
+                "assigned_by": actor,
+                "assigned_at": now,
+                "org_id": str(org_id or "").strip(),
+                "project_id": str(project_id or "").strip(),
+                "created_at": now,
+                "updated_at": now,
+            }
+            if "id" in columns:
+                insert_columns.append("id")
+                value_builders.append(lambda uid: uuid.uuid4().hex)
+            for column, value in optional_values.items():
+                if column in columns:
+                    insert_columns.append(column)
+                    value_builders.append(lambda uid, v=value: v)
+            placeholders = ", ".join(["?"] * len(insert_columns))
             con.executemany(
-                """
-                INSERT INTO session_assignees (session_id, user_id, assigned_by, assigned_at)
-                VALUES (?, ?, ?, ?)
+                f"""
+                INSERT INTO session_assignees ({", ".join(insert_columns)})
+                VALUES ({placeholders})
                 """,
-                [(sid, uid, actor, now) for uid in final_ids],
+                [tuple(builder(uid) for builder in value_builders) for uid in final_ids],
             )
         con.commit()
     return final_ids

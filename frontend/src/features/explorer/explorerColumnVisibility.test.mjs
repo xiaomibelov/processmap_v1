@@ -103,7 +103,7 @@ test("buildExplorerRowMeta: состав · ответственный · обн
     responsible_user: { display_name: "Иван Петров" },
     updated_at: nowSec - 3600 * 5,
   };
-  assert.equal(buildExplorerRowMeta(folder, "folder"), "2 проекта · 1/5 · Иван · 5 ч назад");
+  assert.equal(buildExplorerRowMeta(folder, "folder"), "2 проекта · 1/5 сессий · Иван · 5 ч назад");
 
   const project = {
     type: "project",
@@ -112,11 +112,11 @@ test("buildExplorerRowMeta: состав · ответственный · обн
     executor_user: { name: "Мария" },
     updated_at: nowSec - 30,
   };
-  assert.equal(buildExplorerRowMeta(project, "project"), "3/3 · Мария · только что");
+  assert.equal(buildExplorerRowMeta(project, "project"), "3/3 сессии · Мария · только что");
 
   // без ответственного — часть опущена; без дат — часть опущена
   const bare = { sessions_count: 0 };
-  assert.equal(buildExplorerRowMeta(bare, "project"), "0/0");
+  assert.equal(buildExplorerRowMeta(bare, "project"), "0/0 сессий");
 
   // session: состава и ответственного нет — только «обновлено»
   const session = { updated_at: nowSec - 120 };
