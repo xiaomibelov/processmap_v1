@@ -69,6 +69,21 @@ test("Saving session assignees uses replace endpoint with optimistic cache updat
   assert.match(explorerPaneSource, /apiReplaceSessionAssignees\(sessionId,\s*normalizedUserIds\)/);
 });
 
+test("ProjectPane session assignee save updates only loaded row caches without refetch", () => {
+  const projectPaneSource = between("function ProjectPane(", "// ─── Root WorkspaceExplorer");
+  const saveSource = between("const handleSaveProjectSessionAssignees = useCallback", "const sessionTableDropZoneProps =");
+  const sessionTreeRowsSource = between("function SessionTreeRows({", "// ─── Project Pane");
+
+  assert.match(saveSource, /patchSessionAssigneesInList/);
+  assert.match(saveSource, /setSessionChildrenCache/);
+  assert.match(saveSource, /previousChildrenCache/);
+  assert.match(saveSource, /setSessionChildrenCache\(previousChildrenCache\)/);
+  assert.doesNotMatch(saveSource, /invalidateQueries|refetch|load\(/);
+  assert.match(projectPaneSource, /queryClient\.setQueryData\(queryKey,\s*patchSessions\)/);
+  assert.match(sessionTreeRowsSource, /canAssign=\{canAssign\}/);
+  assert.match(sessionTreeRowsSource, /onAssign=\{onAssign\}/);
+});
+
 test("ProjectPane exposes session assignee column and dialog outside tree mode", () => {
   const projectPaneSource = between("function ProjectPane(", "// ─── Root WorkspaceExplorer");
 

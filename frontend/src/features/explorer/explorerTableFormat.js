@@ -46,7 +46,7 @@ export function compositionSessionsText(count) {
 export function sessionsCounterText(done, total) {
   const d = Math.max(0, Math.floor(Number(done) || 0));
   const t = Math.max(0, Math.floor(Number(total) || 0));
-  return `${d}/${t}`;
+  return `${d}/${t} ${pluralizeRu(t, SESSION_FORMS)}`;
 }
 
 export function sessionsProgressPercent(done, total) {
@@ -60,7 +60,7 @@ export function sessionsTooltipText(done, total) {
   const d = Math.max(0, Math.floor(Number(done) || 0));
   const t = Math.max(0, Math.floor(Number(total) || 0));
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
-  return `Заполнено ${d} из ${t} узлов процесса (${pct}%)`;
+  return `Готово ${d} из ${t} активных сессий (${pct}%)`;
 }
 
 export function formatRelativeTime(epoch) {

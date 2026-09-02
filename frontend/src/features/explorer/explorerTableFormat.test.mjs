@@ -58,10 +58,12 @@ test("workspaceSectionCounterText pluralizes section count", () => {
 });
 
 test("sessionsCounterText renders done/total pair", () => {
-  assert.equal(sessionsCounterText(12, 56), "12/56");
-  assert.equal(sessionsCounterText(0, 0), "0/0");
-  assert.equal(sessionsCounterText(undefined, 5), "0/5");
-  assert.equal(sessionsCounterText(3, undefined), "3/0");
+  assert.equal(sessionsCounterText(12, 56), "12/56 сессий");
+  assert.equal(sessionsCounterText(0, 0), "0/0 сессий");
+  assert.equal(sessionsCounterText(undefined, 5), "0/5 сессий");
+  assert.equal(sessionsCounterText(3, undefined), "3/0 сессий");
+  assert.notEqual(sessionsCounterText(3, 148), "3/148");
+  assert.equal(sessionsCounterText(3, 148), "3/148 сессий");
 });
 
 test("sessionsProgressPercent computes fill percent clamped 0..100", () => {
@@ -73,9 +75,9 @@ test("sessionsProgressPercent computes fill percent clamped 0..100", () => {
 });
 
 test("sessionsTooltipText includes percent", () => {
-  assert.equal(sessionsTooltipText(12, 56), "Заполнено 12 из 56 узлов процесса (21%)");
-  assert.equal(sessionsTooltipText(0, 0), "Заполнено 0 из 0 узлов процесса (0%)");
-  assert.equal(sessionsTooltipText(5, 10), "Заполнено 5 из 10 узлов процесса (50%)");
+  assert.equal(sessionsTooltipText(12, 56), "Готово 12 из 56 активных сессий (21%)");
+  assert.equal(sessionsTooltipText(0, 0), "Готово 0 из 0 активных сессий (0%)");
+  assert.equal(sessionsTooltipText(5, 10), "Готово 5 из 10 активных сессий (50%)");
 });
 
 test("formatRelativeTime matches legacy ts() ladder", () => {
