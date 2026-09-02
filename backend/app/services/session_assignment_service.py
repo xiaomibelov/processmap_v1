@@ -193,6 +193,8 @@ def replace_assignees(
         sid,
         final_ids,
         assigned_by=actor_id,
+        org_id=org_id,
+        project_id=str(getattr(proj, "id", "") or ""),
     )
 
     _emit_assignees_changed(sid, assigned, actor_id)

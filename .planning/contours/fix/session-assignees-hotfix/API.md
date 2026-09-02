@@ -3,7 +3,8 @@
 ## Статус
 
 - В source worktree endpoint объявлен в `backend/app/routers/sessions.py`.
-- Локальный running container `processmap_v1-api-1` отвечает `404` на `GET/PUT /api/sessions/{id}/assignees`, значит текущий running API не соответствует source checkout этого контура. Логи контейнера не содержат свежих `assignees` 500; локально воспроизведён drift endpoint-а, а не source-level 500.
+- Stage reproduction round 2: `PUT /api/sessions/ddc8a44ade/assignees` с одним assignable user возвращал `500 {"detail":"internal_server_error","request_id":"req_fe96e556e303"}`; `PUT` с пустым массивом возвращал `200`, `GET` возвращал `200 []`. Это сужает дефект до insert path.
+- Исправление round 2: insert в `session_assignees` строится по фактическим колонкам таблицы и заполняет совместимые stage/drift поля `id`, `org_id`, `project_id`, `created_at`, `updated_at`, `assigned_by`, `assigned_at`, если они есть. Это не меняет публичный API.
 - Source-контракт закреплён HTTP-тестом `backend/tests/test_session_assignees_api.py`.
 
 ## GET /api/sessions/{session_id}/assignees
@@ -60,3 +61,16 @@ Response:
 - Основной frontend/backend контракт: `session.assignees` всегда массив.
 - Frontend нормализует legacy single поля на чтении: `assignee_user`, `assignee`, `assigneeUser`, `assignee_user_id`, `assignee_id`, `assigneeUserId`.
 - Legacy single значение отображается как массив из одного исполнителя; новые сохранения всегда идут через `PUT .../assignees` с `user_ids: string[]`.
+
+## Explorer composition fields
+
+Семантика полей API для колонки `Состав`:
+
+- `sessions_count` — общее количество сессий проекта.
+- `descendant_sessions_count` — количество сессий внутри раздела/папки рекурсивно.
+- `trackable_sessions_count` — количество активных, не архивных и не soft-deleted сессий проекта.
+- `descendant_trackable_sessions_count` — active/trackable сумма по разделу/папке.
+- `done_sessions_count` — количество trackable сессий проекта со статусом `ready`.
+- `descendant_done_sessions_count` — сумма `done_sessions_count` по разделу/папке.
+
+UI больше не показывает голое `D/T`: прогресс подписан как `D/T сессий`, tooltip — `Готово D из T активных сессий (P%)`.

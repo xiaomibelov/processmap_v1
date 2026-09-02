@@ -238,6 +238,37 @@ class SessionAssigneesTests(unittest.TestCase):
         user_ids = {row["user_id"] for row in listed}
         self.assertEqual(user_ids, {self.assignee_a_id, self.assignee_b_id})
 
+    def test_replace_assignees_handles_existing_table_with_org_project_columns(self):
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.execute("DROP TABLE session_assignees")
+            con.execute(
+                """
+                CREATE TABLE session_assignees (
+                  session_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  assigned_by TEXT NOT NULL,
+                  assigned_at INTEGER NOT NULL,
+                  org_id TEXT NOT NULL,
+                  project_id TEXT NOT NULL,
+                  PRIMARY KEY (session_id, user_id)
+                )
+                """
+            )
+            con.commit()
+
+        result = self.assign_svc.replace_assignees(
+            self.session_id,
+            [self.assignee_a_id],
+            self._req(self.admin),
+        )
+        self.assertEqual(result["user_ids"], [self.assignee_a_id])
+        with sqlite3.connect(str(self._db_path())) as con:
+            row = con.execute(
+                "SELECT org_id, project_id FROM session_assignees WHERE session_id = ? AND user_id = ?",
+                [self.session_id, self.assignee_a_id],
+            ).fetchone()
+        self.assertEqual(row, (self.org_id, self.project_id))
+
     def test_replace_assignees_is_idempotent_replace(self):
         self.assign_svc.replace_assignees(
             self.session_id,
