@@ -46,7 +46,10 @@ test("hide order: Обновлено first, then Ответственный, the
   );
   const l3 = getExplorerColumnLayout(EXPLORER_LAYOUT_COMPACT_MAX + 1); // 680
   assert.equal(l3.compact, false);
-  assert.equal(l3.showComposition, true);
+  // На ширине 680 отображаются только Название + Статус + действия.
+  assert.equal(l3.showComposition, false);
+  assert.equal(l3.showAssignee, false);
+  assert.equal(l3.showUpdated, false);
 });
 
 test("compact <680: only Название/Статус columns, meta-line mode, name not squeezed", () => {

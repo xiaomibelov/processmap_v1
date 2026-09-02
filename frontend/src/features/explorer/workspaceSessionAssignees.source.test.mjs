@@ -13,33 +13,51 @@ function between(start, end) {
   return explorerSource.slice(startIndex, endIndex);
 }
 
-test("ProjectPane table exposes session assignees column", () => {
-  const projectPaneSource = between("function ProjectPane(", "// ─── Root WorkspaceExplorer");
+test("Workspace session tree row exposes assignee cell", () => {
+  const sessionTreeRowSource = between("function SessionTreeRow({", "// Строки сессий раскрытого проекта");
 
-  assert.match(projectPaneSource, /<col className="w-\[132px\]" \/>/);
-  assert.match(projectPaneSource, /<SortHeader label="Исполнители"/);
-  assert.match(projectPaneSource, /showAssigneesColumn/);
-  assert.match(projectPaneSource, /canAssignAssignees=\{!!permissions\?\.canAssignSessionAssignees\}/);
-  assert.match(projectPaneSource, /onAssignAssignees=\{handleOpenSessionAssignees\}/);
+  assert.match(sessionTreeRowSource, /SessionAssigneeCell/);
+  assert.match(sessionTreeRowSource, /canAssign/);
+  assert.match(sessionTreeRowSource, /onAssign/);
 });
 
-test("SessionRow renders assignees cell and menu action without reusing folder/project dialog", () => {
-  const sessionRowSource = between("function SessionRow({", "// ─── Session Tree Rows");
+test("SessionAssigneeCell reads session assignees", () => {
+  const assigneeCellSource = between("function SessionAssigneeCell({", "function CompositionCell(");
 
-  assert.match(sessionRowSource, /SessionAssigneesCell/);
-  assert.match(sessionRowSource, /getSessionAssigneesActionLabel\(session\)/);
-  assert.match(sessionRowSource, /onAssignAssignees\?\.\(session\)/);
-  assert.match(sessionRowSource, /canAssignAssignees/);
-  assert.doesNotMatch(sessionRowSource, /AssigneeDialog|responsible_user_id|executor_user_id/);
+  assert.match(assigneeCellSource, /getSessionAssignees/);
+  assert.match(assigneeCellSource, /getVisibleSessionAssignees/);
 });
 
-test("SessionAssigneesDialog is a multi-select picker with checkboxes", () => {
-  const dialogSource = between("function SessionAssigneesDialog({", "function folderMoveErrorMessage(");
+test("ProjectSessionsRows wires session assignee permissions from workspace", () => {
+  const projectSessionsRowsSource = between("function ProjectSessionsRows({", "function InlineLoadingRow(");
 
-  assert.match(dialogSource, /type="checkbox"/);
-  assert.match(dialogSource, /filterExplorerAssignableUsers\(users, query\)/);
-  assert.match(dialogSource, /onSave\(Array\.from\(selectedIds\)\)/);
-  assert.match(dialogSource, /Сохранить/);
+  assert.match(projectSessionsRowsSource, /canAssign/);
+  assert.match(projectSessionsRowsSource, /onAssign/);
+  assert.match(projectSessionsRowsSource, /canAssign=\{canAssign\}/);
+  assert.match(projectSessionsRowsSource, /onAssign=\{onAssign\}/);
+});
+
+test("ExplorerPane opens session assignee dialog with dedicated kind", () => {
+  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
+
+  assert.match(explorerPaneSource, /kind:\s*"session_assignees"/);
+  assert.match(explorerPaneSource, /canAssign=\{!!permissions\?\.canAssignSessionAssignees\}/);
+});
+
+test("AssigneeDialog supports session_assignees kind", () => {
+  const dialogSource = between("function AssigneeDialog({", "function folderMoveErrorMessage(");
+
+  assert.match(dialogSource, /isSessionAssignees/);
+  assert.match(dialogSource, /getSessionAssigneeIds/);
+  assert.match(dialogSource, /getSessionAssigneesDialogTitle/);
+});
+
+test("Saving session assignees uses replace endpoint with optimistic cache update", () => {
+  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
+
+  assert.match(explorerPaneSource, /apiReplaceSessionAssignees/);
+  assert.match(explorerPaneSource, /projectSessionsQueryKey\(projectId\)/);
+  assert.match(explorerPaneSource, /queryClient\.setQueryData/);
 });
 
 test("API exposes session assignees helpers", () => {
