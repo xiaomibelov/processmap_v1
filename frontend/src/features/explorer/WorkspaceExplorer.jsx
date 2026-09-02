@@ -19,11 +19,14 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import { explorerPageQueryKey, explorerPageQueryOptions } from "./explorerPageQuery.js";
 import {
   EXPLORER_TREE_COLLAPSED_KEY,
+  EXPLORER_TREE_EXPANDED_KEY,
   USER_PREFERENCES_QUERY_KEY,
   createExplorerTreeSaver,
+  expandedMapFromPreferences,
   expandedIdsFromMap,
   expandedIdsFromPreferences,
   fetchUserPreferences,
+  treeScopeKey,
 } from "./explorerTreePersistence.js";
 import SessionCreateModal from "./SessionCreateModal.jsx";
 import {
@@ -222,6 +225,14 @@ function IcoPlus({ className = "" }) {
   return (
     <svg className={`inline-block ${className}`} width="14" height="14" viewBox="0 0 14 14" fill="none">
       <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IcoSearch({ className = "" }) {
+  return (
+    <svg className={`inline-block ${className}`} width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="7" cy="7" r="4.25" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10.25 10.25 13 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1311,10 +1322,31 @@ function MoveProjectDialog({
   );
 }
 
+function WorkspaceExplorerToast({ message, onClose }) {
+  useEffect(() => {
+    if (!message) return undefined;
+    const timer = setTimeout(() => onClose?.(), 3500);
+    return () => clearTimeout(timer);
+  }, [message, onClose]);
+  if (!message) return null;
+  return (
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[130] w-[min(92vw,360px)]" role="status" aria-live="polite">
+      <button
+        type="button"
+        onClick={onClose}
+        className="pointer-events-auto w-full rounded-lg border border-border bg-panel px-3 py-2 text-left text-sm text-accent shadow-panel transition-colors hover:bg-panelAlt focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        title="Закрыть уведомление"
+      >
+        {message}
+      </button>
+    </div>
+  );
+}
+
 function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, placeholder = "Поиск", className = "" }) {
   return (
     <div className={`flex h-8 max-w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 ${className}`}>
-      <span className="text-xs text-muted" aria-hidden>⌕</span>
+      <IcoSearch className="h-4 w-4 shrink-0 text-muted" />
       <label className="sr-only" htmlFor={id}>Поиск по workspace</label>
       <input
         id={id}
@@ -2425,9 +2457,10 @@ function ExplorerPane({
   const inFlightFolderLoadsRef = useRef(new Set());
   const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
 
-  // P1 [А]: свернутость дерева переживает reload — Preferences API.
-  // Значение ключа explorer.tree.collapsed = Record<workspaceId, string[] ЯВНО
-  // раскрытых узлов> (дефолт дерева — «всё свёрнуто»). persistedExpandedRef —
+  // P1 [А]: свёрнутость дерева переживает reload — Preferences API.
+  // Значение ключа explorer.tree.expanded = Record<orgId::workspaceId, string[]
+  // ЯВНО раскрытых узлов>. Legacy explorer.tree.collapsed читается как fallback.
+  // persistedExpandedRef —
   // fallback-карта {fid: true} из GET-снапшота; явные toggle'ы в
   // treeState.expandedByFolder (включая false) имеют приоритет при merge.
   const prefsQuery = useQuery({
@@ -2442,13 +2475,12 @@ function ExplorerPane({
   if (!treeSaverRef.current) {
     treeSaverRef.current = createExplorerTreeSaver({
       onSnapshot: (doc) => {
-        const collapsed = doc?.preferences?.[EXPLORER_TREE_COLLAPSED_KEY] || {};
-        persistedExpandedRef.current = Object.fromEntries(
-          Object.entries(collapsed).map(([ws, ids]) => [
-            ws,
-            Object.fromEntries((Array.isArray(ids) ? ids : []).map((id) => [String(id), true])),
-          ]),
-        );
+        const preferences = doc?.preferences || {};
+        const expanded = preferences[EXPLORER_TREE_EXPANDED_KEY] || preferences[EXPLORER_TREE_COLLAPSED_KEY] || {};
+        persistedExpandedRef.current = Object.fromEntries(Object.entries(expanded).map(([scope, ids]) => [
+          scope,
+          Object.fromEntries((Array.isArray(ids) ? ids : []).map((id) => [String(id), true])),
+        ]));
         setPersistTick((t) => t + 1);
       },
     });
@@ -2458,13 +2490,15 @@ function ExplorerPane({
   }, [prefsQuery.data]);
 
   const contextExpandedByFolder = treeStateByContext[contextKey]?.expandedByFolder;
+  const treePersistenceScope = treeScopeKey(activeOrgId, workspaceId);
   const mergedExpandedByFolder = useMemo(
     () => ({
-      ...(persistedExpandedRef.current[String(workspaceId || "").trim()] || {}),
+      ...(persistedExpandedRef.current[treePersistenceScope] || {}),
+      ...expandedMapFromPreferences(prefsQuery.data?.preferences, workspaceId, activeOrgId),
       ...(contextExpandedByFolder || {}),
     }),
     // persistTick — пересчёт после применения серверного снапшота (ref не триггерит render)
-    [workspaceId, contextKey, contextExpandedByFolder, persistTick],
+    [workspaceId, activeOrgId, treePersistenceScope, contextKey, contextExpandedByFolder, persistTick, prefsQuery.data?.preferences],
   );
 
   const treeState = treeStateByContext[contextKey] || {
@@ -2507,6 +2541,34 @@ function ExplorerPane({
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
+
+  const patchExplorerItemInCaches = useCallback((itemId, patch) => {
+    const id = String(itemId || "").trim();
+    if (!id) return;
+    const patchList = (items) => {
+      if (!Array.isArray(items)) return items;
+      let changed = false;
+      const next = items.map((entry) => {
+        const entryId = String(entry?.id || entry?.session_id || "").trim();
+        if (entryId !== id) return entry;
+        changed = true;
+        return { ...entry, ...patch };
+      });
+      return changed ? next : items;
+    };
+    queryClient.setQueryData(explorerPageQueryKey(workspaceId, folderId || ""), (old) => {
+      if (!old || !Array.isArray(old.items)) return old;
+      const items = patchList(old.items);
+      return items === old.items ? old : { ...old, items };
+    });
+    setTreeStateForContext((prev) => {
+      const nextChildren = Object.fromEntries(
+        Object.entries(prev.childItemsByFolder || {}).map(([parentId, items]) => [parentId, patchList(items)]),
+      );
+      const changed = Object.keys(nextChildren).some((parentId) => nextChildren[parentId] !== prev.childItemsByFolder?.[parentId]);
+      return changed ? { ...prev, childItemsByFolder: nextChildren } : prev;
+    });
+  }, [workspaceId, folderId, queryClient, setTreeStateForContext]);
 
   // P4 [А]: адаптив по ширине КОНТЕЙНЕРА таблицы (сайдбар схлопывается —
   // media queries по viewport не подходят). ResizeObserver + чистая функция
@@ -2857,17 +2919,48 @@ function ExplorerPane({
     const kind = dialog?.kind || getExplorerAssigneeKind(item);
     const normalizedUserId = String(userIdOrIds || "").trim() || null;
     if (kind === "responsible") {
-      const resp = await apiUpdateFolder(workspaceId, item.id, { responsible_user_id: normalizedUserId });
-      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить ответственного");
-      await load({ resetInlineChildren: true });
-      setMoveNotice(normalizedUserId ? "Ответственный назначен." : "Назначение очищено.");
+      const knownUsers = [...responsibleAssigneeUsers, getExplorerBusinessAssignee(item)].filter(Boolean);
+      const responsibleUser = normalizedUserId
+        ? knownUsers.find((u) => getExplorerAssignableUserId(u) === normalizedUserId) || { user_id: normalizedUserId, id: normalizedUserId }
+        : null;
+      const previousExplorerPage = queryClient.getQueryData(explorerPageQueryKey(workspaceId, folderId || ""));
+      const previousTreeState = treeState;
+      patchExplorerItemInCaches(item.id, {
+        responsible_user_id: normalizedUserId,
+        responsible_user: responsibleUser,
+      });
+      try {
+        const resp = await apiUpdateFolder(workspaceId, item.id, { responsible_user_id: normalizedUserId });
+        if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить ответственного");
+        setMoveNotice(normalizedUserId ? "Ответственный назначен." : "Назначение очищено.");
+      } catch (e) {
+        if (previousExplorerPage) queryClient.setQueryData(explorerPageQueryKey(workspaceId, folderId || ""), previousExplorerPage);
+        setTreeStateForContext(previousTreeState);
+        throw e;
+      }
       return;
     }
     if (kind === "executor") {
-      const resp = await apiPatchProject(item.id, { executor_user_id: normalizedUserId });
-      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителя");
-      await load({ resetInlineChildren: true });
-      setMoveNotice(normalizedUserId ? "Исполнитель назначен." : "Назначение очищено.");
+      const knownUsers = [...assigneeMembersState.items, getExplorerBusinessAssignee(item)].filter(Boolean);
+      const executorUser = normalizedUserId
+        ? knownUsers.find((u) => getExplorerAssignableUserId(u) === normalizedUserId) || { user_id: normalizedUserId, id: normalizedUserId }
+        : null;
+      const previousExplorerPage = queryClient.getQueryData(explorerPageQueryKey(workspaceId, folderId || ""));
+      const previousTreeState = treeState;
+      patchExplorerItemInCaches(item.id, {
+        executor_user_id: normalizedUserId,
+        executor_user: executorUser,
+        executor: executorUser,
+      });
+      try {
+        const resp = await apiPatchProject(item.id, { executor_user_id: normalizedUserId });
+        if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителя");
+        setMoveNotice(normalizedUserId ? "Исполнитель назначен." : "Назначение очищено.");
+      } catch (e) {
+        if (previousExplorerPage) queryClient.setQueryData(explorerPageQueryKey(workspaceId, folderId || ""), previousExplorerPage);
+        setTreeStateForContext(previousTreeState);
+        throw e;
+      }
       return;
     }
     if (kind === "session_assignees") {
@@ -2907,7 +3000,7 @@ function ExplorerPane({
       return;
     }
     throw new Error("Назначение недоступно для этого элемента");
-  }, [load, workspaceId, queryClient, assigneeMembersState.items]);
+  }, [workspaceId, folderId, queryClient, assigneeMembersState.items, responsibleAssigneeUsers, treeState, patchExplorerItemInCaches, setTreeStateForContext]);
 
   const handleFolderContextStatusChange = useCallback(async (folder, nextStatus) => {
     const normalizedStatus = normalizeExplorerContextStatus(nextStatus);
@@ -3020,11 +3113,12 @@ function ExplorerPane({
     treeSaverRef.current?.schedule(
       workspaceId,
       expandedIdsFromMap({ ...mergedExpandedByFolder, [fid]: nextExpanded }),
+      activeOrgId,
     );
     if (nextExpanded) {
       void ensureFolderChildrenLoaded(fid);
     }
-  }, [mergedExpandedByFolder, workspaceId, setTreeStateForContext, ensureFolderChildrenLoaded]);
+  }, [mergedExpandedByFolder, workspaceId, activeOrgId, setTreeStateForContext, ensureFolderChildrenLoaded]);
 
   // P2 [Б]: раскрытие проекта — тот же expanded-map и saver (id проекта
   // добавляется в тот же preferences-список expanded-ids). Дочерние сессии
@@ -3040,8 +3134,9 @@ function ExplorerPane({
     treeSaverRef.current?.schedule(
       workspaceId,
       expandedIdsFromMap({ ...mergedExpandedByFolder, [pid]: nextExpanded }),
+      activeOrgId,
     );
-  }, [mergedExpandedByFolder, workspaceId, setTreeStateForContext]);
+  }, [mergedExpandedByFolder, workspaceId, activeOrgId, setTreeStateForContext]);
 
   // projects-table-ux-polish: при восстановлении раскрытого состояния из
   // preferences подгружаем child-items один раз для каждого снапшота
@@ -3052,10 +3147,10 @@ function ExplorerPane({
     const prefsVersion = Number(prefsQuery.data.version || 0);
     const last = initialPrefsLoadedRef.current;
     if (last.workspaceId === workspaceId && last.version === prefsVersion) return;
-    const expandedIds = expandedIdsFromPreferences(prefsQuery.data.preferences, workspaceId);
+    const expandedIds = expandedIdsFromPreferences(prefsQuery.data.preferences, workspaceId, activeOrgId);
     initialPrefsLoadedRef.current = { workspaceId, version: prefsVersion };
     expandedIds.forEach((fid) => ensureFolderChildrenLoaded(fid));
-  }, [workspaceId, prefsQuery.data, ensureFolderChildrenLoaded]);
+  }, [workspaceId, activeOrgId, prefsQuery.data, ensureFolderChildrenLoaded]);
 
   const handleOpenSearchResult = useCallback((result) => {
     const target = result?.target || {};
@@ -3200,10 +3295,8 @@ function ExplorerPane({
 
   const explorerHeader = (
       <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
-        {/* Часть А-2 (nav-zone): левая зона = ширине сайдбара (табы),
-            правая зона = путь + действия, разделитель на границе сайдбара.
-            Кнопка «назад» живёт в левой колонке; счётчики — в сайдбаре.
-            Жертвы по ширине: поиск → иконка, путь схлопывает предков. */}
+        {/* Часть А-2 (nav-zone): глобальная строка навигации. Workspace actions
+            живут ниже в локальном toolbar, чтобы не смешивать уровни IA. */}
         <div
           ref={explorerNavRef}
           className="flex h-[var(--explorer-header-h)] min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
@@ -3220,7 +3313,7 @@ function ExplorerPane({
               onChange={setActiveTab}
             />
           </div>
-          {/* Right zone: breadcrumbs + actions, aligned with table NAME column. */}
+          {/* Right zone: breadcrumbs only, aligned with table NAME column. */}
           <div className="flex-1 h-full flex items-center min-w-0 overflow-hidden gap-2 pl-2 pr-5">
             <TextBreadcrumbs
               crumbs={headerCrumbItems}
@@ -3229,41 +3322,48 @@ function ExplorerPane({
               forceCollapse={explorerNavWidth < 900}
               currentClassName="text-[15px] font-semibold"
             />
-            <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-              <ExplorerSearchBox
-                id="workspace-explorer-tree-search"
-                value={searchQuery}
-                onChange={setSearchQuery}
-                className={explorerHeaderLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
-              />
-              {permissions?.canCreate ? (
-                <button
-                  onClick={() => setCreatingFolder(true)}
-                  className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-                >
-                  <IcoPlus className="opacity-70" /> {createFolderLabel}
-                </button>
-              ) : null}
-              {/* Project can only be created inside a folder, not at workspace root */}
-              {folderId && permissions?.canCreate ? (
-                <button
-                  onClick={() => setCreatingProject(true)}
-                  className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
-                >
-                  <IcoPlus /> Проект
-                </button>
-              ) : permissions?.canCreate ? (
-                <span
-                  className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
-                  title="Войдите в папку, чтобы создать проект"
-                >
-                  <IcoPlus className="opacity-50" /> Проект
-                </span>
-              ) : null}
-            </div>
           </div>
         </div>
       </div>
+  );
+
+  const workspaceToolbar = (
+    <div
+      className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border bg-panel px-5 py-2"
+      data-testid="workspace-explorer-toolbar"
+    >
+      <ExplorerSearchBox
+        id="workspace-explorer-tree-search"
+        value={searchQuery}
+        onChange={setSearchQuery}
+        className={explorerHeaderLayout.searchIconOnly ? "w-[180px]" : "w-[280px]"}
+      />
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+        {permissions?.canCreate ? (
+          <button
+            onClick={() => setCreatingFolder(true)}
+            className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+          >
+            <IcoPlus className="opacity-70" /> {createFolderLabel}
+          </button>
+        ) : null}
+        {folderId && permissions?.canCreate ? (
+          <button
+            onClick={() => setCreatingProject(true)}
+            className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
+          >
+            <IcoPlus /> Создать проект
+          </button>
+        ) : permissions?.canCreate ? (
+          <span
+            className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
+            title="Войдите в папку, чтобы создать проект"
+          >
+            <IcoPlus className="opacity-50" /> Создать проект
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 
   return (
@@ -3274,7 +3374,7 @@ function ExplorerPane({
         <div className="px-4 py-3 text-sm text-danger bg-danger/5 border-b border-border">{error}</div>
       )}
       {moveNotice ? (
-        <div className="px-4 py-2 text-sm text-accent bg-accentSoft/40 border-b border-border">{moveNotice}</div>
+        <WorkspaceExplorerToast message={moveNotice} onClose={() => setMoveNotice("")} />
       ) : null}
 
       {activeTab === "analytics" ? (
@@ -3282,9 +3382,13 @@ function ExplorerPane({
           <AnalyticsPage scope="workspace" scopeId={workspaceId} module="overview" orgId={activeOrgId} embedded />
         </div>
       ) : visibleSearchModel.active ? (
-        <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
+        <>
+          {workspaceToolbar}
+          <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
+        </>
       ) : !isEmpty ? (
         <>
+          {workspaceToolbar}
           {statusFilterChips}
           {/* projects-table-ux: сетка ширин таблицы «Проекты». Тип сущности
               визуально находится в ячейке «Название», отдельной колонки «Тип»
@@ -3465,35 +3569,20 @@ function ExplorerPane({
         </div>
       </>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-          <IcoFolder className="w-12 h-12 text-muted/30" />
-          <div className="text-center">
-            <p className="text-base font-medium text-fg mb-1">
-              {folderCopy.emptyTitle}
-            </p>
-            <p className="text-sm text-muted">
-              {folderCopy.emptyHint}
-            </p>
+        <>
+          {workspaceToolbar}
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+            <IcoFolder className="w-12 h-12 text-muted/30" />
+            <div className="text-center">
+              <p className="text-base font-medium text-fg mb-1">
+                {folderCopy.emptyTitle}
+              </p>
+              <p className="text-sm text-muted">
+                {folderCopy.emptyHint}
+              </p>
+            </div>
           </div>
-          <div className="flex gap-2">
-            {permissions?.canCreate ? (
-              <button
-                onClick={() => setCreatingFolder(true)}
-                className="secondaryBtn h-8 px-4 text-sm flex items-center gap-1"
-              >
-                <IcoPlus className="opacity-70" /> {folderCopy.createLabel}
-              </button>
-            ) : null}
-            {folderId && permissions?.canCreate ? (
-              <button
-                onClick={() => setCreatingProject(true)}
-                className="primaryBtn h-8 px-4 text-sm flex items-center gap-1"
-              >
-                <IcoPlus /> Создать проект
-              </button>
-            ) : null}
-          </div>
-        </div>
+        </>
       )}
 
       {/* Modals */}

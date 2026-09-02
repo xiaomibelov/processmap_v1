@@ -13,15 +13,16 @@ PATCH /api/users/me/preferences  — {base_version, set{...}, unset[...]};
                                    422 — неизвестный ключ / невалидное значение / лимиты.
 
 Scope: per-user + per-org (org — active_org_id запроса). Whitelist ключей:
-explorer.tree.collapsed, explorer.columns, explorer.density, explorer.saved_views.
+explorer.tree.expanded, explorer.tree.collapsed, explorer.columns, explorer.density,
+explorer.saved_views.
 
 Уточнение контракта (2026-08-16): значения хранятся как TEXT (JSON) через общий
 storage-слой, который прозрачно работает и на SQLite (dev/tests), и на
 PostgreSQL (prod, DATABASE_URL) — отдельного jsonb-типа не вводим.
-Семантика explorer.tree.collapsed: дефолт дерева в UI — «всё свёрнуто», поэтому
+Семантика explorer.tree.expanded: дефолт дерева в UI — «всё свёрнуто», поэтому
 в значении ключа хранятся ID ЯВНО РАСКРЫТЫХ пользователем узлов
-(Record<workspaceId, string[]>); collapsed-список при дефолте «свёрнуто» был бы
-избыточен. См. PHASE2_USER_PREFERENCES_CONTRACT.md, раздел «Уточнения».
+(Record<orgId::workspaceId, string[]>). Legacy `explorer.tree.collapsed`
+с той же фактической expanded-семантикой читается для обратной совместимости.
 """
 
 from __future__ import annotations
@@ -46,11 +47,12 @@ MAX_SAVED_VIEWS = 20
 MAX_SAVED_VIEW_NAME = 80
 
 KEY_TREE_COLLAPSED = "explorer.tree.collapsed"
+KEY_TREE_EXPANDED = "explorer.tree.expanded"
 KEY_COLUMNS = "explorer.columns"
 KEY_DENSITY = "explorer.density"
 KEY_SAVED_VIEWS = "explorer.saved_views"
 
-ALLOWED_KEYS = {KEY_TREE_COLLAPSED, KEY_COLUMNS, KEY_DENSITY, KEY_SAVED_VIEWS}
+ALLOWED_KEYS = {KEY_TREE_EXPANDED, KEY_TREE_COLLAPSED, KEY_COLUMNS, KEY_DENSITY, KEY_SAVED_VIEWS}
 DENSITY_VALUES = {"comfortable", "compact"}
 
 
@@ -66,17 +68,17 @@ def _err_422(detail: str) -> JSONResponse:
 
 def _validate_tree_collapsed(value: Any) -> Optional[str]:
     if not isinstance(value, dict):
-        return "explorer.tree.collapsed must be an object Record<workspaceId, string[]>"
-    for workspace_id, ids in value.items():
-        if not str(workspace_id or "").strip():
-            return "explorer.tree.collapsed: workspace id must be a non-empty string"
+        return "explorer tree state must be an object Record<scopeKey, string[]>"
+    for scope_id, ids in value.items():
+        if not str(scope_id or "").strip():
+            return "explorer tree state scope id must be a non-empty string"
         if not isinstance(ids, list):
-            return f"explorer.tree.collapsed[{workspace_id}] must be an array of node ids"
+            return f"explorer tree state[{scope_id}] must be an array of node ids"
         if len(ids) > MAX_COLLAPSED_IDS_PER_WORKSPACE:
-            return f"explorer.tree.collapsed[{workspace_id}] exceeds {MAX_COLLAPSED_IDS_PER_WORKSPACE} ids"
+            return f"explorer tree state[{scope_id}] exceeds {MAX_COLLAPSED_IDS_PER_WORKSPACE} ids"
         for node_id in ids:
             if not isinstance(node_id, str) or not node_id.strip():
-                return f"explorer.tree.collapsed[{workspace_id}] must contain non-empty string ids"
+                return f"explorer tree state[{scope_id}] must contain non-empty string ids"
     return None
 
 
@@ -120,6 +122,7 @@ def _validate_saved_views(value: Any) -> Optional[str]:
 
 
 _VALIDATORS = {
+    KEY_TREE_EXPANDED: _validate_tree_collapsed,
     KEY_TREE_COLLAPSED: _validate_tree_collapsed,
     KEY_COLUMNS: _validate_columns,
     KEY_DENSITY: _validate_density,
