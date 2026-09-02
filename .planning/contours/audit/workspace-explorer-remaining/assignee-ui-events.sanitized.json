@@ -1,0 +1,53 @@
+{
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    }
+  ],
+  "network": [
+    {
+      "method": "POST",
+      "url": "https://stage.processmap.ru/api/auth/refresh",
+      "status": 401,
+      "body": "{\"detail\":\"missing_refresh_token\"}"
+    },
+    {
+      "method": "GET",
+      "url": "https://stage.processmap.ru/api/feature-flags",
+      "status": 200,
+      "body": ""
+    },
+    {
+      "method": "POST",
+      "url": "https://stage.processmap.ru/api/auth/refresh",
+      "status": 401,
+      "body": "{\"detail\":\"missing_refresh_token\"}"
+    },
+    {
+      "method": "GET",
+      "url": "https://stage.processmap.ru/api/feature-flags",
+      "status": 200,
+      "body": ""
+    }
+  ],
+  "measures": {
+    "before": {
+      "url": "https://stage.processmap.ru/?next=%2Fapp",
+      "scrollTop": null,
+      "expanded": [],
+      "text": "Вход в PROCESSMAP\nEmail\nПароль\nВойти\nДоступ по инвайту"
+    },
+    "assignButtonCount": 0,
+    "after": {
+      "url": "https://stage.processmap.ru/?next=%2Fapp",
+      "scrollTop": null,
+      "expanded": [],
+      "text": "Вход в PROCESSMAP\nEmail\nПароль\nВойти\nДоступ по инвайту"
+    }
+  }
+}
