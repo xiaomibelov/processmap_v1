@@ -104,6 +104,7 @@ import {
   getSessionAssigneeIds,
   getSessionAssigneesActionLabel,
   getSessionAssigneesDialogTitle,
+  getSessionAssigneesTooltip,
   getVisibleSessionAssignees,
   mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
@@ -940,10 +941,10 @@ function AssigneeDialog({
   onSave,
 }) {
   const isSessionAssignees = kind === "session_assignees";
-  const initialSelectedId = isSessionAssignees
-    ? (getSessionAssigneeIds(item)[0] || "")
-    : getExplorerAssigneeId(item);
-  const [selectedUserId, setSelectedUserId] = useState(initialSelectedId);
+  const initialSelectedUserIds = isSessionAssignees
+    ? getSessionAssigneeIds(item)
+    : [getExplorerAssigneeId(item)].filter(Boolean);
+  const [selectedUserIds, setSelectedUserIds] = useState(initialSelectedUserIds);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -951,21 +952,32 @@ function AssigneeDialog({
     ? getSessionAssigneesDialogTitle()
     : getExplorerAssigneeDialogTitle(item, { folderLabel });
   const filteredUsers = useMemo(() => filterExplorerAssignableUsers(users, query), [users, query]);
-  const currentAssignedId = isSessionAssignees
-    ? (getSessionAssigneeIds(item)[0] || "")
-    : getExplorerAssigneeId(item);
+  const selectedUserId = selectedUserIds[0] || "";
+  const currentAssignedIds = isSessionAssignees
+    ? getSessionAssigneeIds(item)
+    : [getExplorerAssigneeId(item)].filter(Boolean);
+  const hasCurrentSelection = currentAssignedIds.length > 0 || selectedUserIds.length > 0;
 
   useEffect(() => {
-    setSelectedUserId(isSessionAssignees ? (getSessionAssigneeIds(item)[0] || "") : getExplorerAssigneeId(item));
+    setSelectedUserIds(isSessionAssignees ? getSessionAssigneeIds(item) : [getExplorerAssigneeId(item)].filter(Boolean));
     setQuery("");
     setError("");
   }, [item, isSessionAssignees]);
 
-  const submit = async (userId = selectedUserId) => {
+  const toggleSessionUserId = (uid) => {
+    setSelectedUserIds((prev) => (
+      prev.includes(uid)
+        ? prev.filter((id) => id !== uid)
+        : [...prev, uid]
+    ));
+    setError("");
+  };
+
+  const submit = async (value = (isSessionAssignees ? selectedUserIds : selectedUserId)) => {
     setBusy(true);
     setError("");
     try {
-      await onSave(userId || null);
+      await onSave(isSessionAssignees ? value : (value || null));
       onClose();
     } catch (e) {
       setError(String(e?.message || e || "Не удалось сохранить назначение"));
@@ -1004,15 +1016,19 @@ function AssigneeDialog({
                   className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm text-fg transition-colors hover:bg-panelAlt"
                 >
                   <input
-                    type="radio"
+                    type={isSessionAssignees ? "checkbox" : "radio"}
                     name="explorer-assignee"
                     className="mt-1"
                     value={uid}
-                    checked={selectedUserId === uid}
+                    checked={isSessionAssignees ? selectedUserIds.includes(uid) : selectedUserId === uid}
                     disabled={busy}
                     onChange={() => {
-                      setSelectedUserId(uid);
-                      setError("");
+                      if (isSessionAssignees) {
+                        toggleSessionUserId(uid);
+                      } else {
+                        setSelectedUserIds([uid]);
+                        setError("");
+                      }
                     }}
                   />
                   <span className="min-w-0 flex-1">
@@ -1035,16 +1051,16 @@ function AssigneeDialog({
         <div className="flex flex-wrap justify-end gap-2">
           <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
           <button
-            onClick={() => submit(null)}
+            onClick={() => submit(isSessionAssignees ? [] : null)}
             className="secondaryBtn h-8 px-3 text-sm"
-            disabled={busy || loadingUsers || (!currentAssignedId && !selectedUserId)}
+            disabled={busy || loadingUsers || !hasCurrentSelection}
           >
             Очистить
           </button>
           <button
             onClick={() => submit()}
             className="primaryBtn h-8 px-3 text-sm"
-            disabled={busy || loadingUsers || !selectedUserId}
+            disabled={busy || loadingUsers || (isSessionAssignees ? selectedUserIds.length === 0 : !selectedUserId)}
           >
             {busy ? "…" : "Сохранить"}
           </button>
@@ -1483,7 +1499,7 @@ const WorkspaceSidebarActiveCounters = React.memo(function WorkspaceSidebarActiv
 
   return (
     <span
-      className={`block whitespace-nowrap text-[11px] leading-tight ${isFetching ? "text-muted/40" : "text-muted/75"}`}
+      className={`block max-w-full truncate text-[11px] leading-tight ${isFetching ? "text-muted/40" : "text-muted/75"}`}
       title={title}
     >
       {compact ? shortLabel : full}
@@ -1528,16 +1544,16 @@ function WorkspaceSidebarContextCounters() {
     const projects = Number(contextInfo.childProjectCount ?? folder?.child_project_count ?? folder?.descendant_projects_count ?? 0);
     if (subFolders > 0) {
       const text = `В разделе: ${pluralizeRu(subFolders, ["папка", "папки", "папок"])} · ${compositionProjectsText(projects)}`;
-      return <span className="block whitespace-nowrap text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
+      return <span className="block max-w-full truncate text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
     }
     const text = `В папке: ${compositionProjectsText(projects)}`;
-    return <span className="block whitespace-nowrap text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
+    return <span className="block max-w-full truncate text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
   }
   if (type === "project") {
     const project = contextInfo.project;
     const count = Number(contextInfo.sessionCount ?? project?.sessions_count ?? project?.sessionCount ?? 0);
     const text = `В проекте: ${compositionSessionsText(count)}`;
-    return <span className="block whitespace-nowrap text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
+    return <span className="block max-w-full truncate text-[11px] leading-tight text-muted/75" title={text}>{text}</span>;
   }
   return null;
 }
@@ -1550,7 +1566,7 @@ function ExplorerSidebarHeaderBlock() {
   const header = useExplorerSidebarHeader();
   return (
     <div
-      className="h-10 border-b border-border flex items-center overflow-hidden whitespace-nowrap bg-panel"
+      className="h-[var(--explorer-header-h)] border-b border-border flex items-center overflow-hidden whitespace-nowrap bg-panel"
       data-testid="explorer-sidebar-header"
     >
       {header || <span className="min-w-0 flex-1" aria-hidden="true" />}
@@ -1599,7 +1615,7 @@ function WorkspaceSidebar({
           </button>
         ) : null}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-2 py-1">
         {workspaces.length === 0 && (
           <p className="px-3 py-4 text-xs text-muted text-center">Нет workspaces</p>
         )}
@@ -1610,14 +1626,14 @@ function WorkspaceSidebar({
               key={ws.id}
               onMouseEnter={() => prefetchWorkspace(ws.id)}
               onFocus={() => prefetchWorkspace(ws.id)}
-              className={`w-full flex items-start gap-2 px-3 py-2 text-sm transition-colors rounded-none
+              className={`w-full flex items-start gap-2 rounded-md px-2 py-2 text-sm transition-colors
                 ${isActive
                   ? "bg-accentSoft text-accent font-medium"
                   : "text-fg hover:bg-bg"
                 }`}
             >
               <button
-                className={`min-w-0 flex-1 text-left ${isActive ? "flex flex-col" : "flex items-center gap-2"}`}
+                className={`min-w-0 flex-1 text-left ${isActive ? "flex flex-col gap-0.5" : "flex items-center gap-2"}`}
                 onClick={() => onSelectWorkspace(ws.id)}
               >
                 <span className="flex items-center gap-2 min-w-0">
@@ -1631,9 +1647,9 @@ function WorkspaceSidebar({
                   </>
                 ) : null}
               </button>
-              <span className="text-[10px] text-muted opacity-60 mt-0.5">{ws.role || "viewer"}</span>
+              <span className="max-w-[64px] shrink-0 truncate text-[10px] text-muted opacity-60 mt-0.5" title={ws.role || "viewer"}>{ws.role || "viewer"}</span>
               {canRenameWorkspace && isActive ? (
-                <button className="text-muted hover:text-fg p-0.5 mt-0.5" title="Переименовать workspace" onClick={() => setRenamingWorkspace(ws)}>
+                <button className="shrink-0 text-muted hover:text-fg p-0.5 mt-0.5" title="Переименовать workspace" onClick={() => setRenamingWorkspace(ws)}>
                   <IcoEdit />
                 </button>
               ) : null}
@@ -2833,10 +2849,10 @@ function ExplorerPane({
     };
   }, [folderId, page]);
 
-  const handleSaveAssignee = useCallback(async (dialog, userId) => {
+  const handleSaveAssignee = useCallback(async (dialog, userIdOrIds) => {
     const item = dialog?.item || {};
     const kind = dialog?.kind || getExplorerAssigneeKind(item);
-    const normalizedUserId = String(userId || "").trim() || null;
+    const normalizedUserId = String(userIdOrIds || "").trim() || null;
     if (kind === "responsible") {
       const resp = await apiUpdateFolder(workspaceId, item.id, { responsible_user_id: normalizedUserId });
       if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить ответственного");
@@ -2855,10 +2871,13 @@ function ExplorerPane({
       const sessionId = String(item?.id || item?.session_id || "").trim();
       const projectId = String(item?.project_id || "").trim();
       if (!sessionId) throw new Error("Не удалось определить сессию");
-      const targetUser = normalizedUserId
-        ? assigneeMembersState.items.find((u) => getExplorerAssignableUserId(u) === normalizedUserId) || null
-        : null;
-      const nextAssignees = targetUser ? [targetUser] : [];
+      const normalizedUserIds = (Array.isArray(userIdOrIds) ? userIdOrIds : [userIdOrIds])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean);
+      const knownUsers = [...assigneeMembersState.items, ...getSessionAssignees(item)];
+      const nextAssignees = normalizedUserIds
+        .map((uid) => knownUsers.find((u) => getExplorerAssignableUserId(u) === uid) || { user_id: uid, id: uid })
+        .filter(Boolean);
       const queryKey = projectSessionsQueryKey(projectId);
       const previousSessions = queryClient.getQueryData(queryKey);
       if (previousSessions) {
@@ -2872,10 +2891,11 @@ function ExplorerPane({
         });
       }
       try {
-        const resp = await apiReplaceSessionAssignees(sessionId, normalizedUserId ? [normalizedUserId] : []);
+        const resp = await apiReplaceSessionAssignees(sessionId, normalizedUserIds);
         if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителей схемы");
-        setMoveNotice(normalizedUserId ? "Исполнитель схемы назначен." : "Назначение очищено.");
+        setMoveNotice(normalizedUserIds.length ? "Исполнители схемы сохранены." : "Назначение очищено.");
       } catch (e) {
+        console.warn("[WorkspaceExplorer] failed to save session assignees", e);
         if (previousSessions) {
           queryClient.setQueryData(queryKey, previousSessions);
         }
@@ -3183,7 +3203,7 @@ function ExplorerPane({
             Жертвы по ширине: поиск → иконка, путь схлопывает предков. */}
         <div
           ref={explorerNavRef}
-          className="flex h-10 min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
+          className="flex h-[var(--explorer-header-h)] min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(explorerNavWidth)}
         >
           {/* Left zone: matches sidebar width, contains tabs. */}
@@ -3575,6 +3595,8 @@ function SessionRow({
   isExpanded = false,
   isLoadingChildren = false,
   onToggleExpand,
+  canAssign = false,
+  onAssign,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -3729,6 +3751,9 @@ function SessionRow({
             ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
             : <span className="text-[11px] text-muted/65">—</span>}
         </td>
+        <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+          <SessionAssigneeCell session={session} onAssign={onAssign} canAssign={canAssign} />
+        </td>
         <td className="px-2 py-2"><DodBar percent={session.dod_percent} /></td>
         {showDiscussionColumn ? (
           <td className="px-2 py-2 text-center" title="Открытые обсуждения">
@@ -3874,6 +3899,8 @@ function SessionTreeRows({
   showDiscussionColumn,
   noteAggregatesBySessionId,
   eagerTree = false,
+  canAssign = false,
+  onAssign,
 }) {
   const sorted = useMemo(() => sortProjectSessions(sessions, sort), [sessions, sort]);
   return sorted.map((session) => {
@@ -3903,6 +3930,8 @@ function SessionTreeRows({
           showSignalColumns={showSignalColumns}
           showDiscussionColumn={showDiscussionColumn}
           notesAggregate={noteAggregatesBySessionId?.get(sid) || null}
+          canAssign={canAssign}
+          onAssign={onAssign}
         />
         {isExpanded ? (
           isLoading ? (
@@ -3975,7 +4004,16 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionSort, setSessionSort] = useState(null);
   const [activeTab, setActiveTab] = useState("sessions");
+  const [assigneeDialog, setAssigneeDialog] = useState(null);
+  const [assigneeMembersState, setAssigneeMembersState] = useState({
+    orgId: "",
+    items: [],
+    loading: false,
+    loaded: false,
+    error: "",
+  });
   const openingSessionIdRef = useRef("");
+  const queryClient = useQueryClient();
 
   const treeEnabled = useFeatureFlag("workspace_session_tree_view");
   const [expandedSessionIds, setExpandedSessionIds] = useState(() => new Set());
@@ -4031,6 +4069,41 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     setSessionChildrenCache({});
   }, [projectSessionsQuery.data, treeEnabled]);
 
+  useEffect(() => {
+    if (!assigneeDialog) return undefined;
+    const oid = String(activeOrgId || "").trim();
+    if (!oid) {
+      setAssigneeMembersState({ orgId: "", items: [], loading: false, loaded: true, error: "Не выбрана организация" });
+      return undefined;
+    }
+    let disposed = false;
+    setAssigneeMembersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
+    Promise.race([
+      apiListOrgAssignableUsers(oid),
+      assigneeMembersLoadTimeout(),
+    ]).then((resp) => {
+      if (disposed) return;
+      const normalized = normalizeExplorerAssignableUsersResponse(resp);
+      setAssigneeMembersState({
+        orgId: oid,
+        items: normalized.items,
+        loading: false,
+        loaded: true,
+        error: normalized.error,
+      });
+    }).catch(() => {
+      if (disposed) return;
+      setAssigneeMembersState({
+        orgId: oid,
+        items: [],
+        loading: false,
+        loaded: true,
+        error: "Не удалось загрузить пользователей.",
+      });
+    });
+    return () => { disposed = true; };
+  }, [activeOrgId, assigneeDialog]);
+
   // ── P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта ──────────────
   const updatePendingUpload = useCallback((tempId, patch) => {
     setPendingUploads((prev) => prev.map((u) => (u.tempId === tempId ? { ...u, ...patch } : u)));
@@ -4076,6 +4149,40 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       setTimeout(() => finishPendingUpload(tempId), 1200);
     }
   }, [pendingUploads, load, updatePendingUpload, finishPendingUpload]);
+
+  const handleSaveProjectSessionAssignees = useCallback(async (dialog, userIds) => {
+    const item = dialog?.item || {};
+    const sessionId = String(item?.id || item?.session_id || "").trim();
+    if (!sessionId) throw new Error("Не удалось определить сессию");
+    const normalizedUserIds = (Array.isArray(userIds) ? userIds : [userIds])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    const knownUsers = [...assigneeMembersState.items, ...getSessionAssignees(item)];
+    const nextAssignees = normalizedUserIds
+      .map((uid) => knownUsers.find((u) => getExplorerAssignableUserId(u) === uid) || { user_id: uid, id: uid })
+      .filter(Boolean);
+    const queryKey = projectSessionsQueryKey(projectId);
+    const previousSessions = queryClient.getQueryData(queryKey);
+    const previousPage = page;
+    const patchSessions = (list) => {
+      if (!Array.isArray(list)) return list;
+      return list.map((s) => {
+        const sid = String(s?.id || s?.session_id || "").trim();
+        return sid === sessionId ? { ...s, assignees: nextAssignees } : s;
+      });
+    };
+    queryClient.setQueryData(queryKey, patchSessions);
+    setPage((prev) => (prev && Array.isArray(prev.sessions) ? { ...prev, sessions: patchSessions(prev.sessions) } : prev));
+    try {
+      const resp = await apiReplaceSessionAssignees(sessionId, normalizedUserIds);
+      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителей схемы");
+    } catch (e) {
+      console.warn("[WorkspaceExplorer] failed to save session assignees", e);
+      if (previousSessions) queryClient.setQueryData(queryKey, previousSessions);
+      setPage(previousPage);
+      throw e;
+    }
+  }, [assigneeMembersState.items, page, projectId, queryClient]);
   const sessionTableDropZoneProps = {
     "data-testid": "project-sessions-dropzone",
     onDragOver: (e) => {
@@ -4359,7 +4466,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             Кнопка «назад» живёт в левой колонке; мета счётчики — в сайдбаре. */}
         <div
           ref={projectNavRef}
-          className="flex h-10 min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
+          className="flex h-[var(--explorer-header-h)] min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap"
           data-nav-width={Math.round(projectNavWidth)}
         >
           {/* Left zone: matches sidebar width, contains tabs. */}
@@ -4457,6 +4564,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <col className="w-[154px]" />
               <col className="w-[92px]" />
               <col className="w-[96px]" />
+              <col className="w-[132px]" />
               <col className="w-[90px]" />
               {sessionColumnProfile.showDiscussionColumn ? <col className="w-[76px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[76px]" /> : null}
@@ -4479,6 +4587,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 <th className="hidden md:table-cell px-2 py-2" aria-sort={sessionSort?.key === "owner" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Owner" sortKey="owner" sort={sessionSort} onSort={handleSessionSort} />
                 </th>
+                <th className="px-2 py-2">Исполнители</th>
                 <th className="px-2 py-2">DoD</th>
                 {sessionColumnProfile.showDiscussionColumn ? (
                   <th className="px-2 py-2 text-center" title="Открытые обсуждения" aria-label="Колонка открытых обсуждений">
@@ -4540,6 +4649,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                       showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
                       noteAggregatesBySessionId={noteAggregatesBySessionId}
                       eagerTree={eagerTree}
+                      canAssign={!!permissions?.canAssignSessionAssignees}
+                      onAssign={(targetSession) => {
+                        setAssigneeDialog({
+                          item: targetSession,
+                          kind: "session_assignees",
+                          folderLabel: "",
+                        });
+                      }}
                     />
                   ) : (
                     sortedSessions.map((s) => (
@@ -4561,6 +4678,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                         canChangeStatus={!!permissions?.canChangeStatus}
                         showSignalColumns={sessionColumnProfile.showSignalColumns}
                         showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                        canAssign={!!permissions?.canAssignSessionAssignees}
+                        onAssign={(targetSession) => {
+                          setAssigneeDialog({
+                            item: targetSession,
+                            kind: "session_assignees",
+                            folderLabel: "",
+                          });
+                        }}
                       />
                     ))
                   )}
@@ -4591,6 +4716,18 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             if (res.ok) load();
             return res;
           }}
+        />
+      ) : null}
+      {assigneeDialog ? (
+        <AssigneeDialog
+          item={assigneeDialog.item}
+          folderLabel={assigneeDialog.folderLabel}
+          kind={assigneeDialog.kind || ""}
+          users={assigneeMembersState.items}
+          loadingUsers={assigneeMembersState.loading}
+          usersError={assigneeMembersState.error}
+          onClose={() => setAssigneeDialog(null)}
+          onSave={(userIds) => handleSaveProjectSessionAssignees(assigneeDialog, userIds)}
         />
       ) : null}
     </div>
@@ -4657,7 +4794,7 @@ export default function WorkspaceExplorer({
     <ExplorerSidebarProvider>
       <div
         className="h-full flex flex-col min-h-0 bg-bg font-sans"
-        style={{ "--explorer-sidebar-w": "16rem" }}
+        style={{ "--explorer-sidebar-w": "16rem", "--explorer-header-h": "2.5rem" }}
       >
         {!currentOrgActive ? (
           <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
@@ -4667,7 +4804,7 @@ export default function WorkspaceExplorer({
         ) : null}
         <div className="h-full flex flex-row min-h-0 font-sans">
           {/* Left column: back button on top, workspace list below (single surface). */}
-          <div className="w-[var(--explorer-sidebar-w)] shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border border-border border-r-0 overflow-hidden">
+          <div className="w-[var(--explorer-sidebar-w)] shrink-0 flex flex-col bg-panel rounded-l-[0.875rem] rounded-r-none border-y border-l border-r border-border overflow-hidden">
             <ExplorerSidebarHeaderBlock />
             <div className="flex-1 overflow-hidden">
               <WorkspaceSidebar
