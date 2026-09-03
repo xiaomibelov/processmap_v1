@@ -1,0 +1,9 @@
+{
+  "contour": "fix/session-count-semantics",
+  "branch": "fix/session-count-semantics",
+  "base": "origin/main",
+  "status": "ready_for_review",
+  "phase": "executor",
+  "summary": "Backend explorer/dashboard session counters now exclude subprocess rows; regression tests cover 3 root sessions with 148 subprocess rows."
+}
+
