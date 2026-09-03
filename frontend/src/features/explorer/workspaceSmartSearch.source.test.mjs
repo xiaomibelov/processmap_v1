@@ -32,8 +32,9 @@ test("ExplorerPane renders workspace search and keeps loaded fallback instead of
   assert.match(explorerPaneSource, /apiSearchExplorer\(workspaceId,\s*query,\s*\{\s*limit:\s*50\s*\}\)/);
   assert.match(explorerPaneSource, /query\.length < 2/);
   assert.match(explorerPaneSource, /setTimeout\(\(\) => \{/);
-  assert.match(explorerPaneSource, /data-testid="workspace-explorer-toolbar"/);
-  assert.match(explorerPaneSource, /className=\{explorerHeaderLayout\.searchIconOnly \? "w-\[180px\]" : "w-\[280px\]"\}/);
+  assert.match(explorerPaneSource, /data-testid="workspace-filter-toolbar"/);
+  assert.doesNotMatch(explorerPaneSource, /data-testid="workspace-explorer-toolbar"/);
+  assert.match(explorerPaneSource, /className="w-\[160px\] 2xl:w-\[280px\]"/);
   assert.match(explorerPaneSource, /visibleSearchModel\.active \? \(/);
   assert.match(explorerPaneSource, /onNavigateToFolder\(target\.folderId\)/);
   assert.match(explorerPaneSource, /onNavigateToProject\(target\.projectId,\s*\{\s*breadcrumbBase:/);

@@ -13,8 +13,8 @@ PATCH /api/users/me/preferences  — {base_version, set{...}, unset[...]};
                                    422 — неизвестный ключ / невалидное значение / лимиты.
 
 Scope: per-user + per-org (org — active_org_id запроса). Whitelist ключей:
-explorer.tree.expanded, explorer.tree.collapsed, explorer.columns, explorer.density,
-explorer.saved_views.
+explorer.tree.expanded, explorer.tree.collapsed, explorer.status_filters.hidden,
+explorer.columns, explorer.density, explorer.saved_views.
 
 Уточнение контракта (2026-08-16): значения хранятся как TEXT (JSON) через общий
 storage-слой, который прозрачно работает и на SQLite (dev/tests), и на
@@ -43,17 +43,27 @@ logger = logging.getLogger(__name__)
 
 MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_COLLAPSED_IDS_PER_WORKSPACE = 500
+MAX_HIDDEN_STATUS_FILTERS_PER_WORKSPACE = 8
 MAX_SAVED_VIEWS = 20
 MAX_SAVED_VIEW_NAME = 80
 
 KEY_TREE_COLLAPSED = "explorer.tree.collapsed"
 KEY_TREE_EXPANDED = "explorer.tree.expanded"
+KEY_STATUS_FILTERS_HIDDEN = "explorer.status_filters.hidden"
 KEY_COLUMNS = "explorer.columns"
 KEY_DENSITY = "explorer.density"
 KEY_SAVED_VIEWS = "explorer.saved_views"
 
-ALLOWED_KEYS = {KEY_TREE_EXPANDED, KEY_TREE_COLLAPSED, KEY_COLUMNS, KEY_DENSITY, KEY_SAVED_VIEWS}
+ALLOWED_KEYS = {
+    KEY_TREE_EXPANDED,
+    KEY_TREE_COLLAPSED,
+    KEY_STATUS_FILTERS_HIDDEN,
+    KEY_COLUMNS,
+    KEY_DENSITY,
+    KEY_SAVED_VIEWS,
+}
 DENSITY_VALUES = {"comfortable", "compact"}
+STATUS_FILTER_VALUES = {"active", "done", "draft", "as_is"}
 
 
 class PreferencesPatchBody(BaseModel):
@@ -91,6 +101,22 @@ def _validate_columns(value: Any) -> Optional[str]:
     return None
 
 
+def _validate_status_filters_hidden(value: Any) -> Optional[str]:
+    if not isinstance(value, dict):
+        return "explorer.status_filters.hidden must be an object Record<scopeKey, string[]>"
+    for scope_id, keys in value.items():
+        if not str(scope_id or "").strip():
+            return "explorer.status_filters.hidden scope id must be a non-empty string"
+        if not isinstance(keys, list):
+            return f"explorer.status_filters.hidden[{scope_id}] must be an array of status keys"
+        if len(keys) > MAX_HIDDEN_STATUS_FILTERS_PER_WORKSPACE:
+            return f"explorer.status_filters.hidden[{scope_id}] exceeds {MAX_HIDDEN_STATUS_FILTERS_PER_WORKSPACE} statuses"
+        for key in keys:
+            if key not in STATUS_FILTER_VALUES:
+                return "explorer.status_filters.hidden values must be one of: active, done, draft, as_is"
+    return None
+
+
 def _validate_density(value: Any) -> Optional[str]:
     if value not in DENSITY_VALUES:
         return "explorer.density must be one of: comfortable, compact"
@@ -124,6 +150,7 @@ def _validate_saved_views(value: Any) -> Optional[str]:
 _VALIDATORS = {
     KEY_TREE_EXPANDED: _validate_tree_collapsed,
     KEY_TREE_COLLAPSED: _validate_tree_collapsed,
+    KEY_STATUS_FILTERS_HIDDEN: _validate_status_filters_hidden,
     KEY_COLUMNS: _validate_columns,
     KEY_DENSITY: _validate_density,
     KEY_SAVED_VIEWS: _validate_saved_views,

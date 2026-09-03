@@ -1,0 +1,8 @@
+{
+  "contour": "feature/workspace-toolbar-restructure",
+  "phase": "ready_for_review",
+  "branch": "feature/workspace-toolbar-restructure",
+  "base": "origin/main",
+  "merge_allowed": false,
+  "updated_at": "2026-09-03"
+}
