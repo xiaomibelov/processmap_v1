@@ -98,6 +98,25 @@ function createMockModeler(elements = []) {
           },
         };
       }
+      if (type === "zeebe:Properties") {
+        return {
+          $type: type,
+          values: Array.isArray(payload.values) ? payload.values.slice() : [],
+          set(key, value) {
+            this[key] = value;
+          },
+        };
+      }
+      if (type === "zeebe:Property") {
+        return {
+          $type: type,
+          name: String(payload.name || ""),
+          value: String(payload.value || ""),
+          set(key, value) {
+            this[key] = value;
+          },
+        };
+      }
       if (type === "camunda:ExecutionListener") {
         return {
           $type: type,
@@ -562,7 +581,7 @@ test("export serializer writes execution listeners with explicit event and singl
   );
 }));
 
-test("export serializer adds camunda namespace on definitions when managed extensions are present", () => withDom(() => {
+test("export serializer adds zeebe namespace on definitions when managed properties are present", () => withDom(() => {
   const xml = finalizeCamundaExtensionsXml({
     xmlText: BASE_XML,
     camundaExtensionsByElementId: {
@@ -576,7 +595,9 @@ test("export serializer adds camunda namespace on definitions when managed exten
     },
   });
   const doc = parseXml(xml);
-  assert.equal(doc.documentElement.getAttribute("xmlns:camunda"), "http://camunda.org/schema/1.0/bpmn");
+  assert.equal(doc.documentElement.getAttribute("xmlns:zeebe"), "http://camunda.org/schema/zeebe/1.0");
+  assert.equal(doc.documentElement.getAttribute("xmlns:camunda"), null);
+  assert.equal(doc.documentElement.getAttribute("modeler:executionPlatform"), "Camunda Cloud");
 }));
 
 test("empty-state export omits empty extensionElements", () => withDom(() => {
@@ -1042,11 +1063,11 @@ test("export serializer keeps deterministic extension child ordering: unknown fi
   const children = extensionChildren(doc, "Task_1");
   assert.deepEqual(
     children.map((node) => `${node.prefix || ""}:${node.localName}`),
-    ["foo:meta", "camunda:properties", "camunda:executionListener", "pm:RobotMeta"],
+    ["foo:meta", "zeebe:properties", "camunda:executionListener", "pm:RobotMeta"],
   );
 }));
 
-test("zeebe properties are normalized to camunda properties on export", () => withDom(() => {
+test("zeebe properties stay zeebe on export and camunda properties are removed", () => withDom(() => {
   const extracted = extractCamundaExtensionsMapFromBpmnXml(`<?xml version="1.0" encoding="UTF-8"?>
   <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
     xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
@@ -1065,9 +1086,11 @@ test("zeebe properties are normalized to camunda properties on export", () => wi
     xmlText: BASE_XML,
     camundaExtensionsByElementId: extracted,
   });
-  assert.equal(xml.includes("camunda:properties"), true);
-  assert.equal(xml.includes("camunda:property"), true);
-  assert.equal(xml.includes("zeebe:properties"), false);
+  assert.equal(xml.includes("zeebe:properties"), true);
+  assert.equal(xml.includes("zeebe:property"), true);
+  assert.equal(xml.includes("camunda:properties"), false);
+  assert.equal(xml.includes("camunda:property"), false);
+  assert.equal(xml.includes("modeler:executionPlatform=\"Camunda Cloud\""), true);
 }));
 
 test("integration: create -> save -> reload round-trip restores properties and listeners", () => withDom(() => {
@@ -1152,7 +1175,7 @@ test("integration: deleted element data is not emitted into exported BPMN", () =
   assert.equal(exported.includes("Лоток 150x55"), false);
 }));
 
-test("syncCamundaExtensionsToBpmn preserves non-managed entries and writes managed camunda nodes", () => {
+test("syncCamundaExtensionsToBpmn preserves non-managed entries and writes managed zeebe nodes", () => {
   const taskBusinessObject = {
     id: "Task_1",
     extensionElements: {
@@ -1181,6 +1204,6 @@ test("syncCamundaExtensionsToBpmn preserves non-managed entries and writes manag
   });
   assert.equal(res.ok, true);
   assert.equal(taskBusinessObject.extensionElements.values.filter((entry) => entry.$type === "pm:RobotMeta").length, 1);
-  assert.equal(taskBusinessObject.extensionElements.values.filter((entry) => entry.$type === "camunda:Properties").length, 1);
+  assert.equal(taskBusinessObject.extensionElements.values.filter((entry) => entry.$type === "zeebe:Properties").length, 1);
   assert.equal(taskBusinessObject.extensionElements.values.filter((entry) => entry.$type === "camunda:ExecutionListener").length, 1);
 });
