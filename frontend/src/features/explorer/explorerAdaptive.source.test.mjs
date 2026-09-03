@@ -1,53 +1,54 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources, around } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
-
-function between(start, end) {
-  const startIndex = explorerSource.indexOf(start);
-  assert.notEqual(startIndex, -1, `missing start marker: ${start}`);
-  const endIndex = explorerSource.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `missing end marker: ${end}`);
-  return explorerSource.slice(startIndex, endIndex);
-}
+// retarget(s0): pins are scoped to the whole explorer source set — WorkspaceExplorer.jsx
+// is decomposed into sibling files; in-file between() slices anchored at markers like
+// "function ExplorerPane(" are removed.
+const { text: explorerSource } = readExplorerSources();
 
 test("P4 [А]: adaptive uses container ResizeObserver + pure layout function (no viewport media)", () => {
-  const paneSource = between("function ExplorerPane(", "// ─── Session Row");
-  assert.match(paneSource, /new ResizeObserver/);
-  assert.match(paneSource, /getExplorerColumnLayout\(explorerTableWidth/);
-  assert.match(paneSource, /explorerVisibleColumnCount\(explorerColumnLayout/);
+  assert.match(explorerSource, /new ResizeObserver/);
+  assert.match(explorerSource, /getExplorerColumnLayout\(explorerTableWidth/);
+  assert.match(explorerSource, /explorerVisibleColumnCount\(explorerColumnLayout/);
   // временная мера P0 (minWidth 1044/1116 + h-scroll) убрана
   assert.doesNotMatch(explorerSource, /minWidth:\s*(treeColumnProfile|1044|1116)/);
 });
 
 test("P4 [А]: header hidden in compact; columns hidden by priority flags", () => {
-  const paneSource = between("function ExplorerPane(", "// ─── Session Row");
-  assert.match(paneSource, /explorerColumnLayout\.compact \? null : \(\s*<thead>/);
-  assert.match(paneSource, /explorerColumnLayout\.showUpdated \? \(/);
-  assert.match(paneSource, /explorerColumnLayout\.showAssignee \? \(/);
-  assert.match(paneSource, /explorerColumnLayout\.showComposition \? \(/);
+  assert.match(explorerSource, /explorerColumnLayout\.compact \? null : \(\s*<thead>/);
+  assert.match(explorerSource, /explorerColumnLayout\.showUpdated \? \(/);
+  assert.match(explorerSource, /explorerColumnLayout\.showAssignee \? \(/);
+  assert.match(explorerSource, /explorerColumnLayout\.showComposition \? \(/);
   // «Название» и «Статус» не скрываются никогда — нет условного рендера
-  assert.doesNotMatch(paneSource, /showName|showStatus\s*\?/);
+  assert.doesNotMatch(explorerSource, /showName|showStatus\s*\?/);
 });
 
 test("P4 [А]: marquee applied to name cells of all tree row types", () => {
-  const folderRow = between("function FolderRow(", "// ─── Project Row");
-  const projectRow = between("function ProjectRow(", "// ─── P2 [Б]");
-  const sessionRow = between("function SessionTreeRow(", "// Строки сессий раскрытого проекта");
-  for (const [name, src] of [["folder", folderRow], ["project", projectRow], ["session", sessionRow]]) {
-    assert.match(src, /<ExplorerMarqueeText /, name);
-    assert.match(src, /layout\.compact/, name);
+  // retarget(s0): was sliced via between("function FolderRow(", ...), between("function ProjectRow(", ...)
+  // and between("function SessionTreeRow(", ...); each row type is now located by a stable anchor
+  // (data-testid / string literal unique to the row markup).
+  const rowAnchors = [
+    ["folder", 'data-testid={`folder-navigate-', 3000],
+    ["project", "<ExplorerMarqueeText text={project.name}", 3500],
+    ["session", "title={session.name || session.title}", 3000],
+  ];
+  for (const [name, anchor, radius] of rowAnchors) {
+    const rowSource = around(explorerSource, anchor, radius);
+    assert.match(rowSource, /<ExplorerMarqueeText /, name);
+    assert.match(rowSource, /layout\.compact/, name);
   }
   // Контейнерные строки имеют meta-строку; листовые (сессии) — нет.
-  assert.match(folderRow, /explorer-row-meta/);
-  assert.match(folderRow, /buildExplorerRowMeta/);
-  assert.match(projectRow, /explorer-row-meta/);
-  assert.match(projectRow, /buildExplorerRowMeta/);
+  const folderRowSource = around(explorerSource, 'data-testid={`folder-navigate-', 3000);
+  const projectRowSource = around(explorerSource, "<ExplorerMarqueeText text={project.name}", 3500);
+  assert.match(folderRowSource, /explorer-row-meta/);
+  assert.match(folderRowSource, /buildExplorerRowMeta/);
+  assert.match(projectRowSource, /explorer-row-meta/);
+  assert.match(projectRowSource, /buildExplorerRowMeta/);
   // marquee-контракт: прокрутка только при реальном обрезании
-  const marquee = between("function ExplorerMarqueeText(", "function StatusDotBadge(");
-  assert.match(marquee, /isExplorerTextTruncated\(inner\.scrollWidth, outer\.clientWidth\)/);
-  assert.match(marquee, /explorerMarqueeMotion/);
+  assert.match(explorerSource, /isExplorerTextTruncated\(inner\.scrollWidth, outer\.clientWidth\)/);
+  assert.match(explorerSource, /explorerMarqueeMotion/);
 });
 
 test("P4 [А]: marquee CSS has fade mask + reduced-motion guard", () => {

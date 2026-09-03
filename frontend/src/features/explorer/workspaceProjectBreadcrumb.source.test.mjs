@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set;
+// useWorkspaceExplorerController.js does not move and is still read directly.
+const { text: explorerSource } = readExplorerSources();
 const controllerSource = readFileSync(new URL("./useWorkspaceExplorerController.js", import.meta.url), "utf8");
 
 test("ExplorerPane passes current folder breadcrumbs when opening a project", () => {

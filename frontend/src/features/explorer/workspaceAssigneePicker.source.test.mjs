@@ -1,65 +1,54 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources, around } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
+// retarget(s0): WorkspaceExplorer.jsx-scoped reads moved to the multifile explorer source
+// set; between() slices anchored at in-file markers are replaced by global assertions and
+// windows around stable anchors (component names / string literals).
+const { text: explorerSource } = readExplorerSources();
 const apiSource = readFileSync(new URL("./explorerApi.js", import.meta.url), "utf8");
 
-function between(start, end) {
-  const startIndex = explorerSource.indexOf(start);
-  assert.notEqual(startIndex, -1, `missing start marker: ${start}`);
-  const endIndex = explorerSource.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `missing end marker: ${end}`);
-  return explorerSource.slice(startIndex, endIndex);
-}
-
 test("Explorer renders type-aware assignee column and removes project owner from primary row", () => {
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
-  const folderRowSource = between("function FolderRow(", "// ─── Project Row");
-  const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
-
-  assert.match(explorerPaneSource, /Ответственный \/ Исполнитель/);
-  assert.match(folderRowSource, /<AssigneeCell item=\{folder\}[\s\S]*\/>/);
-  assert.match(projectRowSource, /<AssigneeCell item=\{project\}[\s\S]*\/>/);
-  assert.doesNotMatch(projectRowSource, /Owner:\s*\{project\.owner\.name \|\| project\.owner\.id\}/);
-  assert.doesNotMatch(projectRowSource, /project\.owner\.id/);
+  assert.match(explorerSource, /Ответственный \/ Исполнитель/);
+  assert.match(explorerSource, /<AssigneeCell item=\{folder\}[\s\S]*\/>/);
+  assert.match(explorerSource, /<AssigneeCell item=\{project\}[\s\S]*\/>/);
+  assert.doesNotMatch(explorerSource, /Owner:\s*\{project\.owner\.name \|\| project\.owner\.id\}/);
+  assert.doesNotMatch(explorerSource, /project\.owner\.id/);
 });
 
 test("Folder and project row menus expose assignment actions", () => {
-  const folderRowSource = between("function FolderRow(", "// ─── Project Row");
-  const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
-
-  assert.match(folderRowSource, /getExplorerAssigneeActionLabel\(folder\)/);
-  assert.match(folderRowSource, /onAssign\?\.\(folder,\s*folderLabel\)/);
-  assert.match(projectRowSource, /getExplorerAssigneeActionLabel\(project\)/);
-  assert.match(projectRowSource, /canAssign = false/);
-  assert.match(projectRowSource, /\.\.\.\(canAssign \? \[\{ label: assigneeActionLabel/);
-  assert.match(projectRowSource, /onAssign\?\.\(project\)/);
-  assert.match(explorerPaneSource, /kind:\s*"responsible"/);
-  assert.match(explorerPaneSource, /folderLabel:\s*targetLabel/);
-  assert.match(explorerPaneSource, /kind:\s*"executor"/);
-  assert.match(explorerPaneSource, /canAssign=\{!!permissions\?\.canRenameProject\}/);
+  assert.match(explorerSource, /getExplorerAssigneeActionLabel\(folder\)/);
+  assert.match(explorerSource, /onAssign\?\.\(folder,\s*folderLabel\)/);
+  assert.match(explorerSource, /getExplorerAssigneeActionLabel\(project\)/);
+  assert.match(explorerSource, /canAssign = false/);
+  assert.match(explorerSource, /\.\.\.\(canAssign \? \[\{ label: assigneeActionLabel/);
+  assert.match(explorerSource, /onAssign\?\.\(project\)/);
+  assert.match(explorerSource, /kind:\s*"responsible"/);
+  assert.match(explorerSource, /folderLabel:\s*targetLabel/);
+  assert.match(explorerSource, /kind:\s*"executor"/);
+  assert.match(explorerSource, /canAssign=\{!!permissions\?\.canRenameProject\}/);
   assert.match(explorerSource, /currentUser=\{user\}/);
   assert.match(explorerSource, /orgs=\{orgs\}/);
 });
 
 test("Assignee picker loads assignable users, filters users, and has bounded loading states", () => {
-  const dialogSource = between("function AssigneeDialog(", "function folderMoveErrorMessage(");
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
+  // retarget(s0): dialog pins were sliced via between("function AssigneeDialog(", "function folderMoveErrorMessage(");
+  // the dialog is now located by a stable string literal unique to its user-search markup.
+  const dialogSource = around(explorerSource, 'placeholder="Найти пользователя"', 3800);
 
   assert.match(explorerSource, /apiListOrgAssignableUsers/);
   assert.doesNotMatch(explorerSource, /apiListOrgMembers/);
   assert.match(explorerSource, /mergeExplorerAssignableCurrentUser/);
   assert.match(explorerSource, /getExplorerAssignableUserId/);
-  assert.match(explorerPaneSource, /Promise\.race\(\[\s*apiListOrgAssignableUsers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
-  assert.match(explorerPaneSource, /normalizeExplorerAssignableUsersResponse\(resp\)/);
-  assert.match(explorerPaneSource, /\}, \[activeOrgId,\s*assigneeDialog\]\);/);
-  assert.doesNotMatch(explorerPaneSource, /\}, \[[^\]]*assigneeMembersState\.(?:loaded|loading|orgId)[^\]]*\]\);/);
-  assert.match(explorerPaneSource, /loading:\s*false,\s*loaded:\s*true,\s*error:\s*normalized\.error/s);
-  assert.match(explorerPaneSource, /const responsibleAssigneeUsers = useMemo\(/);
-  assert.match(explorerPaneSource, /assigneeDialog\.kind === "responsible" \? responsibleAssigneeUsers : assigneeMembersState\.items/);
-  assert.match(explorerPaneSource, /catch\(\(e\) => \{[\s\S]*loading:\s*false,[\s\S]*error:\s*"Не удалось загрузить пользователей\."/);
+  assert.match(explorerSource, /Promise\.race\(\[\s*apiListOrgAssignableUsers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
+  assert.match(explorerSource, /normalizeExplorerAssignableUsersResponse\(resp\)/);
+  assert.match(explorerSource, /\}, \[activeOrgId,\s*assigneeDialog\]\);/);
+  assert.doesNotMatch(explorerSource, /\}, \[[^\]]*assigneeMembersState\.(?:loaded|loading|orgId)[^\]]*\]\);/);
+  assert.match(explorerSource, /loading:\s*false,\s*loaded:\s*true,\s*error:\s*normalized\.error/s);
+  assert.match(explorerSource, /const responsibleAssigneeUsers = useMemo\(/);
+  assert.match(explorerSource, /assigneeDialog\.kind === "responsible" \? responsibleAssigneeUsers : assigneeMembersState\.items/);
+  assert.match(explorerSource, /catch\(\(e\) => \{[\s\S]*loading:\s*false,[\s\S]*error:\s*"Не удалось загрузить пользователей\."/);
   assert.match(dialogSource, /filterExplorerAssignableUsers\(users,\s*query\)/);
   assert.match(dialogSource, /Загрузка пользователей\.\.\./);
   assert.match(dialogSource, /Нет доступных пользователей для назначения/);
@@ -69,18 +58,18 @@ test("Assignee picker loads assignable users, filters users, and has bounded loa
 });
 
 test("Saving responsible and executor uses existing API payloads only", () => {
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
-
   assert.match(apiSource, /export async function apiUpdateFolder\(workspaceId,\s*folderId,\s*patch = \{\}\)/);
-  assert.match(explorerPaneSource, /const normalizedUserId = String\(userIdOrIds \|\| ""\)\.trim\(\) \|\| null/);
-  assert.match(explorerPaneSource, /apiUpdateFolder\(workspaceId,\s*item\.id,\s*\{\s*responsible_user_id:\s*normalizedUserId\s*\}\)/);
-  assert.match(explorerPaneSource, /apiPatchProject\(item\.id,\s*\{\s*executor_user_id:\s*normalizedUserId\s*\}\)/);
-  assert.doesNotMatch(explorerPaneSource, /owner_user_id:\s*normalizedUserId/);
-  assert.doesNotMatch(explorerPaneSource, /context_status:\s*normalizedUserId/);
+  assert.match(explorerSource, /const normalizedUserId = String\(userIdOrIds \|\| ""\)\.trim\(\) \|\| null/);
+  assert.match(explorerSource, /apiUpdateFolder\(workspaceId,\s*item\.id,\s*\{\s*responsible_user_id:\s*normalizedUserId\s*\}\)/);
+  assert.match(explorerSource, /apiPatchProject\(item\.id,\s*\{\s*executor_user_id:\s*normalizedUserId\s*\}\)/);
+  assert.doesNotMatch(explorerSource, /owner_user_id:\s*normalizedUserId/);
+  assert.doesNotMatch(explorerSource, /context_status:\s*normalizedUserId/);
 });
 
 test("Session row, search and move surfaces remain wired", () => {
-  const sessionRowSource = between("function SessionRow(", "// ─── Project Pane");
+  // retarget(s0): was sliced via between("function SessionRow(", "// ─── Project Pane");
+  // the session row is now located by its stable kebab-menu title string.
+  const sessionRowSource = around(explorerSource, 'title="Действия сессии"', 4000);
 
   assert.match(sessionRowSource, /StatusPopoverControl/);
   assert.match(sessionRowSource, /onSessionStatusChange/);

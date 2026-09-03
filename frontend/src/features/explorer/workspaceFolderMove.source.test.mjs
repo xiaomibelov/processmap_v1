@@ -1,19 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readExplorerSources, from, around } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
-
-function between(start, end) {
-  const startIndex = explorerSource.indexOf(start);
-  assert.notEqual(startIndex, -1, `missing start marker: ${start}`);
-  const endIndex = explorerSource.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `missing end marker: ${end}`);
-  return explorerSource.slice(startIndex, endIndex);
-}
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set;
+// row/dialog slices are re-anchored at stable identifiers (data-testid / component names)
+// instead of in-file positional markers.
+const { text: explorerSource } = readExplorerSources();
 
 test("folder move uses existing API wrapper and opens from folder rows", () => {
-  const folderRowSource = between("function FolderRow(", "// ─── Project Row");
+  // retarget(s0): was between("function FolderRow(", "// ─── Project Row")
+  const folderRowSource = around(explorerSource, 'data-testid={`folder-navigate-', 3000);
 
   assert.match(explorerSource, /apiMoveFolder,/);
   assert.match(explorerSource, /import \{[^}]*buildFolderMoveTargets[^}]*\} from "\.\/explorerMoveTargets\.js";/s);
@@ -23,14 +19,16 @@ test("folder move uses existing API wrapper and opens from folder rows", () => {
 });
 
 test("session rows do not expose move action from folder move contour", () => {
-  const sessionRowSource = between("function SessionRow(", "// ─── Project Pane");
+  // retarget(s0): was between("function SessionRow(", "// ─── Project Pane")
+  const sessionRowSource = around(explorerSource, 'title="Действия сессии"', 9500);
 
   assert.doesNotMatch(sessionRowSource, /Переместить/);
   assert.doesNotMatch(sessionRowSource, /IcoMove/);
 });
 
 test("move dialog disables invalid targets and calls apiMoveFolder with selected target", () => {
-  const dialogSource = between("function MoveFolderDialog(", "// ─── Workspace Sidebar");
+  // retarget(s0): was between("function MoveFolderDialog(", "// ─── Workspace Sidebar")
+  const dialogSource = from(explorerSource, "MoveFolderDialog", 12000);
 
   assert.match(dialogSource, /buildFolderMoveTargets\(/);
   assert.match(dialogSource, /Переместить \$\{folderLabelAccusative\}/);
@@ -40,10 +38,8 @@ test("move dialog disables invalid targets and calls apiMoveFolder with selected
 });
 
 test("successful folder move refreshes explorer and preserves label aliases", () => {
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Root WorkspaceExplorer");
-
-  assert.match(explorerPaneSource, /load\(\{ resetInlineChildren:\s*true \}\)/);
-  assert.match(explorerPaneSource, /folderDisplayLabel\(\{/);
-  assert.match(explorerPaneSource, /Раздел перемещён/);
-  assert.match(explorerPaneSource, /Папка перемещена/);
+  assert.match(explorerSource, /load\(\{ resetInlineChildren:\s*true \}\)/);
+  assert.match(explorerSource, /folderDisplayLabel\(\{/);
+  assert.match(explorerSource, /Раздел перемещён/);
+  assert.match(explorerSource, /Папка перемещена/);
 });

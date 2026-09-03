@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set
+// (decomposition-safe); explorerApi.js does not move and is still read directly.
+const { text: explorerSource } = readExplorerSources();
 const apiSource = readFileSync(new URL("./explorerApi.js", import.meta.url), "utf8");
 
 test("explorer API supports eager tree query param", () => {
@@ -50,14 +53,12 @@ test("SessionRow shows load subprocesses button for root sessions", () => {
 });
 
 test("SessionRow handles load subprocess failures inline with toast and retry instead of alert", () => {
-  const rowSource = explorerSource.slice(
-    explorerSource.indexOf("function SessionRow("),
-    explorerSource.indexOf("function ActionMenu("),
-  );
-
-  assert.match(rowSource, /subprocessLoadError/);
-  assert.match(rowSource, /setMoveNotice\("Не удалось догрузить подпроцессы\."\)/);
-  assert.match(rowSource, /InlineErrorRow/);
-  assert.match(rowSource, /onRetry=\{loadAllSubprocesses\}/);
-  assert.doesNotMatch(rowSource, /window\.alert|alert\(/);
+  // retarget(s0): was sliced via indexOf("function SessionRow(") .. indexOf("function ActionMenu(");
+  // the failure-handling pins are unique to the session row and hold globally over the
+  // explorer source set, and the no-alert guard is a global product rule.
+  assert.match(explorerSource, /subprocessLoadError/);
+  assert.match(explorerSource, /setMoveNotice\("Не удалось догрузить подпроцессы\."\)/);
+  assert.match(explorerSource, /InlineErrorRow/);
+  assert.match(explorerSource, /onRetry=\{loadAllSubprocesses\}/);
+  assert.doesNotMatch(explorerSource, /window\.alert|alert\(/);
 });

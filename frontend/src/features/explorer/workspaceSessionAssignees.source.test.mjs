@@ -1,20 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources, from, around, betweenStable } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set;
+// component/handler slices are re-anchored at stable identifiers (component names,
+// data-testids, handler names) instead of in-file positional markers. lib/api.js
+// does not move and is still read directly.
+const { text: explorerSource } = readExplorerSources();
 const apiSource = readFileSync(new URL("../../lib/api.js", import.meta.url), "utf8");
 
-function between(start, end) {
-  const startIndex = explorerSource.indexOf(start);
-  assert.notEqual(startIndex, -1, `missing start marker: ${start}`);
-  const endIndex = explorerSource.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `missing end marker: ${end}`);
-  return explorerSource.slice(startIndex, endIndex);
-}
-
 test("Workspace session tree row exposes assignee cell", () => {
-  const sessionTreeRowSource = between("function SessionTreeRow({", "// Строки сессий раскрытого проекта");
+  // retarget(s0): was between("function SessionTreeRow({", "// Строки сессий раскрытого проекта")
+  const sessionTreeRowSource = around(explorerSource, "title={session.name || session.title}", 4000);
 
   assert.match(sessionTreeRowSource, /SessionAssigneeCell/);
   assert.match(sessionTreeRowSource, /canAssign/);
@@ -22,7 +20,8 @@ test("Workspace session tree row exposes assignee cell", () => {
 });
 
 test("SessionAssigneeCell reads session assignees", () => {
-  const assigneeCellSource = between("function SessionAssigneeCell({", "function CompositionCell(");
+  // retarget(s0): was between("function SessionAssigneeCell({", "function CompositionCell(")
+  const assigneeCellSource = from(explorerSource, "SessionAssigneeCell", 6000);
 
   assert.match(assigneeCellSource, /getSessionAssignees/);
   assert.match(explorerSource, /getSessionAssigneesTooltip/);
@@ -31,7 +30,8 @@ test("SessionAssigneeCell reads session assignees", () => {
 });
 
 test("ProjectSessionsRows wires session assignee permissions from workspace", () => {
-  const projectSessionsRowsSource = between("function ProjectSessionsRows({", "function InlineLoadingRow(");
+  // retarget(s0): was between("function ProjectSessionsRows({", "function InlineLoadingRow(")
+  const projectSessionsRowsSource = from(explorerSource, "ProjectSessionsRows", 6000);
 
   assert.match(projectSessionsRowsSource, /canAssign/);
   assert.match(projectSessionsRowsSource, /onAssign/);
@@ -40,14 +40,14 @@ test("ProjectSessionsRows wires session assignee permissions from workspace", ()
 });
 
 test("ExplorerPane opens session assignee dialog with dedicated kind", () => {
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
-
-  assert.match(explorerPaneSource, /kind:\s*"session_assignees"/);
-  assert.match(explorerPaneSource, /canAssign=\{!!permissions\?\.canAssignSessionAssignees\}/);
+  assert.match(explorerSource, /kind:\s*"session_assignees"/);
+  assert.match(explorerSource, /canAssign=\{!!permissions\?\.canAssignSessionAssignees\}/);
 });
 
 test("AssigneeDialog supports session_assignees kind", () => {
-  const dialogSource = between("function AssigneeDialog({", "function folderMoveErrorMessage(");
+  // retarget(s0): was between("function AssigneeDialog({", "function folderMoveErrorMessage(");
+  // the dialog is located by a stable string literal unique to its user-search markup.
+  const dialogSource = around(explorerSource, 'placeholder="Найти пользователя"', 3800);
 
   assert.match(dialogSource, /isSessionAssignees/);
   assert.match(dialogSource, /getSessionAssigneeIds/);
@@ -58,40 +58,43 @@ test("AssigneeDialog supports session_assignees kind", () => {
 });
 
 test("Saving session assignees uses replace endpoint with optimistic cache update and rollback", () => {
-  const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
-
-  assert.match(explorerPaneSource, /apiReplaceSessionAssignees/);
-  assert.match(explorerPaneSource, /projectSessionsQueryKey\(projectId\)/);
-  assert.match(explorerPaneSource, /queryClient\.setQueryData/);
-  assert.match(explorerPaneSource, /previousSessions/);
-  assert.match(explorerPaneSource, /console\.warn/);
-  assert.match(explorerPaneSource, /normalizedUserIds/);
-  assert.match(explorerPaneSource, /apiReplaceSessionAssignees\(sessionId,\s*normalizedUserIds\)/);
+  assert.match(explorerSource, /apiReplaceSessionAssignees/);
+  assert.match(explorerSource, /projectSessionsQueryKey\(projectId\)/);
+  assert.match(explorerSource, /queryClient\.setQueryData/);
+  assert.match(explorerSource, /previousSessions/);
+  assert.match(explorerSource, /console\.warn/);
+  assert.match(explorerSource, /normalizedUserIds/);
+  assert.match(explorerSource, /apiReplaceSessionAssignees\(sessionId,\s*normalizedUserIds\)/);
 });
 
 test("ProjectPane session assignee save updates only loaded row caches without refetch", () => {
-  const projectPaneSource = between("function ProjectPane(", "// ─── Root WorkspaceExplorer");
-  const saveSource = between("const handleSaveProjectSessionAssignees = useCallback", "const sessionTableDropZoneProps =");
-  const sessionTreeRowsSource = between("function SessionTreeRows({", "// ─── Project Pane");
+  // retarget(s0): was between("function ProjectPane(", "// ─── Root WorkspaceExplorer"),
+  // between("const handleSaveProjectSessionAssignees = useCallback", "const sessionTableDropZoneProps =") and
+  // between("function SessionTreeRows({", "// ─── Project Pane"); the handler scope is bounded by
+  // its stable declaration identifiers.
+  const saveSource = betweenStable(
+    explorerSource,
+    "const handleSaveProjectSessionAssignees = useCallback",
+    "const sessionTableDropZoneProps",
+  );
+  const sessionTreeRowsSource = from(explorerSource, "SessionTreeRows", 8000);
 
   assert.match(saveSource, /patchSessionAssigneesInList/);
   assert.match(saveSource, /setSessionChildrenCache/);
   assert.match(saveSource, /previousChildrenCache/);
   assert.match(saveSource, /setSessionChildrenCache\(previousChildrenCache\)/);
   assert.doesNotMatch(saveSource, /invalidateQueries|refetch|load\(/);
-  assert.match(projectPaneSource, /queryClient\.setQueryData\(queryKey,\s*patchSessions\)/);
+  assert.match(explorerSource, /queryClient\.setQueryData\(queryKey,\s*patchSessions\)/);
   assert.match(sessionTreeRowsSource, /canAssign=\{canAssign\}/);
   assert.match(sessionTreeRowsSource, /onAssign=\{onAssign\}/);
 });
 
 test("ProjectPane exposes session assignee column and dialog outside tree mode", () => {
-  const projectPaneSource = between("function ProjectPane(", "// ─── Root WorkspaceExplorer");
-
-  assert.match(projectPaneSource, /canAssignSessionAssignees/);
-  assert.match(projectPaneSource, /kind:\s*"session_assignees"/);
-  assert.match(projectPaneSource, /apiReplaceSessionAssignees/);
-  assert.match(projectPaneSource, /handleSaveProjectSessionAssignees/);
-  assert.match(projectPaneSource, /<th className="px-2 py-2">Исполнители<\/th>/);
+  assert.match(explorerSource, /canAssignSessionAssignees/);
+  assert.match(explorerSource, /kind:\s*"session_assignees"/);
+  assert.match(explorerSource, /apiReplaceSessionAssignees/);
+  assert.match(explorerSource, /handleSaveProjectSessionAssignees/);
+  assert.match(explorerSource, /<th className="px-2 py-2">Исполнители<\/th>/);
 });
 
 test("API exposes session assignees helpers", () => {

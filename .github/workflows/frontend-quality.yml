@@ -37,3 +37,22 @@ jobs:
       - name: ESLint no-undef gate
         working-directory: frontend
         run: npm run lint
+
+      # Test gate (contour refactor/workspace-explorer-s0-tests):
+      # frontend tests must execute on every PR; red tests = red PR.
+      - name: Characterization tests (workspace explorer, Ш0)
+        working-directory: frontend
+        run: npm run test:char
+
+      - name: Smoke tests
+        working-directory: frontend
+        run: npm run test:smoke
+
+      # Explorer-scoped node:test suite (model unit tests + retargeted
+      # source tests). The FULL node --test suite is not gated yet: it has
+      # 86 pre-existing failures unrelated to the explorer (see
+      # .planning/contours/refactor/workspace-explorer-s0-tests/PR.md);
+      # gating it is a follow-up contour.
+      - name: Explorer unit & source tests (node --test)
+        working-directory: frontend
+        run: node --test $(find src/features/explorer src/test-utils -name '*.test.mjs' -type f)
