@@ -15,30 +15,31 @@ const breadcrumbsSource = readFileSync(new URL("./TextBreadcrumbs.jsx", import.m
 // мета → крошки через «…» → статус точкой → кнопка иконкой.
 
 test("ProjectPane: одна flex-строка без переноса, кнопка назад и крошки в ней", () => {
-  assert.match(explorerSource, /← Назад к разделу/);
+  assert.match(explorerSource, /Назад к проекту/);
   assert.match(explorerSource, /data-testid="project-back-section"/);
   assert.match(explorerSource, /dataTestId="project-breadcrumbs"/);
   // однострочный контейнер: nowrap + overflow-hidden + высота строки
-  assert.match(explorerSource, /flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap/);
+  assert.match(explorerSource, /flex h-\[var\(--explorer-header-h\)\] min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap/);
   // H1 как отдельного блока больше нет — testid заголовка на текущем сегменте крошек
   assert.doesNotMatch(explorerSource, /<h1[^>]*data-testid="project-title"/);
   assert.match(explorerSource, /testId: index === projectBreadcrumbTrail\.length - 1 \? "project-title" : undefined/);
 });
 
-test("ProjectPane: статус-контрол и мета «Сессии: N» в строке навигации", () => {
+test("ProjectPane: статус-контрол в строке навигации, мета проекта в sidebar context", () => {
   assert.match(explorerSource, /<StatusPopoverControl/);
   assert.match(explorerSource, /domain="project"/);
   assert.match(explorerSource, /value=\{proj\.status\}/);
-  assert.match(explorerSource, /`· \$\{sessionCountersFull\}`/);
-  assert.match(explorerSource, /data-testid="project-meta"/);
+  assert.match(explorerSource, /const projectSidebarContextInfo = proj \? \{ type: "project", project: proj, sessionCount: sessions\.length \} : null/);
+  assert.match(explorerSource, /useSetExplorerSidebarContextInfo\(projectSidebarContextInfo\)/);
+  assert.doesNotMatch(explorerSource, /data-testid="project-meta"/);
 });
 
 test("ExplorerPane: кнопка «← Назад к разделам», крошки в одной строке; мета workspace перенесена в сайдбар", () => {
-  assert.match(explorerSource, /← Назад к разделам/);
+  assert.match(explorerSource, /Назад к разделам/);
   assert.match(explorerSource, /data-testid="explorer-back-sections"/);
   assert.match(explorerSource, /dataTestId="explorer-breadcrumbs"/);
   assert.doesNotMatch(explorerSource, /<h1[^>]*data-testid="explorer-section-title"/);
-  assert.match(explorerSource, /testId: index === headerCrumbs\.length - 1 \? "explorer-section-title" : undefined/);
+  assert.match(explorerSource, /testId: index === headerDisplayCrumbs\.length - 1 \? "explorer-section-title" : undefined/);
   assert.doesNotMatch(explorerSource, /data-testid="explorer-section-meta"/);
 });
 
@@ -49,7 +50,7 @@ test("AppShell: полоса сессии над ProcessStage/stageOverride пр
 });
 
 test("SessionNavStrip: однострочная полоса — кнопка, крошки, статус, мета", () => {
-  assert.match(stripSource, /← Назад к проекту/);
+  assert.match(stripSource, /Назад к проекту/);
   assert.match(stripSource, /data-testid="session-nav-strip"/);
   assert.match(stripSource, /flex h-10 min-w-0 flex-nowrap items-center gap-2 overflow-hidden whitespace-nowrap/);
   assert.match(stripSource, /dataTestId="topbar-breadcrumbs"/);

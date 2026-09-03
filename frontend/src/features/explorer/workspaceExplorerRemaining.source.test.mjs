@@ -32,15 +32,16 @@ test("workspace success feedback is a fixed toast overlay with auto-dismiss", ()
   assert.doesNotMatch(renderSource, /border-b border-border/);
 });
 
-test("workspace actions live in workspace toolbar, not in portaled header", () => {
-  const headerSource = between("const explorerHeader = (", "const workspaceToolbar = (");
-  const toolbarSource = between("const workspaceToolbar = (", "return (");
+test("workspace actions live in workspace filter toolbar, not in portaled header", () => {
+  const headerSource = between("const explorerHeader = (", "const workspaceFilterToolbar = (");
+  const paneSource = between("function ExplorerPane(", "// ─── Session Row");
 
   assert.doesNotMatch(headerSource, /workspace-explorer-tree-search|setCreatingFolder|setCreatingProject/);
-  assert.match(toolbarSource, /data-testid="workspace-explorer-toolbar"/);
-  assert.match(toolbarSource, /workspace-explorer-tree-search/);
-  assert.match(toolbarSource, /setCreatingFolder\(true\)/);
-  assert.match(toolbarSource, /setCreatingProject\(true\)/);
+  assert.match(paneSource, /data-testid="workspace-filter-toolbar"/);
+  assert.doesNotMatch(explorerSource, /data-testid="workspace-explorer-toolbar"/);
+  assert.match(paneSource, /workspace-explorer-tree-search/);
+  assert.match(paneSource, /setCreatingFolder\(true\)/);
+  assert.match(paneSource, /setCreatingProject\(true\)/);
 });
 
 test("workspace search uses a standard 16px icon component instead of text glyph", () => {
