@@ -125,8 +125,11 @@ function buildSeedBpmnXml(title = "") {
   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+  xmlns:modeler="http://camunda.org/schema/modeler/1.0"
   id="Definitions_1"
-  targetNamespace="http://bpmn.io/schema/bpmn">
+  targetNamespace="http://bpmn.io/schema/bpmn"
+  modeler:executionPlatform="Camunda Cloud">
   <bpmn:process id="Process_1" isExecutable="false" name="${processName}">
     <bpmn:startEvent id="StartEvent_1" name="Старт" />
     <bpmn:task id="Task_1" name="Опишите первый шаг процесса" />
