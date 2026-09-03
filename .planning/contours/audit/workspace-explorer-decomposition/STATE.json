@@ -1,0 +1,22 @@
+{
+  "contour": "audit/workspace-explorer-decomposition",
+  "type": "audit",
+  "branch": "audit/workspace-explorer-decomposition",
+  "baseline": "d7e8b04a73e89b55a48848d19ce6430d4dedd23d",
+  "status": "ready_for_review",
+  "phases": {
+    "planning": "done",
+    "execution": "done",
+    "review": "pending"
+  },
+  "artifacts": {
+    "REPORT.md": "inventory + coupling + metrics + history",
+    "DECOMP.md": "target structure + 18 steps + step 0 + optional 15'",
+    "TESTS-BASELINE.md": "coverage now + characterization plan C1-C4",
+    "RISKS.md": "10 risks with mitigations",
+    "PR.md": "this PR body",
+    "evidence/": "cyclo.py + full complexity output (457 functions); local only, gitignored by convention (.planning/contours/**/evidence/)"
+  },
+  "product_code_changed": false,
+  "notes": "File is 5204 lines (not 1700+ as in contour preamble). Baseline includes #900. Host node/docker unavailable during audit; complexity via python lexer, methodology noted in REPORT."
+}
