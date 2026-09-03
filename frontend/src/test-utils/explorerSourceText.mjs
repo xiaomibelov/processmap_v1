@@ -15,15 +15,25 @@ import path from "node:path";
 
 const EXPLORER_DIR = fileURLToPath(new URL("../features/explorer/", import.meta.url));
 
-export function readExplorerSources() {
-  const names = readdirSync(EXPLORER_DIR)
-    .filter((name) => /\.(js|jsx|css)$/.test(name) && !/\.test\./.test(name))
+// retarget(s1): decomposition moves code into subdirectories (components/, hooks/),
+// so the listing is recursive. Only path discovery changes — no assertion changes.
+function listSourceFiles(dir) {
+  return readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => {
+      if (entry.isDirectory()) return listSourceFiles(path.join(dir, entry.name));
+      return path.join(dir, entry.name);
+    })
+    .filter((file) => /\.(js|jsx|css)$/.test(file) && !/\.test\./.test(file))
     .sort();
-  const parts = names.map((name) => {
+}
+
+export function readExplorerSources() {
+  const files = listSourceFiles(EXPLORER_DIR).map((file) => path.relative(EXPLORER_DIR, file));
+  const parts = files.map((name) => {
     const text = readFileSync(path.join(EXPLORER_DIR, name), "utf8");
     return `/* ─── ${name} ─── */\n${text}`;
   });
-  return { files: names, text: parts.join("\n") };
+  return { files, text: parts.join("\n") };
 }
 
 // Window of `length` chars starting at the first occurrence of a stable anchor.
