@@ -16488,6 +16488,46 @@ paths:
       - explorer
       - explorer
   /api/sessions/{session_id}/create-subprocesses:
+    get:
+      description: 'Получить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: get_create_subprocess_sessions_api_sessions__session_id__create_subprocesses_get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: query
+        name: load_all
+        required: false
+        schema:
+          default: false
+          title: Load All
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить сессию процесса
+      tags:
+      - sessions
     post:
       description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
         с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);

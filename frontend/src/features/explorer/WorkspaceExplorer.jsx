@@ -2326,7 +2326,8 @@ function PendingUploadCard({ upload, onRetry }) {
   );
 }
 
-function InlineErrorRow({ depth = 0, message = "", colSpan = 8, onRetry = null }) {  const leftPadding = 8 + depth * 18;
+function InlineErrorRow({ depth = 0, message = "", colSpan = 8, onRetry = null }) {
+  const leftPadding = 8 + depth * 18;
   const text = String(message || "").trim() || "Не удалось загрузить вложенные элементы.";
   return (
     <tr>
@@ -3542,6 +3543,8 @@ function ExplorerPane({
                           folderLabel: "",
                         });
                       }}
+                      setMoveNotice={setMoveNotice}
+                      onActionError={setActionError}
                     />
                   );
                 }
@@ -3704,10 +3707,13 @@ function SessionRow({
   onToggleExpand,
   canAssign = false,
   onAssign,
+  setMoveNotice = null,
+  onActionError = null,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [creatingSubprocesses, setCreatingSubprocesses] = useState(false);
+  const [subprocessLoadError, setSubprocessLoadError] = useState("");
   const sessionStatusMeta = getManualSessionStatusMeta(session.status || "draft");
   const hasChildren = Boolean(session?.has_children);
   const showChevron = treeMode && hasChildren;
@@ -3744,6 +3750,32 @@ function SessionRow({
   const rowAttentionLabel = discussionAttentionCount === null
     ? "Требует внимания"
     : "Требует внимания из обсуждений";
+  const loadAllSubprocesses = async (event) => {
+    event?.stopPropagation?.();
+    const sid = String(session?.id || session?.session_id || "").trim();
+    if (!sid) return;
+    setCreatingSubprocesses(true);
+    setSubprocessLoadError("");
+    try {
+      const resp = await apiCreateSubprocessSessions(sid, { loadAll: true });
+      if (!resp?.ok) {
+        const message = String(resp?.error || "Не удалось догрузить подпроцессы.");
+        setSubprocessLoadError(message);
+        if (setMoveNotice) setMoveNotice("Не удалось догрузить подпроцессы.");
+        onActionError?.(message);
+        return;
+      }
+      if (setMoveNotice) setMoveNotice("Подпроцессы загружены.");
+      onReload?.();
+    } catch (e) {
+      const message = String(e?.message || "Не удалось догрузить подпроцессы.");
+      setSubprocessLoadError(message);
+      if (setMoveNotice) setMoveNotice("Не удалось догрузить подпроцессы.");
+      onActionError?.(message);
+    } finally {
+      setCreatingSubprocesses(false);
+    }
+  };
   return (
     <>
       <tr
@@ -3815,21 +3847,7 @@ function SessionRow({
               <button
                 type="button"
                 disabled={creatingSubprocesses}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  setCreatingSubprocesses(true);
-                  try {
-                    const remaining = Number(session?.subprocesses_count || 0) - Number(session?.children_count || 0);
-                    const resp = await apiCreateSubprocessSessions(session?.id || session?.session_id, { loadAll: true });
-                    if (!resp?.ok) {
-                      window.alert?.(String(resp?.error || "Не удалось догрузить подпроцессы"));
-                      return;
-                    }
-                    onReload?.();
-                  } finally {
-                    setCreatingSubprocesses(false);
-                  }
-                }}
+                onClick={loadAllSubprocesses}
                 className="ml-2 inline-flex shrink-0 items-center rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 data-stop-row-open="1"
               >
@@ -3930,7 +3948,9 @@ function SessionRow({
                           if (!window.confirm(message)) return;
                           const resp = await apiDeleteSession(session.id);
                           if (!resp?.ok) {
-                            window.alert(String(resp?.error || "Не удалось удалить сессию"));
+                            const errorMessage = String(resp?.error || "Не удалось удалить сессию");
+                            onActionError?.(errorMessage);
+                            setMoveNotice?.("Не удалось удалить сессию.");
                             return;
                           }
                           onReload?.();
@@ -3945,6 +3965,14 @@ function SessionRow({
           </div>
         </td>
       </tr>
+      {subprocessLoadError ? (
+        <InlineErrorRow
+          depth={depth}
+          message={subprocessLoadError}
+          colSpan={10}
+          onRetry={loadAllSubprocesses}
+        />
+      ) : null}
       {renaming && canRename ? (
         <InputModal
           title="Переименовать сессию"
@@ -4008,6 +4036,8 @@ function SessionTreeRows({
   eagerTree = false,
   canAssign = false,
   onAssign,
+  setMoveNotice = null,
+  onActionError = null,
 }) {
   const sorted = useMemo(() => sortProjectSessions(sessions, sort), [sessions, sort]);
   return sorted.map((session) => {
@@ -4039,6 +4069,8 @@ function SessionTreeRows({
           notesAggregate={noteAggregatesBySessionId?.get(sid) || null}
           canAssign={canAssign}
           onAssign={onAssign}
+          setMoveNotice={setMoveNotice}
+          onActionError={onActionError}
         />
         {isExpanded ? (
           isLoading ? (
@@ -4089,6 +4121,8 @@ function SessionTreeRows({
               eagerTree={eagerTree}
               canAssign={canAssign}
               onAssign={onAssign}
+              setMoveNotice={setMoveNotice}
+              onActionError={onActionError}
             />
           )
         ) : null}
@@ -4103,6 +4137,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [moveNotice, setMoveNotice] = useState("");
   const [creating, setCreating] = useState(false);
   // P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта.
   // pendingUploads — транзиентные строки создания/upload (стадии + retry).
@@ -4342,7 +4377,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       const sessionSnapshot = await apiGetSession(sid);
       const baseVersion = Number(sessionSnapshot?.session?.diagram_state_version);
       if (!sessionSnapshot?.ok || !Number.isFinite(baseVersion) || baseVersion < 0) {
-        window.alert(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
+        setError(formatSessionPatchError(sessionSnapshot, "Не удалось получить актуальную версию сессии"));
+        setMoveNotice("Не удалось обновить статус сессии.");
         return false;
       }
       const resp = await apiPatchSession(sid, {
@@ -4353,7 +4389,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         const message = resp?.status === 409
           ? "Переход в выбранный статус недоступен для текущего состояния сессии."
           : formatSessionPatchError(resp);
-        window.alert(message);
+        setError(message);
+        setMoveNotice("Не удалось обновить статус сессии.");
         return false;
       }
       handleSessionPatched(sid, {
@@ -4363,7 +4400,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       await load();
       return true;
     } catch (e) {
-      window.alert(String(e?.message || "Не удалось обновить статус сессии"));
+      setError(String(e?.message || "Не удалось обновить статус сессии"));
+      setMoveNotice("Не удалось обновить статус сессии.");
       return false;
     }
   }, [handleSessionPatched, load]);
@@ -4635,6 +4673,13 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {navSlotEl ? createPortal(projectHeader, navSlotEl) : projectHeader}
 
+      {error ? (
+        <div className="px-4 py-3 text-sm text-danger bg-danger/5 border-b border-border">{error}</div>
+      ) : null}
+      {moveNotice ? (
+        <WorkspaceExplorerToast message={moveNotice} onClose={() => setMoveNotice("")} />
+      ) : null}
+
       {activeTab === "analytics" ? (
         <div className="flex-1 min-h-0 overflow-hidden">
           <AnalyticsPage scope="project" scopeId={projectId} module="overview" orgId={activeOrgId} embedded />
@@ -4774,6 +4819,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                           folderLabel: "",
                         });
                       }}
+                      setMoveNotice={setMoveNotice}
+                      onActionError={setError}
                     />
                   ) : (
                     sortedSessions.map((s) => (
@@ -4803,6 +4850,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                             folderLabel: "",
                           });
                         }}
+                        setMoveNotice={setMoveNotice}
+                        onActionError={setError}
                       />
                     ))
                   )}

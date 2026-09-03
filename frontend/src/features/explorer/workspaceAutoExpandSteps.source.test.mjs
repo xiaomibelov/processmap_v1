@@ -48,3 +48,16 @@ test("SessionRow shows load subprocesses button for root sessions", () => {
   assert.match(explorerSource, /apiCreateSubprocessSessions/);
   assert.match(explorerSource, /Загрузить остальные/);
 });
+
+test("SessionRow handles load subprocess failures inline with toast and retry instead of alert", () => {
+  const rowSource = explorerSource.slice(
+    explorerSource.indexOf("function SessionRow("),
+    explorerSource.indexOf("function ActionMenu("),
+  );
+
+  assert.match(rowSource, /subprocessLoadError/);
+  assert.match(rowSource, /setMoveNotice\("Не удалось догрузить подпроцессы\."\)/);
+  assert.match(rowSource, /InlineErrorRow/);
+  assert.match(rowSource, /onRetry=\{loadAllSubprocesses\}/);
+  assert.doesNotMatch(rowSource, /window\.alert|alert\(/);
+});

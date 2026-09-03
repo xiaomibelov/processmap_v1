@@ -49,6 +49,7 @@
 - Без broad refactor без явного доказательства необходимости.
 - Без product-code изменений вне заявленного bounded contour.
 - Любые решения по runtime/save/revision/status/template контурам не смешиваются между собой без прямого evidence.
+- Во frontend product-code запрещены нативные браузерные диалоги (`alert`, `confirm`, `prompt`) для ошибок/продуктовых действий. Используй inline-состояние рядом с действием, toast для краткого сигнала и/или контролируемый modal с доступным retry/cancel.
 
 ### 6.1. OpenAPI/spec freshness (blocking rule)
 - Любой PR, добавляющий или изменяющий HTTP-эндпоинты, ОБЯЗАН содержать регенерированный `docs/openapi.yaml`.
