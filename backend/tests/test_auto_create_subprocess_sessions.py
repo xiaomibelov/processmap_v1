@@ -485,6 +485,26 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         self.assertEqual(body2["created"], 2)
         self.assertFalse(body2["has_more"])
 
+    def test_endpoint_create_subprocesses_get_load_all_is_supported_for_workspace_prefetch(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_endpoint_create_get@local", "editor_endpoint_create_get@local", "org_endpoint_create_get"
+        )
+        sid = self._create_session(str(owner["id"]), "org_endpoint_create_get", project_id="proj_1", title="root")
+        ids = [f"sub_{i}" for i in range(12)]
+        xml = self._bpmn_with_subprocesses(ids)
+        self._save_bpmn(sid, xml, editor, "org_endpoint_create_get")
+
+        token = create_access_token(str(editor["id"]))
+        r = self.client.get(
+            f"/api/sessions/{sid}/create-subprocesses?load_all=true",
+            headers=self._headers(token, "org_endpoint_create_get"),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["created"], 12)
+        self.assertEqual(body["total"], 12)
+        self.assertFalse(body["has_more"])
+
     def test_endpoint_create_subprocesses_forbidden_for_viewer(self):
         owner = self._make_user("owner_endpoint_viewer@local")
         editor = self._make_user("editor_endpoint_viewer@local")
