@@ -1,0 +1,53 @@
+{
+  "projectHeader": {
+    "x": 77,
+    "y": 58,
+    "width": 1350,
+    "height": 37,
+    "text": "СессииАналитикаПроект хлебных крошекАктивенПоиск по workspace Новая сессия",
+    "title": ""
+  },
+  "projectToolbar": null,
+  "projectSearch": {
+    "x": 1048,
+    "y": 66,
+    "width": 214,
+    "height": 20,
+    "text": "",
+    "title": "Поиск по workspace"
+  },
+  "projectPrimary": {
+    "x": 1279,
+    "y": 58,
+    "width": 128,
+    "height": 36,
+    "text": "Новая сессия",
+    "title": ""
+  },
+  "projectBreadcrumbs": {
+    "x": 253,
+    "y": 66,
+    "width": 183,
+    "height": 20,
+    "text": "Проект хлебных крошек",
+    "title": "Проект хлебных крошек"
+  },
+  "workspaceToolbar": {
+    "x": 345,
+    "y": 148,
+    "width": 1070,
+    "height": 53,
+    "text": "ВсеАктивенГотовоЧерновикAS IS...1 элементовПоиск по workspace Создать раздел Проект",
+    "title": ""
+  },
+  "workspaceSearch": {
+    "x": 1039,
+    "y": 164,
+    "width": 114,
+    "height": 20,
+    "text": "",
+    "title": "Поиск по workspace"
+  },
+  "dialogs": [],
+  "body": "PROCESSMAP\nORG\nDefault\nАдмин-панель\nAPI Docs\nСессии\nАналитика\nПроект хлебных крошек\nАктивен\nПоиск по workspace\nНовая сессия\nНазад к проекту\nWORKSPACES\nMain Workspace\n1 раздел · 1 проект\nВ проекте: 1 сессия\nplatform_admin\n\t\nНАЗВАНИЕ\n↑\n\t\nСТАТУС\n↑\n\t\nСТАДИЯ\n↑\n\t\nOWNER\n↑\n\tИСПОЛНИТЕЛИ\tDOD\tОБС.\t\n⚠\nВНИМ.\n\t📋\t\nОБНОВЛЕНА\n↑\n\t\n\t\nСессия проверки рядов\n\t\nЧерновик\n\tЧерновик\t\nadmin@local\n\t+ Назначить\t\n0%\n\t\n\t—\t\t4 мин назад\t\nОткрыть сессию\n···\nВерсия v1.0.143\n· Перерисованы сабтабы анализа: границы процесса, действия, исключения и AI-анализ."
+}

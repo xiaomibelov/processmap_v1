@@ -268,6 +268,46 @@ class WorkspaceAccessControlsTest(unittest.TestCase):
         self.assertEqual(str(page.project.name or ""), "Explorer Project")
         self.assertEqual(int(page.project.dod_percent or 0), 0)
 
+    def test_project_explorer_returns_full_breadcrumbs_for_direct_open(self):
+        admin_id = str(self.admin.get("id") or "")
+        workspace_id = str(self.list_org_workspaces(self.default_org_id)[0].get("id") or "")
+        section_id = str(
+            self.create_workspace_folder(
+                self.default_org_id,
+                workspace_id,
+                "Section A",
+                user_id=admin_id,
+            ).get("id") or ""
+        )
+        folder_id = str(
+            self.create_workspace_folder(
+                self.default_org_id,
+                workspace_id,
+                "Folder B",
+                parent_id=section_id,
+                user_id=admin_id,
+            ).get("id") or ""
+        )
+        project_id = self.create_project_in_folder(
+            self.default_org_id,
+            workspace_id,
+            folder_id,
+            "Direct Project",
+            user_id=admin_id,
+        )
+
+        page = self.get_project_explorer(project_id, self._mk_req(self.admin), workspace_id=workspace_id)
+
+        self.assertEqual(
+            [(crumb.type, crumb.id, crumb.name) for crumb in page.breadcrumbs],
+            [
+                ("workspace", workspace_id, "Main Workspace"),
+                ("folder", section_id, "Section A"),
+                ("folder", folder_id, "Folder B"),
+                ("project", project_id, "Direct Project"),
+            ],
+        )
+
     def test_workspace_aggregates_count_only_root_sessions_not_subprocesses(self):
         from app.routers.explorer import get_explorer_page
 
