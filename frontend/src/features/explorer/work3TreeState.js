@@ -34,6 +34,50 @@ export function projectHasSessions(project) {
   return count > 0;
 }
 
+export function collectExpandableTreeIds({ rootItems, childItemsByFolder }) {
+  const ids = [];
+  const seen = new Set();
+  const append = (id) => {
+    const normalized = String(id || "").trim();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    ids.push(normalized);
+  };
+  const visitItems = (items) => {
+    for (const item of asArray(items)) {
+      const type = String(item?.type || "").trim();
+      if (type === "folder") {
+        if (hasFolderChildren(item)) append(item.id);
+        visitItems(childItemsByFolder?.[String(item?.id || "").trim()]);
+        continue;
+      }
+      if (type === "project" && projectHasSessions(item)) {
+        append(item.id);
+      }
+    }
+  };
+  visitItems(rootItems);
+  return ids;
+}
+
+export function getTreeBulkExpansionState(expandableIds, expandedByFolder) {
+  const ids = asArray(expandableIds).map((id) => String(id || "").trim()).filter(Boolean);
+  if (!ids.length) return "collapsed";
+  const expandedCount = ids.filter((id) => Boolean(expandedByFolder?.[id])).length;
+  if (expandedCount === ids.length) return "expanded";
+  if (expandedCount === 0) return "collapsed";
+  return "mixed";
+}
+
+export function buildTreeBulkExpandedMap(expandedByFolder, expandableIds, expanded) {
+  const next = { ...(expandedByFolder && typeof expandedByFolder === "object" ? expandedByFolder : {}) };
+  for (const id of asArray(expandableIds)) {
+    const normalized = String(id || "").trim();
+    if (normalized) next[normalized] = Boolean(expanded);
+  }
+  return next;
+}
+
 export function buildVisibleRows({
   rootItems,
   expandedByFolder,

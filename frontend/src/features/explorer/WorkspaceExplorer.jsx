@@ -76,7 +76,14 @@ import {
 } from "../workspace/workspacePermissions";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
-import { buildVisibleRows, hasFolderChildren, projectHasSessions } from "./work3TreeState.js";
+import {
+  buildTreeBulkExpandedMap,
+  buildVisibleRows,
+  collectExpandableTreeIds,
+  getTreeBulkExpansionState,
+  hasFolderChildren,
+  projectHasSessions,
+} from "./work3TreeState.js";
 import { projectSessionsQueryKey, projectSessionsQueryOptions } from "./projectSessionsQuery.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import {
@@ -201,6 +208,20 @@ function IcoChevron({ right = false, className = "" }) {
         ? <path d="M4.5 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         : <path d="M2 4.5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       }
+    </svg>
+  );
+}
+function IcoTreeBulk({ expanded = false, className = "" }) {
+  return (
+    <svg className={`inline-block ${className}`} width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M2 3.5h10M2 7h10M2 10.5h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity=".7" />
+      <path
+        d={expanded ? "M5 5.25 7 7.25l2-2M5 8.75l2 2 2-2" : "M5 2.25l2 2 2-2M5 11.75l2-2 2 2"}
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -1723,15 +1744,43 @@ function WorkspaceSidebar({
 
 function ContextMenu({ items, onClose }) {
   const ref = useRef(null);
+  const [position, setPosition] = useState(null);
   useEffect(() => {
     const handler = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
+  useEffect(() => {
+    const parent = ref.current?.parentElement;
+    const rect = parent?.getBoundingClientRect?.();
+    if (!rect) return;
+    const menuWidth = 180;
+    const menuMaxHeight = 320;
+    const gap = 4;
+    const viewportPadding = 8;
+    setPosition({
+      top: Math.max(
+        viewportPadding,
+        Math.min(rect.bottom + gap, window.innerHeight - menuMaxHeight - viewportPadding),
+      ),
+      left: Math.max(
+        viewportPadding,
+        Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding),
+      ),
+      width: menuWidth,
+    });
+  }, []);
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 z-30 bg-panel border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
+      className="z-30 overflow-y-auto rounded-lg border border-border bg-panel py-1 shadow-lg"
+      style={{
+        position: "fixed",
+        top: position ? `${position.top}px` : "-9999px",
+        left: position ? `${position.left}px` : "-9999px",
+        minWidth: `${position?.width || 180}px`,
+        maxHeight: "min(320px, calc(100vh - 16px))",
+      }}
     >
       {items.map((item, i) =>
         item.separator
@@ -2021,7 +2070,7 @@ function ProjectRow({
         </td>
         {layout.showUpdated ? <UpdatedCell node={project} /> : null}
         <td className={`px-2 py-2.5 text-right ${layout.compact ? "w-8" : "w-[88px]"}`} onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="relative flex items-center justify-end gap-1.5">
             {layout.compact ? null : (
               <AppRouteLink
                 className="text-[12px] font-medium text-accent hover:text-accentHover whitespace-nowrap rounded px-1.5 py-0.5 transition-colors hover:bg-accentSoft"
@@ -2454,6 +2503,7 @@ function ExplorerPane({
   const [explorerSort, setExplorerSort] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [hiddenStatusMenuOpen, setHiddenStatusMenuOpen] = useState(false);
+  const [bulkTreeMode, setBulkTreeMode] = useState(null);
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const [activeTab, setActiveTab] = useState("projects");
   const inFlightFolderLoadsRef = useRef(new Set());
@@ -2767,6 +2817,31 @@ function ExplorerPane({
     }),
     [sortedRootItems, effectiveExpandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
+  const treeBulkExpandableIds = useMemo(
+    () => collectExpandableTreeIds({
+      rootItems: sortedRootItems,
+      childItemsByFolder: sortedChildItemsByFolder,
+    }),
+    [sortedRootItems, sortedChildItemsByFolder],
+  );
+  const treeBulkExpandableFolderIds = useMemo(() => {
+    const ids = [];
+    const seen = new Set();
+    const visit = (items) => {
+      for (const item of Array.isArray(items) ? items : []) {
+        if (String(item?.type || "").trim() !== "folder") continue;
+        const id = String(item?.id || "").trim();
+        if (id && hasFolderChildren(item) && !seen.has(id)) {
+          seen.add(id);
+          ids.push(id);
+        }
+        visit(sortedChildItemsByFolder[id]);
+      }
+    };
+    visit(sortedRootItems);
+    return ids;
+  }, [sortedRootItems, sortedChildItemsByFolder]);
+  const treeBulkState = getTreeBulkExpansionState(treeBulkExpandableIds, mergedExpandedByFolder);
   const inlineColSpan = explorerVisibleColumnCount(explorerColumnLayout, { signalColumns: treeColumnProfile.showSignalColumns });
   const searchIndex = useMemo(
     () => buildExplorerSearchIndex({
@@ -3087,6 +3162,7 @@ function ExplorerPane({
   const handleToggleExpand = useCallback((folder) => {
     const fid = String(folder?.id || "").trim();
     if (!fid || !hasFolderChildren(folder)) return;
+    setBulkTreeMode(null);
     // merge с persisted-fallback: persisted-раскрытый узел без явного toggle
     // считается раскрытым; первый toggle его сворачивает (nextExpanded=false).
     const nextExpanded = !Boolean(mergedExpandedByFolder?.[fid]);
@@ -3110,6 +3186,7 @@ function ExplorerPane({
   const handleToggleProjectExpand = useCallback((project) => {
     const pid = String(project?.id || "").trim();
     if (!pid || !projectHasSessions(project)) return;
+    setBulkTreeMode(null);
     const nextExpanded = !Boolean(mergedExpandedByFolder?.[pid]);
     setTreeStateForContext((prev) => ({
       ...prev,
@@ -3135,6 +3212,41 @@ function ExplorerPane({
     initialPrefsLoadedRef.current = { workspaceId, version: prefsVersion };
     expandedIds.forEach((fid) => ensureFolderChildrenLoaded(fid));
   }, [workspaceId, activeOrgId, prefsQuery.data, ensureFolderChildrenLoaded]);
+
+  useEffect(() => {
+    setBulkTreeMode(null);
+  }, [contextKey]);
+
+  useEffect(() => {
+    if (bulkTreeMode !== "expanded" || !treeBulkExpandableIds.length) return;
+    setTreeStateForContext((prev) => {
+      const nextExpandedByFolder = buildTreeBulkExpandedMap(
+        prev.expandedByFolder,
+        treeBulkExpandableIds,
+        true,
+      );
+      const changed = treeBulkExpandableIds.some((id) => prev.expandedByFolder?.[id] !== true);
+      return changed ? { ...prev, expandedByFolder: nextExpandedByFolder } : prev;
+    });
+    treeBulkExpandableFolderIds.forEach((id) => {
+      void ensureFolderChildrenLoaded(id);
+    });
+  }, [bulkTreeMode, treeBulkExpandableIds, treeBulkExpandableFolderIds, setTreeStateForContext, ensureFolderChildrenLoaded]);
+
+  const handleToggleAllTree = useCallback(() => {
+    if (!treeBulkExpandableIds.length) return;
+    const nextExpanded = treeBulkState !== "expanded";
+    setBulkTreeMode(nextExpanded ? "expanded" : "collapsed");
+    setTreeStateForContext((prev) => ({
+      ...prev,
+      expandedByFolder: buildTreeBulkExpandedMap(prev.expandedByFolder, treeBulkExpandableIds, nextExpanded),
+    }));
+    if (nextExpanded) {
+      treeBulkExpandableFolderIds.forEach((id) => {
+        void ensureFolderChildrenLoaded(id);
+      });
+    }
+  }, [treeBulkExpandableIds, treeBulkExpandableFolderIds, treeBulkState, setTreeStateForContext, ensureFolderChildrenLoaded]);
 
   const handleOpenSearchResult = useCallback((result) => {
     const target = result?.target || {};
@@ -3291,6 +3403,11 @@ function ExplorerPane({
       </div>
   );
 
+  const treeBulkToggleLabel = treeBulkState === "expanded" ? "Свернуть всё" : "Развернуть всё";
+  const treeBulkToggleTitle = treeBulkState === "expanded"
+    ? "Свернуть все разделы, папки и проекты"
+    : "Развернуть все разделы, папки и проекты";
+
   const workspaceFilterToolbar = (
     <div
       className="flex min-h-11 flex-nowrap items-center gap-1.5 border-b border-border bg-panel px-4 py-2"
@@ -3318,6 +3435,18 @@ function ExplorerPane({
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={handleToggleAllTree}
+          disabled={!treeBulkExpandableIds.length}
+          className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-panel text-fg/75 transition-colors hover:border-border-strong hover:bg-bg disabled:cursor-default disabled:opacity-45"
+          aria-label={treeBulkToggleLabel}
+          aria-pressed={treeBulkState === "expanded" ? "true" : "false"}
+          title={treeBulkToggleTitle}
+          data-testid="workspace-tree-bulk-toggle"
+        >
+          <IcoTreeBulk expanded={treeBulkState === "expanded"} />
+        </button>
         <div className="relative">
           <button
             type="button"
