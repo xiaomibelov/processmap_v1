@@ -26,8 +26,17 @@ import {
   expandedIdsFromMap,
   expandedIdsFromPreferences,
   fetchUserPreferences,
+  patchUserPreferences,
   treeScopeKey,
 } from "./explorerTreePersistence.js";
+import {
+  EXPLORER_STATUS_FILTERS_HIDDEN_KEY,
+  STATUS_FILTER_OPTIONS,
+  filterExplorerTreeByStatus,
+  hiddenStatusKeysFromPreferences,
+  statusHiddenWithKeys,
+  visibleStatusFilterOptions,
+} from "./explorerStatusFilters.js";
 import SessionCreateModal from "./SessionCreateModal.jsx";
 import {
   createSessionWithBpmnUpload,
@@ -1612,7 +1621,6 @@ function ExplorerSidebarHeaderBlock() {
 // ─── Workspace Sidebar ────────────────────────────────────────────────────────
 
 function WorkspaceSidebar({
-  organizationName = "",
   workspaces,
   activeWorkspaceId,
   onSelectWorkspace,
@@ -1630,15 +1638,7 @@ function WorkspaceSidebar({
   };
   return (
     <div className="h-full flex flex-col select-none">
-      <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-        <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Organization</div>
-          <div className="truncate text-xs text-fg/80" title={organizationName || "—"}>
-            {organizationName || "—"}
-          </div>
-        </div>
-      </div>
-      <div className="px-3 pb-2 flex items-center justify-between border-b border-border/60">
+      <div className="px-3 py-2 flex items-center justify-between border-b border-border/60">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">Workspaces</span>
         {canCreateWorkspace ? (
           <button
@@ -2452,6 +2452,7 @@ function ExplorerPane({
   });
   const [explorerSort, setExplorerSort] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [hiddenStatusMenuOpen, setHiddenStatusMenuOpen] = useState(false);
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const [activeTab, setActiveTab] = useState("projects");
   const inFlightFolderLoadsRef = useRef(new Set());
@@ -2488,6 +2489,18 @@ function ExplorerPane({
   useEffect(() => {
     if (prefsQuery.data) treeSaverRef.current.attach(prefsQuery.data);
   }, [prefsQuery.data]);
+  const hiddenStatusKeys = useMemo(
+    () => hiddenStatusKeysFromPreferences(prefsQuery.data?.preferences, workspaceId, activeOrgId),
+    [prefsQuery.data?.preferences, workspaceId, activeOrgId],
+  );
+  const hiddenStatusKeySet = useMemo(() => new Set(hiddenStatusKeys), [hiddenStatusKeys]);
+  const statusFilterOptions = useMemo(() => visibleStatusFilterOptions(hiddenStatusKeys), [hiddenStatusKeys]);
+  const effectiveStatusFilter = statusFilter !== "all" && hiddenStatusKeySet.has(statusFilter) ? "all" : statusFilter;
+  useEffect(() => {
+    if (statusFilter !== "all" && hiddenStatusKeySet.has(statusFilter)) {
+      setStatusFilter("all");
+    }
+  }, [statusFilter, hiddenStatusKeySet]);
 
   const contextExpandedByFolder = treeStateByContext[contextKey]?.expandedByFolder;
   const treePersistenceScope = treeScopeKey(activeOrgId, workspaceId);
@@ -2537,6 +2550,40 @@ function ExplorerPane({
       refetchType: "active",
     });
   }, [workspaceId, folderId, queryClient, setTreeStateForContext]);
+
+  const handleStatusVisibilityChange = useCallback(async (statusKey, visible) => {
+    const key = String(statusKey || "").trim();
+    if (!key) return;
+    const currentDoc = prefsQuery.data;
+    const currentPreferences = currentDoc?.preferences || {};
+    const currentValue = currentPreferences[EXPLORER_STATUS_FILTERS_HIDDEN_KEY] || {};
+    const nextHiddenKeys = visible
+      ? hiddenStatusKeys.filter((item) => item !== key)
+      : [...hiddenStatusKeys, key];
+    const nextValue = statusHiddenWithKeys(currentValue, workspaceId, nextHiddenKeys, activeOrgId);
+    const previousStatusFilter = statusFilter;
+    const resetActiveFilter = !visible && statusFilter === key;
+    if (resetActiveFilter) setStatusFilter("all");
+    queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, (old) => old ? ({
+      ...old,
+      preferences: {
+        ...(old.preferences || {}),
+        [EXPLORER_STATUS_FILTERS_HIDDEN_KEY]: nextValue,
+      },
+    }) : old);
+    try {
+      const resp = await patchUserPreferences({
+        baseVersion: Number(currentDoc?.version || 0),
+        set: { [EXPLORER_STATUS_FILTERS_HIDDEN_KEY]: nextValue },
+      });
+      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить настройки статусов");
+      queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, resp.data || null);
+    } catch (e) {
+      console.warn("[WorkspaceExplorer] failed to save status filter preferences", e);
+      if (currentDoc) queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, currentDoc);
+      if (resetActiveFilter) setStatusFilter(previousStatusFilter);
+    }
+  }, [activeOrgId, hiddenStatusKeys, prefsQuery.data, queryClient, statusFilter, workspaceId]);
 
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
@@ -2678,79 +2725,15 @@ function ExplorerPane({
   }, []);
 
   // projects-table-ux: фильтр-чипы по статусам (Все / Активен / Готово / Черновик / AS IS).
-  const statusFilteredItems = useMemo(() => {
-    if (statusFilter === "all") return { rootItems, childItemsByFolder: treeState.childItemsByFolder };
-
-    function itemStatusMatches(item) {
-      const type = String(item?.type || "").trim().toLowerCase();
-      const status = String(
-        type === "folder" ? item?.context_status : item?.status
-      ).trim().toLowerCase();
-      if (statusFilter === "active") {
-        return status === "active" || status === "in_progress";
-      }
-      if (statusFilter === "done") {
-        return status === "ready" || status === "done" || status === "completed";
-      }
-      if (statusFilter === "draft") {
-        return status === "draft";
-      }
-      if (statusFilter === "as_is") {
-        return status === "as_is";
-      }
-      return false;
-    }
-
-    const keepRoot = new Set();
-    const keepChild = new Map(); // folderId -> Set<itemId>
-
-    // Сессии не в childItemsByFolder, они загружаются отдельно через ProjectSessionsRows.
-    // Фильтр применяется только к разделам/папкам/проектам, загруженным в explorer.
-    function markRoot(item) {
-      const id = String(item?.id || "").trim();
-      if (!id || keepRoot.has(id)) return;
-      keepRoot.add(id);
-      const pid = String(item?.parent_id || "").trim();
-      if (pid) {
-        const parent = rootItems.find((r) => String(r?.id || "").trim() === pid);
-        if (parent) markRoot(parent);
-      }
-    }
-
-    function markChild(item, folderId) {
-      const id = String(item?.id || "").trim();
-      if (!id) return;
-      if (!keepChild.has(folderId)) keepChild.set(folderId, new Set());
-      if (keepChild.get(folderId).has(id)) return;
-      keepChild.get(folderId).add(id);
-      const pid = String(item?.parent_id || "").trim();
-      if (pid) {
-        const siblings = treeState.childItemsByFolder[folderId] || [];
-        const parent = siblings.find((r) => String(r?.id || "").trim() === pid);
-        if (parent) markChild(parent, folderId);
-      }
-    }
-
-    rootItems.forEach((item) => {
-      if (itemStatusMatches(item)) markRoot(item);
-    });
-
-    Object.entries(treeState.childItemsByFolder).forEach(([folderId, items]) => {
-      items.forEach((item) => {
-        if (itemStatusMatches(item)) markChild(item, folderId);
-      });
-    });
-
-    return {
-      rootItems: rootItems.filter((item) => keepRoot.has(String(item?.id || "").trim())),
-      childItemsByFolder: Object.fromEntries(
-        Object.entries(treeState.childItemsByFolder).map(([folderId, items]) => [
-          folderId,
-          items.filter((item) => keepChild.get(folderId)?.has(String(item?.id || "").trim())),
-        ]),
-      ),
-    };
-  }, [rootItems, treeState.childItemsByFolder, statusFilter]);
+  const statusFilteredItems = useMemo(
+    () => filterExplorerTreeByStatus({
+      rootItems,
+      childItemsByFolder: treeState.childItemsByFolder,
+      statusFilter: effectiveStatusFilter,
+      hiddenStatusKeys,
+    }),
+    [rootItems, treeState.childItemsByFolder, effectiveStatusFilter, hiddenStatusKeys],
+  );
 
   const sortedRootItems = useMemo(
     () => sortExplorerItems(statusFilteredItems.rootItems, explorerSort, { isRoot: !folderId }),
@@ -2762,7 +2745,7 @@ function ExplorerPane({
   );
 
   const effectiveExpandedByFolder = useMemo(() => {
-    if (statusFilter === "all") return mergedExpandedByFolder;
+    if (effectiveStatusFilter === "all") return mergedExpandedByFolder;
     // projects-table-ux: при активном фильтре статусов игнорируем свёрнутость —
     // показываем все совпадающие узлы и их предков.
     const allIds = new Set([
@@ -2770,7 +2753,7 @@ function ExplorerPane({
       ...Object.values(sortedChildItemsByFolder).flat().map((i) => String(i?.id || "").trim()).filter(Boolean),
     ]);
     return Object.fromEntries(Array.from(allIds).map((id) => [id, true]));
-  }, [mergedExpandedByFolder, sortedRootItems, sortedChildItemsByFolder, statusFilter]);
+  }, [mergedExpandedByFolder, sortedRootItems, sortedChildItemsByFolder, effectiveStatusFilter]);
 
   const visibleRows = useMemo(
     () => buildVisibleRows({
@@ -3184,13 +3167,25 @@ function ExplorerPane({
   }, [onNavigateToFolder, onNavigateToProject, onOpenSession, page?.breadcrumbs, workspaceId]);
 
   const headerCrumbs = Array.isArray(page?.breadcrumbs) ? page.breadcrumbs : [];
-  const headerCrumbItems = headerCrumbs.map((crumb, index) => ({
+  const currentOrg = orgs.find((org) => String(org?.id || org?.org_id || "") === String(activeOrgId || ""));
+  const currentOrgName = String(currentOrg?.name || currentOrg?.org_name || "Организация").trim();
+  const workspaceName = String(
+    page?.context?.workspace?.name
+      || headerCrumbs.find((crumb) => crumb?.type === "workspace")?.name
+      || "Workspace"
+  ).trim();
+  const headerDisplayCrumbs = [
+    { type: "organization", id: activeOrgId || "organization", name: currentOrgName },
+    { type: "workspace", id: workspaceId, name: workspaceName },
+    ...headerCrumbs.filter((crumb) => crumb?.type !== "workspace"),
+  ];
+  const headerCrumbItems = headerDisplayCrumbs.map((crumb, index) => ({
     key: `${crumb.type}-${crumb.id || "root"}`,
     label: crumb.name,
     // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
-    testId: index === headerCrumbs.length - 1 ? "explorer-section-title" : undefined,
+    testId: index === headerDisplayCrumbs.length - 1 ? "explorer-section-title" : undefined,
     onClick:
-      index < headerCrumbs.length - 1
+      index < headerDisplayCrumbs.length - 1 && crumb.type !== "organization"
         ? () => {
             if (crumb.type === "workspace") onNavigateToBreadcrumb(workspaceId, "");
             else onNavigateToBreadcrumb(workspaceId, crumb.id);
@@ -3256,43 +3251,6 @@ function ExplorerPane({
   const explorerIsLoadingPage = pageQuery.isFetching && !page;
   const showExplorerSkeleton = useDelayedSkeleton(explorerIsLoadingPage);
 
-  // projects-table-ux: фильтр-чипы по статусам в таблице «Проекты».
-  const statusFilterOptions = [
-    { key: "all", label: "Все" },
-    { key: "active", label: "Активен", dotClass: "bg-accent" },
-    { key: "done", label: "Готово", dotClass: "bg-success" },
-    { key: "draft", label: "Черновик", dotClass: "bg-slate-400" },
-    { key: "as_is", label: "AS IS", dotClass: "bg-slate-400" },
-  ];
-  const statusFilterChips = (
-    <div className="flex items-center gap-2 px-5 py-2 border-b border-border bg-panel flex-shrink-0">
-      {statusFilterOptions.map((option) => {
-        const active = statusFilter === option.key;
-        return (
-          <button
-            key={option.key}
-            type="button"
-            onClick={() => setStatusFilter(option.key)}
-            className={`inline-flex items-center gap-1.5 h-[26px] px-3 rounded-full text-[12px] font-medium border transition-colors ${
-              active
-                ? "bg-fg text-white border-fg"
-                : "bg-panel border-border text-fg/85 hover:border-border-strong hover:bg-bg"
-            }`}
-            aria-pressed={active}
-          >
-            {option.dotClass ? (
-              <span className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white" : option.dotClass}`} aria-hidden />
-            ) : null}
-            {option.label}
-          </button>
-        );
-      })}
-      <span className="ml-auto text-[11px] text-muted">
-        {visibleRows.filter((r) => r.rowType === "folder" || r.rowType === "project").length} элементов
-      </span>
-    </div>
-  );
-
   const explorerHeader = (
       <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
         {/* Часть А-2 (nav-zone): глобальная строка навигации. Workspace actions
@@ -3327,18 +3285,76 @@ function ExplorerPane({
       </div>
   );
 
-  const workspaceToolbar = (
+  const workspaceFilterToolbar = (
     <div
-      className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border bg-panel px-5 py-2"
-      data-testid="workspace-explorer-toolbar"
+      className="flex min-h-11 flex-nowrap items-center gap-1.5 border-b border-border bg-panel px-4 py-2"
+      data-testid="workspace-filter-toolbar"
     >
+      <div className="flex min-w-0 shrink items-center gap-1.5">
+        {statusFilterOptions.map((option) => {
+          const active = effectiveStatusFilter === option.key;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setStatusFilter(option.key)}
+              className={`inline-flex h-[26px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-medium transition-colors ${
+                active
+                  ? "bg-fg text-white border-fg"
+                  : "bg-panel border-border text-fg/85 hover:border-border-strong hover:bg-bg"
+              }`}
+              aria-pressed={active}
+            >
+              {option.dotClass ? (
+                <span className={`h-1.5 w-1.5 rounded-full ${active ? "bg-white" : option.dotClass}`} aria-hidden />
+              ) : null}
+              {option.label}
+            </button>
+          );
+        })}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setHiddenStatusMenuOpen((open) => !open)}
+            className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-panel text-sm leading-none text-fg/75 hover:border-border-strong hover:bg-bg"
+            aria-label="Настроить статусы"
+            aria-expanded={hiddenStatusMenuOpen}
+          >
+            ...
+          </button>
+          {hiddenStatusMenuOpen ? (
+            <div className="absolute left-0 top-8 z-30 min-w-[190px] rounded-md border border-border bg-panel p-2 shadow-lg">
+              {STATUS_FILTER_OPTIONS.filter((option) => option.key !== "all").map((option) => (
+                <label key={option.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-fg hover:bg-bg">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-current"
+                    checked={!hiddenStatusKeySet.has(option.key)}
+                    onChange={(e) => handleStatusVisibilityChange(option.key, e.target.checked)}
+                  />
+                  {option.dotClass ? (
+                    <span className={`h-1.5 w-1.5 rounded-full ${option.dotClass}`} aria-hidden />
+                  ) : null}
+                  <span className="flex-1">{option.label}</span>
+                  {hiddenStatusKeySet.has(option.key) ? (
+                    <span className="text-[10px] text-muted">скрыт</span>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <span className="ml-auto shrink-0 text-[11px] text-muted">
+        {visibleRows.filter((r) => r.rowType === "folder" || r.rowType === "project").length} элементов
+      </span>
       <ExplorerSearchBox
         id="workspace-explorer-tree-search"
         value={searchQuery}
         onChange={setSearchQuery}
-        className={explorerHeaderLayout.searchIconOnly ? "w-[180px]" : "w-[280px]"}
+        className="w-[160px] 2xl:w-[280px]"
       />
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+      <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
         {permissions?.canCreate ? (
           <button
             onClick={() => setCreatingFolder(true)}
@@ -3352,14 +3368,14 @@ function ExplorerPane({
             onClick={() => setCreatingProject(true)}
             className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
           >
-            <IcoPlus /> Создать проект
+            <IcoPlus /> Проект
           </button>
         ) : permissions?.canCreate ? (
           <span
             className="secondaryBtn h-7 px-2.5 text-xs opacity-40 cursor-not-allowed"
             title="Войдите в папку, чтобы создать проект"
           >
-            <IcoPlus className="opacity-50" /> Создать проект
+            <IcoPlus className="opacity-50" /> Проект
           </span>
         ) : null}
       </div>
@@ -3383,13 +3399,12 @@ function ExplorerPane({
         </div>
       ) : visibleSearchModel.active ? (
         <>
-          {workspaceToolbar}
+          {workspaceFilterToolbar}
           <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
         </>
       ) : !isEmpty ? (
         <>
-          {workspaceToolbar}
-          {statusFilterChips}
+          {workspaceFilterToolbar}
           {/* projects-table-ux: сетка ширин таблицы «Проекты». Тип сущности
               визуально находится в ячейке «Название», отдельной колонки «Тип»
               в шапке нет. Колонки: Название (min 320, flex) + Состав 210 +
@@ -3516,8 +3531,8 @@ function ExplorerPane({
                       colSpan={inlineColSpan}
                       onOpenSession={onOpenSession}
                       onSessionStatusChange={handleTreeSessionStatusChange}
-                      columnLayout={explorerColumnLayout}
-                      statusFilter={statusFilter}
+                          columnLayout={explorerColumnLayout}
+                          statusFilter={effectiveStatusFilter}
                       canAssign={!!permissions?.canAssignSessionAssignees}
                       onAssign={(targetSession) => {
                         setMoveNotice("");
@@ -3568,9 +3583,9 @@ function ExplorerPane({
           </table>
         </div>
       </>
-      ) : (
-        <>
-          {workspaceToolbar}
+          ) : (
+            <>
+              {workspaceFilterToolbar}
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
             <IcoFolder className="w-12 h-12 text-muted/30" />
             <div className="text-center">
@@ -4848,7 +4863,6 @@ export default function WorkspaceExplorer({
 }) {
   const { user, orgs } = useAuth();
   const {
-    currentOrgName,
     currentOrgActive,
     permissions,
     workspaces,
@@ -4910,7 +4924,6 @@ export default function WorkspaceExplorer({
             <ExplorerSidebarHeaderBlock />
             <div className="flex-1 overflow-hidden">
               <WorkspaceSidebar
-                organizationName={currentOrgName}
                 workspaces={workspaces}
                 activeWorkspaceId={activeWorkspaceId}
                 onSelectWorkspace={handleSelectWorkspace}

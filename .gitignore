@@ -6,6 +6,7 @@
 
 .venv/
 .venv-test/
+.venv311-test/
 venv/
 env/
 
