@@ -199,6 +199,8 @@ class SessionItem(BaseModel):
 
 
 class ProjectPage(BaseModel):
+    context: ContextOut
+    breadcrumbs: List[BreadcrumbItem]
     project: ProjectItem
     sessions: List[SessionItem]
 
@@ -1043,9 +1045,15 @@ def get_project_explorer(
     workspace = _resolve_workspace(request, workspace_id)
     oid = str(workspace.get("org_id") or "")
     wid = str(workspace.get("id") or "")
+    ws_name = str(workspace.get("name") or wid or "Workspace")
     user_id = _require_org_access(request, oid)
     is_admin = request_is_admin(request)
     pid = str(project_id or "").strip()
+    org_name = oid
+    for item in _cached_memberships(user_id, is_admin):
+        if str(item.get("org_id") or "") == oid:
+            org_name = str(item.get("name") or oid)
+            break
 
     details = storage.get_project_workspace_details(oid, pid)
     if details and str(details.get("workspace_id") or "") != wid:
@@ -1071,6 +1079,28 @@ def get_project_explorer(
         description=str(passport.get("description", "") or ""),
         updated_at=proj.updated_at,
     )
+    project_folder_id = str(getattr(proj, "folder_id", "") or "")
+    raw_crumbs = _cached_breadcrumb(oid, wid, project_folder_id)
+    breadcrumbs: List[BreadcrumbItem] = [
+        BreadcrumbItem(type="workspace", id=wid, name=ws_name)
+    ]
+    context_folder: Optional[ContextFolder] = None
+    for c in raw_crumbs:
+        breadcrumbs.append(BreadcrumbItem(type="folder", id=c["id"], name=c["name"]))
+    if raw_crumbs:
+        last = raw_crumbs[-1]
+        context_folder = ContextFolder(
+            id=last["id"],
+            name=last["name"],
+            status=str(last.get("context_status") or "none"),
+            updated_at=int(last.get("updated_at") or 0),
+        )
+    breadcrumbs.append(BreadcrumbItem(type="project", id=pid, name=proj.title))
+    context = ContextOut(
+        organization={"id": oid, "name": org_name},
+        workspace={"id": wid, "name": ws_name},
+        folder=context_folder,
+    )
 
     # Sessions: cache-aside only for the default flat list.
     if tree:
@@ -1087,7 +1117,7 @@ def get_project_explorer(
 
     logger.info("explorer /projects/%s org=%s workspace=%s root_only=%s meta=%s tree=%s sessions=%d total=%dms",
                 pid, oid, wid, root_only, include_children_meta, tree, len(sessions), _ms(t0))
-    return ProjectPage(project=proj_item, sessions=sessions)
+    return ProjectPage(context=context, breadcrumbs=breadcrumbs, project=proj_item, sessions=sessions)
 
 
 @router.get("/api/sessions/{session_id}/children", response_model=List[SessionItem])

@@ -2645,6 +2645,13 @@ components:
       type: object
     ProjectPage:
       properties:
+        breadcrumbs:
+          items:
+            $ref: '#/components/schemas/BreadcrumbItem'
+          title: Breadcrumbs
+          type: array
+        context:
+          $ref: '#/components/schemas/ContextOut'
         project:
           $ref: '#/components/schemas/ProjectItem'
         sessions:
@@ -2653,6 +2660,8 @@ components:
           title: Sessions
           type: array
       required:
+      - context
+      - breadcrumbs
       - project
       - sessions
       title: ProjectPage

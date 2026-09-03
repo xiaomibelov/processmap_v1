@@ -6,7 +6,7 @@ const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.me
 const displayLabelSource = readFileSync(new URL("./workspaceDisplayLabels.js", import.meta.url), "utf8");
 
 test("ProjectPane keeps breadcrumb trail and moves session count to sidebar", () => {
-  assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.title\s*\|\|\s*proj\?\.name\s*\|\|\s*""\)/);
+  assert.match(explorerSource, /buildProjectBreadcrumbTrail\(projectBreadcrumbBase,\s*proj\?\.title\s*\|\|\s*proj\?\.name\s*\|\|\s*""\)/);
   assert.doesNotMatch(explorerSource, /sessionCountersFull\s*=\s*`Сессии: \$\{sessionCount\}`/);
   assert.doesNotMatch(explorerSource, /data-testid="project-meta"/);
   assert.doesNotMatch(explorerSource, /SummaryPill label="Owner"/);
@@ -14,9 +14,11 @@ test("ProjectPane keeps breadcrumb trail and moves session count to sidebar", ()
   assert.doesNotMatch(explorerSource, /SummaryPill label="DoD"/);
 });
 
-test("project header is single-line and sessions table renders directly below it", () => {
+test("project header is single-line and sessions table renders below the context toolbar", () => {
   assert.match(explorerSource, /data-testid="project-header"/);
+  assert.match(explorerSource, /data-testid="project-filter-toolbar"/);
   assert.doesNotMatch(explorerSource, /<span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии<\/span>/);
+  assert.match(explorerSource, /\{projectToolbar\}[\s\S]*<thead className="sticky top-0 z-10">/);
   assert.match(explorerSource, /sortedSessions\.map\(\(s\) =>/);
 });
 
