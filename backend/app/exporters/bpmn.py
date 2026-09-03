@@ -11,6 +11,8 @@ NS_BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 NS_BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 NS_DC = "http://www.omg.org/spec/DD/20100524/DC"
 NS_DI = "http://www.omg.org/spec/DD/20100524/DI"
+NS_ZEEBE = "http://camunda.org/schema/zeebe/1.0"
+NS_MODELER = "http://camunda.org/schema/modeler/1.0"
 
 
 def _safe_id(s: str) -> str:
@@ -200,6 +202,40 @@ def _shape_size(kind: str) -> Tuple[float, float]:
     return 180.0, 80.0
 
 
+def _camunda_meta_properties_by_element_id(data: Dict[str, Any]) -> Dict[str, List[Tuple[str, str]]]:
+    meta = data.get("bpmn_meta")
+    if not isinstance(meta, dict):
+        return {}
+    by_id = meta.get("camunda_extensions_by_element_id")
+    if not isinstance(by_id, dict):
+        return {}
+    out: Dict[str, List[Tuple[str, str]]] = {}
+    for element_id, entry in by_id.items():
+        eid = _text(element_id).strip()
+        if not eid or not isinstance(entry, dict):
+            continue
+        props: List[Tuple[str, str]] = []
+        properties = entry.get("properties")
+        if isinstance(properties, dict):
+            for row in properties.get("extensionProperties") or []:
+                if not isinstance(row, dict):
+                    continue
+                name = _text(row.get("key") or row.get("name") or "").strip()
+                if not name:
+                    continue
+                props.append((name, _text(row.get("value"))))
+        if props:
+            out[eid] = props
+    return out
+
+
+def _append_zeebe_properties(el: ET.Element, props: List[Tuple[str, str]]) -> None:
+    ext = ET.SubElement(el, f"{{{NS_BPMN}}}extensionElements")
+    container = ET.SubElement(ext, f"{{{NS_ZEEBE}}}properties")
+    for name, value in props:
+        ET.SubElement(container, f"{{{NS_ZEEBE}}}property", attrib={"name": name, "value": value})
+
+
 def export_session_to_bpmn_xml(session: Any) -> str:
     """BPMN 2.0 XML export that is importable/renderable in bpmn-js.
 
@@ -214,10 +250,13 @@ def export_session_to_bpmn_xml(session: Any) -> str:
         ET.register_namespace("bpmndi", NS_BPMNDI)
         ET.register_namespace("dc", NS_DC)
         ET.register_namespace("di", NS_DI)
+        ET.register_namespace("zeebe", NS_ZEEBE)
+        ET.register_namespace("modeler", NS_MODELER)
 
         data = _as_dict(session)
         nodes_in = list(data.get("nodes") or [])
         edges_in = list(data.get("edges") or [])
+        meta_props_by_element_id = _camunda_meta_properties_by_element_id(data)
 
         nodes: List[Dict[str, Any]] = [_as_dict(n) for n in nodes_in]
         edges: List[Dict[str, Any]] = [_as_dict(e) for e in edges_in]
@@ -266,6 +305,7 @@ def export_session_to_bpmn_xml(session: Any) -> str:
         # node ids mapping
         raw_to_bpmn_id: Dict[str, str] = {}
         used_ids: set[str] = set()
+        zeebe_props_written = False
 
         def alloc_id(raw_id: str, fallback_prefix: str, idx: int) -> str:
             base = _safe_id(raw_id) if raw_id else f"{fallback_prefix}_{idx}"
@@ -330,16 +370,24 @@ def export_session_to_bpmn_xml(session: Any) -> str:
             kind = _node_kind(n)
             label = _node_label(n, i, kind)
 
+            el: ET.Element
             if kind == "gateway_xor":
-                ET.SubElement(proc, f"{{{NS_BPMN}}}exclusiveGateway", attrib={"id": nid, "name": label})
+                el = ET.SubElement(proc, f"{{{NS_BPMN}}}exclusiveGateway", attrib={"id": nid, "name": label})
             elif kind == "gateway_parallel":
-                ET.SubElement(proc, f"{{{NS_BPMN}}}parallelGateway", attrib={"id": nid, "name": label})
+                el = ET.SubElement(proc, f"{{{NS_BPMN}}}parallelGateway", attrib={"id": nid, "name": label})
             elif kind in ("subprocess_collapsed", "subprocess_expanded"):
-                ET.SubElement(proc, f"{{{NS_BPMN}}}subProcess", attrib={"id": nid, "name": label})
+                el = ET.SubElement(proc, f"{{{NS_BPMN}}}subProcess", attrib={"id": nid, "name": label})
             elif kind in ("adhoc_subprocess_collapsed", "adhoc_subprocess_expanded"):
-                ET.SubElement(proc, f"{{{NS_BPMN}}}adHocSubProcess", attrib={"id": nid, "name": label, "ordering": "Parallel"})
+                el = ET.SubElement(proc, f"{{{NS_BPMN}}}adHocSubProcess", attrib={"id": nid, "name": label, "ordering": "Parallel"})
             else:
-                ET.SubElement(proc, f"{{{NS_BPMN}}}task", attrib={"id": nid, "name": label})
+                el = ET.SubElement(proc, f"{{{NS_BPMN}}}task", attrib={"id": nid, "name": label})
+
+            # Managed element properties are exported zeebe-only (Camunda 8),
+            # read from bpmn_meta.camunda_extensions_by_element_id.
+            props = meta_props_by_element_id.get(nid)
+            if props:
+                _append_zeebe_properties(el, props)
+                zeebe_props_written = True
 
             node_kind_by_bpmn_id[nid] = kind
             role = _node_role(n) or fallback_role
@@ -572,9 +620,11 @@ def export_session_to_bpmn_xml(session: Any) -> str:
             lshape = ET.SubElement(plane, f"{{{NS_BPMNDI}}}BPMNShape", attrib={"id": f"{lane_id}_di", "bpmnElement": lane_id, "isHorizontal": "true"})
             ET.SubElement(lshape, f"{{{NS_DC}}}Bounds", attrib={"x": f"{lx:.1f}", "y": f"{ly:.1f}", "width": f"{lane_w:.1f}", "height": f"{lane_h:.1f}"})
 
+        if zeebe_props_written:
+            defs.set(f"{{{NS_MODELER}}}executionPlatform", "Camunda Cloud")
+
         xml = ET.tostring(defs, encoding="utf-8", xml_declaration=True)
         return xml.decode("utf-8", errors="replace")
-
     except Exception as ex:
         msg = _html.escape(str(ex))
         return f'<?xml version="1.0" encoding="UTF-8"?><error>{msg}</error>'
