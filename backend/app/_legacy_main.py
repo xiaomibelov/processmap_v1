@@ -5767,6 +5767,8 @@ def enterprise_workspace(
     user_session_counts: Dict[str, int] = {}
     for row_raw in raw_sessions:
         row = row_raw if isinstance(row_raw, dict) else {}
+        if str(row.get("parent_session_id") or "").strip():
+            continue
         pid = str(row.get("project_id") or "").strip()
         if selected_project_id and pid != selected_project_id:
             continue
