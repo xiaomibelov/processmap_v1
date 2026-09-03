@@ -3,6 +3,7 @@ import { dedupeExactPropertyRows } from "./dedupeExactPropertyRows.js";
 
 export const CAMUNDA_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
 export const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
+export const MODELER_NAMESPACE_URI = "http://camunda.org/schema/modeler/1.0";
 export const BPMN_NAMESPACE_URI = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 export const PM_NAMESPACE_URI = PM_ROBOT_META_NAMESPACE;
 const XMLNS_NAMESPACE_URI = "http://www.w3.org/2000/xmlns/";
@@ -203,8 +204,8 @@ function propertySignatureFromTag(tag) {
 function hasDuplicateCamundaPropertiesWithRegex(xmlText) {
   const text = String(xmlText || "");
   if (!text || !text.includes("property")) return false;
-  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
-  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  const blockRegex = /<(camunda|zeebe):properties\b[^>]*>[\s\S]*?<\/(camunda|zeebe):properties>/gi;
+  const propertyRegex = /<(camunda|zeebe):property\b[^>]*>/gi;
   for (const blockMatch of text.matchAll(blockRegex)) {
     const block = blockMatch[0];
     const seen = new Set();
@@ -225,9 +226,16 @@ export function hasDuplicateCamundaProperties(xmlText) {
     // a regex scan so the guard still works.
     return hasDuplicateCamundaPropertiesWithRegex(xmlText);
   }
-  const propertyNodes = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "property")
-    || doc.getElementsByTagName?.("camunda:property")
-    || [];
+  const propertyNodes = [
+    ...asArray(doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "property")),
+    ...asArray(doc.getElementsByTagNameNS?.(ZEEBE_NAMESPACE_URI, "property")),
+  ];
+  if (!propertyNodes.length && typeof doc.getElementsByTagName === "function") {
+    propertyNodes.push(
+      ...asArray(doc.getElementsByTagName("camunda:property")),
+      ...asArray(doc.getElementsByTagName("zeebe:property")),
+    );
+  }
   const seenByParent = new Map();
   for (let i = 0; i < propertyNodes.length; i += 1) {
     const node = propertyNodes[i];
@@ -251,8 +259,8 @@ export function hasDuplicateCamundaProperties(xmlText) {
 function dedupCamundaPropertiesWithRegex(xmlText) {
   const text = String(xmlText || "");
   if (!text || !text.includes("property")) return text;
-  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
-  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  const blockRegex = /<(camunda|zeebe):properties\b[^>]*>[\s\S]*?<\/(camunda|zeebe):properties>/gi;
+  const propertyRegex = /<(camunda|zeebe):property\b[^>]*>/gi;
   return text.replace(blockRegex, (block) => {
     const seen = new Set();
     return block.replace(propertyRegex, (tag) => {
@@ -275,18 +283,24 @@ export function dedupCamundaProperties(xmlText) {
     // a regex-based deduplication.
     return dedupCamundaPropertiesWithRegex(xmlText);
   }
-  const propertiesLists = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "properties")
-    || doc.getElementsByTagName?.("camunda:properties")
-    || [];
-  for (let i = 0; i < propertiesLists.length; i += 1) {
-    const list = propertiesLists[i];
+  const propertiesLists = [
+    ...asArray(doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "properties")),
+    ...asArray(doc.getElementsByTagNameNS?.(ZEEBE_NAMESPACE_URI, "properties")),
+  ];
+  if (!propertiesLists.length && typeof doc.getElementsByTagName === "function") {
+    propertiesLists.push(
+      ...asArray(doc.getElementsByTagName("camunda:properties")),
+      ...asArray(doc.getElementsByTagName("zeebe:properties")),
+    );
+  }
+  propertiesLists.forEach((list) => {
     const children = asArray(list.childNodes);
     const seen = new Set();
     children.forEach((child) => {
       if (child?.nodeType !== 1) return;
       const localName = String(child.localName || "").toLowerCase();
       const ns = String(child.namespaceURI || "").trim();
-      if (localName !== "property" || ns !== CAMUNDA_NAMESPACE_URI) return;
+      if (localName !== "property" || (ns !== CAMUNDA_NAMESPACE_URI && ns !== ZEEBE_NAMESPACE_URI)) return;
       const name = String(child.getAttribute?.("name") || "").trim();
       if (!name) return;
       const value = String(child.getAttribute?.("value") || "").trim();
@@ -303,7 +317,7 @@ export function dedupCamundaProperties(xmlText) {
       }
       seen.add(signature);
     });
-  }
+  });
   return serializeXmlNode(doc);
 }
 
@@ -1260,7 +1274,7 @@ function hasAnyCamundaState(entryRaw) {
 
 function isManagedCamundaModelEntry(entry) {
   const type = String(entry?.$type || "").trim();
-  return type === "camunda:Properties" || type === "camunda:ExecutionListener";
+  return type === "camunda:Properties" || type === "zeebe:Properties" || type === "camunda:ExecutionListener";
 }
 
 function isPmRobotMetaModelEntry(entry) {
@@ -1325,7 +1339,8 @@ export function extractManagedCamundaExtensionStateFromBusinessObject(boRaw) {
 /**
  * Apply an extension state to a bpmn-js modeler instance without re-importing XML.
  *
- * Replaces the element's camunda:properties block while preserving other extension
+ * Replaces the element's managed properties block (always written back in the
+ * zeebe namespace, Camunda 8 only) while preserving other extension
  * elements (listeners, connectors, robot meta, etc.). This keeps the canvas alive
  * and the viewport stable after property-only saves.
  */
@@ -1342,14 +1357,11 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
     const existingExt = asObject(bo.extensionElements);
     const existingValues = asArray(existingExt.values);
 
-    // Determine the element's property namespace. A zeebe element carries a
-    // zeebe:Properties container (materialized by the zeebe moddle descriptor);
-    // otherwise we fall back to camunda to preserve legacy behavior.
+    // Properties are always written in the zeebe namespace (Camunda 8 only):
+    // legacy camunda:properties containers are dropped below and rebuilt as
+    // zeebe, so a property-only save migrates the element on write.
     const managedPropertiesTypes = new Set(["camunda:properties", "zeebe:properties"]);
-    const hasZeebeProperties = existingValues.some((entry) => (
-      String(entry?.$type || "").toLowerCase() === "zeebe:properties"
-    ));
-    const propertiesPrefix = hasZeebeProperties ? "zeebe" : "camunda";
+    const propertiesPrefix = "zeebe";
 
     // Drop ALL managed properties containers (both namespaces) for this element
     // so repeated applies never accumulate zeebe + camunda duplicates.
@@ -1719,12 +1731,12 @@ function createCamundaModelEntries(moddle, stateRaw) {
   const entries = [];
   if (state.properties.extensionProperties.length) {
     const values = state.properties.extensionProperties.map((item) => (
-      moddle.create("camunda:Property", {
+      moddle.create("zeebe:Property", {
         name: String(item.name || ""),
         value: String(item.value || ""),
       })
     ));
-    entries.push(moddle.create("camunda:Properties", { values }));
+    entries.push(moddle.create("zeebe:Properties", { values }));
   }
   state.properties.extensionListeners.forEach((item) => {
     const payload = { event: String(item.event || "") };
@@ -1740,7 +1752,7 @@ function signatureForManagedModelEntries(valuesRaw) {
   const values = asArray(valuesRaw).filter((entry) => isManagedCamundaModelEntry(entry));
   const parts = values.map((entry) => {
     const type = String(entry?.$type || "");
-    if (type === "camunda:Properties") {
+    if (type === "camunda:Properties" || type === "zeebe:Properties") {
       return {
         $type: type,
         values: asArray(entry?.values).map((item) => ({
@@ -1895,28 +1907,6 @@ function readDefinitionExecutionPlatform(doc) {
   return asText(executionPlatformAttr?.value).toLowerCase();
 }
 
-function hasZeebeNamespaceDeclaration(doc) {
-  const attrs = asArray(doc?.documentElement?.attributes);
-  return attrs.some((attr) => (
-    localNameOf(attr) && localNameOf(attr).startsWith("xmlns")
-    && asText(attr?.value) === ZEEBE_NAMESPACE_URI
-  ));
-}
-
-function hasZeebeExtensionNodes(doc) {
-  const nodes = asArray(doc?.getElementsByTagName?.("*"));
-  return nodes.some((node) => namespaceOf(node) === ZEEBE_NAMESPACE_URI);
-}
-
-function shouldUseZeebePropertiesProfile(doc) {
-  const platform = readDefinitionExecutionPlatform(doc);
-  if (platform.includes("camunda cloud") || platform.includes("camunda 8") || platform.includes("zeebe")) {
-    return true;
-  }
-  if (hasZeebeExtensionNodes(doc)) return true;
-  return hasZeebeNamespaceDeclaration(doc);
-}
-
 function readExecutionPlatformPreference(doc) {
   const platform = readDefinitionExecutionPlatform(doc);
   if (platform.includes("cloud") || platform.includes("zeebe")) return "cloud";
@@ -2014,7 +2004,6 @@ export function finalizeCamundaExtensionsXml({
   const doc = parseXmlDocument(rawXml);
   if (!doc) return rawXml;
   const normalizedMap = normalizeCamundaExtensionsMap(camundaExtensionsByElementId);
-  const useZeebeProperties = shouldUseZeebePropertiesProfile(doc);
   const candidateIds = collectCurrentManagedCandidateIds(doc);
   Object.keys(normalizedMap).forEach((elementId) => candidateIds.add(elementId));
 
@@ -2066,13 +2055,19 @@ export function finalizeCamundaExtensionsXml({
       seenSignatures.add(signature);
       return true;
     });
-    const managedNodes = buildManagedCamundaDomNodes(doc, state, { useZeebeProperties });
+    const managedNodes = buildManagedCamundaDomNodes(doc, state, { useZeebeProperties: true });
     const pmNodes = currentChildren
       .filter((child) => namespaceOf(child) === PM_NAMESPACE_URI && localNameOf(child) === "RobotMeta")
       .map((child) => doc.importNode(child, true));
     const rawNodes = mergedRaw
       .map((fragment) => importFragmentNode(doc, fragment))
-      .filter(Boolean);
+      .filter(Boolean)
+      // Anti-dual-block: legacy camunda:properties must never survive a write
+      // alongside the managed zeebe block (they may re-enter via preserved
+      // raw fragments of shadowed legacy namespaces from a C7 import).
+      .filter((node) => !(
+        namespaceOf(node) === CAMUNDA_NAMESPACE_URI && localNameOf(node) === "properties"
+      ));
     const nextChildren = [...rawNodes, ...managedNodes, ...pmNodes];
 
     if (!nextChildren.length) {
@@ -2087,11 +2082,12 @@ export function finalizeCamundaExtensionsXml({
   });
 
   if (hasAnyManagedPropertiesInMap(normalizedMap)) {
-    if (useZeebeProperties) {
-      doc.documentElement?.setAttribute("xmlns:zeebe", ZEEBE_NAMESPACE_URI);
-    } else {
-      doc.documentElement?.setAttribute("xmlns:camunda", CAMUNDA_NAMESPACE_URI);
-    }
+    // Properties are written zeebe-only (Camunda 8); declare the namespaces
+    // and mark the document as a Camunda Cloud model so the properties panel
+    // shows them as extension properties.
+    doc.documentElement?.setAttribute("xmlns:zeebe", ZEEBE_NAMESPACE_URI);
+    doc.documentElement?.setAttribute("xmlns:modeler", MODELER_NAMESPACE_URI);
+    doc.documentElement?.setAttribute("modeler:executionPlatform", "Camunda Cloud");
   }
   if (hasAnyManagedListenersInMap(normalizedMap)) {
     doc.documentElement?.setAttribute("xmlns:camunda", CAMUNDA_NAMESPACE_URI);
