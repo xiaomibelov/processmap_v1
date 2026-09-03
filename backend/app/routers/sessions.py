@@ -88,6 +88,14 @@ def create_subprocess_sessions(
 ):
     return _svc.create_subprocess_sessions(session_id, request=request, load_all=load_all)
 
+@router.get('/api/sessions/{session_id}/create-subprocesses')
+def get_create_subprocess_sessions(
+    session_id: str,
+    request: Request = None,
+    load_all: bool = Query(default=False),
+):
+    return _svc.create_subprocess_sessions(session_id, request=request, load_all=load_all)
+
 @router.get('/api/sessions/{session_id}/graph')
 def get_session_graph(session_id: str, request: Request = None):
     return _svc.get_session_graph(session_id, request=request)
