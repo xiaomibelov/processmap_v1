@@ -1443,7 +1443,7 @@ def create_subprocess_sessions(
     sess, scope, err = session_access_from_request(request, session_id)
     if err or sess is None:
         raise HTTPException(status_code=404, detail="not found")
-    role = _org_role_for_request(request, sess.org_id) if request is not None else ""
+    role = org_role_for_request(request, sess.org_id) if request is not None else ""
     user = _request_auth_user(request) if request is not None else {}
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
     if not _can_edit_workspace(role, is_admin=is_admin):
