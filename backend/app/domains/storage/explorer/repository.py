@@ -414,7 +414,12 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         project_rows_all = con.execute(
             """
             SELECT p.*,
-              (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sessions_count
+              (
+                SELECT COUNT(*)
+                FROM sessions s
+                WHERE s.project_id = p.id
+                  AND COALESCE(s.parent_session_id, '') = ''
+              ) AS sessions_count
             FROM projects p
             WHERE p.org_id = ? AND p.workspace_id = ?
             ORDER BY p.updated_at DESC, p.title ASC
@@ -427,6 +432,7 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             FROM sessions s
             JOIN projects p ON p.id = s.project_id
             WHERE p.org_id = ? AND p.workspace_id = ?
+              AND COALESCE(s.parent_session_id, '') = ''
             ORDER BY s.project_id ASC, s.updated_at DESC, s.id DESC
             """,
             [oid, wid],

@@ -114,6 +114,15 @@ test("buildExplorerRowMeta: состав · ответственный · обн
   };
   assert.equal(buildExplorerRowMeta(project, "project"), "3/3 сессии · Мария · только что");
 
+  const projectWithSubprocesses = {
+    type: "project",
+    sessions_count: 3,
+    trackable_sessions_count: 3,
+    done_sessions_count: 1,
+    subprocesses_count: 148,
+  };
+  assert.equal(buildExplorerRowMeta(projectWithSubprocesses, "project"), "1/3 сессии");
+
   // без ответственного — часть опущена; без дат — часть опущена
   const bare = { sessions_count: 0 };
   assert.equal(buildExplorerRowMeta(bare, "project"), "0/0 сессий");
