@@ -61,7 +61,7 @@ test("apply writes zeebe:Property for a zeebe element and collapses mixed contai
   assert.equal(containers[0].values[0].value, "new");
 });
 
-test("apply keeps camunda:Property for a camunda-only element (fallback, no regression)", () => {
+test("apply writes zeebe:Property for a camunda-only legacy element (zeebe-only migration on write)", () => {
   const { modeler, el } = createMockModeler([
     { $type: "camunda:Properties", values: [{ $type: "camunda:Property", name: "priority", value: "low" }] },
   ]);
@@ -74,7 +74,8 @@ test("apply keeps camunda:Property for a camunda-only element (fallback, no regr
   applyCamundaExtensionStateToModeler("Task_1", state, modeler);
   const containers = propsContainers(el.businessObject.extensionElements.values);
   assert.equal(containers.length, 1);
-  assert.equal(containers[0].$type, "camunda:Properties");
+  assert.equal(containers[0].$type, "zeebe:Properties");
+  assert.equal(containers[0].values[0].$type, "zeebe:Property");
   assert.equal(containers[0].values[0].value, "high");
 });
 
