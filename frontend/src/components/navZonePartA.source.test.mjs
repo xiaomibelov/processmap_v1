@@ -1,18 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-
-const explorerSource = readFileSync(new URL("../features/explorer/WorkspaceExplorer.jsx", import.meta.url), "utf8");
-const appShellSource = readFileSync(new URL("./AppShell.jsx", import.meta.url), "utf8");
-const topBarSource = readFileSync(new URL("./TopBar.jsx", import.meta.url), "utf8");
-const stripSource = readFileSync(new URL("./SessionNavStrip.jsx", import.meta.url), "utf8");
-const breadcrumbsSource = readFileSync(new URL("./TextBreadcrumbs.jsx", import.meta.url), "utf8");
+import { readExplorerSources } from "../test-utils/explorerSourceText.mjs";
 
 // Часть А-2 (nav-zone): навигационная зона — ОДНА строка на всех трёх
 // уровнях (раздел/проект/сессия). Кнопка «назад» слева, текстовые крошки
 // (текущий сегмент полужирный, заменяет H1), статус-бейдж после него, мета
 // справа через «·». Строка не переносится; жертвы по ширине контейнера:
 // мета → крошки через «…» → статус точкой → кнопка иконкой.
+
+// retarget(s0): tests 1-3 read the multifile explorer source set (WorkspaceExplorer.jsx
+// is decomposed into sibling files). Tests 4-7 read files that do not move and are
+// still read directly.
+const { text: explorerSource } = readExplorerSources();
+const appShellSource = readFileSync(new URL("./AppShell.jsx", import.meta.url), "utf8");
+const topBarSource = readFileSync(new URL("./TopBar.jsx", import.meta.url), "utf8");
+const stripSource = readFileSync(new URL("./SessionNavStrip.jsx", import.meta.url), "utf8");
+const breadcrumbsSource = readFileSync(new URL("./TextBreadcrumbs.jsx", import.meta.url), "utf8");
 
 test("ProjectPane: одна flex-строка без переноса, кнопка назад и крошки в ней", () => {
   assert.match(explorerSource, /Назад к проекту/);
@@ -22,7 +26,10 @@ test("ProjectPane: одна flex-строка без переноса, кноп�
   assert.match(explorerSource, /flex h-\[var\(--explorer-header-h\)\] min-w-0 flex-nowrap items-center overflow-hidden whitespace-nowrap/);
   // H1 как отдельного блока больше нет — testid заголовка на текущем сегменте крошек
   assert.doesNotMatch(explorerSource, /<h1[^>]*data-testid="project-title"/);
-  assert.match(explorerSource, /testId: index === projectBreadcrumbTrail\.length - 1 \? "project-title" : undefined/);
+  // retarget(s0): the crumb array was renamed from projectBreadcrumbTrail to
+  // projectHeaderDisplayCrumbs in the source; intent (current crumb carries the title
+  // testid) is unchanged.
+  assert.match(explorerSource, /testId: index === projectHeaderDisplayCrumbs\.length - 1 \? "project-title" : undefined/);
 });
 
 test("ProjectPane: статус-контрол в строке навигации, мета проекта в sidebar context", () => {
@@ -60,6 +67,8 @@ test("SessionNavStrip: однострочная полоса — кнопка, �
   assert.match(stripSource, /testId: "session-nav-title"/);
   assert.match(stripSource, /data-testid="session-nav-meta"/);
   // адаптив: ResizeObserver-хук + чистая функция порогов
+  // (пороги getNavSingleLineLayout/getWorkspaceHeaderLayout покрыты
+  // поведенчески в components/navSingleLineLayout.test.mjs)
   assert.match(stripSource, /useElementWidth/);
   assert.match(stripSource, /getNavSingleLineLayout\(stripWidth\)/);
 });

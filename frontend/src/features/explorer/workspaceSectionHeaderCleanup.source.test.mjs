@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set
+// (all pins here are globally unique identifiers/strings and survive the split).
+const { text: explorerSource } = readExplorerSources();
 const displayLabelSource = readFileSync(new URL("./workspaceDisplayLabels.js", import.meta.url), "utf8");
 
 test("ProjectPane keeps breadcrumb trail and moves session count to sidebar", () => {
@@ -23,6 +26,8 @@ test("project header is single-line and sessions table renders below the context
 });
 
 test("explorer header is single-line", () => {
+  // getWorkspaceHeaderLayout is covered behaviorally by components/navSingleLineLayout.test.mjs;
+  // these pins guarantee the panes still wire their container widths into the layout function.
   assert.match(explorerSource, /data-testid="explorer-header"/);
   assert.match(explorerSource, /getWorkspaceHeaderLayout\(explorerNavWidth\)/);
   assert.match(explorerSource, /getWorkspaceHeaderLayout\(projectNavWidth\)/);
