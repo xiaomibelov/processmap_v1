@@ -92,6 +92,17 @@ class UsersPreferencesTest(unittest.TestCase):
         self.assertEqual(resp["version"], 1)
         self.assertEqual(resp["preferences"]["explorer.tree.expanded"], {"org_a::ws_main": ["f1", "p2"]})
 
+    def test_patch_accepts_hidden_status_filters_scoped_by_org_workspace(self):
+        resp = self._patch({
+            "base_version": 0,
+            "set": {"explorer.status_filters.hidden": {"org_a::ws_main": ["done", "draft"]}},
+        })
+        self.assertEqual(resp["version"], 1)
+        self.assertEqual(
+            resp["preferences"]["explorer.status_filters.hidden"],
+            {"org_a::ws_main": ["done", "draft"]},
+        )
+
     def test_patch_null_and_unset_remove_keys(self):
         self._patch({"base_version": 0, "set": {"explorer.density": "compact", "explorer.columns": {"dod": True}}})
         resp = self._patch({"base_version": 1, "set": {"explorer.density": None}})
@@ -128,6 +139,12 @@ class UsersPreferencesTest(unittest.TestCase):
         self.assertEqual(getattr(resp3, "status_code", None), 422)
         resp4 = self._patch({"base_version": 0, "set": {"explorer.density": "wide"}})
         self.assertEqual(getattr(resp4, "status_code", None), 422)
+        resp5 = self._patch({"base_version": 0, "set": {"explorer.status_filters.hidden": {"ws1": ["unknown"]}}})
+        self.assertEqual(getattr(resp5, "status_code", None), 422)
+        resp6 = self._patch({"base_version": 0, "set": {"explorer.status_filters.hidden": {"": ["done"]}}})
+        self.assertEqual(getattr(resp6, "status_code", None), 422)
+        resp7 = self._patch({"base_version": 0, "set": {"explorer.status_filters.hidden": {"ws1": "done"}}})
+        self.assertEqual(getattr(resp7, "status_code", None), 422)
 
     def test_per_org_isolation(self):
         self._patch({"base_version": 0, "set": {"explorer.density": "compact"}}, org_id=self.org_a)

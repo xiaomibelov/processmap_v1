@@ -72,7 +72,7 @@ test("Saving responsible and executor uses existing API payloads only", () => {
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
 
   assert.match(apiSource, /export async function apiUpdateFolder\(workspaceId,\s*folderId,\s*patch = \{\}\)/);
-  assert.match(explorerPaneSource, /const normalizedUserId = String\(userId \|\| ""\)\.trim\(\) \|\| null/);
+  assert.match(explorerPaneSource, /const normalizedUserId = String\(userIdOrIds \|\| ""\)\.trim\(\) \|\| null/);
   assert.match(explorerPaneSource, /apiUpdateFolder\(workspaceId,\s*item\.id,\s*\{\s*responsible_user_id:\s*normalizedUserId\s*\}\)/);
   assert.match(explorerPaneSource, /apiPatchProject\(item\.id,\s*\{\s*executor_user_id:\s*normalizedUserId\s*\}\)/);
   assert.doesNotMatch(explorerPaneSource, /owner_user_id:\s*normalizedUserId/);
