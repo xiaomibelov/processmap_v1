@@ -64,6 +64,7 @@ test("sessionsCounterText renders done/total pair", () => {
   assert.equal(sessionsCounterText(3, undefined), "3/0 сессий");
   assert.notEqual(sessionsCounterText(3, 148), "3/148");
   assert.equal(sessionsCounterText(3, 148), "3/148 сессий");
+  assert.equal(sessionsCounterText(1, 3), "1/3 сессии");
 });
 
 test("sessionsProgressPercent computes fill percent clamped 0..100", () => {

@@ -268,6 +268,93 @@ class WorkspaceAccessControlsTest(unittest.TestCase):
         self.assertEqual(str(page.project.name or ""), "Explorer Project")
         self.assertEqual(int(page.project.dod_percent or 0), 0)
 
+    def test_workspace_aggregates_count_only_root_sessions_not_subprocesses(self):
+        from app.routers.explorer import get_explorer_page
+
+        admin_id = str(self.admin.get("id") or "")
+        workspace_id = str(self.list_org_workspaces(self.default_org_id)[0].get("id") or "")
+        folder_id = str(
+            self.create_workspace_folder(
+                self.default_org_id,
+                workspace_id,
+                "Session Count Folder",
+                user_id=admin_id,
+            ).get("id") or ""
+        )
+        project_id = self.create_project_in_folder(
+            self.default_org_id,
+            workspace_id,
+            folder_id,
+            "Session Count Project",
+            user_id=admin_id,
+        )
+
+        root_ids = []
+        for index, status in enumerate(["ready", "draft", "draft"], start=1):
+            root = self.create_project_session(
+                project_id,
+                self.CreateSessionIn(title=f"Root Session {index}"),
+                "quick_skeleton",
+                request=self._mk_req(self.admin),
+            )
+            sid = str(root.get("id") or "")
+            root_ids.append(sid)
+            with sqlite3.connect(str(self._db_path())) as con:
+                con.execute(
+                    "UPDATE sessions SET interview_json = ? WHERE id = ?",
+                    [f'{{"status":"{status}"}}', sid],
+                )
+                con.commit()
+
+        with sqlite3.connect(str(self._db_path())) as con:
+            rows = []
+            now = 1_800_000_000
+            for index in range(148):
+                parent_id = root_ids[index % len(root_ids)]
+                rows.append((
+                    f"child_{index:03d}",
+                    f"Child {index:03d}",
+                    project_id,
+                    self.default_org_id,
+                    admin_id,
+                    admin_id,
+                    admin_id,
+                    now + index,
+                    now + index,
+                    parent_id,
+                    f"Element_{index:03d}",
+                ))
+            con.executemany(
+                """
+                INSERT INTO sessions (
+                  id, title, project_id, org_id, owner_user_id, created_by, updated_by,
+                  created_at, updated_at, parent_session_id, element_id_in_parent,
+                  roles_json, interview_json, nodes_json, edges_json, questions_json,
+                  normalized_json, resources_json, analytics_json, ai_llm_state_json,
+                  bpmn_meta_json, diagram_last_write_changed_keys_json
+                ) VALUES (
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  '[]', '{"status":"ready"}', '[]', '[]', '[]',
+                  '{}', '{}', '{}', '{}', '{}', '[]'
+                )
+                """,
+                rows,
+            )
+            con.commit()
+
+        root_page = get_explorer_page(self._mk_req(self.admin), workspace_id=workspace_id, folder_id="")
+        folder_item = next(item for item in root_page.items if item.get("id") == folder_id)
+        self.assertEqual(int(folder_item.get("descendant_sessions_count") or 0), 3)
+        self.assertEqual(int(folder_item.get("descendant_trackable_sessions_count") or 0), 3)
+        self.assertEqual(int(folder_item.get("descendant_done_sessions_count") or 0), 1)
+
+        folder_page = get_explorer_page(self._mk_req(self.admin), workspace_id=workspace_id, folder_id=folder_id)
+        project_item = next(item for item in folder_page.items if item.get("id") == project_id)
+        self.assertEqual(int(project_item.get("sessions_count") or 0), 3)
+        self.assertEqual(int(project_item.get("descendant_sessions_count") or 0), 3)
+        self.assertEqual(int(project_item.get("trackable_sessions_count") or 0), 3)
+        self.assertEqual(int(project_item.get("done_sessions_count") or 0), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
