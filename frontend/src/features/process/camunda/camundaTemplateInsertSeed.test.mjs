@@ -46,6 +46,25 @@ function createMockModeler(elements = []) {
           },
         };
       }
+      if (type === "zeebe:Properties") {
+        return {
+          $type: type,
+          values: Array.isArray(payload.values) ? payload.values.slice() : [],
+          set(key, value) {
+            this[key] = value;
+          },
+        };
+      }
+      if (type === "zeebe:Property") {
+        return {
+          $type: type,
+          name: String(payload.name || ""),
+          value: String(payload.value || ""),
+          set(key, value) {
+            this[key] = value;
+          },
+        };
+      }
       if (type === "camunda:Property") {
         return {
           $type: type,
@@ -174,7 +193,7 @@ test("seeded managed state from BO survives syncCamundaExtensionsToBpmn", () => 
     },
   });
   assert.equal(res.ok, true);
-  const propsEntry = taskBusinessObject.extensionElements.values.find((entry) => entry?.$type === "camunda:Properties");
+  const propsEntry = taskBusinessObject.extensionElements.values.find((entry) => entry?.$type === "zeebe:Properties");
   assert.ok(propsEntry);
   assert.deepEqual(
     propsEntry.values.map((item) => ({ name: item.name, value: item.value })),
