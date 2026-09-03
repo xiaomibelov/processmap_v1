@@ -39,6 +39,7 @@ test("global explorer header breadcrumbs include organization before workspace p
   assert.match(crumbsSource, /currentOrgName/);
   assert.match(crumbsSource, /workspaceName/);
   assert.match(headerSource, /dataTestId="explorer-breadcrumbs"/);
+  assert.match(headerSource, /maxVisible=\{6\}/);
   assert.doesNotMatch(headerSource, /workspace-explorer-tree-search|setCreatingFolder|setCreatingProject/);
 });
 
