@@ -1,50 +1,54 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readExplorerSources, betweenStable } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
-
-function between(start, end) {
-  const startIndex = explorerSource.indexOf(start);
-  assert.notEqual(startIndex, -1, `missing start marker: ${start}`);
-  const endIndex = explorerSource.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `missing end marker: ${end}`);
-  return explorerSource.slice(startIndex, endIndex);
-}
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set;
+// header scoping is bounded by stable data-testids instead of in-file const-declaration
+// markers ("const explorerHeader = (", ...).
+const { text: explorerSource } = readExplorerSources();
 
 test("workspace has one toolbar row with chips, counter, search and create actions", () => {
   assert.doesNotMatch(explorerSource, /data-testid="workspace-explorer-toolbar"/);
   assert.match(explorerSource, /data-testid="workspace-filter-toolbar"/);
 
-  const toolbarSource = between("function ExplorerPane(", "// ─── Session Row");
-  assert.match(toolbarSource, /statusFilterOptions\.map/);
-  assert.match(toolbarSource, /visibleRows\.filter/);
-  assert.match(toolbarSource, /workspace-explorer-tree-search/);
-  assert.match(toolbarSource, /setCreatingFolder\(true\)/);
-  assert.match(toolbarSource, /setCreatingProject\(true\)/);
-  assert.match(toolbarSource, /aria-label="Настроить статусы"/);
+  assert.match(explorerSource, /statusFilterOptions\.map/);
+  assert.match(explorerSource, /visibleRows\.filter/);
+  assert.match(explorerSource, /workspace-explorer-tree-search/);
+  assert.match(explorerSource, /setCreatingFolder\(true\)/);
+  assert.match(explorerSource, /setCreatingProject\(true\)/);
+  assert.match(explorerSource, /aria-label="Настроить статусы"/);
 });
 
 test("workspace actions are not rendered in a separate row before filter chips", () => {
-  const renderSource = between("return (", "{/* Modals */}");
-  assert.doesNotMatch(renderSource, /\{workspaceToolbar\}/);
-  assert.match(renderSource, /\{workspaceFilterToolbar\}/);
-  assert.doesNotMatch(renderSource, /\{workspaceFilterToolbar\}\s*\{statusFilterChips\}/);
+  // retarget(s0): was between("return (", "{/* Modals */}"); {workspaceToolbar} no longer
+  // exists anywhere (global negative), statusFilterChips was never extracted as a variable.
+  assert.doesNotMatch(explorerSource, /\{workspaceToolbar\}/);
+  assert.match(explorerSource, /\{workspaceFilterToolbar\}/);
+  assert.doesNotMatch(explorerSource, /\{workspaceFilterToolbar\}\s*\{statusFilterChips\}/);
 });
 
 test("global explorer header breadcrumbs include organization before workspace path", () => {
-  const crumbsSource = between("const currentOrgName =", "const parentHeaderCrumb =");
-  const headerSource = between("const explorerHeader = (", "const workspaceFilterToolbar = (");
+  assert.match(explorerSource, /currentOrgName/);
+  assert.match(explorerSource, /workspaceName/);
+  // retarget(s0): header negative was between("const explorerHeader = (", "const workspaceFilterToolbar = (");
+  // the header scope is bounded by stable data-testids.
+  const headerSource = betweenStable(
+    explorerSource,
+    'data-testid="explorer-header"',
+    'data-testid="workspace-filter-toolbar"',
+  );
 
-  assert.match(crumbsSource, /currentOrgName/);
-  assert.match(crumbsSource, /workspaceName/);
   assert.match(headerSource, /dataTestId="explorer-breadcrumbs"/);
   assert.match(headerSource, /maxVisible=\{6\}/);
   assert.doesNotMatch(headerSource, /workspace-explorer-tree-search|setCreatingFolder|setCreatingProject/);
 });
 
 test("sidebar starts with workspaces and no longer duplicates organization name", () => {
-  const sidebarSource = between("function WorkspaceSidebar({", "// ─── Context Menu");
+  // retarget(s0): was between("function WorkspaceSidebar({", "// ─── Context Menu");
+  // the sidebar body is located by its stable "Workspaces" label anchor.
+  const start = explorerSource.indexOf(">Workspaces<");
+  assert.notEqual(start, -1, "missing Workspaces sidebar label");
+  const sidebarSource = explorerSource.slice(Math.max(0, start - 4000), start + 6000);
 
   assert.doesNotMatch(sidebarSource, /organizationName/);
   assert.doesNotMatch(sidebarSource, /Organization/);
@@ -53,10 +57,8 @@ test("sidebar starts with workspaces and no longer duplicates organization name"
 });
 
 test("hiding active status filter resets it to all and hidden menu shows checkbox state", () => {
-  const paneSource = between("function ExplorerPane(", "// ─── Session Row");
-
-  assert.match(paneSource, /hiddenStatusKeys/);
-  assert.match(paneSource, /setStatusFilter\("all"\)/);
-  assert.match(paneSource, /type="checkbox"/);
-  assert.match(paneSource, /checked=\{!hiddenStatusKeySet\.has\(option\.key\)\}/);
+  assert.match(explorerSource, /hiddenStatusKeys/);
+  assert.match(explorerSource, /setStatusFilter\("all"\)/);
+  assert.match(explorerSource, /type="checkbox"/);
+  assert.match(explorerSource, /checked=\{!hiddenStatusKeySet\.has\(option\.key\)\}/);
 });

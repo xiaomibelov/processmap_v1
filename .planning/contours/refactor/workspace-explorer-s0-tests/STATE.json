@@ -1,0 +1,22 @@
+{
+  "contour": "refactor/workspace-explorer-s0-tests",
+  "type": "refactor",
+  "branch": "refactor/workspace-explorer-s0-tests",
+  "baseline": "60bcd99b",
+  "status": "ready_for_review",
+  "phases": { "planning": "done", "execution": "done", "review": "pending" },
+  "results": {
+    "char_tests": "17/17 green (16 required + 1 bonus reject-drop)",
+    "smoke": "30/30 green",
+    "explorer_node_test": "207/207 green",
+    "lint": "clean",
+    "product_code_changed": false
+  },
+  "ci_gate": "frontend-quality.yml: test:char + test:smoke + explorer-scoped node --test",
+  "found_bugs": ["char-bug-1: ExplorerSidebarContext infinite passive-effect loop (OPEN, not fixed)"],
+  "followups": [
+    "fix contour: char-bug-1 ExplorerSidebarContext (before DECOMP step 12/17)",
+    "full node --test suite has 86 pre-existing failures outside explorer — fix/quarantine then extend gate",
+    "decision: e2e/playwright gating"
+  ]
+}

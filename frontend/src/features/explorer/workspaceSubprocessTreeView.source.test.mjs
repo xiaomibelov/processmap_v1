@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readExplorerSources } from "../../test-utils/explorerSourceText.mjs";
 
-const explorerSource = readFileSync(new URL("./WorkspaceExplorer.jsx", import.meta.url), "utf8");
+// retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set
+// (all pins are globally unique identifiers/strings). explorerApi.js does not move
+// and is still read directly.
+const { text: explorerSource } = readExplorerSources();
 const apiSource = readFileSync(new URL("./explorerApi.js", import.meta.url), "utf8");
 
 test("explorer API supports tree view query params", () => {
