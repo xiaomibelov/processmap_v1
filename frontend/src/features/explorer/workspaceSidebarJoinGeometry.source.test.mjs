@@ -15,7 +15,7 @@ function between(start, end) {
 test("workspace shell has one continuous sidebar border axis", () => {
   const renderSource = between("<ExplorerSidebarProvider>", "</ExplorerSidebarProvider>");
 
-  assert.match(renderSource, /"--explorer-header-h":\s*"2\.5rem"/);
+  assert.match(renderSource, /"--explorer-header-h":\s*"3\.5rem"/);
   assert.match(renderSource, /border-r border-border/);
   assert.doesNotMatch(renderSource, /border-r-0/);
 });
@@ -37,4 +37,11 @@ test("left and right headers share the same fixed height token", () => {
   assert.match(sidebarHeaderSource, /h-\[var\(--explorer-header-h\)\]/);
   assert.match(explorerHeaderSource, /h-\[var\(--explorer-header-h\)\]/);
   assert.match(projectHeaderSource, /h-\[var\(--explorer-header-h\)\]/);
+});
+
+test("header tabs are centered within the taller app header row", () => {
+  const tabsSource = between("function HeaderTabs(", "function WorkspaceSidebarContextCounters()");
+
+  assert.match(tabsSource, /className="flex h-full items-center/);
+  assert.match(tabsSource, /className=\{`relative inline-flex h-9 items-center/);
 });

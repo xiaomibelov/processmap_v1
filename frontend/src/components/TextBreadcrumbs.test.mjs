@@ -28,6 +28,18 @@ test("collapseBreadcrumbTrail: длинный трейл — … / текущи�
   assert.equal(model.items[1].crumb.label, "Crumb 5");
 });
 
+test("collapseBreadcrumbTrail: maxVisible сохраняет полный путь проекта", () => {
+  const model = collapseBreadcrumbTrail(makeCrumbs(5), 6);
+  assert.equal(model.collapsed, false);
+  assert.deepEqual(model.items.map((item) => item.crumb.label), [
+    "Crumb 0",
+    "Crumb 1",
+    "Crumb 2",
+    "Crumb 3",
+    "Crumb 4",
+  ]);
+});
+
 test("TextBreadcrumbs: текстовый стиль 12–13px, без чипов и подложек", () => {
   assert.match(componentSource, /text-\[13px\]/);
   assert.doesNotMatch(componentSource, /rounded-full|rounded-lg|border\s|bg-panel|bg-accent/);

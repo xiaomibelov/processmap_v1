@@ -1563,9 +1563,9 @@ function HeaderTabs({ tabs, activeKey, onChange }) {
             role="tab"
             aria-selected={active ? "true" : "false"}
             onClick={() => onChange(tab.key)}
-            className={`relative h-full px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-none
+            className={`relative inline-flex h-9 items-center px-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-md
               ${active
-                ? "text-accent"
+                ? "text-accent bg-accentSoft"
                 : "text-muted hover:text-fg hover:bg-bg"
               }`}
           >
@@ -3253,7 +3253,11 @@ function ExplorerPane({
   const showExplorerSkeleton = useDelayedSkeleton(explorerIsLoadingPage);
 
   const explorerHeader = (
-      <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="explorer-header">
+      <div
+        className="border-b border-border flex-shrink-0 bg-panel"
+        style={{ "--explorer-header-h": "3.5rem" }}
+        data-testid="explorer-header"
+      >
         {/* Часть А-2 (nav-zone): глобальная строка навигации. Workspace actions
             живут ниже в локальном toolbar, чтобы не смешивать уровни IA. */}
         <div
@@ -3279,6 +3283,7 @@ function ExplorerPane({
               dataTestId="explorer-breadcrumbs"
               singleLine
               forceCollapse={explorerNavWidth < 900}
+              maxVisible={6}
               currentClassName="text-[15px] font-semibold"
             />
           </div>
@@ -4467,6 +4472,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 
   const proj = page?.project;
   const sessions = page?.sessions || [];
+  const projectBreadcrumbBase = normalizeProjectBreadcrumbBase(page?.breadcrumbs || breadcrumbBase);
   const sortedSessions = useMemo(
     () => sortProjectSessions(sessions, sessionSort),
     [sessions, sessionSort],
@@ -4499,7 +4505,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const noteAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const isEmpty = !loading && !error && sessions.length === 0;
   const sessionColumnProfile = EXPLORER_COLUMN_PROFILES.sessions;
-  const backCrumbs = normalizeProjectBreadcrumbBase(breadcrumbBase);
+  const backCrumbs = projectBreadcrumbBase;
   const parentFolderCrumb = [...backCrumbs].reverse().find((crumb) => crumb.type === "folder") || null;
   const projectContext = {
     projectId,
@@ -4534,13 +4540,22 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     }
   }, [onOpenSession, projectContext, projectId, workspaceId]);
 
-  const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.title || proj?.name || "");
-  const projectCrumbItems = projectBreadcrumbTrail.map((c, index) => ({
+  const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(projectBreadcrumbBase, proj?.title || proj?.name || "");
+  const projectOrg = page?.context?.organization;
+  const projectHeaderDisplayCrumbs = [
+    {
+      type: "organization",
+      id: String(projectOrg?.id || activeOrgId || "organization"),
+      name: String(projectOrg?.name || "Организация").trim(),
+    },
+    ...projectBreadcrumbTrail,
+  ];
+  const projectCrumbItems = projectHeaderDisplayCrumbs.map((c, index) => ({
     key: `${c.type}-${c.id || "project"}`,
     label: c.name,
     // Текущий сегмент заменяет H1 — testid заголовка живёт на нём.
-    testId: index === projectBreadcrumbTrail.length - 1 ? "project-title" : undefined,
-    onClick: c.active ? undefined : () => onBack(c),
+    testId: index === projectHeaderDisplayCrumbs.length - 1 ? "project-title" : undefined,
+    onClick: c.active || c.type === "organization" ? undefined : () => onBack(c),
   }));
   // Часть А-2 (nav-zone): однострочная полоса — адаптив по ширине контейнера.
   const [projectNavRef, projectNavWidth] = useElementWidth();
@@ -4613,11 +4628,15 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   }
 
   const createSessionLabel = projectNavLayout.shortCreateLabels ? "Сессия" : "Новая сессия";
-
+  const visibleProjectItemCount = searchModel.active ? searchModel.total : sortedSessions.length;
   const projectHeader = (
-      <div className="border-b border-border flex-shrink-0 bg-panel" data-testid="project-header">
+      <div
+        className="border-b border-border flex-shrink-0 bg-panel"
+        style={{ "--explorer-header-h": "3.5rem" }}
+        data-testid="project-header"
+      >
         {/* Часть А-2 (nav-zone): левая зона = ширине сайдбара (табы),
-            правая зона = путь + статус + действия, разделитель на границе сайдбара.
+            правая зона = путь + статус, разделитель на границе сайдбара.
             Кнопка «назад» живёт в левой колонке; мета счётчики — в сайдбаре. */}
         <div
           ref={projectNavRef}
@@ -4635,13 +4654,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               onChange={setActiveTab}
             />
           </div>
-          {/* Right zone: breadcrumbs + status + actions, aligned with table NAME column. */}
+          {/* Right zone: breadcrumbs + status, aligned with table NAME column. */}
           <div className="flex-1 h-full flex items-center min-w-0 overflow-hidden gap-2 pl-2 pr-5">
             <TextBreadcrumbs
               crumbs={projectCrumbItems}
               dataTestId="project-breadcrumbs"
               singleLine
               forceCollapse={projectNavWidth < 900}
+              maxVisible={6}
               currentClassName="text-[15px] font-semibold"
             />
             {proj ? (
@@ -4651,22 +4671,32 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 onChange={handleProjectStatusChange}
               />
             ) : null}
-            <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-              <ExplorerSearchBox
-                id="workspace-explorer-project-search"
-                value={searchQuery}
-                onChange={setSearchQuery}
-                className={projectNavLayout.searchIconOnly ? "w-[140px]" : "w-[260px]"}
-              />
-              {permissions?.canCreate ? (
-                <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
-                  <IcoPlus /> {createSessionLabel}
-                </button>
-              ) : null}
-            </div>
           </div>
         </div>
       </div>
+  );
+  const projectToolbar = (
+    <div
+      className="flex min-h-11 flex-nowrap items-center gap-1.5 border-b border-border bg-panel px-4 py-2"
+      data-testid="project-filter-toolbar"
+    >
+      <span className="ml-auto shrink-0 text-[11px] text-muted">
+        {visibleProjectItemCount} элементов
+      </span>
+      <ExplorerSearchBox
+        id="workspace-explorer-project-search"
+        value={searchQuery}
+        onChange={setSearchQuery}
+        className={projectNavLayout.searchIconOnly ? "w-[160px]" : "w-[280px]"}
+      />
+      <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+        {permissions?.canCreate ? (
+          <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-2.5 text-xs flex items-center gap-1">
+            <IcoPlus /> {createSessionLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 
   return (
@@ -4684,11 +4714,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         <div className="flex-1 min-h-0 overflow-hidden">
           <AnalyticsPage scope="project" scopeId={projectId} module="overview" orgId={activeOrgId} embedded />
         </div>
-      ) : null}
-
-      {searchModel.active ? (
-        <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
+      ) : searchModel.active ? (
+        <>
+          {projectToolbar}
+          <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
+        </>
       ) : isEmpty ? (
+        <>
+        {projectToolbar}
         <div
           className={`flex-1 flex flex-col items-center justify-center gap-4 p-8 transition-colors ${tableDragOver ? "bg-accentSoft/30 outline-2 outline-dashed outline-accent/60 outline-offset-[-6px]" : ""}`}
           {...sessionTableDropZoneProps}
@@ -4714,7 +4747,10 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             </button>
           ) : null}
         </div>
+        </>
       ) : (
+        <>
+        {projectToolbar}
         <div
           className={`flex-1 overflow-y-auto transition-colors ${tableDragOver ? "bg-accentSoft/25 outline-2 outline-dashed outline-accent/60 outline-offset-[-6px]" : ""}`}
           {...sessionTableDropZoneProps}
@@ -4860,6 +4896,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {creating && permissions?.canCreate ? (
@@ -4959,7 +4996,7 @@ export default function WorkspaceExplorer({
     <ExplorerSidebarProvider>
       <div
         className="h-full flex flex-col min-h-0 bg-bg font-sans"
-        style={{ "--explorer-sidebar-w": "16rem", "--explorer-header-h": "2.5rem" }}
+        style={{ "--explorer-sidebar-w": "16rem", "--explorer-header-h": "3.5rem" }}
       >
         {!currentOrgActive ? (
           <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">

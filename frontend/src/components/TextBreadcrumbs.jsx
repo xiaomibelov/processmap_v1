@@ -13,6 +13,7 @@ export default function TextBreadcrumbs({
   singleLine = false,
   currentClassName = "",
   forceCollapse = false,
+  maxVisible = 4,
 }) {
   const [expanded, setExpanded] = useState(false);
   const list = (Array.isArray(crumbs) ? crumbs : []).filter(
@@ -22,7 +23,7 @@ export default function TextBreadcrumbs({
 
   const model = expanded && !forceCollapse
     ? { collapsed: false, items: list.map((crumb) => ({ type: "crumb", crumb })) }
-    : collapseBreadcrumbTrail(list, forceCollapse ? 2 : 4);
+    : collapseBreadcrumbTrail(list, forceCollapse ? 2 : maxVisible);
   const lastKey = list[list.length - 1].key;
   const fullPath = list.map((crumb) => crumb.label).join(" / ");
 

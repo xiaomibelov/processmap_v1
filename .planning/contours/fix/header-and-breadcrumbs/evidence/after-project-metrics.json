@@ -1,0 +1,61 @@
+{
+  "projectHeader": {
+    "x": 77,
+    "y": 58,
+    "width": 1350,
+    "height": 57,
+    "text": "СессииАналитикаDefault/Main Workspace/Раздел витрин/Папка прямого входа/Проект хлебных крошекАктивен",
+    "title": ""
+  },
+  "projectToolbar": {
+    "x": 345,
+    "y": 127,
+    "width": 1070,
+    "height": 53,
+    "text": "1 элементовПоиск по workspace Новая сессия",
+    "title": ""
+  },
+  "projectSearch": {
+    "x": 1024,
+    "y": 143,
+    "width": 234,
+    "height": 20,
+    "text": "",
+    "title": "Поиск по workspace"
+  },
+  "projectPrimary": {
+    "x": 1275,
+    "y": 135,
+    "width": 124,
+    "height": 36,
+    "text": "Новая сессия",
+    "title": ""
+  },
+  "projectBreadcrumbs": {
+    "x": 261,
+    "y": 76,
+    "width": 603,
+    "height": 20,
+    "text": "Default/Main Workspace/Раздел витрин/Папка прямого входа/Проект хлебных крошек",
+    "title": "Default / Main Workspace / Раздел витрин / Папка прямого входа / Проект хлебных крошек"
+  },
+  "workspaceToolbar": {
+    "x": 345,
+    "y": 184,
+    "width": 1070,
+    "height": 53,
+    "text": "ВсеАктивенГотовоЧерновикAS IS...1 элементовПоиск по workspace Создать раздел Проект",
+    "title": ""
+  },
+  "workspaceSearch": {
+    "x": 1039,
+    "y": 200,
+    "width": 114,
+    "height": 20,
+    "text": "",
+    "title": "Поиск по workspace"
+  },
+  "workspacePrimary": null,
+  "dialogs": [],
+  "body": "PROCESSMAP\nORG\nDefault\nАдмин-панель\nAPI Docs\nСессии\nАналитика\nDefault\n/\nMain Workspace\n/\nРаздел витрин\n/\nПапка прямого входа\n/\nПроект хлебных крошек\nАктивен\nНазад к проекту\nWORKSPACES\nMain Workspace\n1 раздел · 1 проект\nВ проекте: 1 сессия\nplatform_admin\n1 элементов\nПоиск по workspace\nНовая сессия\n\t\nНАЗВАНИЕ\n↑\n\t\nСТАТУС\n↑\n\t\nСТАДИЯ\n↑\n\t\nOWNER\n↑\n\tИСПОЛНИТЕЛИ\tDOD\tОБС.\t\n⚠\nВНИМ.\n\t📋\t\nОБНОВЛЕНА\n↑\n\t\n\t\nСессия проверки рядов\n\t\nЧерновик\n\tЧерновик\t\nadmin@local\n\t+ Назначить\t\n0%\n\t\n\t—\t\t4 мин назад\t\nОткрыть сессию\n···\nВерсия v1.0.143\n· Перерисованы сабтабы анализа: границы процесса, действия, исключения и AI-анализ."
+}
