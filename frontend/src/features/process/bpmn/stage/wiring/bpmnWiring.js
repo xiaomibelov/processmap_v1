@@ -85,6 +85,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
   const createBpmnCoordinator = deps.createBpmnCoordinator || createBpmnCoordinatorDefault;
   const createBpmnRuntime = deps.createBpmnRuntime || createBpmnRuntimeDefault;
   const forceTaskResizeRulesModule = deps.forceTaskResizeRulesModule || null;
+  const moveRetargetRulesModule = deps.moveRetargetRulesModule || null;
   const pmModdleDescriptor = deps.pmModdleDescriptor || null;
   const camundaModdleDescriptor = deps.camundaModdleDescriptor || null;
   const zeebeModdleDescriptor = deps.zeebeModdleDescriptor || null;
@@ -274,7 +275,10 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       mode: "modeler",
       getCtorOptions: async (runtimeMode) => {
         if (String(runtimeMode || "").toLowerCase() !== "modeler") return {};
-        const additionalModules = forceTaskResizeRulesModule ? [forceTaskResizeRulesModule] : [];
+        const additionalModules = [
+          ...(forceTaskResizeRulesModule ? [forceTaskResizeRulesModule] : []),
+          ...(moveRetargetRulesModule ? [moveRetargetRulesModule] : []),
+        ];
         if (typeof window !== "undefined") {
           try {
             const drilldown = await import("bpmn-js/lib/features/drilldown/index.js");
