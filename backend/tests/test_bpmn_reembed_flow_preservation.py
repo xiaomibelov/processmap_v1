@@ -82,6 +82,26 @@ def _child_without_external_flows() -> str:
     return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
 
+def _child_with_degraded_messageflow() -> str:
+    """Child kept the messageFlow but lost its external targetRef (moddle could
+    not resolve the dangling dataStoreReference)."""
+    child = extract_subprocess_xml(PARENT_XML, "SubProcess_Resync_1")
+    assert child is not None
+    root = ET.fromstring(child)
+    flow = next(el for el in root.iter(f"{{{BPMN_NS}}}messageFlow"))
+    flow.attrib.pop("targetRef", None)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
+def _child_with_collaboration(xml: str) -> str:
+    """Wrap a child document with an empty <bpmn:collaboration> (hoisted-docs
+    dialect): element ids missing from the whole document are intentional
+    deletions."""
+    root = ET.fromstring(xml)
+    root.insert(0, ET.Element(f"{{{BPMN_NS}}}collaboration", {"id": "Collaboration_Child"}))
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
 def _semantic_ids(root: ET.Element) -> set:
     ids = set()
     for el in root.iter():
@@ -151,6 +171,76 @@ def test_orphan_bpmnedge_is_collected_on_reembed():
 def test_reembed_is_idempotent():
     once = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", _child_without_external_flows())
     twice = re_embed_child_xml_into_parent(once, "SubProcess_Resync_1", _child_without_external_flows())
+    assert once == twice
+
+
+def test_degraded_child_messageflow_merges_parent_targetref():
+    out = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", _child_with_degraded_messageflow())
+    assert out is not None
+    root = ET.fromstring(out)
+    sp = next(el for el in root.iter() if el.attrib.get("id") == "SubProcess_Resync_1")
+    flows = [el for el in sp.iter(f"{{{BPMN_NS}}}messageFlow")]
+    assert [el.attrib.get("id") for el in flows] == ["MsgFlow_External_1"]
+    assert flows[0].attrib.get("sourceRef") == "Task_Internal_1"
+    assert flows[0].attrib.get("targetRef") == "DataStoreReference_External"
+
+
+def test_nonempty_child_targetref_is_not_overwritten_by_parent():
+    root = ET.fromstring(_child_with_degraded_messageflow())
+    flow = next(el for el in root.iter(f"{{{BPMN_NS}}}messageFlow"))
+    flow.attrib["targetRef"] = "DataStoreReference_Child_Choice"
+    child = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    out = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", child)
+    assert out is not None
+    root = ET.fromstring(out)
+    flow = next(el for el in root.iter(f"{{{BPMN_NS}}}messageFlow"))
+    assert flow.attrib.get("targetRef") == "DataStoreReference_Child_Choice"
+
+
+def test_degraded_child_datainputassociation_merges_nested_sourceref():
+    child = extract_subprocess_xml(PARENT_XML, "SubProcess_Resync_1")
+    assert child is not None
+    root = ET.fromstring(child)
+    assoc = next(el for el in root.iter(f"{{{BPMN_NS}}}dataInputAssociation"))
+    sref = next(el for el in assoc if el.tag == f"{{{BPMN_NS}}}sourceRef")
+    sref.text = ""
+    child = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    out = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", child)
+    assert out is not None
+    root = ET.fromstring(out)
+    assoc = next(el for el in root.iter(f"{{{BPMN_NS}}}dataInputAssociation"))
+    sref = next(el for el in assoc if el.tag == f"{{{BPMN_NS}}}sourceRef")
+    assert (sref.text or "").strip() == "DataStoreReference_External"
+
+
+def test_intentional_deletion_with_collaboration_is_not_resurrected():
+    child = _child_with_collaboration(_child_without_external_flows())
+    out = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", child)
+    assert out is not None
+    root = ET.fromstring(out)
+    sp = next(el for el in root.iter() if el.attrib.get("id") == "SubProcess_Resync_1")
+    sp_ids = {el.attrib.get("id") for el in sp.iter()}
+    assert "MsgFlow_External_1" not in sp_ids
+    assert "DataInputAssoc_1" not in sp_ids
+    di_edges = [el for el in root.iter(f"{{{BPMNDI_NS}}}BPMNEdge")]
+    assert not any(el.attrib.get("bpmnElement") == "MsgFlow_External_1" for el in di_edges)
+
+
+def test_missing_element_without_collaboration_is_reinjected():
+    child = _child_without_external_flows()
+    root = ET.fromstring(child)
+    assert not any(el.tag == f"{{{BPMN_NS}}}collaboration" for el in root.iter())
+    out = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", child)
+    assert out is not None
+    root = ET.fromstring(out)
+    sp = next(el for el in root.iter() if el.attrib.get("id") == "SubProcess_Resync_1")
+    assert any(el.attrib.get("id") == "MsgFlow_External_1" for el in sp.iter())
+
+
+def test_merge_is_idempotent_on_repeated_reembed():
+    once = re_embed_child_xml_into_parent(PARENT_XML, "SubProcess_Resync_1", _child_with_degraded_messageflow())
+    assert once is not None
+    twice = re_embed_child_xml_into_parent(once, "SubProcess_Resync_1", _child_with_degraded_messageflow())
     assert once == twice
 
 
