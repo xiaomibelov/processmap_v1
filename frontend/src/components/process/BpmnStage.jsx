@@ -41,6 +41,7 @@ import {
 } from "../../features/process/bpmn/stage/orchestration/bpmnRenderRuntimeLifecycle";
 import { readOverlayCanvasZoom } from "../../features/process/bpmn/stage/decor/overlayLayoutModel.js";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
+import moveRetargetRulesModule from "../../features/process/bpmn/runtime/modules/moveRetargetRules";
 import {
   saveBpmnSnapshot,
   getLatestBpmnSnapshot,
@@ -1481,6 +1482,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     }),
     {
       forceTaskResizeRulesModule,
+      moveRetargetRulesModule,
       pmModdleDescriptor,
       camundaModdleDescriptor,
       zeebeModdleDescriptor,
