@@ -29,6 +29,7 @@ def _do_index_session_bpmn_xml(session_id: str, org_id: str) -> Dict[str, Any]:
     projection = build_process_projection(session)
     digest = projection_digest(projection)
     session_title = str(getattr(session, "title", "") or "").strip()
+    dsv = int(getattr(session, "diagram_state_version", 0) or 0)
 
     metadata = {
         "source_type": "bpmn_xml",
@@ -36,6 +37,7 @@ def _do_index_session_bpmn_xml(session_id: str, org_id: str) -> Dict[str, Any]:
         "session_id": sid,
         "session_title": session_title,
         "projection_digest": digest,
+        "diagram_state_version": dsv,
     }
 
     result = index_document(
@@ -44,7 +46,7 @@ def _do_index_session_bpmn_xml(session_id: str, org_id: str) -> Dict[str, Any]:
         source_id=sid,
         content=bpmn_xml,
         metadata=metadata,
-        source_version=int(getattr(session, "bpmn_xml_version", 0) or 0) or None,
+        source_version=dsv or None,
     )
 
     upsert_rag_source_status(
@@ -60,6 +62,7 @@ def _do_index_session_bpmn_xml(session_id: str, org_id: str) -> Dict[str, Any]:
         "chunks_created": result.get("chunks_created", 0),
         "was_updated": result.get("was_updated", False),
         "projection_digest": digest,
+        "diagram_state_version": dsv,
     }
 
 
@@ -80,7 +83,12 @@ def index_session_bpmn_xml(self, session_id: str, org_id: str) -> Dict[str, Any]
         result = _do_index_session_bpmn_xml(sid, oid)
         if result.get("status") in ("indexed", "unchanged"):
             storage = get_storage()
-            storage.set_rag_readiness(sid, "indexed", org_id=oid)
+            storage.set_rag_readiness(
+                sid,
+                "indexed",
+                org_id=oid,
+                indexed_dsv=result.get("diagram_state_version"),
+            )
         return result
     except Exception as exc:
         logger.exception("index_session_bpmn_xml failed for %s/%s", oid, sid)
@@ -88,6 +96,12 @@ def index_session_bpmn_xml(self, session_id: str, org_id: str) -> Dict[str, Any]
             self.retry(exc=exc)
         except Exception:
             pass
+        # Retry исчерпан: фиксируем наблюдаемый провал индексации, чтобы
+        # readiness не зависал в прежнем состоянии. Не должен подниматься.
+        try:
+            get_storage().set_rag_readiness(sid, "error", org_id=oid)
+        except Exception:
+            logger.warning("index_session_bpmn_xml: failed to mark readiness error for %s/%s", oid, sid)
         return {"status": "failed", "reason": str(exc), "session_id": sid}
 
 
@@ -107,10 +121,19 @@ def index_queued_sessions_bpmn_xml(self) -> Dict[str, Any]:
             try:
                 result = _do_index_session_bpmn_xml(sid, oid)
                 if result.get("status") in ("indexed", "unchanged"):
-                    storage.set_rag_readiness(sid, "indexed", org_id=oid)
+                    storage.set_rag_readiness(
+                        sid,
+                        "indexed",
+                        org_id=oid,
+                        indexed_dsv=result.get("diagram_state_version"),
+                    )
                 results.append({"session_id": sid, **result})
             except Exception as exc:
                 logger.exception("index_queued_sessions_bpmn_xml failed for %s/%s", oid, sid)
+                try:
+                    storage.set_rag_readiness(sid, "error", org_id=oid)
+                except Exception:
+                    logger.warning("index_queued_sessions_bpmn_xml: failed to mark readiness error for %s/%s", oid, sid)
                 results.append({"session_id": sid, "status": "failed", "reason": str(exc)})
         return {"status": "ok", "processed": len(results), "results": results}
     except Exception as exc:
