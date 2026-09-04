@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 
 /**
- * FIX-V (блок 2): общий резолвер позиции «якоря» диаграмм-тулбара для
- * toast-viewport. Логика повторяет исторический резолвер ProcessSaveAckToast
- * (он залочен source-contract тестом и не может быть разделён без правки
- * контракта): header notification anchor → правый слот тулбара → action bar.
+ * FIX-V (блок 2) + П3: общий резолвер позиции якоря для toast-viewport.
+ * П3: приоритет — плавающий тулбар канваса (.diagramActionBar): событийные
+ * тосты уходят строго под его bottom и не перекрывают «Шаблоны/Отчёты/…».
+ * Fallback-цепочка для надёжности: notification anchor → правый слот хедера
+ * (исторический порядок сохранён для процессов без плавающего тулбара).
  *
  * Возвращает DOMRect-подобный объект {left, top, right, bottom, width, height,
  * kind} или null, если якорь не найден / вне браузера.
@@ -34,19 +35,22 @@ export function resolveDiagramToolbarAnchorRect() {
     };
   };
 
+  const diagramToolbar = readRect(
+    document.querySelector(".diagramActionBar"),
+    "diagram-toolbar",
+  );
+  if (diagramToolbar) return diagramToolbar;
+
   const headerAnchor = readRect(
     document.querySelector('[data-testid="diagram-toolbar-notification-anchor"]'),
     "header-anchor",
   );
   if (headerAnchor) return headerAnchor;
 
-  const headerSlot = readRect(
+  return readRect(
     document.querySelector(".diagramToolbarSlot--right"),
     "header-slot",
   );
-  if (headerSlot) return headerSlot;
-
-  return readRect(document.querySelector(".diagramActionBar"), "diagram-toolbar");
 }
 
 export default function useDiagramToolbarAnchorRect(enabled = true) {

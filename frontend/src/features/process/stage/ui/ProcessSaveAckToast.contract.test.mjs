@@ -30,6 +30,15 @@ test("save ack toast anchors to header notification slot and keeps safe fallback
   assert.equal(source.includes("text-amber-900"), true);
   assert.equal(source.includes("text-rose-900"), true);
   assert.equal(source.includes("text-sky-900"), true);
+  // Тёмная тема: тоны не остаются светлыми (аудит П3).
+  assert.equal(source.includes("dark:bg-emerald-950"), true);
+  assert.equal(source.includes("dark:bg-amber-950"), true);
+  assert.equal(source.includes("dark:bg-rose-950"), true);
+  assert.equal(source.includes("dark:bg-sky-950"), true);
+  assert.equal(source.includes("dark:text-emerald-100"), true);
+  assert.equal(source.includes("dark:text-amber-100"), true);
+  assert.equal(source.includes("dark:text-rose-100"), true);
+  assert.equal(source.includes("dark:text-sky-100"), true);
   assert.equal(source.includes("actionLabel = \"\""), true);
   assert.equal(source.includes("persistent = false"), true);
   assert.equal(source.includes('data-testid="process-save-ack-toast-action"'), true);

@@ -62,7 +62,7 @@ export default function ProcessToastViewport({
 
   return (
     <div
-      className="pointer-events-none fixed z-[130] flex w-[min(92vw,420px)] flex-col items-end gap-2"
+      className="pointer-events-none fixed z-[95] flex w-[min(92vw,420px)] flex-col items-end gap-2"
       style={containerStyle || undefined}
       data-testid="process-toast-viewport"
     >

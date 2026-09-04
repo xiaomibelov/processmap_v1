@@ -23,6 +23,13 @@ test("process toast viewport is a single pointer-events-none stack under the too
   assert.equal(source.includes("useDiagramToolbarAnchorRect"), true);
 });
 
+test("toast viewport stays below modal layer and above the floating diagram toolbar", () => {
+  const source = readSource("ProcessToastViewport.jsx");
+  // Z-карта: diagramActionBar 92 < toasts 95 < modals 100 < legacy 120 < account menu 140.
+  assert.equal(source.includes("z-[95]"), true);
+  assert.equal(source.includes("z-[130]"), false);
+});
+
 test("save ack toast supports stack layout without self-positioning", () => {
   const source = readSource("ProcessSaveAckToast.jsx");
   assert.equal(source.includes('layout = ""'), true);
@@ -30,6 +37,14 @@ test("save ack toast supports stack layout without self-positioning", () => {
   // Stack-режим отключает anchor-эффект и fixed-позиционирование.
   assert.equal(source.includes("if (isMounted !== true || isStackLayout)"), true);
   assert.equal(source.includes("if (isStackLayout) return null;"), true);
+});
+
+test("save ack toast tones carry dark-theme token fallbacks", () => {
+  const source = readSource("ProcessSaveAckToast.jsx");
+  assert.equal(source.includes("dark:bg-emerald-950"), true);
+  assert.equal(source.includes("dark:bg-amber-950"), true);
+  assert.equal(source.includes("dark:bg-rose-950"), true);
+  assert.equal(source.includes("dark:bg-sky-950"), true);
 });
 
 test("hybrid persist toast supports stack layout and pointer-events hygiene", () => {
@@ -41,21 +56,12 @@ test("hybrid persist toast supports stack layout and pointer-events hygiene", ()
   assert.equal(source.includes('data-testid="hybrid-persist-toast-dismiss"'), true);
 });
 
-test("anchor resolver prefers header notification anchor and falls back safely", () => {
+test("anchor resolver prefers floating diagram toolbar and falls back to header surfaces", () => {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true });
   const prevDocument = globalThis.document;
   globalThis.document = dom.window.document;
   try {
     assert.equal(resolveDiagramToolbarAnchorRect(), null);
-
-    const toolbar = dom.window.document.createElement("div");
-    toolbar.className = "diagramActionBar";
-    toolbar.getBoundingClientRect = () => ({
-      left: 100, top: 50, right: 900, bottom: 90, width: 800, height: 40,
-    });
-    dom.window.document.body.appendChild(toolbar);
-    const viaToolbar = resolveDiagramToolbarAnchorRect();
-    assert.equal(viaToolbar?.kind, "diagram-toolbar");
 
     const slot = dom.window.document.createElement("div");
     slot.className = "diagramToolbarSlot--right";
@@ -75,6 +81,17 @@ test("anchor resolver prefers header notification anchor and falls back safely",
     const viaAnchor = resolveDiagramToolbarAnchorRect();
     assert.equal(viaAnchor?.kind, "header-anchor");
     assert.equal(viaAnchor?.bottom, 86);
+
+    // Плавающий тулбар канваса — приоритетный якорь: тосты уходят под его bottom.
+    const toolbar = dom.window.document.createElement("div");
+    toolbar.className = "diagramActionBar";
+    toolbar.getBoundingClientRect = () => ({
+      left: 100, top: 110, right: 900, bottom: 156, width: 800, height: 46,
+    });
+    dom.window.document.body.appendChild(toolbar);
+    const viaToolbar = resolveDiagramToolbarAnchorRect();
+    assert.equal(viaToolbar?.kind, "diagram-toolbar");
+    assert.equal(viaToolbar?.bottom, 156);
   } finally {
     globalThis.document = prevDocument;
     dom.window.close();
