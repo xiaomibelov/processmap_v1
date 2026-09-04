@@ -690,6 +690,40 @@ def _collect_boundary_preserves(parent_el: ET.Element) -> List[ET.Element]:
     return preserved
 
 
+def _merge_missing_boundary_refs(preserved_el: ET.Element, parent_el: ET.Element) -> None:
+    """Fill refs the child session degraded (e.g. a messageFlow whose external
+    targetRef the moddle dropped because the dataStoreReference dangles in the
+    standalone child document): the child-side element with the same id wins,
+    but an empty child ref is repaired from the parent-side preserved copy.
+    Non-empty child refs are authoritative and left untouched."""
+    el_id = _element_id(preserved_el)
+    child_el = next(
+        (d for d in parent_el.iter() if d is not parent_el and _element_id(d) == el_id),
+        None,
+    )
+    if child_el is None:
+        return
+    for attr in ("sourceRef", "targetRef"):
+        child_val = str(child_el.attrib.get(attr) or "").strip()
+        parent_val = str(preserved_el.attrib.get(attr) or "").strip()
+        if parent_val and not child_val:
+            child_el.attrib[attr] = parent_val
+    for tag in ("sourceref", "targetref"):
+        child_refs = [c for c in child_el if _local_tag(c.tag) == tag]
+        parent_refs = [
+            p
+            for p in preserved_el.iter()
+            if p is not preserved_el and _local_tag(p.tag) == tag
+        ]
+        for idx, cref in enumerate(child_refs):
+            if (cref.text or "").strip():
+                continue
+            if idx < len(parent_refs):
+                ptext = (parent_refs[idx].text or "").strip()
+                if ptext:
+                    cref.text = ptext
+
+
 def _remove_orphan_bpmn_edges(root: ET.Element) -> None:
     """Drop bpmndi:BPMNEdge entries whose bpmnElement no longer exists in the
     semantic model (e.g. the element was removed in the child session)."""
@@ -719,8 +753,13 @@ def re_embed_child_xml_into_parent(parent_xml: str, element_id: str, child_xml: 
     data associations / sequenceFlow with sourceRef/targetRef outside the
     subProcess) are preserved: the child document cannot carry them (their
     references dangle there), so the parent-side copy is re-injected unless
-    the child still has an element with the same id.  Orphaned bpmndi:BPMNEdge
-    entries whose semantic element is gone are collected.
+    the child still has an element with the same id.  A child-side element
+    with the same id wins, but refs it degraded to empty (e.g. a messageFlow
+    with a lost external targetRef) are merged back from the parent copy.
+    When the child document carries a <bpmn:collaboration>, an id absent from
+    the whole child document is treated as an intentional deletion and is not
+    resurrected.  Orphaned bpmndi:BPMNEdge entries whose semantic element is
+    gone are collected.
 
     Returns the updated parent XML or None when:
     - the parent element is not a <subProcess> (callActivity is intentionally skipped),
@@ -774,15 +813,32 @@ def re_embed_child_xml_into_parent(parent_xml: str, element_id: str, child_xml: 
         parent_el.append(child)
 
     # Re-inject preserved boundary elements the child no longer carries
-    # (dedup by id: a child-side element with the same id wins).
+    # (dedup by id: a child-side element with the same id wins, with its
+    # degraded refs merged back from the parent copy).
     new_ids = {
         _element_id(desc)
         for desc in parent_el.iter()
         if desc is not parent_el and _element_id(desc)
     }
+    # A <bpmn:collaboration> in the child document means the frontend hoisted
+    # boundary flows there; an id then absent from the whole child document is
+    # an intentional deletion and must not be resurrected.  Without a
+    # collaboration the moddle may have silently dropped the element, so the
+    # parent copy is re-injected (#910 behaviour).
+    child_has_collaboration = any(
+        _local_tag(el.tag) == "collaboration" for el in child_root.iter()
+    )
+    child_all_ids = (
+        {_element_id(el) for el in child_root.iter() if _element_id(el)}
+        if child_has_collaboration
+        else None
+    )
     for el in preserved:
         el_id = _element_id(el)
         if el_id and el_id in new_ids:
+            _merge_missing_boundary_refs(el, parent_el)
+            continue
+        if child_has_collaboration and el_id and child_all_ids is not None and el_id not in child_all_ids:
             continue
         parent_el.append(el)
 
