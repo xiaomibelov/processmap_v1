@@ -114,7 +114,6 @@ export default function TopBar({
   onOpenWorkspace,
   onOpen,
   onDeleteSession,
-  onChangeSessionStatus,
   isChangingSessionStatus = false,
   onNewProject,
   onOpenDiscussionNotifications,

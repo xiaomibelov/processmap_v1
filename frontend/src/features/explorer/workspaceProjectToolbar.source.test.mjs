@@ -33,3 +33,22 @@ test("project render keeps toolbar before search results and table header", () =
   assert.match(explorerSource, /\{projectToolbar\}[\s\S]*<ExplorerSearchResults/);
   assert.match(explorerSource, /\{projectToolbar\}[\s\S]*<thead className="sticky top-0 z-10">/);
 });
+
+// П4 (б): поповер статуса проекта живёт в строке h-[3.5rem] overflow-hidden,
+// поэтому меню обязано уходить в portal на document.body с fixed-позиционированием
+// от якоря (z поверх topbar), иначе обрезается overflow-барьерами.
+test("project status popover escapes overflow clipping via fixed portal", () => {
+  const headerSource = betweenStable(
+    explorerSource,
+    'data-testid="project-header"',
+    'data-testid="project-filter-toolbar"',
+  );
+  // project-usage включает portal-режим
+  assert.match(headerSource, /<StatusPopoverControl[\s\S]*?portal/);
+  // контроль умеет portal/fixed-режим: меню уходит в document.body, z >= 140
+  assert.match(explorerSource, /portal\s*=\s*false/);
+  assert.match(explorerSource, /createPortal\(menu,\s*document\.body\)/);
+  assert.match(explorerSource, /fixed z-\[140\][\s\S]*min-w-\[132px\]/);
+  // позиция считается от якоря-кнопки
+  assert.match(explorerSource, /buttonRef\.current\?\.getBoundingClientRect/);
+});
