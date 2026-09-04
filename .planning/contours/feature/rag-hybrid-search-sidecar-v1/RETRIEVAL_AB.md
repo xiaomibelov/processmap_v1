@@ -1,6 +1,27 @@
 # RETRIEVAL_AB — rag-hybrid-search-sidecar-v1
 
-## Статус: PENDING — требуется живой sidecar (docker stack, env-lock)
+## Статус: PENDING — lock освобождён (force-unlock stale pid 85566 approve'нут
+пользователем 2026-09-04); замер выполняет измеряющая сессия на изолированном
+стеке; эта сессия только верифицирует итоговые цифры.
+
+## Решения пользователя (2026-09-04)
+
+1. **Harness — изолированный ephemeral-стек** (план параллельной сессии):
+   порты `18011` (api) / `15432` (postgres) / `16379` (redis), свои volumes,
+   `down -v` после замера. Shared-стек (`processmap_v1`, смонтирован на чужой
+   worktree) **не переключаем** — риск смешанного состояния неприемлем.
+2. **Координация:** замер выполняет РОВНО ОДНА сессия (та, что поднимает
+   изолированный стек). Две сессии не мутируют docker одновременно ни при
+   каких условиях. Другие сессии — верификация цифр и артефактов только.
+3. **Скоуп контрольного набора:** q1–q7 — file-RAG лукапы (contour/policy/
+   runtime, корпус файлов workspace, `tools/rag/pm-rag-search.mjs`), вне
+   гибридного слоя продукта. Гибрид затрагивает только `GET /api/rag/search`,
+   поэтому A/B строится на **q8–q15** (`structured_fact_qa` по живым корпусам
+   property_dictionary / operation_catalog / glossary). Методология ниже —
+   без изменений.
+4. **Merge-approve ждёт:** зелёный CI (PR #912 — есть) + RETRIEVAL_AB.md с
+   цифрами: hybrid ≥ keyword по hit@3, регрессия latency p50 < 20%,
+   fallback доказан вживую.
 
 A/B-замер retrieval **не выполнен**. Критерий приёмки «hybrid ≥ keyword на контрольном
 наборе» (план §9) **не измерен end-to-end** и должен быть верифицирован при включении
@@ -12,14 +33,16 @@ A/B-замер retrieval **не выполнен**. Критерий приём�
 
 - **Контрольный набор:** q11–q15 (перефразы/синонимы, включая «шокер») + q8–q10
   (baseline-факты) из `tools/rag/processmap-rag-validation-queries.json`.
+  (q1–q7 — file-RAG лукапы, вне гибридного слоя — см. «Решения пользователя».)
 - **Метрики:**
   - hit@3 по `expected_sources`/`expected_terms` (пасс по `pass_criteria` кейса);
   - latency поиска p50 — критерий «не деградирует >20%» vs keyword-only.
 - **Ветки сравнения:** keyword-only (`hybrid_enabled=0`) vs hybrid
   (`hybrid_enabled=1, bm25_weight=0.5, vector_weight=0.5`), тот же индексный корпус,
   включение/выключение только конфигом `rag_settings` (без редеплоя).
-- **Harness:** локальный compose-стек под `tools/pm-env-lock.sh acquire`
-  (shared env mutex, AGENTS.md §10); bearer-токен admin/org-admin (см. AGENTS.md §2.2).
+- **Harness:** ИЗОЛИРОВАННЫЙ ephemeral compose-стек (порты 18011/15432/16379,
+  свои volumes, `down -v` после замера) — решение пользователя 2026-09-04.
+  Shared-стек не переключается. Bearer-токен admin/org-admin (см. AGENTS.md §2.2).
 
 ## Процедура (точные шаги)
 

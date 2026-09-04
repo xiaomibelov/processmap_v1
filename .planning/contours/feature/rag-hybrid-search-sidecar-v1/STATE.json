@@ -1,31 +1,44 @@
 {
-  "contour": "feature/rag-hybrid-search-sidecar-v1",
-  "type": "feature",
-  "phase": "3-draft-pr-complete",
-  "agent_run_id": "kimi-agent-4-20260904T160735",
-  "branch": "feature/rag-hybrid-search-sidecar-v1",
-  "baseline": "4fff681d1edf7000ce30b376a1b77bd7c09e1766",
-  "baseline_note": "rebase 2026-09-04 выполнен: ветка перебазирована на origin/main 4fff681d (#911, rag-auto-index-on-version-v1). Конфликтов не было (16/16 auto-merge); изменения обоих контуров в rag_tasks.py/compat/repository.py интегрированы аддитивно. Цепочка интеграции: version -> _enqueue_rag_index_after_version -> index_session_bpmn_xml -> index_document -> insert_rag_chunks -> _maybe_enqueue_embed -> embed_chunks.",
-  "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/feature/rag-hybrid-search-sidecar-v1",
-  "gates": {
-    "plan_approved_by_user": true,
-    "plan_note": "approve с дополнением — runbook включения/отката на stage (§16) написан отдельным коммитом",
-    "phase1_code_complete": true,
-    "phase2_tests_complete": true,
-    "rebase_after_parallel_contour": "DONE: onto 4fff681d (#911), 0 conflicts, обе цепочки проверены grep-верификацией",
-    "tests_green": "104 passed после rebase (97 контур: test_rag_api 41 + bm25 10 + fusion 15 + embeddings_client 9 + hybrid_api 8 + admin_rag_settings 14; +7 test_rag_auto_index_on_version соседнего контура) — cross-contour regression не выявлен",
-    "openapi_gate": "update_openapi.sh --no-lint (до rebase): 298 paths / 377 ops (+0/+0); endpoint-изменений нет, гейт чист",
-    "ab_measurement": "PENDING — требуется живой sidecar (docker stack, env-lock); критерий 'hybrid >= keyword' НЕ измерен end-to-end (RETRIEVAL_AB.md)",
-    "merge_blocked": "explicit user approve + A/B на stage (runbook §16); rebase-блокер снят",
-    "deploy": "blocked: prod только ручной деплой из main по решению владельца"
-  },
-  "artifacts": {
-    "plan": "PLAN.md",
-    "runbook": "PLAN.md §16 (stage enable/disable)",
-    "tests": "TESTS.md",
-    "pr_draft": "PR.md",
-    "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
-    "git_proof": "git-proof.md"
-  },
-  "next": "1) approve -> push + draft PR (PR.md); 2) stage: runbook §16 + A/B-замер (RETRIEVAL_AB.md) -> верификация критерия приёмки -> решение о merge"
+ "contour": "feature/rag-hybrid-search-sidecar-v1",
+ "type": "feature",
+ "phase": "3-draft-pr-complete-rebased",
+ "agent_run_id": "kimi-agent-4-20260904T160735",
+ "branch": "feature/rag-hybrid-search-sidecar-v1",
+ "baseline": "4fff681d1edf7000ce30b376a1b77bd7c09e1766",
+ "baseline_note": "rebase 2026-09-04 выполнен: ветка перебазирована на origin/main 4fff681d (#911, rag-auto-index-on-version-v1). Конфликтов не было (16/16 auto-merge); изменения обоих контуров в rag_tasks.py/compat/repository.py интегрированы аддитивно. Цепочка интеграции: version -> _enqueue_rag_index_after_version -> index_session_bpmn_xml -> index_document -> insert_rag_chunks -> _maybe_enqueue_embed -> embed_chunks.",
+ "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/feature/rag-hybrid-search-sidecar-v1",
+ "gates": {
+  "plan_approved_by_user": true,
+  "plan_note": "approve с дополнением — runbook включения/отката на stage (§16) написан отдельным коммитом",
+  "phase1_code_complete": true,
+  "phase2_tests_complete": true,
+  "rebase_after_parallel_contour": "DONE: onto 4fff681d (#911), 0 conflicts, обе цепочки проверены grep-верификацией",
+  "tests_green": "104 passed после rebase (97 контур: test_rag_api 41 + bm25 10 + fusion 15 + embeddings_client 9 + hybrid_api 8 + admin_rag_settings 14; +7 test_rag_auto_index_on_version соседнего контура) — cross-contour regression не выявлен",
+  "openapi_gate": "update_openapi.sh --no-lint (до rebase): 298 paths / 377 ops (+0/+0); endpoint-изменений нет, гейт чист",
+  "ab_measurement": "PENDING — требуется живой sidecar (docker stack, env-lock); критерий 'hybrid >= keyword' НЕ измерен end-to-end (RETRIEVAL_AB.md)",
+  "merge_blocked": "explicit user approve + A/B на stage (runbook §16); rebase-блокер снят",
+  "deploy": "blocked: prod только ручной деплой из main по решению владельца"
+ },
+ "artifacts": {
+  "plan": "PLAN.md",
+  "runbook": "PLAN.md §16 (stage enable/disable)",
+  "tests": "TESTS.md",
+  "pr_draft": "PR.md",
+  "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
+  "git_proof": "git-proof.md"
+ },
+ "next": "1) approve force-unlock stale lock (kill 85566, rm /tmp/processmap-env.lock.d) -> 2) A/B по RETRIEVAL_AB.md на живом стеке -> 3) RETRIEVAL_AB.md с цифрами -> 4) merge-approve",
+ "rebase": {
+  "onto": "4fff681d (rag-auto-index-on-version-v1 squash #911)",
+  "date": "2026-09-04",
+  "result": "clean merge-base; интеграция цепочки version->index->embed сохранена (rag_tasks markers indexed_dsv/error целы; _maybe_enqueue_embed в indexer.py)",
+  "tests_after_rebase": "110 passed (37 fast + 73 heavy)"
+ },
+ "pr_draft": {
+  "number": 912,
+  "url": "https://github.com/xiaomibelov/processmap_v1/pull/912",
+  "head": "8fc9ab6",
+  "ci": "all green (contract 3m15s, spec-drift, builds)"
+ },
+ "ab_measurement": "PENDING — BLOCKED: env-lock удерживается stale-процессом pid 85566 (fix/stage-session-save-session-not-found-v1, 2026-08-31, leaked sleep); force-unlock требует approve пользователя"
 }
