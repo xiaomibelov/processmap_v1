@@ -14,7 +14,7 @@ import {
   hasAutoReloadedForSha,
   markAutoReloadedForSha,
   normalizeVersionJson,
-  reloadPage,
+  hardReloadPage,
   setUpdateSnooze,
   shouldShowUpdateToast,
 } from "./appUpdateModel.js";
@@ -100,7 +100,7 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
     if (hasAutoReloadedForSha(remoteSha)) return undefined;
     const timer = window.setTimeout(() => {
       markAutoReloadedForSha(remoteSha);
-      reloadPage(window);
+      void hardReloadPage(window);
     }, APP_UPDATE_AUTO_RELOAD_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [availableRuntime, refreshRisk]);
@@ -125,7 +125,7 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
       }
       const result = await runSafeRefreshBeforeReload({ reason: "app_update_refresh" });
       if (result?.ok === true) {
-        reloadPage(window);
+        void hardReloadPage(window);
         return result;
       }
       const message = String(

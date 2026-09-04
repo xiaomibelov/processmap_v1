@@ -39,15 +39,15 @@ test("хук: boot + interval(5 мин) + visibilitychange→visible, cleanup, �
   assert.doesNotMatch(hookSource, /apiMeta/, "apiMeta больше не используется");
 });
 
-test("reload только по клику [Обновить]: refresh() → guard → flush → reloadPage; автозагрузки нет", () => {
-  assert.match(hookSource, /reloadPage\(window\)/);
-  const autoReloads = hookSource.match(/reloadPage\(window\)/g) || [];
-  assert.equal(autoReloads.length, 1, "reloadPage вызывается ровно в одном месте (refresh)");
+test("reload через hardReloadPage ровно в двух местах (refresh после guard+flush; авто-reload в clean-состоянии); reloadPage в hook отсутствует", () => {
+  const hardReloads = hookSource.match(/hardReloadPage\(window\)/g) || [];
+  assert.equal(hardReloads.length, 2, "hardReloadPage(window) вызывается ровно в двух местах");
   assert.match(hookSource, /runSafeRefreshBeforeReload/);
   assert.match(hookSource, /refreshGuard/);
+  assert.doesNotMatch(hookSource, /reloadPage\(/, "обычного reloadPage в hook нет");
   // checkForUpdate НЕ вызывает reload
   const checkFn = hookSource.split("const checkForUpdate")[1]?.split("useEffect")[0] || "";
-  assert.doesNotMatch(checkFn, /reloadPage/);
+  assert.doesNotMatch(checkFn, /hardReloadPage|reloadPage/);
 });
 
 test("[Позже] = snooze 30 мин (новая семантика), не постоянный dismiss", () => {
