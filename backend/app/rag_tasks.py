@@ -148,7 +148,7 @@ def index_queued_sessions_bpmn_xml(self) -> Dict[str, Any]:
 EXPECTED_EMBEDDING_MODEL_ID = "local-e5-small"
 
 
-@app.task(bind=True, max_retries=1, default_retry_delay=10, name="processmap.rag.embed_chunks")
+@app.task(bind=True, max_retries=1, default_retry_delay=10, ignore_result=True, name="processmap.rag.embed_chunks")
 def embed_chunks(self, chunk_ids: list, org_id: str) -> Dict[str, Any]:
     """Эмбеддить чанки через sidecar и сохранить в rag_embeddings (hybrid search).
 
