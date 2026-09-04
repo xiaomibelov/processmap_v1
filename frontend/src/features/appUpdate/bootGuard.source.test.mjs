@@ -26,4 +26,20 @@ describe("index.html boot guard source checks", () => {
     assert.match(html, /processmap:version-boot-reload/);
   });
 
+  test("SW kill-switch: unregister + clearCaches выполняются ВСЕГДА (без sessionStorage-gate «processmap:sw-kill:v1»)", () => {
+    assert.doesNotMatch(html, /processmap:sw-kill:v1/, "gate один-раз-за-сессию убран: kill-switch постоянный");
+    assert.match(html, /navigator\.serviceWorker\.getRegistrations/);
+    assert.match(html, /unregister/);
+    assert.match(html, /function clearCaches/);
+  });
+
+  test("SW kill-switch: gate «один hardReload за сессию» по navigator.serviceWorker.controller сохранён", () => {
+    assert.match(html, /navigator\.serviceWorker\.controller/);
+    assert.match(html, /hardReload\(\)/);
+  });
+
+  test("SW kill-switch: постоянный механизм (комментарий в коде)", () => {
+    assert.match(html, /постоянн/i, "в index.html зафиксировано, что kill-switch не удаляется");
+  });
+
 });

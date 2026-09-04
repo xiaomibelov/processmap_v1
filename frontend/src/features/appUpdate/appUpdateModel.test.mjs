@@ -10,6 +10,7 @@ import {
   APP_UPDATE_VERSION_URL,
   getCurrentBuildSha,
   getUpdateSnoozeUntil,
+  hardReloadPage,
   hasAutoReloadedForSha,
   markAutoReloadedForSha,
   normalizeVersionJson,
@@ -117,6 +118,82 @@ test("reloadPage — только явный вызов (по клику [Обн
   assert.equal(called, 1);
   reloadPage(null); // без window — no-op, не бросает
   assert.equal(called, 1);
+});
+
+// ---------------------------------------------------------------- hardReloadPage
+function createHardReloadWin({ href = "https://app.example/projects?tab=1", withSW = true, withCaches = true } = {}) {
+  const unregisterSpies = [() => {}, () => {}].map((fn) => {
+    let calls = 0;
+    const spy = () => { calls += 1; return Promise.resolve(); };
+    spy.calls = () => calls;
+    return spy;
+  });
+  const deletedKeys = [];
+  const win = { location: { href } };
+  if (withSW) {
+    win.navigator = {
+      serviceWorker: {
+        getRegistrations: () => Promise.resolve(unregisterSpies.map((spy) => ({ unregister: spy }))),
+      },
+    };
+  } else {
+    win.navigator = {};
+  }
+  if (withCaches) {
+    win.caches = {
+      keys: () => Promise.resolve(["cache-a", "cache-b"]),
+      delete: (key) => { deletedKeys.push(key); return Promise.resolve(true); },
+    };
+  }
+  return { win, unregisterSpies, deletedKeys };
+}
+
+test("hardReloadPage: unregister всех SW + очистка caches + href с __pm_cb", async () => {
+  const { win, unregisterSpies, deletedKeys } = createHardReloadWin();
+  await hardReloadPage(win);
+  assert.equal(unregisterSpies[0].calls(), 1);
+  assert.equal(unregisterSpies[1].calls(), 1);
+  assert.deepEqual(deletedKeys.sort(), ["cache-a", "cache-b"]);
+  assert.match(win.location.href, /__pm_cb=\d+/);
+  assert.ok(win.location.href.startsWith("https://app.example/projects?tab=1&__pm_cb="), "исходный путь/параметры сохранены");
+});
+
+test("hardReloadPage: повторный __pm_cb в исходном URL заменяется, а не дублируется", async () => {
+  const { win } = createHardReloadWin({ href: "https://app.example/x?__pm_cb=111&tab=1" });
+  await hardReloadPage(win);
+  const matches = win.location.href.match(/__pm_cb=/g) || [];
+  assert.equal(matches.length, 1, "ровно один __pm_cb");
+  assert.ok(!/__pm_cb=111/.test(win.location.href), "старый ts заменён");
+  assert.ok(win.location.href.includes("tab=1"), "прочие параметры сохранены");
+});
+
+test("hardReloadPage: без navigator.serviceWorker/caches href всё равно меняется, не бросает", async () => {
+  const { win } = createHardReloadWin({ withSW: false, withCaches: false });
+  await hardReloadPage(win);
+  assert.match(win.location.href, /__pm_cb=\d+/);
+});
+
+test("hardReloadPage: ошибки unregister/caches глушатся, навигация выполняется", async () => {
+  const win = {
+    location: { href: "https://app.example/" },
+    navigator: {
+      serviceWorker: {
+        getRegistrations: () => Promise.resolve([
+          { unregister: () => Promise.reject(new Error("boom")) },
+        ]),
+      },
+    },
+    caches: {
+      keys: () => Promise.reject(new Error("boom")),
+      delete: () => Promise.reject(new Error("boom")),
+    },
+  };
+  await hardReloadPage(win);
+  assert.match(win.location.href, /__pm_cb=\d+/);
+});
+
+test("hardReloadPage(null) → no-op, не бросает", async () => {
+  await hardReloadPage(null);
 });
 
 // ---------------------------------------------------------------- auto-reload

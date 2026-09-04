@@ -128,7 +128,72 @@ export function markAutoReloadedForSha(sha, storage = getDefaultAutoReloadStorag
   }
 }
 
-/** reload — по клику [Обновить] или авто-reload в безопасном состоянии. */
+/**
+ * Обычный location.reload(). НЕ использовать для сценария обновления версии:
+ * под контролем исторического SW перезагрузка обслуживается из его Cache
+ * Storage и отдаёт старый бандл. Для [Обновить]/авто-reload — hardReloadPage.
+ */
 export function reloadPage(win = typeof window === "undefined" ? null : window) {
   win?.location?.reload?.();
+}
+
+// ---------------------------------------------------------------- hardReloadPage
+/** Очистка Cache Storage (аналог clearCaches в index.html); мок win.caches в тестах. */
+async function clearPageCaches(win) {
+  const store = win?.caches || (typeof caches !== "undefined" ? caches : null);
+  if (!store || typeof store.keys !== "function") return;
+  try {
+    const keys = await store.keys();
+    await Promise.all((keys || []).map((key) => Promise.resolve(store.delete(key)).catch(() => {})));
+  } catch {
+    // ошибки кэша не прерывают цепочку
+  }
+}
+
+/** Unregister всех service worker'ов; ошибки глушим, цепочку не прерываем. */
+async function unregisterPageServiceWorkers(win) {
+  const sw = win?.navigator?.serviceWorker;
+  if (!sw || typeof sw.getRegistrations !== "function") return;
+  try {
+    const registrations = await sw.getRegistrations();
+    await Promise.all(
+      (registrations || []).map((registration) =>
+        Promise.resolve(registration?.unregister?.()).catch(() => {}),
+      ),
+    );
+  } catch {
+    // ошибки SW не прерывают цепочку
+  }
+}
+
+/**
+ * Гарантированный переход на новый бандл: unregister всех SW + очистка
+ * Cache Storage + навигация с cache-bust (__pm_cb) — идентично hardReload()
+ * из index.html. Reload — терминальная операция: функция всегда резолвится
+ * и не бросает.
+ *
+ * Постоянный механизм: исторические SW, зарегистрированные старыми версиями
+ * приложения, живут в браузерах пользователей годами. Их controller обслуживает
+ * обычный location.reload() из своего Cache Storage → старый index.html →
+ * старый бандл. Обычный reloadPage() для этого сценария не подходит.
+ *
+ * Переходный путь для уже «застрявших» пользователей: они получат НОВЫЙ
+ * index.html при первой же загрузке (kill-switch в index.html снимет SW), а
+ * эта функция чинит последующие обновления по кнопке [Обновить].
+ */
+export async function hardReloadPage(win = typeof window === "undefined" ? null : window) {
+  if (!win) return;
+  try {
+    await unregisterPageServiceWorkers(win);
+    await clearPageCaches(win);
+  } catch {
+    // любые ошибки подготовки игнорируем — reload всё равно выполняем
+  }
+  try {
+    var url = String(win.location?.href || "").replace(/([?&])__pm_cb=\d+&?/g, "$1").replace(/[?&]$/, "");
+    var sep = url.indexOf("?") === -1 ? "?" : "&";
+    win.location.href = url + sep + "__pm_cb=" + Date.now();
+  } catch {
+    win.location?.reload?.(true);
+  }
 }
