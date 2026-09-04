@@ -1,7 +1,7 @@
-"""033 — session assignees (many-to-many).
+"""034 — session assignees (many-to-many).
 
-Revision ID: 033
-Revises: 032
+Revision ID: 034
+Revises: 033
 Create Date: 2026-08-31
 
 Contour feature/session-assignees:
@@ -14,8 +14,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "033"
-down_revision = "032"
+revision = "034"
+down_revision = "033"
 branch_labels = None
 depends_on = None
 
