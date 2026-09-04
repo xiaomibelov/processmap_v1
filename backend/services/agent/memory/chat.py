@@ -543,11 +543,19 @@ def _search_rag_for_structured_fact(
     source_type: str,
     top_k: int = 5,
 ) -> List[Dict[str, Any]]:
-    """Search a specific corpus, falling back to global RAG if no results."""
+    """Search a specific corpus, falling back to global RAG if no results.
+
+    Справочники (property_dictionary / operation_catalog / glossary) — org-wide
+    корпуса: их чанки не привязаны к source_id сессии, поэтому session-scoping
+    здесь не применяем — иначе rag_search фильтрует все чанки справочников
+    (session_id фильтрует по metadata.source_id) и ветка молча деградирует
+    в free answer. Сессионный scope осмыслен только для bpmn_xml (doc_qa).
+    """
+    _ = session_id  # org-wide corpora: session scope intentionally dropped.
     try:
         resp = search_rag(
             question,
-            session_id,
+            "",
             token,
             org_id=org_id,
             source_type=source_type,
@@ -562,7 +570,7 @@ def _search_rag_for_structured_fact(
     try:
         resp = search_rag(
             question,
-            session_id,
+            "",
             token,
             org_id=org_id,
             source_type="",
