@@ -1,0 +1,26 @@
+{
+ "contour": "fix/rag-embedder-onnx-latency-v1",
+ "type": "fix",
+ "agent_run_id": "kimi-fix-onnx-latency-20260905T012800",
+ "branch": "fix/rag-embedder-onnx-latency-v1",
+ "base": "29b9cbe0 (feature/rag-hybrid-search-sidecar-v1 HEAD = PR #912; намеренное исключение из правила baseline=origin/main — контур закрывает latency-FAIL из A/B того же PR)",
+ "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/fix/rag-embedder-onnx-latency-v1",
+ "goal": "Снять latency-FAIL PR #912 (hybrid p50 x16 vs keyword): ONNX int8 сайдкар + тред-тюнинг + overlap query-эмбеддинга с BM25, re-measure на raghybrid-ab с критерием hybrid p50 <= keyword x1.2 и контролями hit@3 / cos-drift / fallback",
+ "gates": {
+  "onnx_sidecar": "DONE: build-time export last_hidden_state (opset 17) + quantize_dynamic QInt8, onnxruntime + tokenizers по tokenizer.json, numpy mean-pooling/L2, warm-up при старте, EMBEDDINGS_ORT_THREADS env, контракт идентичен (local-e5-small, 384, query:/passage:). Коммит 0af5742a",
+  "timeout_split": "DONE: QUERY_TIMEOUT_DEFAULT_SECONDS=5.0 / PASSAGE_TIMEOUT_DEFAULT_SECONDS=60.0, env-оверрайды EMBEDDINGS_QUERY/PASSAGE_TIMEOUT_SECONDS; 35 passed. Коммит 775094e3",
+  "standalone_benchmark": "DONE: torch->ONNX warm query p50 617.0->77.9ms (x7.9), batch-16 8033.4->266.6ms (x30) при согласованном тред-пуле (EMBEDDINGS_ORT_THREADS=2, --cpus=2). BENCHMARK.md",
+  "cos_drift": "mean 0.990635 / min 0.989020 (18 текстов) — /tmp/cos_drift.json",
+  "overlap_prefetch": "DONE: prefetch_query_embedding до list_rag_chunks, future.result(timeout=30), ошибка -> keyword-only. 35 passed. Коммит 3c7a4b1a",
+  "compose_ort_threads": "DONE: EMBEDDINGS_ORT_THREADS=4 для rag-embedder. Коммит f52024f3",
+  "stack_remeasure": "PENDING",
+  "ff_merge_into_feature": "PENDING",
+  "ci_green": "PENDING",
+  "teardown": "PENDING"
+ },
+ "artifacts": {
+  "benchmark": "BENCHMARK.md",
+  "git_proof": "git-proof.md"
+ },
+ "next": "stack re-measure -> RETRIEVAL_AB «После ONNX» (в feature-ворктри после ff-merge) -> push -> CI -> teardown + release env-lock"
+}
