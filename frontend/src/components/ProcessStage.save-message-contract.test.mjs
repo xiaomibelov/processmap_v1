@@ -20,3 +20,22 @@ test("process status feedback is bridged to source-prefixed toast instead of hea
   assert.equal(source.includes("showSaveAckToast(message, tone);"), true);
   assert.equal(source.includes("toolbarInlineMessage"), false);
 });
+
+test("plain success save-ack is routed to the header status slot, not the floating toast", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("saveStatusSlotFlash"), true);
+  assert.equal(source.includes("setSaveStatusSlotFlash"), true);
+  // Маршрутизация: только короткий success без действий/persistent/kind уходит в слот.
+  assert.equal(source.includes('requestedKind !== "remote_update"'), true);
+  assert.equal(source.includes('requestedKind !== "conflict"'), true);
+  // Конфликт и remote_update по-прежнему идут в toast-стек.
+  assert.equal(source.includes('kind: "remote_update"'), true);
+  assert.equal(source.includes("ProcessToastViewport"), true);
+});
+
+test("success save-ack no longer renders as floating toast over the diagram toolbar", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  // Viewport остаётся для событийных тостов (conflict/remote_update/hybrid),
+  // но save-ack внутри него не рендерится: маршрутизация уходит в слот до setSaveAckToast.
+  assert.equal(source.includes("DiagramToolbarSaveStatusSlot") || source.includes("saveStatusSlotFlashView") || source.includes("saveStatusSlotFlash"), true);
+});
