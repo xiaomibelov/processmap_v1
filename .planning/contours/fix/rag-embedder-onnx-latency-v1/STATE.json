@@ -11,9 +11,9 @@
   "timeout_split": "DONE: QUERY_TIMEOUT_DEFAULT_SECONDS=5.0 / PASSAGE_TIMEOUT_DEFAULT_SECONDS=60.0, env-оверрайды EMBEDDINGS_QUERY/PASSAGE_TIMEOUT_SECONDS; 35 passed. Коммит 775094e3",
   "standalone_benchmark": "DONE: torch->ONNX warm query p50 617.0->77.9ms (x7.9), batch-16 8033.4->266.6ms (x30) при согласованном тред-пуле (EMBEDDINGS_ORT_THREADS=2, --cpus=2). BENCHMARK.md",
   "cos_drift": "mean 0.990635 / min 0.989020 (18 текстов) — /tmp/cos_drift.json",
-  "overlap_prefetch": "DONE: prefetch_query_embedding до list_rag_chunks, future.result(timeout=30), ошибка -> keyword-only. 35 passed. Коммит 3c7a4b1a",
-  "compose_ort_threads": "DONE: EMBEDDINGS_ORT_THREADS=4 для rag-embedder. Коммит f52024f3",
-  "stack_remeasure": "PENDING",
+  "overlap_prefetch": "DONE: prefetch_query_embedding до list_rag_chunks, future.result(timeout=30), ошибка -> keyword-only. 35 passed. Коммит 3c7a4b1a + фикс порядка dd4d6f8a (prefetch реально ДО BM25-полки — иначе latencies складываются)",
+  "compose_ort_threads": "DONE: EMBEDDINGS_ORT_THREADS=4 для rag-embedder (2 в стеке хуже: p50 292ms). Коммит f52024f3",
+  "stack_remeasure": "DONE: hybrid p50 1428.8 -> 91-130ms (x11-x15.7); критерий x1.2 внутри окна НЕ выполнен (x2.5-x5.3, шум базовой BM25-линии 24-87ms; против опорной линии torch-окна x1.04-x1.49); hit@3 8/8=8/8 (q14 PASS — эффект cos-drift, дефект не чинился); q1-q7 0/7 симметрично; hybrid-путь подтверждён логами (75-78 POST /embed, деградаций нет). BENCHMARK.md, /tmp/rag_ab_results_onnx2.json + _final.json",
   "ff_merge_into_feature": "PENDING",
   "ci_green": "PENDING",
   "teardown": "PENDING"
