@@ -21,7 +21,12 @@ import httpx
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://rag-embedder:8000"
-TIMEOUT_SECONDS = 3.0
+# CPU-sidecar (e5-small, без GPU) эмбеддит батч чанков ~0.4s/текст: 16+ чанков —
+# это 5-15s, одиночный query 0.7-2s под нагрузкой. Таймаут 3s (раннее значение)
+# на реальном CPU-сайдкаре даёт систематический таймаут passage-батчей и
+# периодический таймаут query → молчаливая деградация hybrid в keyword.
+# Замерено вживую на raghybrid-ab (apple-silicon docker VM): 16 texts = 6.84s.
+TIMEOUT_SECONDS = 60.0
 FAILURE_COOLDOWN_SECONDS = 30.0
 
 _state_lock = threading.Lock()

@@ -15,7 +15,7 @@
   "rebase_after_parallel_contour": "DONE: onto 4fff681d (#911), 0 conflicts, обе цепочки проверены grep-верификацией",
   "tests_green": "104 passed после rebase (97 контур: test_rag_api 41 + bm25 10 + fusion 15 + embeddings_client 9 + hybrid_api 8 + admin_rag_settings 14; +7 test_rag_auto_index_on_version соседнего контура) — cross-contour regression не выявлен",
   "openapi_gate": "update_openapi.sh --no-lint (до rebase): 298 paths / 377 ops (+0/+0); endpoint-изменений нет, гейт чист",
-  "ab_measurement": "PENDING — требуется живой sidecar (docker stack, env-lock); критерий 'hybrid >= keyword' НЕ измерен end-to-end (RETRIEVAL_AB.md)",
+  "ab_measurement": "DONE 2026-09-04/05 на изолированном стеке raghybrid-ab (env-lock, teardown выполнен). hit@3 primary q8-q15: BM25 7/8 = hybrid 7/8 (q14 падает в обоих, тюнинг весов 0.3/0.7 не спасает; follow-up по данным/чанкеру). q1-q7 secondary: 0/7 в обоих (file-RAG корпус не наполнялся, out of scope). Latency p50 avg: 87.2ms -> 1428.8ms (~x16, НЕ ВЫПОЛНЕН критерий <20% на CPU-сайдкаре; доминирует query-эмбеддинг e5-small 0.7-2.0s). Fallback доказан вживую: stop rag-embedder -> ok=true, top-3 байт-в-байт = keyword-only -> start -> восстановление. Вердикты: критерий 1 PASS, 2 PASS, 3 FAIL (CPU-only конфигурация). Детали: RETRIEVAL_AB.md",
   "merge_blocked": "explicit user approve + A/B на stage (runbook §16); rebase-блокер снят",
   "deploy": "blocked: prod только ручной деплой из main по решению владельца"
  },
@@ -27,7 +27,7 @@
   "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
   "git_proof": "git-proof.md"
  },
- "next": "1) approve force-unlock stale lock (kill 85566, rm /tmp/processmap-env.lock.d) -> 2) A/B по RETRIEVAL_AB.md на живом стеке -> 3) RETRIEVAL_AB.md с цифрами -> 4) merge-approve",
+ "next": "A/B DONE (RETRIEVAL_AB.md с цифрами, STATE обновлён). Осталось: merge-approve пользователем с учётом вердиктов (hit@3 PASS, fallback PASS, latency <20% FAIL на CPU-only) + зелёный CI PR #912",
  "rebase": {
   "onto": "4fff681d (rag-auto-index-on-version-v1 squash #911)",
   "date": "2026-09-04",
@@ -40,5 +40,5 @@
   "head": "8fc9ab6",
   "ci": "all green (contract 3m15s, spec-drift, builds)"
  },
- "ab_measurement": "PENDING — BLOCKED: env-lock удерживается stale-процессом pid 85566 (fix/stage-session-save-session-not-found-v1, 2026-08-31, leaked sleep); force-unlock требует approve пользователя"
+ "ab_measurement": "DONE — замер выполнен (см. gates.ab_measurement); hit@3 7/8=7/8, latency p50 ~x16 на CPU (критерий <20% не выполнен на CPU-конфигурации), fallback доказан. Live-фиксы замера: embeddings.py TIMEOUT_SECONDS 3->60 (систематический таймаут passage-батчей на CPU) + rag-embedder Dockerfile CPU-only torch и pip retries. Merge-approve решение за пользователем: latency-критерий не выполнен на CPU-only; на GPU/ином железе цифры иные"
 }

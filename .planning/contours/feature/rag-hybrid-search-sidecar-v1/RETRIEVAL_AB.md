@@ -1,109 +1,144 @@
 # RETRIEVAL_AB — rag-hybrid-search-sidecar-v1
 
-## Статус: PENDING — lock освобождён (force-unlock stale pid 85566 approve'нут
-пользователем 2026-09-04); замер выполняет измеряющая сессия на изолированном
-стеке; эта сессия только верифицирует итоговые цифры.
+## Статус: DONE — замер выполнен измеряющей сессией 2026-09-04/05 на изолированном
+стеке `raghybrid-ab`; эти цифры — результат того самого единственного замера
+(решение пользователя №2: ровно одна сессия мутирует docker).
 
 ## Решения пользователя (2026-09-04)
 
-1. **Harness — изолированный ephemeral-стек** (план параллельной сессии):
-   порты `18011` (api) / `15432` (postgres) / `16379` (redis), свои volumes,
-   `down -v` после замера. Shared-стек (`processmap_v1`, смонтирован на чужой
-   worktree) **не переключаем** — риск смешанного состояния неприемлем.
-2. **Координация:** замер выполняет РОВНО ОДНА сессия (та, что поднимает
-   изолированный стек). Две сессии не мутируют docker одновременно ни при
-   каких условиях. Другие сессии — верификация цифр и артефактов только.
-3. **Скоуп контрольного набора:** q1–q7 — file-RAG лукапы (contour/policy/
-   runtime, корпус файлов workspace, `tools/rag/pm-rag-search.mjs`), вне
-   гибридного слоя продукта. Гибрид затрагивает только `GET /api/rag/search`,
-   поэтому A/B строится на **q8–q15** (`structured_fact_qa` по живым корпусам
-   property_dictionary / operation_catalog / glossary). Методология ниже —
-   без изменений.
+1. **Harness — изолированный ephemeral-стек**: порты `18011` (api) / `15432`
+   (postgres) / `16379` (redis), свои volumes, `down -v` после замера.
+   Shared-стек (`processmap_v1`) не переключался — подтверждено целым (9
+   контейнеров) после teardown.
+2. **Координация:** замер выполняла РОВНО ОДНА сессия (эта). Другие сессии —
+   верификация цифр и артефактов только.
+3. **Скоуп контрольного набора:** q1–q7 — file-RAG лукапы (корпус файлов
+   workspace, `tools/rag/pm-rag-search.mjs`), вне гибридного слоя продукта.
+   Гибрид затрагивает только `GET /api/rag/search`, поэтому A/B построен на
+   **q8–q15** (`structured_fact_qa` по живым корпусам property_dictionary /
+   operation_catalog / glossary). Факт: q1–q7 в стеке не наполнялись — 0/7 в
+   обоих режимах, out of scope (см. Результаты).
 4. **Merge-approve ждёт:** зелёный CI (PR #912 — есть) + RETRIEVAL_AB.md с
-   цифрами: hybrid ≥ keyword по hit@3, регрессия latency p50 < 20%,
-   fallback доказан вживую.
+   цифрами: hybrid ≥ keyword по hit@3, регрессия latency p50 < 20%, fallback
+   доказан вживую. Все три пункта измерены (вердикты — внизу).
 
-A/B-замер retrieval **не выполнен**. Критерий приёмки «hybrid ≥ keyword на контрольном
-наборе» (план §9) **не измерен end-to-end** и должен быть верифицирован при включении
-на stage (runbook §16) **до approve мержа**. Причина: замер требует живой сервис
-`rag-embedder` в compose-стеке с реальной моделью; docker-команды вне окон Фаз 1–3
-(shared environment rules).
+## Методология (фактическая)
 
-## Методология
+- Модель: `intfloat/multilingual-e5-small` (`local-e5-small`, 384 dims) в сайдкаре
+  `rag-embedder` (CPU-only, apple-silicon docker VM). Векторный слой: 34/34 чанков
+  (5 property_dictionary + 13 operation_catalog + 16 glossary), `rag_embeddings`
+  заполнена, `model_id='local-e5-small'`.
+- Режимы: keyword-only (`hybrid_enabled=0`) vs hybrid (`hybrid_enabled=1`,
+  `bm25_weight=0.5, vector_weight=0.5`), переключение только
+  `PATCH /api/admin/rag/settings` (подтверждено ответами эндпоинта).
+- Запросы: `GET /api/rag/search?q=..&top_k=8&min_score=0`, без `source_type`-фильтра
+  (hit@3 меряется по нефильтрованной выдаче).
+- Harness: `/tmp/rag_ab_runner.py` (вне репо): 15 query × 2 режима с записью
+  top-3 (chunk_id, source_type, score, term_canon/operation_code, snippet) +
+  latency p50/max/min/mean × 20 повторов для q10/q12/q8 на режим.
+- Hybrid-путь во время замера верифицирован живым: 78 `POST /embed` в логах
+  сайдкара, предупреждений «degraded to keyword-only» в логах api нет.
+- Fallback: `docker compose stop rag-embedder` при `hybrid_enabled=1` → q12 → `start`.
 
-- **Контрольный набор:** q11–q15 (перефразы/синонимы, включая «шокер») + q8–q10
-  (baseline-факты) из `tools/rag/processmap-rag-validation-queries.json`.
-  (q1–q7 — file-RAG лукапы, вне гибридного слоя — см. «Решения пользователя».)
-- **Метрики:**
-  - hit@3 по `expected_sources`/`expected_terms` (пасс по `pass_criteria` кейса);
-  - latency поиска p50 — критерий «не деградирует >20%» vs keyword-only.
-- **Ветки сравнения:** keyword-only (`hybrid_enabled=0`) vs hybrid
-  (`hybrid_enabled=1, bm25_weight=0.5, vector_weight=0.5`), тот же индексный корпус,
-  включение/выключение только конфигом `rag_settings` (без редеплоя).
-- **Harness:** ИЗОЛИРОВАННЫЙ ephemeral compose-стек (порты 18011/15432/16379,
-  свои volumes, `down -v` после замера) — решение пользователя 2026-09-04.
-  Shared-стек не переключается. Bearer-токен admin/org-admin (см. AGENTS.md §2.2).
+## Результаты
 
-## Процедура (точные шаги)
+### Hit@3 primary (q8–q15)
 
-```bash
-# 0) Стек поднят, rag-embedder healthy (runbook §16.1), worker без ошибок импорта задачи
-docker compose ps rag-embedder celery-worker
+| Кейс | Ожидание | BM25-only | Hybrid (0.5/0.5) |
+|---|---|---|---|
+| q8-property-dictionary-task-properties | property_dictionary | ✅ | ✅ |
+| q9-operation-catalog-parameters | operation_catalog (open_container) | ✅ | ✅ |
+| q10-glossary-term («что такое шокер») | glossary blast_chiller_1 | ✅ | ✅ |
+| q11-glossary-shocker-periphrasis | glossary blast_chiller_1 | ✅ | ✅ |
+| q12-glossary-blast-chiller-paraphrase | glossary blast_chiller_1 | ✅ | ✅ |
+| q13-glossary-shock-freeze-synonym | glossary blast_chiller_1 | ✅ | ✅ |
+| q14-operation-open-container-paraphrase | operation_catalog open_container | ❌ | ❌ |
+| q15-property-duration-paraphrase | property_dictionary | ✅ | ✅ |
+| **Итого hit@3** | | **7/8** | **7/8** |
 
-# 1) Наполнение векторного слоя (однократно, до включения hybrid)
-curl -s -X POST http://localhost:8011/api/rag/index-dictionaries \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
-# контроль: rows > 0 для model_id='local-e5-small' в rag_embeddings
+- **Hybrid не изменил ни порядок, ни состав top-3 ни в одном из 8 кейсов**
+  (порядок сверен по chunk_id, не только по source_type). На корпусе из 34 чанков
+  BM25 с алиасами в тексте glossary уже покрывает перифразы q11–q13 — ожидаемый
+  прирост hybrid именно на periphrasis-кейсах **не материализовался**.
+- **q14 падает в обоих режимах**, в т.ч. при тюнинге `bm25_weight=0.3 /
+  vector_weight=0.7` (в top-3 `open_equipment`, не `open_container`). Реальный
+  промах обоих режимов: следует чинить данные/чанкер (синонимы «открыть
+  контейнер»), а не веса. Follow-up.
 
-# 2) Замер keyword-only (baseline)
-curl -s -X PATCH http://localhost:8011/api/admin/rag/settings \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"hybrid_enabled": 0}'
-# прогнать q8-q15 (tools/rag/pm-rag-run-validation-queries.mjs или curl-цикл),
-# записать hit@3 и latency p50 в таблицу ниже (колонка BM25-only)
+### Hit@3 secondary (q1–q7, file-RAG origin)
 
-# 3) Замер hybrid
-curl -s -X PATCH http://localhost:8011/api/admin/rag/settings \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"hybrid_enabled": 1, "bm25_weight": 0.5, "vector_weight": 0.5}'
-# повторить прогон q8-q15 -> колонка Hybrid
-# latency: замерить p50 search (минимум 20 повторов на кейс) для обеих веток
+| BM25-only | Hybrid |
+|---|---|
+| 0/7 | 0/7 |
 
-# 4) Fallback-проверка (контрольная точка runbook §16.5)
-docker compose stop rag-embedder
-# search ok=true, keyword-only без 5xx; затем docker compose start rag-embedder
+Корпус файлов workspace в продуктовом API в этом стеке не индексировался —
+метрика неприменима, зафиксирована для полноты (решение пользователя №3:
+q1–q7 вне гибридного слоя; регрессии нет — симметричный 0/7).
 
-# 5) Откат (если замер неудовлетворителен)
-curl -s -X PATCH http://localhost:8011/api/admin/rag/settings \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"hybrid_enabled": 0}'
+### Latency p50 (20 повторов на кейс, ms)
+
+| Кейс | BM25-only p50 | Hybrid p50 | Регрессия | BM25 max | Hybrid max |
+|---|---|---|---|---|---|
+| q8-property-dictionary | 67.0 | 994.1 | +1384% | 153.2 | 3604.1 |
+| q10-glossary-term | 107.0 | 1665.9 | +1457% | 207.8 | 4334.6 |
+| q12-glossary-paraphrase | 87.7 | 1626.4 | +1754% | 170.5 | 3510.5 |
+| **Среднее p50** | **87.2** | **1428.8** | **~×16.4** | | |
+
+Регрессия — стоимость одного query-эмбеддинга в сайдкаре (CPU e5-small,
+замерено напрямую: одиночный query 0.7–2.0s, батч 16 passage 6.84s при
+контенде CPU в docker VM). Критерий «<20%» **не выполнен на CPU-конфигурации**.
+
+### Fallback-транскрипт (runbook §16.5)
+
+```
+$ docker compose stop rag-embedder            # hybrid_enabled=1, веса 0.5/0.5
+$ GET /api/rag/search?q=«аппарат для быстрого охлаждения продукта»
+→ {"ok": true, "total": 3}                    # без 5xx, без rag_disabled
+→ top-3 chunk_ids: fbacbb30…, 654b3fcf…, f81389ce… (glossary, blast_chiller_1)
+→ сравнение с keyword-only top-3 (hybrid_enabled=0): IDENTICAL = true
+$ docker compose start rag-embedder
+→ embedder healthy; повторный hybrid-поиск «шокер»: ok=true, top-3 blast_chiller_1, ~1.0s
 ```
 
-## Результаты (заполняется при включении)
+Деградация в keyword-only подтверждена вживую: `ok=true`, top-3 байт-в-байт
+совпадает с режимом `hybrid_enabled=0`; после старта сайдкара гибридный путь
+восстанавливается без рестарта api.
 
-| Кейс | Ожидание (expected_sources) | BM25-only hit@3 | Hybrid hit@3 | BM25-only p50, ms | Hybrid p50, ms |
-|---|---|---|---|---|---|
-| q8-property-dictionary-task-properties | property_dictionary | | | | |
-| q9-operation-catalog-parameters | operation_catalog | | | | |
-| q10-glossary-term | glossary | | | | |
-| q11-glossary-shocker-periphrasis | glossary (blast_chiller_1) | | | | |
-| q12-glossary-blast-chiller-paraphrase | glossary (blast_chiller_1) | | | | |
-| q13-glossary-shock-freeze-synonym | glossary (blast_chiller_1) | | | | |
-| q14-operation-open-container-paraphrase | operation_catalog | | | | |
-| q15-property-duration-paraphrase | property_dictionary | | | | |
-| **Итого hit@3** | | | | | |
-| **Latency p50 (среднее по кейсам)** | | | | | |
+## Критерии приёмки (план §9) — вердикт
 
-**pending: требуется живой sidecar (docker stack, env-lock)** — строки заполняются
-по процедуре выше при включении на stage.
+1. **hybrid ≥ keyword на контрольном наборе** — ✅ ВЫПОЛНЕН (7/8 = 7/8,
+   деградации нет; прироста тоже нет — см. честную фиксацию ниже).
+2. **fallback-матрица подтверждена вживую** — ✅ ВЫПОЛНЕН (транскрипт выше).
+3. **регрессия latency p50 < 20%** — ❌ НЕ ВЫПОЛНЕН на CPU-сайдкаре
+   (p50 ~87ms → ~1429ms, ×16). Все latency-бюджеты поиска съедает один
+   query-эмбеддинг e5-small на CPU. Опции для CPU-only деплоя: кэширование
+   query-эмбеддингов, более лёгкая модель, GPU-сайдкар, либо явное принятие
+   latency-трейдоффа. Цифры зафиксированы для «CPU-only, apple-silicon docker
+   VM»; на GPU/ином железе будут иными.
 
-## Критерии приёмки (план §9)
+**Честная фиксация:** на малом словарном корпусе (34 чанка) hybrid-режим
+статистически неотличим от keyword-only по качеству top-3 — ценность гибрида
+(по замыслу q11–q15) проявится на больших корпусах с перифразами, не покрытыми
+алиасами; на текущем наборе её не видно. Юнит/интеграционные тесты (97 passed)
+покрывают математику fusion и fallback на stub-сайдкаре; этот замер покрывает
+retrieval и fallback реальной моделью end-to-end.
 
-- hybrid ≥ keyword на контрольном наборе (ожидаемый прирост — именно на q11–q15
-  periphrasis-кейсах; q8–q10 не должны деградировать);
-- fallback-матрица подтверждена вживую (sidecar stop → ok=true keyword-only);
-- регрессия latency p50 < 20%.
+## Ограничения и отклонения методологии (прозрачно)
 
-**Честная фиксация:** на момент коммита ни одно из трёх утверждений не измерено
-end-to-end; юнит/интеграционные тесты (97 passed) покрывают математику fusion и
-деградацию на stub-sidecar, но не качество retrieval реальной моделью.
+- **Fresh-DB bootstrap сломан вне контура** (предсуществующий дефект): на пустой
+  БД `db_bootstrap` не может накатить alembic с нуля (001 требует существующую
+  `users`), entrypoint уходит в degraded start, сиды не выполняются. Для замера
+  таблица `operation_catalog` создана вручную по DDL миграций 002+009 и засеяна
+  `seed_operations.py`. В контур не входит; follow-up для product-контура bootstrap.
+- **Дубликаты в top-3**: chunker property_dictionary эмитит несколько чанков с
+  идентичным текстом (напр. «Свойство: Приоритет (priority)» ×3 — разные
+  chunk_id, одинаковый текст). На hit@3 не влияет (source_type совпадает),
+  зафиксировано как качественный дефект чанкера.
+- **Два фикса кода, найденных замером** (включены в коммит с этим файлом):
+  - `backend/app/rag/embeddings.py`: `TIMEOUT_SECONDS` 3.0 → 60.0 — на реальном
+    CPU-сайдкаре 3s даёт систематический таймаут passage-батчей (6.8s на 16
+    текстов) и периодический таймаут query (0.7–2.0s) → молчаливая деградация
+    hybrid в keyword и вечный embedding-пайплайн;
+  - `rag-embedder/Dockerfile`: CPU-only torch (aarch64-wheel из PyPI тянет
+    CUDA-стек ~3-4 GB, скачивание в docker VM стабильно замирало на ~1 GB,
+    3 сталла подряд) + pip `--timeout 30 --retries 10`.
