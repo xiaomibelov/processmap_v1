@@ -1865,6 +1865,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN rag_queued_at INTEGER")
             if not _column_exists(con, "sessions", "rag_indexed_at"):
                 con.execute("ALTER TABLE sessions ADD COLUMN rag_indexed_at INTEGER")
+            if not _column_exists(con, "sessions", "rag_indexed_dsv"):
+                con.execute("ALTER TABLE sessions ADD COLUMN rag_indexed_dsv INTEGER")
             if not _column_exists(con, "bpmn_versions", "diagram_state_version"):
                 con.execute("ALTER TABLE bpmn_versions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "bpmn_versions", "session_payload_hash"):
@@ -3093,6 +3095,7 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "rag_readiness_status": str((row["rag_readiness_status"] if "rag_readiness_status" in keys else "not_ready") or "not_ready"),
         "rag_queued_at": int(row["rag_queued_at"]) if ("rag_queued_at" in keys and row["rag_queued_at"] is not None) else None,
         "rag_indexed_at": int(row["rag_indexed_at"]) if ("rag_indexed_at" in keys and row["rag_indexed_at"] is not None) else None,
+        "rag_indexed_dsv": int(row["rag_indexed_dsv"]) if ("rag_indexed_dsv" in keys and row["rag_indexed_dsv"] is not None) else None,
     }
     return Session.model_validate(payload)
 
@@ -4080,6 +4083,15 @@ def _storage_create_bpmn_version_snapshot(
             import_note=str(import_note or ""),
         )
         con.commit()
+        # Post-commit хук: XML сессии здесь не меняется, поэтому save-гейт
+        # bpmn_xml_changed этот путь не покрывает. До commit'а мы не доходим
+        # при ошибке — enqueue только если строка версии реально вставлена.
+        self._enqueue_rag_index_after_version(
+            sid,
+            org_id=scope_org,
+            diagram_state_version=int(result.get("diagram_state_version") or 0),
+            reason="version_create",
+        )
     return result
 
 
@@ -4385,6 +4397,7 @@ def _storage_get_rag_readiness(
         "rag_readiness_status": session.rag_readiness_status,
         "rag_queued_at": session.rag_queued_at,
         "rag_indexed_at": session.rag_indexed_at,
+        "rag_indexed_dsv": getattr(session, "rag_indexed_dsv", None),
     }
 
 
@@ -5546,6 +5559,7 @@ def _storage_save(
                 """,
                 values,
             )
+        snapshot_inserted = False
         if bpmn_snapshot:
             snap_xml = str(bpmn_snapshot.get("bpmn_xml") or "")
             snap_action = str(bpmn_snapshot.get("source_action") or "").strip().lower()
@@ -5563,6 +5577,7 @@ def _storage_save(
                     created_by=str(bpmn_snapshot.get("created_by") or ""),
                     import_note=str(bpmn_snapshot.get("import_note") or ""),
                 )
+                snapshot_inserted = True
                 bpmn_snapshot.clear()
                 bpmn_snapshot.update(snap_row)
         next_diagram_state_version = int(values.get("diagram_state_version") or 0)
@@ -5604,19 +5619,58 @@ def _storage_save(
             )
         con.commit()
         # AGENT-2: фоновая переиндексация bpmn_xml после успешного сохранения.
-        # Локальный импорт, чтобы избежать циклического импорта на старте.
-        # Enqueue только при реальном изменении bpmn_xml в ЭТОМ save:
-        # enqueue на каждый save, где поле физически присутствует, вместе со
-        # служебными save (rag-статусы и т.п.) образует самоподдерживающийся
-        # цикл задач (audit/prod-stage-divergence-409).
-        try:
-            from ....rag_tasks import index_session_bpmn_xml
+        # Триггер — создание версии (bpmn_versions) в ЭТОМ save, а не сам факт
+        # save: enqueue на каждый save, где поле физически присутствует, вместе
+        # со служебными save (rag-статусы и т.п.) образует самоподдерживающийся
+        # цикл задач (audit/prod-stage-divergence-409). Хук — тот же helper,
+        # что и в create_bpmn_version_snapshot; ошибка enqueue не роняет save.
+        bpmn_xml_value = str(values.get("bpmn_xml") or "").strip()
+        if bpmn_xml_value and (bpmn_xml_changed or snapshot_inserted):
+            self._enqueue_rag_index_after_version(
+                sid,
+                org_id=org_scope,
+                diagram_state_version=next_diagram_state_version,
+                reason="save",
+            )
 
-            bpmn_xml_value = str(values.get("bpmn_xml") or "").strip()
-            if bpmn_xml_value and bpmn_xml_changed:
-                index_session_bpmn_xml.delay(sid, org_scope)
-        except Exception as exc:
-            logger.warning("save: failed to enqueue rag index task for %s: %s", sid, exc)
+
+def _storage__enqueue_rag_index_after_version(
+    self,
+    session_id: str,
+    org_id: Optional[str] = None,
+    diagram_state_version: Optional[int] = None,
+    reason: str = "",
+) -> None:
+    """Post-commit enqueue RAG-индексации по факту создания версии (bpmn_versions).
+
+    Вызывается ТОЛЬКО после commit: версия/сохранение уже durable, ошибка
+    readiness/enqueue логируется и не пропагируется. Readiness выставляется
+    точечным UPDATE только rag-колонок (урок fix/rag-readiness-version-clobber,
+    PR #874): load()+save() полного объекта здесь запрещён.
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
+        return
+    try:
+        # Локальный импорт, чтобы избежать циклического импорта на старте.
+        from ....rag_tasks import index_session_bpmn_xml
+
+        oid = _scope_org_id(org_id) or _default_org_id()
+        self.set_rag_readiness(sid, "queued", org_id=oid)
+        index_session_bpmn_xml.delay(sid, oid)
+        logger.info(
+            "rag: enqueued bpmn_xml reindex for %s after version create (reason=%s, dsv=%s)",
+            sid,
+            reason,
+            diagram_state_version,
+        )
+    except Exception as exc:
+        logger.warning(
+            "rag: failed to enqueue bpmn_xml reindex after version for %s (reason=%s): %s",
+            sid,
+            reason,
+            exc,
+        )
 
 
 def _storage_set_rag_readiness(
@@ -5625,6 +5679,7 @@ def _storage_set_rag_readiness(
     new_status: str,
     *,
     org_id: Optional[str] = None,
+    indexed_dsv: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """Установить rag-статус сессии ТОЧЕЧНЫМ update только rag-колонок.
 
@@ -5633,6 +5688,9 @@ def _storage_set_rag_readiness(
     после успешного CAS-save пользователя, оставляя orphan-снапшот в
     bpmn_versions и ловя сессию в вечный 409 SESSION_WRITE_CONFLICT
     (audit/prod-stage-divergence-409).
+
+    ``indexed_dsv`` — dsv, фактически проиндексированный таском; пишется
+    только вместе со статусом ``indexed`` (остаётся точечным UPDATE).
     """
     sid = str(session_id or "").strip()
     if not sid:
@@ -5659,6 +5717,17 @@ def _storage_set_rag_readiness(
                  WHERE id = ? {org_clause}
                 """,
                 [status, now, now, sid, *org_params],
+            )
+        elif status == "indexed" and indexed_dsv is not None:
+            con.execute(
+                f"""
+                UPDATE sessions
+                   SET rag_readiness_status = ?,
+                       rag_indexed_dsv = ?,
+                       updated_at = ?
+                 WHERE id = ? {org_clause}
+                """,
+                [status, int(indexed_dsv), now, sid, *org_params],
             )
         else:
             con.execute(
