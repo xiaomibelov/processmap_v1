@@ -32,6 +32,7 @@ import {
   bindViewerStageEvents,
 } from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
 import { bindSubprocessNavigationEvents } from "../../features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents";
+import { applyMessageFlowExportDialect } from "../../features/process/bpmn/dialect/messageFlowDialect.js";
 import { extractOverlaysFromBpmn } from "../../components/process/utils/bpmnOverlayParser";
 import {
   renderModelerDiagram,
@@ -463,7 +464,7 @@ async function alignDiagramOnInstance(inst, options = {}) {
     }
 
     const saved = await inst.saveXML({ format: true });
-    const xml = String(saved?.xml || "");
+    const xml = applyMessageFlowExportDialect(String(saved?.xml || ""));
     return { ok: true, xml };
   } catch (error) {
     return { ok: false, error: String(error?.message || error || "align_failed") };
@@ -3523,7 +3524,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         const xmlModeler = modelerRef.current || await ensureModeler();
         if (xmlModeler && typeof xmlModeler.saveXML === "function") {
           const xmlOut = await xmlModeler.saveXML({ format: true });
-          const currentXml = String(xmlOut?.xml || "");
+          const currentXml = applyMessageFlowExportDialect(String(xmlOut?.xml || ""));
           if (currentXml.trim()) {
             lastModelerXmlHashRef.current = fnv1aHex(currentXml);
             setXml(currentXml);
@@ -4972,7 +4973,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function persistXmlSnapshot(rawXml, hintBase = "backend") {
     const sid = String(sessionId || "");
     if (!sid) return { ok: false, error: "missing session id" };
-    const out = String(rawXml || "");
+    const out = applyMessageFlowExportDialect(String(rawXml || ""));
     const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
     const startedAt = Date.now();
     const persistStartCount = bumpSaveCounter("persist_started");
@@ -5162,7 +5163,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (activeModeler && typeof activeModeler.saveXML === "function") {
         try {
           const probeOut = await activeModeler.saveXML({ format: true });
-          preFlushXml = String(probeOut?.xml || "");
+          preFlushXml = applyMessageFlowExportDialect(String(probeOut?.xml || ""));
           if (shouldLogBpmnTrace()) {
             // eslint-disable-next-line no-console
             console.debug(`[CAMUNDA_EXT] pre_flush_xml len=${preFlushXml.length} prop=${preFlushXml.includes("fromXmlProp")} activeSameRef=${activeModeler === modelerRef.current}`);

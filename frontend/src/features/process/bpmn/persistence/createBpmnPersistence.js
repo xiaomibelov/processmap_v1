@@ -3,6 +3,7 @@ import {
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
+import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
@@ -19,7 +20,7 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
     if (typeof apiPutBpmnXml !== "function") {
       return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
     }
-    return apiPutBpmnXml(sessionId, payload.xml, { ...payload.options, signal });
+    return apiPutBpmnXml(sessionId, applyMessageFlowExportDialect(asText(payload.xml)), { ...payload.options, signal });
   },
   buildPayload: (payload) => {
     const options = {
@@ -660,7 +661,8 @@ export default function createBpmnPersistence(options = {}) {
   async function saveRaw(sessionId, xmlText, rev, reason = "save", options = {}) {
     const sid = asText(sessionId).trim();
     if (!sid) return { ok: false, status: 0, error: "missing session id" };
-    const xml = asText(xmlText);
+    const dialectXml = applyMessageFlowExportDialect(String(xmlText || ""));
+    const xml = asText(dialectXml);
     const targetRev = asNumber(rev, 0);
     const bpmnMeta = options?.bpmnMeta && typeof options.bpmnMeta === "object"
       ? options.bpmnMeta

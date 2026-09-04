@@ -21,6 +21,7 @@ import {
   readStaleConflictChangedKeys,
   withTimeout,
 } from "./createBpmnCoordinator.helpers.js";
+import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
 
 export default function createBpmnCoordinator(options = {}) {
   const store = options?.store;
@@ -435,7 +436,9 @@ export default function createBpmnCoordinator(options = {}) {
       rawXml = asText(xmlRes?.xml);
       runtimeToken = asNumber(xmlRes?.token, 0);
     }
-    const prepared = preparePersistedXml(rawXml, {
+    const prepared = preparePersistedXml(
+      applyMessageFlowExportDialect(asText(rawXml)),
+      {
       sid,
       reason,
       rev,
