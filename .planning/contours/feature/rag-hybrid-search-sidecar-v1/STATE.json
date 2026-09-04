@@ -1,0 +1,15 @@
+{
+  "contour": "feature/rag-hybrid-search-sidecar-v1",
+  "type": "feature",
+  "phase": "0-planning-complete",
+  "agent_run_id": "kimi-agent-4-20260904T160735",
+  "branch": "feature/rag-hybrid-search-sidecar-v1",
+  "baseline": "37a55e410f10dc5d54492140af53dc47961f14fa",
+  "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/feature/rag-hybrid-search-sidecar-v1",
+  "gates": {
+    "plan_approved_by_user": false,
+    "parallel_contour_merge_first": "rag-auto-index-on-version-v1 (планирование, коммитов нет на 2026-09-04)",
+    "rag_preflight": "unavailable: node отсутствует на хосте; docker-поиск pm-rag-search.mjs выполнен"
+  },
+  "next": "Ожидание approve PLAN.md -> Фаза 1 (implementation) -> Фаза 2 (tests) -> Фаза 3 (draft PR)"
+}
