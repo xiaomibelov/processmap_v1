@@ -87,3 +87,39 @@ test("TopBar очищен: нет кнопки назад, крошек и ст�
   assert.doesNotMatch(topBarSource, /topbarCrumbs/);
   assert.doesNotMatch(topBarSource, /STATUS_CHIP_STYLES/);
 });
+
+// П4 (а): пилюля статуса сессии — интерактивный контрол. Поповер рендерится
+// через portal/fixed-позиционирование от якоря, чтобы не обрезаться
+// overflow-hidden строки полосы; опции фильтруются transition-матрицей.
+test("SessionNavStrip: пилюля статуса интерактивна — button с popover-меню", () => {
+  // пилюля с testid topbar-session-status живёт на <button> (реальная кликабельность)
+  assert.match(stripSource, /<button[^>]*data-testid="topbar-session-status"/);
+  assert.match(stripSource, /aria-haspopup="menu"/);
+  assert.match(stripSource, /aria-expanded=\{statusMenuOpen/);
+  // опции меню — только допустимые переходы из матрицы sessionStatus.js
+  assert.match(stripSource, /getAllowedNextStatuses/);
+  // меню уходит в portal на document.body с fixed-позиционированием (z поверх topbar)
+  assert.match(stripSource, /createPortal\([\s\S]*document\.body/);
+  assert.match(stripSource, /data-testid="session-status-menu"/);
+  assert.match(stripSource, /fixed z-\[140\]/);
+  // смена статуса идёт через прокинутый обработчик optimistic-обновления
+  assert.match(stripSource, /onChangeStatus\?\.\(option\.value\)/);
+  // закрытие по клику вне меню и по Escape
+  assert.match(stripSource, /Escape/);
+});
+
+// П4: мёртвый проп onChangeSessionStatus убран из TopBar и переключён
+// на реальное потребление в SessionNavStrip (AppShell).
+test("AppShell: onChangeSessionStatus уходит в SessionNavStrip, TopBar очищен", () => {
+  const topBarCall = appShellSource.slice(
+    appShellSource.indexOf("<TopBar"),
+    appShellSource.indexOf("/>", appShellSource.indexOf("<TopBar")),
+  );
+  assert.doesNotMatch(topBarCall, /onChangeSessionStatus/);
+  const stripCall = appShellSource.slice(
+    appShellSource.indexOf("<SessionNavStrip"),
+    appShellSource.indexOf("/>", appShellSource.indexOf("<SessionNavStrip")),
+  );
+  assert.match(stripCall, /onChangeStatus=\{onChangeSessionStatus\}/);
+  assert.doesNotMatch(topBarSource, /onChangeSessionStatus/);
+});

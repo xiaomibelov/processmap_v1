@@ -19,6 +19,11 @@ test("App wires topbar status from draft.interview status resolver", () => {
   assert.equal(source.includes('sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}'), true);
 });
 
-test("App passes onChangeSessionStatus to TopBar when user can change status", () => {
-  assert.equal(source.includes("onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}"), true);
+test("App passes onChangeSessionStatus to session strip gated by permissions (archived → canManage)", () => {
+  // П4: обработчик живёт для SessionNavStrip; для archived-сессий нужен can_manage,
+  // для остальных — can_edit (workspacePermissions.canChangeStatus).
+  assert.match(
+    source,
+    /onChangeSessionStatus=\{\(resolveSessionStatusFromDraft\(draft, "draft"\) === "archived" \? workspacePermissions\.canManage : workspacePermissions\.canChangeStatus\) \? changeCurrentSessionStatus : undefined\}/,
+  );
 });

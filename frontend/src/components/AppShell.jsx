@@ -299,7 +299,6 @@ export default function AppShell({
           sessionStatus={sessionStatus}
           tobeActive={!!stageOverride}
           onDeleteSession={onDeleteSession}
-          onChangeSessionStatus={onChangeSessionStatus}
           isChangingSessionStatus={isChangingSessionStatus}
           onOpenSession={onOpenSession}
           onOpenWorkspace={workspaceBackHandler}
@@ -383,6 +382,7 @@ export default function AppShell({
                   tobeActive={!!stageOverride}
                   sessionStatus={sessionStatus}
                   isChangingStatus={isChangingSessionStatus}
+                  onChangeStatus={onChangeSessionStatus}
                   onBackToProject={() => onReturnToSessionList?.()}
                   onOpenWorkspace={() => onProjectChange?.("")}
                 />

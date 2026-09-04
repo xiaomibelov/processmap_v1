@@ -64,7 +64,10 @@ test("row kebab menus exist for section folder project and session rows", () => 
 test("context menu uses viewport-safe fixed positioning", () => {
   // retarget(s0): was between("function ContextMenu(", "// ─── Folder Row");
   // the ContextMenu positioning code is located by its stable anchor call.
-  const contextMenu = from(source, "getBoundingClientRect", 4000);
+  // П4: ранее якорем был первый getBoundingClientRect в файле — после добавления
+  // fixed-позиционирования поповера статуса (StatusPopoverControl) он перестал
+  // однозначно указывать на ContextMenu.
+  const contextMenu = from(source, "function ContextMenu(", 4000);
 
   assert.match(contextMenu, /getBoundingClientRect/);
   assert.match(contextMenu, /Math\.min\(rect\.right - menuWidth/);

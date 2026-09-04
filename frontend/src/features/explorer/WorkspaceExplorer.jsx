@@ -852,7 +852,7 @@ function StatusDotBadge({ domain, value }) {
   );
 }
 
-function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
+function StatusPopoverControl({ domain, value, disabled = false, onChange, portal = false }) {
   const catalogValue = mapStatusToCatalog(domain, value);
   const [state, dispatch] = useReducer(explorerStatusChangeReducer, {
     current: catalogValue,
@@ -861,6 +861,9 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
   });
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null);
 
   // синхронизация с серверным значением, пока не летит optimistic-запрос
   useEffect(() => {
@@ -871,11 +874,13 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain, value]);
 
-  // закрытие по клику вне и по Escape
+  // закрытие по клику вне и по Escape (в portal-режиме меню живёт вне rootRef)
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+      if (rootRef.current && rootRef.current.contains(event.target)) return;
+      if (menuRef.current && menuRef.current.contains(event.target)) return;
+      setOpen(false);
     };
     const onKeyDown = (event) => {
       if (event.key === "Escape") setOpen(false);
@@ -887,6 +892,22 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  // portal-режим: fixed-позиция от якоря-кнопки, пересчёт на resize, пока меню открыто
+  useEffect(() => {
+    if (!portal || !open) return undefined;
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect?.();
+      if (!rect) return;
+      setMenuPos({
+        top: rect.bottom + 4,
+        left: Math.max(8, Math.min(rect.left, (window.innerWidth || 0) - 160)),
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
+  }, [portal, open]);
 
   const options = getExplorerStatusOptions(domain, state.current);
   const entry = getExplorerStatusEntry(domain, state.pending);
@@ -908,7 +929,7 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
 
   // клавиатурная навигация по пунктам: ↑/↓ — фокус, Enter/Space — выбор, Esc — закрыть
   const handleMenuKeyDown = (event) => {
-    const items = Array.from(rootRef.current?.querySelectorAll('[role="menuitemradio"]') || []);
+    const items = Array.from(menuRef.current?.querySelectorAll('[role="menuitemradio"]') || []);
     const index = items.indexOf(document.activeElement);
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -919,9 +940,45 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
     }
   };
 
+  // portal-режим (project header): fixed-позиция от якоря-кнопки, чтобы меню
+  // не обрезалось overflow-hidden строки шапки; иначе — absolute под якорем.
+  const menu = (
+    <span
+      ref={menuRef}
+      role="menu"
+      className={
+        portal
+          ? "fixed z-[140] min-w-[132px] rounded-lg border border-border bg-panel py-1 shadow-panel"
+          : "absolute left-0 top-full z-30 mt-1 min-w-[132px] rounded-lg border border-border bg-panel py-1 shadow-panel"
+      }
+      style={portal && menuPos ? { top: menuPos.top, left: menuPos.left } : undefined}
+      onKeyDown={handleMenuKeyDown}
+    >
+      {options.map((option) => {
+        const optionEntry = getExplorerStatusEntry(domain, option.id);
+        const selected = option.id === state.current;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            role="menuitemradio"
+            aria-checked={selected ? "true" : "false"}
+            onClick={() => handleSelect(option.id)}
+            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accentSoft/40 focus:outline-none focus-visible:bg-accentSoft/50 ${selected ? "font-semibold text-fg" : "text-fg/85"}`}
+          >
+            <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${optionEntry.dotClass}`} aria-hidden />
+            <span className="flex-1">{option.label}</span>
+            <span className="w-3 text-accent" aria-hidden>{selected ? "✓" : ""}</span>
+          </button>
+        );
+      })}
+    </span>
+  );
+
   return (
     <span ref={rootRef} className="relative inline-block" onClick={(e) => e.stopPropagation()}>
       <button
+        ref={buttonRef}
         type="button"
         disabled={disabled || state.saving}
         onClick={() => setOpen((v) => !v)}
@@ -934,32 +991,7 @@ function StatusPopoverControl({ domain, value, disabled = false, onChange }) {
         <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${entry.dotClass}`} aria-hidden />
         <span className={entry.textClass}>{state.saving ? `${entry.label}…` : entry.label}</span>
       </button>
-      {open ? (
-        <span
-          role="menu"
-          className="absolute left-0 top-full z-30 mt-1 min-w-[132px] rounded-lg border border-border bg-panel py-1 shadow-panel"
-          onKeyDown={handleMenuKeyDown}
-        >
-          {options.map((option) => {
-            const optionEntry = getExplorerStatusEntry(domain, option.id);
-            const selected = option.id === state.current;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected ? "true" : "false"}
-                onClick={() => handleSelect(option.id)}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accentSoft/40 focus:outline-none focus-visible:bg-accentSoft/50 ${selected ? "font-semibold text-fg" : "text-fg/85"}`}
-              >
-                <span className={`inline-block h-[7px] w-[7px] shrink-0 rounded-full ${optionEntry.dotClass}`} aria-hidden />
-                <span className="flex-1">{option.label}</span>
-                <span className="w-3 text-accent" aria-hidden>{selected ? "✓" : ""}</span>
-              </button>
-            );
-          })}
-        </span>
-      ) : null}
+      {open ? (portal ? createPortal(menu, document.body) : menu) : null}
     </span>
   );
 }
@@ -4798,6 +4830,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 domain="project"
                 value={proj.status}
                 onChange={handleProjectStatusChange}
+                portal
               />
             ) : null}
           </div>

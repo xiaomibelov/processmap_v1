@@ -33,6 +33,11 @@
   cursor: pointer;
 }
 
+/* read-only вариант (нет прав на смену статуса): не показываем ложный аффорданс */
+.statusComboPill--readonly{
+  cursor: default;
+}
+
 .statusComboPill.state-ok{
   color: #d1fae5;
   border-color: rgba(34,197,94,.44);
