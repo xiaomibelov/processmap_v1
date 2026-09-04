@@ -1,4 +1,8 @@
 import { disableBpmnZoomScroll } from "./zoomScrollLifecycle.js";
+import {
+  applyMessageFlowExportDialect,
+  applyMessageFlowImportDialect,
+} from "../dialect/messageFlowDialect.js";
 
 function asMode(value) {
   return String(value || "").trim().toLowerCase() === "viewer" ? "viewer" : "modeler";
@@ -273,7 +277,7 @@ export default function createBpmnRuntime(options = {}) {
       if (e2eDelay > 0) {
         await new Promise((resolve) => setTimeout(resolve, e2eDelay));
       }
-      await inst.importXML(asText(xml));
+      await inst.importXML(applyMessageFlowImportDialect(asText(xml)));
     } catch (error) {
       if (destroyed || opToken !== activeToken || inst !== instance) {
         emitTrace("load.stale_error", { source, token: opToken });
@@ -362,7 +366,7 @@ export default function createBpmnRuntime(options = {}) {
       if (destroyed || opToken !== activeToken || inst !== instance) {
         return { ok: false, reason: "stale", token: opToken };
       }
-      return { ok: true, token: opToken, xml: asText(out?.xml) };
+      return { ok: true, token: opToken, xml: applyMessageFlowExportDialect(asText(out?.xml)) };
     } catch (error) {
       const msg = asError(error, "saveXML failed");
       if (msg.toLowerCase().includes("no definitions loaded")) {
