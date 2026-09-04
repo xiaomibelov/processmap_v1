@@ -14,7 +14,10 @@ from ..utils.session_helpers import (
 )
 
 _ALLOWED_SUGGESTION_STATUSES = {"pending", "approved", "rejected"}
-_ALLOWED_RAG_STATUSES = {"not_ready", "ready", "queued", "indexed"}
+# "error" — терминальный статус фоновой индексации (rag_tasks) после
+# исчерпания retry; в whitelist включён аддитивно, чтобы readiness-ответы
+# и ручные переходы понимали это значение.
+_ALLOWED_RAG_STATUSES = {"not_ready", "ready", "queued", "indexed", "error"}
 
 
 def _text(value: Any) -> str:
