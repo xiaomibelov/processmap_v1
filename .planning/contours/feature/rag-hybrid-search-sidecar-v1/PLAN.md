@@ -183,3 +183,85 @@ search path (GET /api/rag/search)
 
 - STOP после Фазы 0 → approve пользователя, далее Фазы 1-3.
 - Никаких merge / deploy / PR-merge без явного approve. PROD не трогать. Stage — только после approve как отдельный шаг.
+
+## 16. Runbook stage — включение и откат (письменная процедура, дополнение по approve)
+
+Фича включается конфигом в БД, **без рестарта сервисов и без передеплоя**. Действия выполняются с токеном admin/org-admin соответствующей org (настройки per-org, таблица `rag_settings`).
+
+### 16.1 Prereqs (после деплоя контура на stage)
+
+1. Sidecar поднят: `docker compose ps rag-embedder` → `healthy`; `curl -sf http://localhost:<внутренний порт>/health` (через exec в сети стека) → OK.
+2. Worker жив: `docker compose ps celery-worker` → Up; в логах нет ошибок импорта задачи `processmap.rag.embed_chunks`.
+3. Миграции применены (023 и ранее — цепочка целая, дублей revision нет).
+
+### 16.2 Наполнение векторного слоя (однократно, до включения)
+
+Для каждой org, где включаем hybrid:
+
+```bash
+# 1) Реиндексация корпусов -> enqueue embed-задачи -> rag_embeddings заполняется
+curl -s -X POST https://stage.processmap.ru/api/rag/index-dictionaries \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+
+# 2) Проверка, что эмбеддинги записались (ожидание: worker отработал за секунды)
+#    ожидаем rows > 0 для model_id='local-e5-small'
+```
+
+Порядок строгий: сначала §16.2, потом §16.3. Включать hybrid на пустом векторном слое бессмысленно (деградация на keyword-only прозрачна, но цель — векторная нога).
+
+### 16.3 Включение
+
+```bash
+# Веса по умолчанию 0.5/0.5; при перефраз-нагруженном трафике можно vector_weight=0.6
+curl -s -X PATCH https://stage.processmap.ru/api/admin/rag/settings \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"hybrid_enabled": 1, "bm25_weight": 0.5, "vector_weight": 0.5}'
+```
+
+Smoke сразу после включения:
+
+```bash
+# 1) Прямой кейс (baseline)
+curl -s "https://stage.processmap.ru/api/rag/search?q=что такое шокер&source_type=glossary&top_k=3" -H "Authorization: Bearer $TOKEN"
+# 2) Перефраз (признак, что векторная нога работает)
+curl -s "https://stage.processmap.ru/api/rag/search?q=аппарат для быстрого охлаждения продукта&source_type=glossary&top_k=3" -H "Authorization: Bearer $TOKEN"
+```
+
+Ожидание: оба запроса возвращают glossary-чанк `term_canon=blast_chiller_1` в top-3; `ok=true`. Затем A/B и latency-замер по §9 (RETRIEVAL_AB.md).
+
+### 16.4 Откат (rollback)
+
+**Мгновенный конфиг-откат (основной путь):**
+
+```bash
+curl -s -X PATCH https://stage.processmap.ru/api/admin/rag/settings \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"hybrid_enabled": 0}'
+```
+
+Эффект: search path возвращается к keyword-only **байт-в-байт** (кодовая ветка та же, что до фичи); рестарты не нужны; эмбеддинги в БД не мешают и не участвуют в поиске.
+
+**Если sidecar сам является источником проблем** (съел CPU/падает с ошибками):
+
+```bash
+docker compose stop rag-embedder
+# поиск автоматически деградирует на keyword-only (WARN в логах api), ответы агенту успешные
+docker compose start rag-embedder   # восстановление
+```
+
+**Полный откат данных (только если требуется освободить место / сбросить слой):**
+
+```sql
+TRUNCATE TABLE rag_embeddings;  -- опционально; на поведение при hybrid_enabled=0 не влияет
+```
+
+**Восстановление после отката:** повторить §16.2 → §16.3.
+
+### 16.5 Контрольные точки
+
+| Проверка | Как | Норма |
+|---|---|---|
+| Векторный слой заполнен | count `rag_embeddings` per org/model_id | > 0 до включения |
+| Fallback жив | `docker compose stop rag-embedder` → search ok=true | keyword-only без 5xx |
+| Откат чистый | после `hybrid_enabled=0` diff ответов vs до фичи | идентичен на контрольных запросах |
+| Latency | p50 search до/после | регрессия <20% |
