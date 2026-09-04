@@ -148,6 +148,7 @@ services:
       context: ./rag-embedder
     environment:
       - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}
+      - EMBEDDINGS_ORT_THREADS=${EMBEDDINGS_ORT_THREADS:-4}
     restart: unless-stopped
     stop_signal: SIGTERM
     stop_grace_period: 10s
