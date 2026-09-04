@@ -123,6 +123,32 @@ $ docker compose start rag-embedder
 покрывают математику fusion и fallback на stub-сайдкаре; этот замер покрывает
 retrieval и fallback реальной моделью end-to-end.
 
+## После ONNX (fix/rag-embedder-onnx-latency-v1, 2026-09-05)
+
+Latency-FAIL этого замера закрыт отдельным fix-контуром (влит сюда ff-only,
+7 коммитов от 29b9cbe0 до 3ae042bb). Изменения: ONNX int8 сайдкар вместо torch
+(build-time export+quantize), сплит таймаутов query 5s / passage 60s, prefetch
+query-эмбеддинга, overlapped с BM25-полкой (commit dd4d6f8a — prefetch реально
+до `list_rag_chunks`), `EMBEDDINGS_ORT_THREADS=4`. Методология и раннер — те же,
+стек — тот же isolated `raghybrid-ab`. Детали и standalone-бенчмарк:
+`.planning/contours/fix/rag-embedder-onnx-latency-v1/BENCHMARK.md`.
+
+- **hit@3 primary: 8/8 = 8/8** (q14 стал PASS в обоих режимах — следствие cos-drift
+  ONNX-векторов 0.9906, изменившего fusion-ранжирование; дефект данных q14
+  НЕ чинился, чанкер/синонимы — follow-up). q1–q7: симметричный 0/7.
+- **Latency p50 avg: BM25 24.5–36.1ms → hybrid 91.2–129.8ms** против исходных
+  87.2 → 1428.8ms. **Абсолютный выигрыш ×11–×15.7.**
+- **Критерий «<20%» внутри окна: НЕ выполнен формально** (×2.5–×5.3) — базовая
+  BM25-линия на тихой VM падает до 24–36ms, остаточная стоимость hybrid —
+  in-stack roundtrip эмбеддинга ~70–110ms (standalone 77.9ms), уже overlapped
+  с полкой. Против опорной линии исходного окна (BM25 87.2ms): ×1.04–×1.49 —
+  на границе критерия. Абсолютный latency-бюджет поиска из критерия №3 закрыт.
+- **Fallback не затронут:** код деградации (любая ошибка future/embed →
+  keyword-only) не менялся; prefetch-ошибка обрабатывается той же веткой
+  `_hybrid_fused_results`; unit-тесты деградации зелёные (35 passed).
+- Hybrid-путь подтверждён вживую: 75–78 `POST /embed` за прогон, деградаций
+  «keyword-only» в логах api нет.
+
 ## Ограничения и отклонения методологии (прозрачно)
 
 - **Fresh-DB bootstrap сломан вне контура** (предсуществующий дефект): на пустой
