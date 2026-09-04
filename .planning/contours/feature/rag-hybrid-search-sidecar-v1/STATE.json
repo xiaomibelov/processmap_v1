@@ -1,23 +1,30 @@
 {
   "contour": "feature/rag-hybrid-search-sidecar-v1",
   "type": "feature",
-  "phase": "2-tests-complete",
+  "phase": "3-draft-pr-complete",
   "agent_run_id": "kimi-agent-4-20260904T160735",
   "branch": "feature/rag-hybrid-search-sidecar-v1",
   "baseline": "37a55e410f10dc5d54492140af53dc47961f14fa",
   "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/feature/rag-hybrid-search-sidecar-v1",
   "gates": {
     "plan_approved_by_user": true,
+    "plan_note": "approve с дополнением — runbook включения/отката на stage (§16) написан отдельным коммитом 1216b1ec",
     "phase1_code_complete": true,
     "phase2_tests_complete": true,
-    "parallel_contour_merge_first": "rag-auto-index-on-version-v1 (планирование, коммитов нет на 2026-09-04)",
-    "rag_preflight": "unavailable: node отсутствует на хосте; docker-поиск pm-rag-search.mjs выполшен",
-    "openapi_gate": "update_openapi.sh --no-lint: 298 paths / 377 ops (+0/+0), diff docs/openapi.yaml пуст"
+    "tests_green": "97 passed (TESTS.md)",
+    "openapi_gate": "update_openapi.sh --no-lint: 298 paths / 377 ops (+0/+0), diff docs/openapi.yaml пуст",
+    "ab_measurement": "PENDING — требуется живой sidecar (docker stack, env-lock); критерий 'hybrid >= keyword' НЕ измерен end-to-end (RETRIEVAL_AB.md)",
+    "parallel_contour_merge_first": "rag-auto-index-on-version-v1 (планирование, коммитов нет на 2026-09-04); rebase этого контура после его мержа",
+    "merge_blocked": "explicit user approve + rebase после parallel contour + A/B на stage (runbook §16)",
+    "deploy": "blocked: prod только ручной деплой из main по решению владельца"
   },
-  "tests": {
-    "command": "cd backend && /Users/mac/agents_place/kimi_PM/processmap_v1_main_clone/.venv/bin/python -m pytest tests/test_rag_api.py tests/test_rag_bm25.py tests/test_rag_fusion_rrf.py tests/test_rag_embeddings_client.py tests/test_rag_hybrid_api.py tests/test_admin_rag_settings.py -q",
-    "result": "97 passed, 6 warnings in 1012.90s",
-    "details": ".planning/contours/feature/rag-hybrid-search-sidecar-v1/TESTS.md"
+  "artifacts": {
+    "plan": "PLAN.md",
+    "runbook": "PLAN.md §16 (stage enable/disable)",
+    "tests": "TESTS.md",
+    "pr_draft": "PR.md",
+    "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
+    "git_proof": "git-proof.md"
   },
-  "next": "Фаза 3: draft PR (PR.md, RETRIEVAL_AB.md после живого sidecar, git-proof.md); rebase после мержа rag-auto-index-on-version-v1; A/B-замер на compose-стеке"
+  "next": "1) мерж rag-auto-index-on-version-v1 -> rebase этой ветки; 2) approve -> push + draft PR (PR.md); 3) stage: runbook §16 + A/B-замер (RETRIEVAL_AB.md) -> верификация критерия приёмки -> решение о merge"
 }
