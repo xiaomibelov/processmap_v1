@@ -4,6 +4,7 @@ import {
   extractManagedCamundaExtensionStateFromBusinessObject,
   normalizeCamundaExtensionState,
 } from "../../../camunda/camundaExtensions.js";
+import { applyMessageFlowExportDialect } from "../../dialect/messageFlowDialect.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -602,7 +603,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
             setTimeout(() => reject(new Error("getRuntimeXmlSnapshot: saveXML timeout")), saveXmlTimeout)
           ),
         ]);
-        const xml = String(out?.xml || "");
+        const xml = applyMessageFlowExportDialect(String(out?.xml || ""));
         if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
           // eslint-disable-next-line no-console
           console.debug(`[GET_RUNTIME_XML] source=modeler_saveXML len=${xml.length} prop=${xml.includes("fromXmlProp")} modelerRefSame=${modeler === refs.modelerRef?.current}`);
