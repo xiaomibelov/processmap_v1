@@ -19,6 +19,7 @@ export function buildWorkspacePermissions(roleRaw, isAdmin = false) {
     role,
     canView: true,
     canEdit,
+    canManage,
     canCreate: canEdit,
     canRenameWorkspace: canManage,
     canRenameFolder: canEdit,

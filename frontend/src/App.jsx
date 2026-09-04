@@ -4393,7 +4393,7 @@ export default function App() {
           commentId: options?.commentId || options?.comment_id || "",
         })}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
-        onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
+        onChangeSessionStatus={(resolveSessionStatusFromDraft(draft, "draft") === "archived" ? workspacePermissions.canManage : workspacePermissions.canChangeStatus) ? changeCurrentSessionStatus : undefined}
         isChangingSessionStatus={isChangingSessionStatus}
         bpmnStageRef={bpmnStageRef}
         focusElementId={focusElementId}
