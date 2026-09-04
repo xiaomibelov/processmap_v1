@@ -29,12 +29,15 @@
           }
         }
 
-        // 1. Service worker kill-switch: если страницей управляет старый SW — unregister + reload.
+        // 1. Service worker kill-switch: ПОСТОЯННЫЙ механизм, НЕ удалять.
+        // Исторические SW, зарегистрированные старыми версиями приложения,
+        // живут в браузерах пользователей годами. Без unregister их controller
+        // обслуживает reload из своего Cache Storage → вечно старый бандл.
+        // Выполняется ВСЕГДА (без sessionStorage-gate): операции идемпотентны и
+        // дёшевы. Gate «один hardReload за сессию» по controller оставлен —
+        // иначе возможны циклы перезагрузок.
         try {
-          var swKey = "processmap:sw-kill:v1";
-          var swDone = sessionStorage.getItem(swKey);
-          if (!swDone && typeof navigator !== "undefined" && navigator.serviceWorker) {
-            sessionStorage.setItem(swKey, "1");
+          if (typeof navigator !== "undefined" && navigator.serviceWorker) {
             navigator.serviceWorker.getRegistrations().then(function (regs) {
               var jobs = regs.map(function (r) { return r.unregister(); });
               jobs.push(clearCaches());
