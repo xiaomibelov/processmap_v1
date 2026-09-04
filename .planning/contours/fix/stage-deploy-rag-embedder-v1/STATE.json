@@ -1,0 +1,28 @@
+{
+  "contour": "fix/stage-deploy-rag-embedder-v1",
+  "type": "fix",
+  "branch": "fix/stage-deploy-rag-embedder-v1",
+  "base": "origin/main",
+  "base_sha": "53b51f0650adabacba0514e2b2391a8166ab834c",
+  "head_sha": "9d3805b9",
+  "worktree": "processmap_v1_main_clone-worktrees/fix/stage-deploy-rag-embedder-v1",
+  "phase": "3-draft-pr-complete",
+  "phases": {
+    "0-recon": "done (deploy-stage.yml, .env.stage provisioning, EMBEDDINGS_* list, resource limits)",
+    "1-patch": "done (BUILD/UP_SERVICES + rag-embedder, env auto-inject, health/task gates)",
+    "2-checks": "done (actionlint 0 findings, compose config dry-run OK)",
+    "3-draft-pr": "done (PR #916 https://github.com/xiaomibelov/processmap_v1/pull/916)",
+    "4-merge-deploy": "STOP — awaiting explicit user approve",
+    "5-runbook-16": "blocked-by-4",
+    "6-cleanup": "blocked-by-5"
+  },
+  "gates": {
+    "prod_touched": false,
+    "hybrid_default_changed": false,
+    "product_code_changed": false,
+    "secrets_committed": false,
+    "review": "REVIEW_PASS (self-review)",
+    "user_approve": "pending"
+  },
+  "blocker": "stage enablement was blocked by deploy-drift; now unblocked after merge+deploy of this contour"
+}
