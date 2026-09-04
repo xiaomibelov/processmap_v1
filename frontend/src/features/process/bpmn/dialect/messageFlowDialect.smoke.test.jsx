@@ -129,4 +129,22 @@ describe("hoist / re-inject roundtrip", () => {
     expect(flow).toBeTruthy();
     expect(flow.parentNode.getAttribute("id")).toBe("SubProcess_Dialect_1");
   });
+
+  it("re-inject is symmetric and idempotent (egress safety)", () => {
+    const hoisted = hoistMessageFlowsFromContainers(DIALECT_XML);
+    const restored = reinjectMessageFlowsIntoContainers(hoisted.xml, hoisted);
+    // re-inject of already-dialect XML is a no-op
+    expect(reinjectMessageFlowsIntoContainers(restored, hoisted)).toBe(restored);
+    // double re-inject of hoisted XML is stable
+    const once = reinjectMessageFlowsIntoContainers(hoisted.xml, hoisted);
+    expect(reinjectMessageFlowsIntoContainers(once, hoisted)).toBe(once);
+    // links survive to the original container
+    const flow = localEls(restored, "messageFlow")[0];
+    expect(flow.parentNode.getAttribute("id")).toBe("SubProcess_Dialect_1");
+    expect(flow.getAttribute("targetRef")).toBe("DataStoreReference_External");
+  });
+
+  it("export dialect without prior import is a no-op", () => {
+    expect(applyMessageFlowExportDialect(DIALECT_XML)).toBe(DIALECT_XML);
+  });
 });

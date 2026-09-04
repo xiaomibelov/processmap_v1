@@ -1,6 +1,7 @@
 import { isPlainObject, joinUrl } from "./apiClient.js";
 import { apiRoutes } from "./apiRoutes.js";
 import { getClientIdHeader } from "./clientId.js";
+import { applyMessageFlowExportDialect } from "../features/process/bpmn/dialect/messageFlowDialect.js";
 import {
   apiRequest as request,
   fnv1aHex,
@@ -1891,7 +1892,7 @@ export async function apiRestoreBpmnVersion(sessionId, versionId, options = {}) 
 export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const body = { xml: String(xml || "") };
+  const body = { xml: applyMessageFlowExportDialect(String(xml || "")) };
   const rev = Number(options?.rev);
   if (Number.isFinite(rev) && rev >= 0) {
     body.rev = rev;
