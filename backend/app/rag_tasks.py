@@ -143,3 +143,57 @@ def index_queued_sessions_bpmn_xml(self) -> Dict[str, Any]:
         except Exception:
             pass
         return {"status": "failed", "reason": str(exc)}
+
+
+EXPECTED_EMBEDDING_MODEL_ID = "local-e5-small"
+
+
+@app.task(bind=True, max_retries=1, default_retry_delay=10, ignore_result=True, name="processmap.rag.embed_chunks")
+def embed_chunks(self, chunk_ids: list, org_id: str) -> Dict[str, Any]:
+    """Эмбеддить чанки через sidecar и сохранить в rag_embeddings (hybrid search).
+
+    Не в request-path: вызывается из indexer после insert_rag_chunks.
+    Sidecar недоступен -> soft retry; несовпадение model_id -> permanent fail.
+    """
+    ids = [str(c) for c in (chunk_ids or []) if str(c or "").strip()]
+    oid = str(org_id or "").strip() or "org_default"
+    if not ids:
+        return {"status": "skipped", "reason": "empty_chunk_ids"}
+
+    try:
+        from .rag.embeddings import encode_vector, get_embeddings_for_texts
+        from .rag.storage_rag import get_rag_chunk_texts, upsert_rag_embeddings
+
+        texts_by_id = get_rag_chunk_texts(oid, ids)
+        if not texts_by_id:
+            return {"status": "skipped", "reason": "no_chunks", "org_id": oid}
+        ordered_ids = list(texts_by_id.keys())
+        result = get_embeddings_for_texts([texts_by_id[cid] for cid in ordered_ids])
+        if not result:
+            raise RuntimeError("embedder unavailable")
+        embeddings, model_id, dimensions = result
+        if model_id != EXPECTED_EMBEDDING_MODEL_ID:
+            logger.error(
+                "embed_chunks: unexpected model_id %r (expected %r), org=%s chunks=%d",
+                model_id, EXPECTED_EMBEDDING_MODEL_ID, oid, len(ordered_ids),
+            )
+            return {"status": "failed", "reason": "unexpected_model_id", "model_id": model_id}
+        rows = []
+        for cid, vec in zip(ordered_ids, embeddings):
+            dims = int(dimensions or 0) or len(vec or [])
+            rows.append({
+                "chunk_id": cid,
+                "org_id": oid,
+                "model_id": model_id,
+                "vector": encode_vector(vec),
+                "dimensions": dims,
+            })
+        written = upsert_rag_embeddings(rows)
+        return {"status": "ok", "org_id": oid, "embedded": written, "model_id": model_id}
+    except Exception as exc:
+        logger.exception("embed_chunks failed for %s (%d chunks)", oid, len(ids))
+        try:
+            self.retry(exc=exc)
+        except Exception:
+            pass
+        return {"status": "failed", "reason": str(exc), "org_id": oid}

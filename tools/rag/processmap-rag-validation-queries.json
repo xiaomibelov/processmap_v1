@@ -1,7 +1,7 @@
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "project": "ProcessMap",
-  "description": "Validation queries for BM25 search index. Rewritten for term-density matching with realistic path patterns.",
+  "description": "Validation queries for BM25/hybrid search index. Rewritten for term-density matching with realistic path patterns; q11-q15 — hybrid periphrasis/synonym cases (rag-hybrid-search-sidecar-v1).",
   "queries": [
     {
       "id": "q1-diagram-review-pass-rules",
@@ -101,6 +101,56 @@
       "expected_sources": ["glossary"],
       "expected_answer_summary": "Шокер — камера интенсивного охлаждения.",
       "pass_criteria": "top-3 результата содержат source_type=glossary и term_canon=blast_chiller_1.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q11-glossary-shocker-periphrasis",
+      "query": "что такое шокер",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["шокер", "blast_chiller_1", "камера интенсивного охлаждения"],
+      "expected_sources": ["glossary"],
+      "expected_answer_summary": "Шокер — камера интенсивного охлаждения (blast_chiller_1).",
+      "pass_criteria": "top-3 результата содержат source_type=glossary и term_canon=blast_chiller_1.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q12-glossary-blast-chiller-paraphrase",
+      "query": "аппарат для быстрого охлаждения продукта",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["blast_chiller_1", "камера интенсивного охлаждения", "охлаждение"],
+      "expected_sources": ["glossary"],
+      "expected_answer_summary": "Аппарат для быстрого охлаждения — шокер, камера интенсивного охлаждения (blast_chiller_1).",
+      "pass_criteria": "top-3 результата содержат source_type=glossary и term_canon=blast_chiller_1 (перефраз без слова «шокер» — keyword-only мажет).",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q13-glossary-shock-freeze-synonym",
+      "query": "камера шоковой заморозки",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["blast_chiller_1", "шокер", "заморозка", "охлаждения"],
+      "expected_sources": ["glossary"],
+      "expected_answer_summary": "Камера шоковой заморозки — шокер, камера интенсивного охлаждения (blast_chiller_1).",
+      "pass_criteria": "top-3 результата содержат source_type=glossary и term_canon=blast_chiller_1.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q14-operation-open-container-paraphrase",
+      "query": "как открыть контейнер в процессе",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["open_container", "container_id", "open_method"],
+      "expected_sources": ["operation_catalog"],
+      "expected_answer_summary": "Открытие контейнера — операция open_container: параметры container_id (обязательный), open_method (опциональный, default=auto).",
+      "pass_criteria": "top-3 результата содержат source_type=operation_catalog и operation_code=open_container.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q15-property-duration-paraphrase",
+      "query": "сколько времени длится задача по умолчанию",
+      "query_type": "structured_fact_qa",
+      "expected_terms": ["duration", "default_value", "задача", "Task"],
+      "expected_sources": ["property_dictionary"],
+      "expected_answer_summary": "Длительность задачи по умолчанию — свойство duration (default_value) у типа Task.",
+      "pass_criteria": "top-3 результата содержат source_type=property_dictionary и хотя бы 2 expected_terms (duration/default_value).",
       "failure_explanation": ""
     }
   ]

@@ -1,7 +1,10 @@
 import hashlib
 import json
+import logging
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(BACKEND_DIR) not in sys.path:
@@ -86,6 +89,7 @@ def index_document(
     )
 
     chunks_created = insert_rag_chunks(doc_id, org_id, chunks)
+    _maybe_enqueue_embed(chunk_ids=chunks_created, org_id=org_id)
 
     upsert_rag_source_status(
         org_id=org_id,
@@ -95,9 +99,25 @@ def index_document(
 
     return {
         "doc_id": doc_id,
-        "chunks_created": chunks_created,
+        "chunks_created": len(chunks_created),
         "was_updated": True,
     }
+
+
+def _maybe_enqueue_embed(chunk_ids: list, org_id: str) -> None:
+    """Узкая точка интеграции: async-эмбеддинг свежих чанков (hybrid search).
+
+    Вызывается только после создания чанков (hash-unchanged early return выше —
+    естественный skip). Любой сбой публикации логируется и не ломает индексацию.
+    """
+    if not chunk_ids:
+        return
+    try:
+        from app.rag_tasks import embed_chunks
+
+        embed_chunks.delay(list(chunk_ids), org_id)
+    except Exception as exc:
+        logger.warning("embed enqueue failed for org=%s chunks=%d: %s", org_id, len(chunk_ids), exc)
 
 
 def delete_document(org_id: str, doc_id: str) -> bool:

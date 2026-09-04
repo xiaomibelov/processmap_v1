@@ -1,0 +1,45 @@
+{
+ "contour": "feature/rag-hybrid-search-sidecar-v1",
+ "type": "feature",
+ "phase": "5-merge-approved-criterion-revised",
+ "agent_run_id": "kimi-agent-4-20260904T160735",
+ "branch": "feature/rag-hybrid-search-sidecar-v1",
+ "baseline": "4fff681d1edf7000ce30b376a1b77bd7c09e1766",
+ "baseline_note": "rebase 2026-09-04 выполнен: ветка перебазирована на origin/main 4fff681d (#911, rag-auto-index-on-version-v1). Конфликтов не было (16/16 auto-merge); изменения обоих контуров в rag_tasks.py/compat/repository.py интегрированы аддитивно. Цепочка интеграции: version -> _enqueue_rag_index_after_version -> index_session_bpmn_xml -> index_document -> insert_rag_chunks -> _maybe_enqueue_embed -> embed_chunks.",
+ "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/feature/rag-hybrid-search-sidecar-v1",
+ "gates": {
+  "plan_approved_by_user": true,
+  "plan_note": "approve с дополнением — runbook включения/отката на stage (§16) написан отдельным коммитом",
+  "phase1_code_complete": true,
+  "phase2_tests_complete": true,
+  "rebase_after_parallel_contour": "DONE: onto 4fff681d (#911), 0 conflicts, обе цепочки проверены grep-верификацией",
+  "tests_green": "104 passed после rebase (97 контур: test_rag_api 41 + bm25 10 + fusion 15 + embeddings_client 9 + hybrid_api 8 + admin_rag_settings 14; +7 test_rag_auto_index_on_version соседнего контура) — cross-contour regression не выявлен",
+  "openapi_gate": "update_openapi.sh --no-lint (до rebase): 298 paths / 377 ops (+0/+0); endpoint-изменений нет, гейт чист",
+  "ab_measurement": "DONE 2026-09-04/05 на изолированном стеке raghybrid-ab (env-lock, teardown выполнен). hit@3 primary q8-q15: BM25 7/8 = hybrid 7/8 (q14 падает в обоих, тюнинг весов 0.3/0.7 не спасает; follow-up по данным/чанкеру). q1-q7 secondary: 0/7 в обоих (file-RAG корпус не наполнялся, out of scope). Latency p50 avg: 87.2ms -> 1428.8ms (~x16, НЕ ВЫПОЛНЕН критерий <20% на CPU-сайдкаре; доминирует query-эмбеддинг e5-small 0.7-2.0s). Fallback доказан вживую: stop rag-embedder -> ok=true, top-3 байт-в-байт = keyword-only -> start -> восстановление. Вердикты: критерий 1 PASS, 2 PASS, 3 FAIL (CPU-only конфигурация). Детали: RETRIEVAL_AB.md | ПОСЛЕ ONNX (fix-контур, ff-only до 3ae042bb): hybrid p50 1428.8->91-130ms (x11-x15.7); hit@3 8/8=8/8 (q14 PASS — эффект cos-drift 0.9906); критерий <20% формально не выполнен внутри окна (x2.5-x5.3, шум базовой линии), абсолютный бюджет закрыт; fallback не затронут. Детали: RETRIEVAL_AB.md «После ONNX» + fix-контурный BENCHMARK.md",
+  "merge_blocked": "explicit user approve + A/B на stage (runbook §16); rebase-блокер снят",
+  "deploy": "blocked: prod только ручной деплой из main по решению владельца"
+ },
+ "artifacts": {
+  "plan": "PLAN.md",
+  "runbook": "PLAN.md §16 (stage enable/disable)",
+  "tests": "TESTS.md",
+  "pr_draft": "PR.md",
+  "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
+  "git_proof": "git-proof.md"
+ },
+ "next": "merge PR #912 squash -> deploy stage -> §16 enablement -> cleanup",
+ "rebase": {
+  "onto": "4fff681d (rag-auto-index-on-version-v1 squash #911)",
+  "date": "2026-09-04",
+  "result": "clean merge-base; интеграция цепочки version->index->embed сохранена (rag_tasks markers indexed_dsv/error целы; _maybe_enqueue_embed в indexer.py)",
+  "tests_after_rebase": "110 passed (37 fast + 73 heavy)"
+ },
+ "pr_draft": {
+  "number": 912,
+  "url": "https://github.com/xiaomibelov/processmap_v1/pull/912",
+  "head": "3ae042bb",
+  "ci": "all green (contract 3m15s, spec-drift, builds)"
+ },
+ "ab_measurement": "DONE — замер выполнен (см. gates.ab_measurement); hit@3 7/8=7/8, latency p50 ~x16 на CPU (критерий <20% не выполнен на CPU-конфигурации), fallback доказан. Live-фиксы замера: embeddings.py TIMEOUT_SECONDS 3->60 (систематический таймаут passage-батчей на CPU) + rag-embedder Dockerfile CPU-only torch и pip retries. Merge-approve решение за пользователем: latency-критерий не выполнен на CPU-only; на GPU/ином железе цифры иные",
+ "criterion_revision": "2026-09-05 (approve merge, дословно): «БЫЛО: \"hybrid ≤ keyword +20%\". СТАЛО: \"hybrid — opt-in фича (hybrid_enabled=0 по умолчанию, дефолтный путь поиска неизменен). Для включённой org бюджет: p50 hybrid ≤ 150ms на stage-железе. Факт: 91–130ms — в бюджете. Остаточная стоимость 70–110ms — CPU-floor roundtrip до sidecar; дальнейшая оптимизация (Redis-кэш query-эмбеддингов, более лёгкая модель, GPU) — отдельным контуром при наличии данных о необходимости\".» — в BENCHMARK.md fix-контура, RETRIEVAL_AB.md, PR.md"
+}
