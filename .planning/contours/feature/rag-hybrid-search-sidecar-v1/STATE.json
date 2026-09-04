@@ -1,7 +1,7 @@
 {
  "contour": "feature/rag-hybrid-search-sidecar-v1",
  "type": "feature",
- "phase": "4-onnx-latency-fix-integrated",
+ "phase": "5-merge-approved-criterion-revised",
  "agent_run_id": "kimi-agent-4-20260904T160735",
  "branch": "feature/rag-hybrid-search-sidecar-v1",
  "baseline": "4fff681d1edf7000ce30b376a1b77bd7c09e1766",
@@ -27,7 +27,7 @@
   "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
   "git_proof": "git-proof.md"
  },
- "next": "push feature (HEAD 3ae042bb) -> зелёный CI PR #912 -> merge-approve пользователем. Вердикты: hit@3 PASS (8/8=8/8), fallback PASS (не затронут), latency: абсолютный FAIL снят (x11-x15.7), относительный <20% — на границе/не выполнен внутри тихого окна",
+ "next": "merge PR #912 squash -> deploy stage -> §16 enablement -> cleanup",
  "rebase": {
   "onto": "4fff681d (rag-auto-index-on-version-v1 squash #911)",
   "date": "2026-09-04",
@@ -40,5 +40,6 @@
   "head": "3ae042bb",
   "ci": "all green (contract 3m15s, spec-drift, builds)"
  },
- "ab_measurement": "DONE — замер выполнен (см. gates.ab_measurement); hit@3 7/8=7/8, latency p50 ~x16 на CPU (критерий <20% не выполнен на CPU-конфигурации), fallback доказан. Live-фиксы замера: embeddings.py TIMEOUT_SECONDS 3->60 (систематический таймаут passage-батчей на CPU) + rag-embedder Dockerfile CPU-only torch и pip retries. Merge-approve решение за пользователем: latency-критерий не выполнен на CPU-only; на GPU/ином железе цифры иные"
+ "ab_measurement": "DONE — замер выполнен (см. gates.ab_measurement); hit@3 7/8=7/8, latency p50 ~x16 на CPU (критерий <20% не выполнен на CPU-конфигурации), fallback доказан. Live-фиксы замера: embeddings.py TIMEOUT_SECONDS 3->60 (систематический таймаут passage-батчей на CPU) + rag-embedder Dockerfile CPU-only torch и pip retries. Merge-approve решение за пользователем: latency-критерий не выполнен на CPU-only; на GPU/ином железе цифры иные",
+ "criterion_revision": "2026-09-05 (approve merge, дословно): «БЫЛО: \"hybrid ≤ keyword +20%\". СТАЛО: \"hybrid — opt-in фича (hybrid_enabled=0 по умолчанию, дефолтный путь поиска неизменен). Для включённой org бюджет: p50 hybrid ≤ 150ms на stage-железе. Факт: 91–130ms — в бюджете. Остаточная стоимость 70–110ms — CPU-floor roundtrip до sidecar; дальнейшая оптимизация (Redis-кэш query-эмбеддингов, более лёгкая модель, GPU) — отдельным контуром при наличии данных о необходимости\".» — в BENCHMARK.md fix-контура, RETRIEVAL_AB.md, PR.md"
 }

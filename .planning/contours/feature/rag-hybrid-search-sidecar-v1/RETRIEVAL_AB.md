@@ -168,3 +168,7 @@ query-эмбеддинга, overlapped с BM25-полкой (commit dd4d6f8a —
   - `rag-embedder/Dockerfile`: CPU-only torch (aarch64-wheel из PyPI тянет
     CUDA-стек ~3-4 GB, скачивание в docker VM стабильно замирало на ~1 GB,
     3 сталла подряд) + pip `--timeout 30 --retries 10`.
+
+## Ревизия критерия приёмки (2026-09-05, approve merge PR #912)
+
+«БЫЛО: "hybrid ≤ keyword +20%". СТАЛО: "hybrid — opt-in фича (hybrid_enabled=0 по умолчанию, дефолтный путь поиска неизменен). Для включённой org бюджет: p50 hybrid ≤ 150ms на stage-железе. Факт: 91–130ms — в бюджете. Остаточная стоимость 70–110ms — CPU-floor roundtrip до sidecar; дальнейшая оптимизация (Redis-кэш query-эмбеддингов, более лёгкая модель, GPU) — отдельным контуром при наличии данных о необходимости".»
