@@ -1,4 +1,6 @@
 from __future__ import annotations
+import io
+import re
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional
 
@@ -8,12 +10,57 @@ BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI"
 DC_NS = "http://www.omg.org/spec/DD/20100524/DC"
 DI_NS = "http://www.omg.org/spec/DD/20100524/DI"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+ZEEBE_NS = "http://camunda.org/schema/zeebe/1.0"
+CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn"
 
 ET.register_namespace("bpmn", BPMN_NS)
 ET.register_namespace("bpmndi", BPMNDI_NS)
 ET.register_namespace("dc", DC_NS)
 ET.register_namespace("di", DI_NS)
 ET.register_namespace("xsi", XSI_NS)
+ET.register_namespace("zeebe", ZEEBE_NS)
+ET.register_namespace("camunda", CAMUNDA_NS)
+
+_AUTO_NS_PREFIX = re.compile(r"^ns\d+$", re.IGNORECASE)
+_registered_prefix_uris: Dict[str, str] = {
+    "bpmn": BPMN_NS,
+    "bpmndi": BPMNDI_NS,
+    "dc": DC_NS,
+    "di": DI_NS,
+    "xsi": XSI_NS,
+    "zeebe": ZEEBE_NS,
+    "camunda": CAMUNDA_NS,
+}
+
+
+def _register_namespaces(xml_text: str) -> None:
+    """Register namespace prefixes declared in the source XML so the ET
+    roundtrip keeps meaningful prefixes (zeebe:, camunda:) instead of ns1:.
+
+    Conflicting redefinitions of the same prefix are skipped: the first
+    registration wins and clashing docs fall back to auto-generated prefixes
+    rather than serializing the wrong URI under a known prefix.
+    """
+    if not xml_text:
+        return
+    try:
+        events = ET.iterparse(io.BytesIO(xml_text.encode("utf-8")), events=("start-ns",))
+        for _, (prefix, uri) in events:
+            prefix = str(prefix or "").strip()
+            if not prefix or prefix.lower() in ("xml", "xmlns") or _AUTO_NS_PREFIX.match(prefix):
+                continue
+            known = _registered_prefix_uris.get(prefix)
+            if known == uri:
+                continue
+            if known is not None:
+                continue
+            try:
+                ET.register_namespace(prefix, uri)
+            except ValueError:
+                continue
+            _registered_prefix_uris[prefix] = uri
+    except Exception:
+        return
 
 
 def _local_tag(tag: str) -> str:
@@ -556,6 +603,7 @@ def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> s
 
 
 def extract_embedded_process_xml(xml_text: str, process_id: str) -> Optional[str]:
+    _register_namespaces(xml_text)
     root = ET.fromstring(xml_text)
     for el in root.iter():
         if _local_tag(el.tag) == "process" and _element_id(el) == process_id:
@@ -564,6 +612,7 @@ def extract_embedded_process_xml(xml_text: str, process_id: str) -> Optional[str
 
 
 def extract_subprocess_xml(xml_text: str, element_id: str) -> Optional[str]:
+    _register_namespaces(xml_text)
     el = find_bpmn_element(xml_text, element_id)
     if el is None:
         return None
@@ -600,12 +649,78 @@ def resolve_target_element_id(xml_text: str, explicit_target_id: Optional[str] =
     return auto_target_element_id(xml_text)
 
 
+def _boundary_refs_outside(el: ET.Element, descendant_ids: set) -> List[str]:
+    """Return refs (attributes or nested sourceRef/targetRef text) pointing
+    outside the subprocess subtree — i.e. into the parent process scope."""
+    refs: List[str] = []
+    for attr in ("sourceRef", "targetRef"):
+        value = str(el.attrib.get(attr) or "").strip()
+        if value:
+            refs.append(value)
+    for ch in el.iter():
+        if ch is el:
+            continue
+        if _local_tag(ch.tag) in ("sourceref", "targetref"):
+            text = str(ch.text or "").strip()
+            if text:
+                refs.append(text)
+    return [ref for ref in refs if ref and ref not in descendant_ids]
+
+
+_PRESERVE_BOUNDARY_TAGS = {"messageflow", "datainputassociation", "dataoutputassociation", "sequenceflow"}
+
+
+def _collect_boundary_preserves(parent_el: ET.Element) -> List[ET.Element]:
+    """Children of a subProcess that reference elements OUTSIDE it (messageFlow
+    to an external dataStoreReference, data associations, sequenceFlows with an
+    external endpoint).  The child session XML is a standalone document where
+    such references dangle, so the frontend moddle drops these elements; on
+    re-embed they would be lost together with the link to the data store."""
+    descendant_ids = {
+        _element_id(desc)
+        for desc in parent_el.iter()
+        if desc is not parent_el and _element_id(desc)
+    }
+    preserved: List[ET.Element] = []
+    for child in list(parent_el):
+        if _local_tag(child.tag) not in _PRESERVE_BOUNDARY_TAGS:
+            continue
+        if _boundary_refs_outside(child, descendant_ids):
+            preserved.append(child)
+    return preserved
+
+
+def _remove_orphan_bpmn_edges(root: ET.Element) -> None:
+    """Drop bpmndi:BPMNEdge entries whose bpmnElement no longer exists in the
+    semantic model (e.g. the element was removed in the child session)."""
+    di_uri = f"{{{BPMNDI_NS}}}"
+    edge_tag = f"{di_uri}BPMNEdge"
+    semantic_ids = {
+        _element_id(el)
+        for el in root.iter()
+        if not str(el.tag).startswith(di_uri) and _element_id(el)
+    }
+    for el in list(root.iter(edge_tag)):
+        bpmn_element = str(el.attrib.get("bpmnElement") or "").strip()
+        if bpmn_element and bpmn_element not in semantic_ids:
+            parent = next((p for p in root.iter() for c in p if c is el), None)
+            if parent is not None:
+                parent.remove(el)
+
+
 def re_embed_child_xml_into_parent(parent_xml: str, element_id: str, child_xml: str) -> Optional[str]:
     """Replace the contents of a parent <subProcess> with the child process contents.
 
     The parent element is identified by `element_id`.  The child XML is expected to
     be a standalone BPMN document (as produced by `extract_subprocess_xml`) whose
     first <process> contains the edited subprocess contents.
+
+    Boundary-referencing children of the parent subProcess (messageFlow /
+    data associations / sequenceFlow with sourceRef/targetRef outside the
+    subProcess) are preserved: the child document cannot carry them (their
+    references dangle there), so the parent-side copy is re-injected unless
+    the child still has an element with the same id.  Orphaned bpmndi:BPMNEdge
+    entries whose semantic element is gone are collected.
 
     Returns the updated parent XML or None when:
     - the parent element is not a <subProcess> (callActivity is intentionally skipped),
@@ -614,6 +729,8 @@ def re_embed_child_xml_into_parent(parent_xml: str, element_id: str, child_xml: 
     """
     if not parent_xml or not child_xml or not element_id:
         return None
+    _register_namespaces(parent_xml)
+    _register_namespaces(child_xml)
     try:
         parent_root = ET.fromstring(parent_xml)
     except Exception:
@@ -648,10 +765,27 @@ def re_embed_child_xml_into_parent(parent_xml: str, element_id: str, child_xml: 
     if child_name:
         parent_el.attrib["name"] = child_name
 
+    preserved = _collect_boundary_preserves(parent_el)
+
     # Replace semantic children of the parent subprocess with the child contents.
     for child in list(parent_el):
         parent_el.remove(child)
     for child in child_process:
         parent_el.append(child)
+
+    # Re-inject preserved boundary elements the child no longer carries
+    # (dedup by id: a child-side element with the same id wins).
+    new_ids = {
+        _element_id(desc)
+        for desc in parent_el.iter()
+        if desc is not parent_el and _element_id(desc)
+    }
+    for el in preserved:
+        el_id = _element_id(el)
+        if el_id and el_id in new_ids:
+            continue
+        parent_el.append(el)
+
+    _remove_orphan_bpmn_edges(parent_root)
 
     return ET.tostring(parent_root, encoding="utf-8", xml_declaration=True).decode("utf-8")
