@@ -11,15 +11,15 @@ const TOAST_EXIT_ANIMATION_MS = 280;
 
 function resolveToneClass(tone) {
   if (tone === "error") {
-    return "border-rose-300/90 bg-rose-100/95 text-rose-900 shadow-[0_10px_28px_hsl(346_68%_32%_/_0.24)]";
+    return "border-rose-300/90 bg-rose-100/95 text-rose-900 shadow-[0_10px_28px_hsl(346_68%_32%_/_0.24)] dark:border-rose-800/80 dark:bg-rose-950/90 dark:text-rose-100 dark:shadow-[0_10px_28px_hsl(346_68%_8%_/_0.5)]";
   }
   if (tone === "warning") {
-    return "border-amber-300/90 bg-amber-100/95 text-amber-900 shadow-[0_10px_28px_hsl(36_88%_32%_/_0.20)]";
+    return "border-amber-300/90 bg-amber-100/95 text-amber-900 shadow-[0_10px_28px_hsl(36_88%_32%_/_0.20)] dark:border-amber-800/80 dark:bg-amber-950/90 dark:text-amber-100 dark:shadow-[0_10px_28px_hsl(36_88%_8%_/_0.5)]";
   }
   if (tone === "info") {
-    return "border-sky-300/90 bg-sky-100/95 text-sky-900 shadow-[0_10px_26px_hsl(205_88%_34%_/_0.18)]";
+    return "border-sky-300/90 bg-sky-100/95 text-sky-900 shadow-[0_10px_26px_hsl(205_88%_34%_/_0.18)] dark:border-sky-800/80 dark:bg-sky-950/90 dark:text-sky-100 dark:shadow-[0_10px_26px_hsl(205_88%_8%_/_0.5)]";
   }
-  return "border-emerald-300/90 bg-emerald-100/95 text-emerald-900 shadow-[0_10px_28px_hsl(154_55%_30%_/_0.20)]";
+  return "border-emerald-300/90 bg-emerald-100/95 text-emerald-900 shadow-[0_10px_28px_hsl(154_55%_30%_/_0.20)] dark:border-emerald-800/80 dark:bg-emerald-950/90 dark:text-emerald-100 dark:shadow-[0_10px_28px_hsl(154_55%_8%_/_0.5)]";
 }
 
 export default function ProcessSaveAckToast({
@@ -259,8 +259,8 @@ export default function ProcessSaveAckToast({
   const containerClassName = isStackLayout
     ? "w-full"
     : containerStyle
-      ? "pointer-events-none fixed z-[130] w-[min(92vw,420px)]"
-      : "pointer-events-none fixed bottom-5 left-1/2 z-[130] w-[min(92vw,420px)] -translate-x-1/2 sm:bottom-6";
+      ? "pointer-events-none fixed z-[95] w-[min(92vw,420px)]"
+      : "pointer-events-none fixed bottom-5 left-1/2 z-[95] w-[min(92vw,420px)] -translate-x-1/2 sm:bottom-6";
   const toneClass = resolveToneClass(String(tone || "").trim());
   return (
     <div
@@ -286,7 +286,7 @@ export default function ProcessSaveAckToast({
           {canDismiss ? (
             <button
               type="button"
-              className="-mr-1 -mt-1 h-7 w-7 shrink-0 rounded-md text-base leading-none opacity-70 transition hover:bg-black/10 hover:opacity-100 disabled:opacity-40"
+              className="-mr-1 -mt-1 h-7 w-7 shrink-0 rounded-md text-base leading-none opacity-70 transition hover:bg-black/10 hover:opacity-100 disabled:opacity-40 dark:hover:bg-white/15"
               onClick={onDismiss}
               aria-label="Закрыть уведомление"
               data-testid="process-save-ack-toast-dismiss"
@@ -299,7 +299,7 @@ export default function ProcessSaveAckToast({
           <div className="mt-2 flex justify-end">
             <button
               type="button"
-              className="rounded-md border border-current/25 bg-white/35 px-2.5 py-1 text-[12px] font-semibold leading-4 transition hover:bg-white/55 disabled:cursor-not-allowed disabled:opacity-55"
+              className="rounded-md border border-current/25 bg-white/35 px-2.5 py-1 text-[12px] font-semibold leading-4 transition hover:bg-white/55 disabled:cursor-not-allowed disabled:opacity-55 dark:bg-white/10 dark:hover:bg-white/20"
               onClick={onAction}
               disabled={actionDisabled === true}
               data-testid="process-save-ack-toast-action"

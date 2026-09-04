@@ -12,12 +12,13 @@ test("header no longer uses generic inline status badge as save/version channel"
   assert.equal(source.includes("toolbarInlineMessage"), false);
   assert.equal(source.includes("showToolbarInlineBadge"), false);
   assert.equal(source.includes('data-testid="diagram-toolbar-save-status"'), false);
-  assert.equal(source.includes('data-testid="diagram-toolbar-notification-anchor"'), true);
+  assert.equal(source.includes("DiagramToolbarSaveStatusSlot"), true);
 });
 
-test("header keeps process feedback anchored to toast surface", () => {
+test("header keeps process feedback in visible slot and toast surface, not inline text", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStageHeader.jsx"), "utf8");
-  assert.equal(source.includes('data-testid="diagram-toolbar-notification-anchor"'), true);
+  assert.equal(source.includes("DiagramToolbarSaveStatusSlot"), true);
+  assert.equal(source.includes('data-testid="diagram-toolbar-notification-anchor"'), false);
   assert.equal(source.includes("process-save-ack-toast"), false);
   assert.equal(source.includes("Сохранено внутри версии"), false);
   assert.equal(source.includes("Создана новая версия BPMN"), false);
