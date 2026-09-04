@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import ProcessPanels from "./ProcessPanels";
+import DiagramToolbarSaveStatusSlot from "./DiagramToolbarSaveStatusSlot";
 import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
 import ModeSwitchSegment from "../../../../components/ModeSwitchSegment";
 import { getFirstPickedFile } from "./fileInputEvent.js";
@@ -88,6 +89,8 @@ export default function ProcessStageHeader({ view = {} }) {
     featureFlags,
     tobeEntry,
     modeSwitch, // UXF addendum-3: сегмент «Схема | TO BE» справа от вкладки Diagram
+    saveStatusSlotFlash, // П3: краткая success-индикация в слоте вместо floating-тоста
+    sessionSaveReadSnapshot, // shellProps: isSaving/isDirty/isFailed/isStale/isSaved
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
@@ -234,10 +237,12 @@ export default function ProcessStageHeader({ view = {} }) {
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
         <div className="diagramToolbarRightStatus">
-          <span
-            className="diagramToolbarNotificationAnchor"
-            data-testid="diagram-toolbar-notification-anchor"
-            aria-hidden="true"
+          {/* П3: видимый in-flow слот статуса сохранения вместо невидимой
+              1px-метки-якоря; виден на lg+ (hidden lg:flex у контейнера). */}
+          <DiagramToolbarSaveStatusSlot
+            saveUploadStatus={saveUploadStatus}
+            saveSnapshot={sessionSaveReadSnapshot}
+            flash={saveStatusSlotFlash}
           />
           {showSessionPresenceBadge ? (
             <span

@@ -1267,10 +1267,17 @@ function ProcessStage({
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession]);
   const saveAckToastTimerRef = useRef(0);
+  const saveStatusSlotFlashTimerRef = useRef(0);
   const processStatusToastLastSignatureRef = useRef("");
   const saveLifecycleToastLastSignatureRef = useRef("");
   const remoteUpdateToastLastShownKeyRef = useRef("");
   const remoteUpdateToastDismissedKeyRef = useRef("");
+  // П3: краткая success-индикация в видимом слоте хедера вместо floating-тоста
+  // поверх плавающего тулбара канваса.
+  const [saveStatusSlotFlash, setSaveStatusSlotFlash] = useState({
+    visible: false,
+    message: "",
+  });
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
     tone: "success",
@@ -1316,6 +1323,32 @@ function ProcessStage({
       saveAckToastTimerRef.current = 0;
     }
     const isErrorOrWarning = tone === "error" || tone === "warning";
+    // П3: короткий success save-ack уходит в видимый слот хедера, а не в
+    // floating-тост поверх плавающего тулбара канваса. Событийные тосты
+    // (conflict / remote_update / warning / error / persistent / action) —
+    // по-прежнему в единый toast-стек под тулбаром.
+    const normalizedActionLabel = toText(options.actionLabel);
+    const routeToStatusSlot = !persistent
+      && !isErrorOrWarning
+      && normalizedActionLabel.length === 0
+      && requestedKind !== "remote_update"
+      && requestedKind !== "conflict";
+    if (routeToStatusSlot) {
+      if (typeof window !== "undefined" && saveStatusSlotFlashTimerRef.current) {
+        window.clearTimeout(saveStatusSlotFlashTimerRef.current);
+        saveStatusSlotFlashTimerRef.current = 0;
+      }
+      setSaveStatusSlotFlash({ visible: true, message: toastView.message });
+      if (typeof window === "undefined") return;
+      saveStatusSlotFlashTimerRef.current = window.setTimeout(() => {
+        setSaveStatusSlotFlash((prev) => ({
+          ...prev,
+          visible: false,
+        }));
+        saveStatusSlotFlashTimerRef.current = 0;
+      }, SAVE_ACK_TOAST_HIDE_MS);
+      return;
+    }
     setSaveAckToast({
       visible: true,
       tone,
@@ -1343,9 +1376,14 @@ function ProcessStage({
   }, [toText]);
   useEffect(() => () => {
     if (typeof window === "undefined") return;
-    if (!saveAckToastTimerRef.current) return;
-    window.clearTimeout(saveAckToastTimerRef.current);
-    saveAckToastTimerRef.current = 0;
+    if (saveAckToastTimerRef.current) {
+      window.clearTimeout(saveAckToastTimerRef.current);
+      saveAckToastTimerRef.current = 0;
+    }
+    if (saveStatusSlotFlashTimerRef.current) {
+      window.clearTimeout(saveStatusSlotFlashTimerRef.current);
+      saveStatusSlotFlashTimerRef.current = 0;
+    }
   }, []);
   useEffect(() => {
     const message = toText(genErr || infoMsg);
@@ -7742,6 +7780,7 @@ function ProcessStage({
       ?? 0),
     tobeEntry,
     modeSwitch,
+    saveStatusSlotFlash,
     asArray,
   });
 

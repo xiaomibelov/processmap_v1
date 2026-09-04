@@ -397,6 +397,7 @@ export function buildDiagramHeaderView({
   saveUploadStatus,
   tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
   modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE»
+  saveStatusSlotFlash = null, // П3: краткая success-индикация в слоте хедера
   asArray,
 } = {}) {
   return {
@@ -435,6 +436,7 @@ export function buildDiagramHeaderView({
     sessionPresenceView,
     tobeEntry: tobeEntry && typeof tobeEntry === "object" ? tobeEntry : null,
     modeSwitch: modeSwitch && typeof modeSwitch === "object" ? modeSwitch : null,
+    saveStatusSlotFlash: saveStatusSlotFlash && typeof saveStatusSlotFlash === "object" ? saveStatusSlotFlash : null,
     asArray,
   };
 }
