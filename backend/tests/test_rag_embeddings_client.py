@@ -30,9 +30,10 @@ class _FakeClient:
 
     instances = []
 
-    def __init__(self, response=None, post_exc=None):
+    def __init__(self, response=None, post_exc=None, **kwargs):
         self._response = response
         self._post_exc = post_exc
+        self.client_kwargs = kwargs
         self.post_calls = []
         self.__class__.instances.append(self)
 
@@ -50,7 +51,7 @@ class _FakeClient:
 
 
 def _patch_client(response=None, post_exc=None):
-    return mock.patch.object(emb.httpx, "Client", lambda *a, **k: _FakeClient(response, post_exc))
+    return mock.patch.object(emb.httpx, "Client", lambda *a, **k: _FakeClient(response, post_exc, **k))
 
 
 class EmbeddingsClientTests(unittest.TestCase):
@@ -146,6 +147,27 @@ class EmbeddingsClientTests(unittest.TestCase):
         with _patch_client(response=_FakeResponse(payload)):
             self.assertIsNotNone(emb.get_query_embedding("q"))
         self.assertEqual(emb._failures, 0)
+
+    def test_query_path_uses_short_timeout(self):
+        # Request-path поиска: fail-fast таймаут (default 5s).
+        payload = {"embeddings": [[0.1]], "model_id": "local-e5-small", "dimensions": 384}
+        with _patch_client(response=_FakeResponse(payload)):
+            self.assertIsNotNone(emb.get_query_embedding("q"))
+        self.assertEqual(_FakeClient.instances[-1].client_kwargs.get("timeout"), 5.0)
+
+    def test_passage_batch_path_uses_long_timeout(self):
+        # Celery-батч индексации: длинный таймаут (default 60s).
+        payload = {"embeddings": [[0.1], [0.2]], "model_id": "local-e5-small", "dimensions": 384}
+        with _patch_client(response=_FakeResponse(payload)):
+            self.assertIsNotNone(emb.get_embeddings_for_texts(["a", "b"]))
+        self.assertEqual(_FakeClient.instances[-1].client_kwargs.get("timeout"), 60.0)
+
+    def test_timeouts_env_override(self):
+        payload = {"embeddings": [[0.1]], "model_id": "local-e5-small", "dimensions": 384}
+        with mock.patch.dict("os.environ", {"EMBEDDINGS_QUERY_TIMEOUT_SECONDS": "2.5"}):
+            with _patch_client(response=_FakeResponse(payload)):
+                self.assertIsNotNone(emb.get_query_embedding("q"))
+        self.assertEqual(_FakeClient.instances[-1].client_kwargs.get("timeout"), 2.5)
 
 
 if __name__ == "__main__":

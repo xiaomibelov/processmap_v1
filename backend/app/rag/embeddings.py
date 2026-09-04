@@ -21,13 +21,25 @@ import httpx
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://rag-embedder:8000"
-# CPU-sidecar (e5-small, без GPU) эмбеддит батч чанков ~0.4s/текст: 16+ чанков —
-# это 5-15s, одиночный query 0.7-2s под нагрузкой. Таймаут 3s (раннее значение)
-# на реальном CPU-сайдкаре даёт систематический таймаут passage-батчей и
-# периодический таймаут query → молчаливая деградация hybrid в keyword.
-# Замерено вживую на raghybrid-ab (apple-silicon docker VM): 16 texts = 6.84s.
-TIMEOUT_SECONDS = 60.0
+# Раздельные таймауты путей (fix/rag-embedder-onnx-latency-v1), читаются из env
+# на каждый вызов (ops-переопределение без редеплоя кода):
+# - query (request-path поиска): быстрый fail -> деградация на keyword-only.
+#   На CPU-сайдкаре int8-ONNX query ~50-150ms; 5s — с запасом на прогрев/контенд.
+# - passage (celery-батч индексации): чанки эмбеддятся пачками, на CPU int8
+#   батч 16 ~1-2s, но при больших батчах/контенде допустимы десятки секунд.
+# Замеры: raghybrid-ab (apple-silicon docker VM), BENCHMARK.md контура
+# fix/rag-embedder-onnx-latency-v1.
+QUERY_TIMEOUT_DEFAULT_SECONDS = 5.0
+PASSAGE_TIMEOUT_DEFAULT_SECONDS = 60.0
 FAILURE_COOLDOWN_SECONDS = 30.0
+
+
+def _query_timeout_seconds() -> float:
+    return float(os.environ.get("EMBEDDINGS_QUERY_TIMEOUT_SECONDS", QUERY_TIMEOUT_DEFAULT_SECONDS))
+
+
+def _passage_timeout_seconds() -> float:
+    return float(os.environ.get("EMBEDDINGS_PASSAGE_TIMEOUT_SECONDS", PASSAGE_TIMEOUT_DEFAULT_SECONDS))
 
 _state_lock = threading.Lock()
 _failures = 0
@@ -60,7 +72,7 @@ def _record_failure() -> None:
             _cooldown_until = time.monotonic() + FAILURE_COOLDOWN_SECONDS
 
 
-def _post_embed(texts: list, input_type: str) -> Optional[QueryEmbedding]:
+def _post_embed(texts: list, input_type: str, timeout_seconds: float) -> Optional[QueryEmbedding]:
     texts = [str(t) for t in (texts or []) if str(t or "").strip()]
     if not texts:
         return None
@@ -68,7 +80,7 @@ def _post_embed(texts: list, input_type: str) -> Optional[QueryEmbedding]:
         logger.warning("rag-embedder skipped (%s): failure cooldown active", input_type)
         return None
     try:
-        with httpx.Client(timeout=TIMEOUT_SECONDS) as client:
+        with httpx.Client(timeout=timeout_seconds) as client:
             resp = client.post(
                 f"{_base_url()}/embed",
                 json={"texts": texts, "input_type": input_type},
@@ -89,11 +101,13 @@ def _post_embed(texts: list, input_type: str) -> Optional[QueryEmbedding]:
 
 
 def get_query_embedding(text: str) -> Optional[QueryEmbedding]:
-    return _post_embed([text], "query")
+    """Request-path поиска: короткий таймаут, fail-fast -> keyword-only."""
+    return _post_embed([text], "query", _query_timeout_seconds())
 
 
 def get_embeddings_for_texts(texts: list) -> Optional[QueryEmbedding]:
-    return _post_embed(list(texts or []), "passage")
+    """Celery-батч индексации: длинный таймаут под пачки чанков."""
+    return _post_embed(list(texts or []), "passage", _passage_timeout_seconds())
 
 
 def encode_vector(values: Any) -> bytes:
