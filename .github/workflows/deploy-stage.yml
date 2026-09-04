@@ -228,7 +228,7 @@ jobs:
             export STAGE_IMAGE_TAG="${DEPLOY_SHA}"
 
             ENV_FILE=".env.stage"
-            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d; /^STAGE_IMAGE_TAG=/d' "${ENV_FILE}"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d; /^STAGE_IMAGE_TAG=/d; /^EMBEDDINGS_BASE_URL=/d; /^EMBEDDINGS_ORT_THREADS=/d; /^EMBEDDINGS_QUERY_TIMEOUT_SECONDS=/d; /^EMBEDDINGS_PASSAGE_TIMEOUT_SECONDS=/d' "${ENV_FILE}"
             {
               echo ""
               echo "# Auto-injected by deploy-stage.yml at ${BUILD_TIME}"
@@ -244,6 +244,14 @@ jobs:
               echo "VITE_DEPLOY_REQUESTED_REF=${REQUESTED_REF}"
               echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
               echo "STAGE_IMAGE_TAG=${DEPLOY_SHA}"
+              echo "# RAG hybrid sidecar (fix/stage-deploy-rag-embedder-v1). Значения не-секретные"
+              echo "# (внутренний docker-network URL, треды, таймауты), дефолты консистентны"
+              echo "# с docker-compose.yml. ORT_THREADS=4 по BENCHMARK.md fix/rag-embedder-onnx-latency-v1"
+              echo "# (threads=2 хуже: p50 292ms + выброс 14.3s; default-пул при cpu-limit — oversubscription)."
+              echo "EMBEDDINGS_BASE_URL=http://rag-embedder:8000"
+              echo "EMBEDDINGS_ORT_THREADS=4"
+              echo "EMBEDDINGS_QUERY_TIMEOUT_SECONDS=5"
+              echo "EMBEDDINGS_PASSAGE_TIMEOUT_SECONDS=60"
             } >> "${ENV_FILE}"
 
             STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
@@ -258,7 +266,10 @@ jobs:
             # ЛЮБОЕ изменение backend может его затронуть. Он пересобирается и
             # пересоздаётся всегда: условный rebuild здесь — первопричина протухшего
             # stage-воркера (audit/prod-stage-divergence-409, 2026-08-30).
-            BUILD_SERVICES="api frontend notifications celery-worker"
+            # rag-embedder (RAG hybrid sidecar, PR #912) — свой образ (./rag-embedder),
+            # собирается всегда: на хосте stage его не было (deploy-drift
+            # fix/stage-deploy-rag-embedder-v1), а api/celery-worker уже зависят от него.
+            BUILD_SERVICES="api frontend notifications celery-worker rag-embedder"
             if [ "${AGENT_CHANGED}" = "true" ]; then
               BUILD_SERVICES="${BUILD_SERVICES} agent"
             fi
@@ -282,7 +293,7 @@ jobs:
               rm -fsv frontend 2>/dev/null || true
             docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
-            UP_SERVICES="api frontend notifications celery-worker"
+            UP_SERVICES="api frontend notifications celery-worker rag-embedder"
             if [ "${AGENT_CHANGED}" = "true" ]; then
               UP_SERVICES="${UP_SERVICES} agent"
             fi
@@ -318,10 +329,47 @@ jobs:
             done
             echo "OK: all deployed stage services run image tag ${DEPLOY_SHA}"
 
+            # Гейт здоровья rag-embedder (runbook §16.1): контейнер обязан стать healthy
+            # (healthcheck в docker-compose.yml, start_period 180s — прогрев ONNX), затем
+            # /health внутри контейнера обязан вернуть ok=true и model_loaded=true.
+            echo "[deploy-stage] waiting for rag-embedder to become healthy"
+            embedder_status="missing"
+            for attempt in $(seq 1 36); do
+              embedder_status="$(docker inspect processmap_stage-rag-embedder-1 --format '{{.State.Health.Status}}' 2>/dev/null || echo missing)"
+              if [ "${embedder_status}" = "healthy" ]; then
+                break
+              fi
+              echo "[deploy-stage] rag-embedder health: ${embedder_status} (attempt ${attempt}/36)"
+              sleep 5
+            done
+            if [ "${embedder_status}" != "healthy" ]; then
+              echo "ERROR: rag-embedder not healthy after deploy (status=${embedder_status})" >&2
+              exit 1
+            fi
+            STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
+              --env-file .env.stage \
+              -f docker-compose.yml \
+              -f docker-compose.stage.yml \
+              -p processmap_stage \
+              exec -T rag-embedder \
+              python -c "import json,urllib.request; d=json.load(urllib.request.urlopen('http://localhost:8000/health')); assert d.get('ok') and d.get('model_loaded'), d; print('[deploy-stage] rag-embedder /health OK:', d)"
+            echo "OK: rag-embedder healthy, model loaded"
+
             echo "[deploy-stage] checking celery-worker task registration"
             ./deploy/verify_celery_task.sh \
               --container processmap_stage-celery-worker-1 \
               --task index_session_bpmn_xml \
+              --retries 10 \
+              --delay 3 \
+              --timeout 10
+
+            # RAG hybrid: задача эмбеддинга обязана быть зарегистрирована (PR #912).
+            # Fail-loud здесь дешевле, чем молчаливая деградация на keyword-only при
+            # рассинхроне кода воркера (embed-задачи уходят в никуда).
+            echo "[deploy-stage] checking celery-worker RAG embed task registration"
+            ./deploy/verify_celery_task.sh \
+              --container processmap_stage-celery-worker-1 \
+              --task processmap.rag.embed_chunks \
               --retries 10 \
               --delay 3 \
               --timeout 10
