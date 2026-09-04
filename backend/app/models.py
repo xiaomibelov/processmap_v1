@@ -98,6 +98,7 @@ class Session(BaseModel):
     rag_readiness_status: str = "not_ready"
     rag_queued_at: Optional[int] = None
     rag_indexed_at: Optional[int] = None
+    rag_indexed_dsv: Optional[int] = None
     version: int = 0
     owner_user_id: str = ""
     org_id: str = ""
