@@ -11,7 +11,7 @@
     "0-recon": "done (deploy-stage.yml, .env.stage provisioning, EMBEDDINGS_* list, resource limits)",
     "1-patch": "done (BUILD/UP_SERVICES + rag-embedder, env auto-inject, health/task gates)",
     "2-checks": "done (actionlint 0 findings, compose config dry-run OK)",
-    "3-draft-pr": "pending-push",
+    "3-draft-pr": "done (PR #916 https://github.com/xiaomibelov/processmap_v1/pull/916)",
     "4-merge-deploy": "STOP — awaiting explicit user approve",
     "5-runbook-16": "blocked-by-4",
     "6-cleanup": "blocked-by-5"
