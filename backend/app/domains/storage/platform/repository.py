@@ -159,6 +159,10 @@ def get_rag_settings(org_id: str) -> dict:
         "default_min_score": None,
         "allowed_source_types": ["bpmn_xml", "product_action"],
         "show_technical_fragments": False,
+        "hybrid_enabled": False,
+        "bm25_weight": 0.5,
+        "vector_weight": 0.5,
+        "embedding_model_id": "local-e5-small",
     }
     try:
         with _connect() as con:
@@ -174,6 +178,12 @@ def get_rag_settings(org_id: str) -> dict:
         source_types = json.loads(d.get("allowed_source_types") or '["bpmn_xml","product_action"]')
     except Exception:
         source_types = list(_defaults["allowed_source_types"])
+    try:
+        bm25_weight = float(d.get("bm25_weight") if d.get("bm25_weight") is not None else 0.5)
+        vector_weight = float(d.get("vector_weight") if d.get("vector_weight") is not None else 0.5)
+    except Exception:
+        bm25_weight = 0.5
+        vector_weight = 0.5
     return {
         "enabled": bool(d.get("enabled", 1)),
         "indexing_enabled": bool(d.get("indexing_enabled", 1)),
@@ -182,6 +192,11 @@ def get_rag_settings(org_id: str) -> dict:
         "default_min_score": d.get("default_min_score"),
         "allowed_source_types": source_types,
         "show_technical_fragments": bool(d.get("show_technical_fragments", 0)),
+        # 023-колонки: .get-дефолты — БД без миграции 023 получают keyword-only режим.
+        "hybrid_enabled": bool(d.get("hybrid_enabled", 0)),
+        "bm25_weight": bm25_weight,
+        "vector_weight": vector_weight,
+        "embedding_model_id": str(d.get("embedding_model_id") or "local-e5-small"),
     }
 
 

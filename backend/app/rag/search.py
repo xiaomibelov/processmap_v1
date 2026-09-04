@@ -2,6 +2,7 @@ import json
 import math
 import re
 from collections import Counter
+from typing import Any
 
 _STOPWORDS = {
     "и", "в", "на", "с", "по", "для", "из", "от", "до", "при", "за", "к", "о",
@@ -85,3 +86,84 @@ class BM25Index:
 
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
+
+
+def _decode_vector(data: Any) -> list:
+    """vector_data (array('f') bytes) -> [float]. Битые/пустые данные -> []."""
+    if not data:
+        return []
+    try:
+        from array import array
+        arr = array("f")
+        arr.frombytes(bytes(data))
+        return list(arr)
+    except Exception:
+        return []
+
+
+def cosine_similarity(a: list, b: list) -> float:
+    """Косинусная близость на чистом Python (без numpy)."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for x, y in zip(a, b):
+        fx = float(x)
+        fy = float(y)
+        dot += fx * fy
+        na += fx * fx
+        nb += fy * fy
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / (math.sqrt(na) * math.sqrt(nb))
+
+
+def rank_by_vector(
+    candidates: list,
+    embeddings_by_chunk: dict,
+    query_vec: list,
+) -> list:
+    """Векторная полка: [(chunk_id, cos_sim)] по убыванию.
+
+    candidates — chunk_ids кандидатного множества; embeddings_by_chunk —
+    {chunk_id: (vector_bytes, dimensions)}. Чанки без эмбеддинга в полку не попадают.
+    """
+    if not query_vec:
+        return []
+    ranked = []
+    for chunk_id in candidates or []:
+        entry = (embeddings_by_chunk or {}).get(chunk_id)
+        if not entry:
+            continue
+        vec = _decode_vector(entry[0])
+        if not vec or len(vec) != len(query_vec):
+            continue
+        sim = cosine_similarity(query_vec, vec)
+        if sim > 0.0:
+            ranked.append((chunk_id, sim))
+    ranked.sort(key=lambda x: x[1], reverse=True)
+    return ranked
+
+
+def fuse_rrf(
+    bm25_ranked: list,
+    vec_ranked: list,
+    w_bm25: float,
+    w_vec: float,
+    k: int = 60,
+) -> list:
+    """RRF-fusion двух полок -> [chunk_id] в порядке убывания fused-ранга.
+
+    Полки: [(chunk_id, score), ...] (порядок значим, score — нет).
+    RRF определяет ТОЛЬКО порядок; отсутствующие в полке кандидаты не получают
+    вклад этой ноги. Чанки вне обеих полок в результат не попадают.
+    """
+    fused: dict = {}
+    for rank, item in enumerate(bm25_ranked or [], start=1):
+        chunk_id = item[0]
+        fused[chunk_id] = fused.get(chunk_id, 0.0) + float(w_bm25) / (k + rank)
+    for rank, item in enumerate(vec_ranked or [], start=1):
+        chunk_id = item[0]
+        fused[chunk_id] = fused.get(chunk_id, 0.0) + float(w_vec) / (k + rank)
+    return [chunk_id for chunk_id, _score in sorted(fused.items(), key=lambda x: x[1], reverse=True)]

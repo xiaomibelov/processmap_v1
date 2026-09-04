@@ -2156,9 +2156,13 @@ def _ensure_schema() -> None:
                     org_id          TEXT NOT NULL,
                     model_id        TEXT NOT NULL,
                     vector_data     BYTEA,
+                    dimensions      INTEGER,
                     created_at      INTEGER NOT NULL
                 )
             """)
+            if not _column_exists(con, "rag_embeddings", "dimensions"):
+                con.execute("ALTER TABLE rag_embeddings ADD COLUMN dimensions INTEGER")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_embed_chunk_model ON rag_embeddings(chunk_id, model_id)")
             con.execute("""
                 CREATE TABLE IF NOT EXISTS rag_sources (
                     source_id       TEXT PRIMARY KEY,
@@ -2210,10 +2214,23 @@ def _ensure_schema() -> None:
                     default_min_score       REAL,
                     allowed_source_types    TEXT NOT NULL DEFAULT '["bpmn_xml","product_action"]',
                     show_technical_fragments INTEGER NOT NULL DEFAULT 0,
+                    hybrid_enabled          INTEGER NOT NULL DEFAULT 0,
+                    vector_weight           REAL NOT NULL DEFAULT 0.5,
+                    bm25_weight             REAL NOT NULL DEFAULT 0.5,
+                    embedding_model_id      TEXT NOT NULL DEFAULT 'local-e5-small',
                     updated_at              INTEGER NOT NULL DEFAULT 0,
                     updated_by              TEXT NOT NULL DEFAULT ''
                 )
             """)
+            # 023-колонки: ALTER-гварды для БД, созданных до миграции 023 (sqlite-bootstrap).
+            if not _column_exists(con, "rag_settings", "hybrid_enabled"):
+                con.execute("ALTER TABLE rag_settings ADD COLUMN hybrid_enabled INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "rag_settings", "vector_weight"):
+                con.execute("ALTER TABLE rag_settings ADD COLUMN vector_weight REAL NOT NULL DEFAULT 0.5")
+            if not _column_exists(con, "rag_settings", "bm25_weight"):
+                con.execute("ALTER TABLE rag_settings ADD COLUMN bm25_weight REAL NOT NULL DEFAULT 0.5")
+            if not _column_exists(con, "rag_settings", "embedding_model_id"):
+                con.execute("ALTER TABLE rag_settings ADD COLUMN embedding_model_id TEXT NOT NULL DEFAULT 'local-e5-small'")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS feature_flags (

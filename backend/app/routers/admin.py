@@ -1853,6 +1853,7 @@ def admin_audit(
 _SAFE_RAG_FIELDS = {
     "enabled", "indexing_enabled", "default_top_k", "max_top_k",
     "default_min_score", "allowed_source_types", "show_technical_fragments",
+    "hybrid_enabled", "bm25_weight", "vector_weight", "embedding_model_id",
 }
 _INVARIANT_RAG_FIELDS = {
     "read_only_mode", "auto_apply_enabled", "embeddings_enabled", "vector_search_enabled",
@@ -1870,6 +1871,10 @@ def _rag_settings_defaults(org_id: str) -> Dict[str, Any]:
         "default_min_score": None,
         "allowed_source_types": ["bpmn_xml", "product_action"],
         "show_technical_fragments": False,
+        "hybrid_enabled": False,
+        "bm25_weight": 0.5,
+        "vector_weight": 0.5,
+        "embedding_model_id": "local-e5-small",
         "updated_at": None,
         "updated_by": None,
     }
@@ -1886,6 +1891,12 @@ def _rag_settings_load(con: Any, org_id: str) -> Dict[str, Any]:
         source_types = json.loads(d.get("allowed_source_types") or '["bpmn_xml","product_action"]')
     except Exception:
         source_types = ["bpmn_xml", "product_action"]
+    try:
+        bm25_weight = float(d.get("bm25_weight") if d.get("bm25_weight") is not None else 0.5)
+        vector_weight = float(d.get("vector_weight") if d.get("vector_weight") is not None else 0.5)
+    except Exception:
+        bm25_weight = 0.5
+        vector_weight = 0.5
     return {
         "org_id": d["org_id"],
         "enabled": bool(d.get("enabled", 1)),
@@ -1895,6 +1906,10 @@ def _rag_settings_load(con: Any, org_id: str) -> Dict[str, Any]:
         "default_min_score": d.get("default_min_score"),
         "allowed_source_types": source_types,
         "show_technical_fragments": bool(d.get("show_technical_fragments", 0)),
+        "hybrid_enabled": bool(d.get("hybrid_enabled", 0)),
+        "bm25_weight": bm25_weight,
+        "vector_weight": vector_weight,
+        "embedding_model_id": str(d.get("embedding_model_id") or "local-e5-small"),
         "updated_at": d.get("updated_at") or None,
         "updated_by": d.get("updated_by") or None,
     }
@@ -1942,8 +1957,10 @@ def admin_rag_get_settings(request: Request) -> Any:
             **settings,
             "read_only_mode": True,
             "auto_apply_enabled": False,
-            "embeddings_enabled": False,
-            "vector_search_enabled": False,
+            # Derived: embeddings участвуют в поиске ровно когда включён hybrid-режим
+            # (sidecar-reachability — runtime-свойство, здесь не вычисляется).
+            "embeddings_enabled": bool(settings.get("hybrid_enabled")),
+            "vector_search_enabled": bool(settings.get("hybrid_enabled")),
         },
         "status": status,
     }
@@ -2021,6 +2038,25 @@ async def admin_rag_patch_settings(request: Request) -> Any:
             )
         patch["allowed_source_types"] = json.dumps(types)
 
+    if "hybrid_enabled" in body:
+        patch["hybrid_enabled"] = 1 if body["hybrid_enabled"] else 0
+
+    for weight_field in ("bm25_weight", "vector_weight"):
+        if weight_field in body:
+            try:
+                w = float(body[weight_field])
+            except (TypeError, ValueError):
+                return _legacy_main._enterprise_error(400, "invalid_value", f"{weight_field} must be a number")
+            if w < 0:
+                return _legacy_main._enterprise_error(400, "invalid_value", f"{weight_field} must be >= 0")
+            patch[weight_field] = w
+
+    if "embedding_model_id" in body:
+        model_id = _as_text(body["embedding_model_id"])
+        if not model_id:
+            return _legacy_main._enterprise_error(400, "invalid_value", "embedding_model_id must be a non-empty string")
+        patch["embedding_model_id"] = model_id
+
     if not patch:
         return {"ok": True, "updated": False}
 
@@ -2046,8 +2082,9 @@ async def admin_rag_patch_settings(request: Request) -> Any:
                 """INSERT INTO rag_settings
                    (org_id, enabled, indexing_enabled, default_top_k, max_top_k,
                     default_min_score, allowed_source_types, show_technical_fragments,
+                    hybrid_enabled, bm25_weight, vector_weight, embedding_model_id,
                     updated_at, updated_by)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [
                     org_id,
                     patch.get("enabled", 1),
@@ -2057,6 +2094,10 @@ async def admin_rag_patch_settings(request: Request) -> Any:
                     patch.get("default_min_score"),
                     patch.get("allowed_source_types", '["bpmn_xml","product_action"]'),
                     patch.get("show_technical_fragments", 0),
+                    patch.get("hybrid_enabled", 0),
+                    patch.get("bm25_weight", 0.5),
+                    patch.get("vector_weight", 0.5),
+                    patch.get("embedding_model_id", "local-e5-small"),
                     now,
                     _as_text(uid),
                 ],
@@ -2071,8 +2112,8 @@ async def admin_rag_patch_settings(request: Request) -> Any:
             **settings,
             "read_only_mode": True,
             "auto_apply_enabled": False,
-            "embeddings_enabled": False,
-            "vector_search_enabled": False,
+            "embeddings_enabled": bool(settings.get("hybrid_enabled")),
+            "vector_search_enabled": bool(settings.get("hybrid_enabled")),
         },
     }
 

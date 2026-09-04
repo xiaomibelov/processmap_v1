@@ -51,9 +51,10 @@ def upsert_rag_document(
     return doc_id
 
 
-def insert_rag_chunks(doc_id: str, org_id: str, chunks: list[dict]) -> int:
+def insert_rag_chunks(doc_id: str, org_id: str, chunks: list[dict]) -> list[str]:
     import uuid
     now = _now_ts()
+    chunk_ids: list[str] = []
     with _connect() as con:
         for chunk in chunks:
             chunk_id = str(uuid.uuid4())
@@ -70,18 +71,94 @@ def insert_rag_chunks(doc_id: str, org_id: str, chunks: list[dict]) -> int:
                     now,
                 ],
             )
+            chunk_ids.append(chunk_id)
         con.commit()
-    return len(chunks)
+    return chunk_ids
 
 
 def delete_rag_chunks_for_doc(org_id: str, doc_id: str) -> int:
     with _connect() as con:
+        # Cascade: сначала эмбеддинги чанков документа, потом сами чанки.
+        con.execute(
+            """
+            DELETE FROM rag_embeddings
+             WHERE org_id = ?
+               AND chunk_id IN (SELECT chunk_id FROM rag_chunks WHERE doc_id = ? AND org_id = ?)
+            """,
+            [org_id, doc_id, org_id],
+        )
         cur = con.execute(
             "DELETE FROM rag_chunks WHERE doc_id=? AND org_id=?",
             [doc_id, org_id],
         )
         con.commit()
         return cur.rowcount
+
+
+def upsert_rag_embeddings(rows: list[dict]) -> int:
+    """rows: chunk_id, org_id, model_id, vector (bytes), dimensions. Idempotent по (chunk_id, model_id)."""
+    import uuid
+    now = _now_ts()
+    count = 0
+    with _connect() as con:
+        for row in rows or []:
+            chunk_id = str(row.get("chunk_id") or "")
+            model_id = str(row.get("model_id") or "")
+            vector = row.get("vector")
+            if not chunk_id or not model_id or not vector:
+                continue
+            # Детерминированный PK: одна актуальная запись на (chunk_id, model_id).
+            embedding_id = f"{chunk_id}:{model_id}"
+            con.execute(
+                """
+                INSERT OR REPLACE INTO rag_embeddings (embedding_id, chunk_id, org_id, model_id, vector_data, dimensions, created_at)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                [embedding_id, chunk_id, str(row.get("org_id") or ""), model_id, vector, row.get("dimensions"), now],
+            )
+            count += 1
+        con.commit()
+    return count
+
+
+def get_rag_embeddings(org_id: str, model_id: str, chunk_ids: list[str]) -> dict:
+    """-> {chunk_id: (vector_bytes, dimensions)} для активной модели."""
+    ids = [str(c) for c in (chunk_ids or []) if str(c)]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT chunk_id, vector_data, dimensions FROM rag_embeddings WHERE org_id=? AND model_id=? AND chunk_id IN ({placeholders})",
+            [str(org_id), str(model_id), *ids],
+        ).fetchall()
+    out: dict = {}
+    for row in rows:
+        if hasattr(row, "keys"):
+            out[str(row["chunk_id"])] = (row["vector_data"], row["dimensions"])
+        else:
+            out[str(row[0])] = (row[1], row[2])
+    return out
+
+
+def get_rag_chunk_texts(org_id: str, chunk_ids: list[str]) -> dict:
+    """-> {chunk_id: chunk_text} (org-scoped) для embed-задачи."""
+    ids = [str(c) for c in (chunk_ids or []) if str(c)]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT chunk_id, chunk_text FROM rag_chunks WHERE org_id=? AND chunk_id IN ({placeholders})",
+            [str(org_id), *ids],
+        ).fetchall()
+    out: dict = {}
+    for row in rows:
+        if hasattr(row, "keys"):
+            out[str(row["chunk_id"])] = str(row["chunk_text"] or "")
+        else:
+            out[str(row[0])] = str(row[1] or "")
+    return out
 
 
 def get_rag_document_by_source(org_id: str, source_type: str, source_id: str) -> dict | None:
