@@ -4,18 +4,19 @@
   "phase": "3-draft-pr-complete",
   "agent_run_id": "kimi-agent-4-20260904T160735",
   "branch": "feature/rag-hybrid-search-sidecar-v1",
-  "baseline": "37a55e410f10dc5d54492140af53dc47961f14fa",
+  "baseline": "4fff681d1edf7000ce30b376a1b77bd7c09e1766",
+  "baseline_note": "rebase 2026-09-04 выполнен: ветка перебазирована на origin/main 4fff681d (#911, rag-auto-index-on-version-v1). Конфликтов не было (16/16 auto-merge); изменения обоих контуров в rag_tasks.py/compat/repository.py интегрированы аддитивно. Цепочка интеграции: version -> _enqueue_rag_index_after_version -> index_session_bpmn_xml -> index_document -> insert_rag_chunks -> _maybe_enqueue_embed -> embed_chunks.",
   "worktree": "/Users/mac/agents_place/kimi_PM/processmap_v1_main_clone-worktrees/feature/rag-hybrid-search-sidecar-v1",
   "gates": {
     "plan_approved_by_user": true,
-    "plan_note": "approve с дополнением — runbook включения/отката на stage (§16) написан отдельным коммитом 1216b1ec",
+    "plan_note": "approve с дополнением — runbook включения/отката на stage (§16) написан отдельным коммитом",
     "phase1_code_complete": true,
     "phase2_tests_complete": true,
-    "tests_green": "97 passed (TESTS.md)",
-    "openapi_gate": "update_openapi.sh --no-lint: 298 paths / 377 ops (+0/+0), diff docs/openapi.yaml пуст",
+    "rebase_after_parallel_contour": "DONE: onto 4fff681d (#911), 0 conflicts, обе цепочки проверены grep-верификацией",
+    "tests_green": "104 passed после rebase (97 контур: test_rag_api 41 + bm25 10 + fusion 15 + embeddings_client 9 + hybrid_api 8 + admin_rag_settings 14; +7 test_rag_auto_index_on_version соседнего контура) — cross-contour regression не выявлен",
+    "openapi_gate": "update_openapi.sh --no-lint (до rebase): 298 paths / 377 ops (+0/+0); endpoint-изменений нет, гейт чист",
     "ab_measurement": "PENDING — требуется живой sidecar (docker stack, env-lock); критерий 'hybrid >= keyword' НЕ измерен end-to-end (RETRIEVAL_AB.md)",
-    "parallel_contour_merge_first": "rag-auto-index-on-version-v1 (планирование, коммитов нет на 2026-09-04); rebase этого контура после его мержа",
-    "merge_blocked": "explicit user approve + rebase после parallel contour + A/B на stage (runbook §16)",
+    "merge_blocked": "explicit user approve + A/B на stage (runbook §16); rebase-блокер снят",
     "deploy": "blocked: prod только ручной деплой из main по решению владельца"
   },
   "artifacts": {
@@ -26,5 +27,5 @@
     "ab_methodology": "RETRIEVAL_AB.md (PENDING)",
     "git_proof": "git-proof.md"
   },
-  "next": "1) мерж rag-auto-index-on-version-v1 -> rebase этой ветки; 2) approve -> push + draft PR (PR.md); 3) stage: runbook §16 + A/B-замер (RETRIEVAL_AB.md) -> верификация критерия приёмки -> решение о merge"
+  "next": "1) approve -> push + draft PR (PR.md); 2) stage: runbook §16 + A/B-замер (RETRIEVAL_AB.md) -> верификация критерия приёмки -> решение о merge"
 }
