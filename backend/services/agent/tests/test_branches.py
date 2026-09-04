@@ -301,6 +301,95 @@ def test_structured_fact_qa_branch_uses_cheap_model_class(admin_token, session_w
     assert fake_complete.call_args.kwargs.get("model_class") == "cheap"
 
 
+def test_structured_fact_qa_branch_searches_dictionaries_without_session_scope(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    """Regression (stage-verify-agent-v2 D1/F2): dictionary corpora are org-wide.
+
+    rag_search applies session_id as a filter on metadata.source_id; dictionary
+    chunks (source_id=system/operation_catalog/glossary) never match a session
+    id, so passing the session scope silently empties results and the branch
+    degrades to free answer. The branch must search without session scope.
+    """
+    mock_route_intent_smalltalk.return_value = "structured_fact_qa"
+    with mock.patch("memory.chat.complete") as fake_complete, mock.patch("memory.chat.search_rag") as fake_rag:
+        fake_rag.return_value = {
+            "ok": True,
+            "results": [{"chunk_text": "Свойство: длительность (duration)", "score": 0.9}],
+        }
+        fake_complete.return_value = {
+            "ok": True,
+            "status": "ok",
+            "text": "Свойства задачи: длительность и другие.",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "provider_id": "p1",
+            "model": "deepseek-chat",
+            "prompt_version": 1,
+            "fallback": False,
+            "cached": False,
+        }
+        c = TestClient(app)
+        r = c.post(
+            f"/sessions/{session_with_steps}/agent/chat",
+            headers=_auth(admin_token),
+            json={"message": "какие свойства у задачи"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["action"] == "structured_fact_qa"
+    assert fake_rag.called
+    for call in fake_rag.call_args_list:
+        assert call.args[1] == "", f"structured fact search must drop session scope, got {call.args[1]!r}"
+
+
+def test_structured_fact_qa_branch_global_fallback_also_without_session_scope(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    """Fallback (source_type miss → global search) must be session-scope-free too."""
+    mock_route_intent_smalltalk.return_value = "structured_fact_qa"
+    with mock.patch("memory.chat.complete") as fake_complete, mock.patch("memory.chat.search_rag") as fake_rag:
+        fake_rag.side_effect = [
+            {"ok": True, "results": []},
+            {"ok": True, "results": [{"chunk_text": "Операция: open_container", "score": 0.8}]},
+        ]
+        fake_complete.return_value = {
+            "ok": True,
+            "status": "ok",
+            "text": "Операция open_container: открыть тару.",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "provider_id": "p1",
+            "model": "deepseek-chat",
+            "prompt_version": 1,
+            "fallback": False,
+            "cached": False,
+        }
+        c = TestClient(app)
+        r = c.post(
+            f"/sessions/{session_with_steps}/agent/chat",
+            headers=_auth(admin_token),
+            json={"message": "параметры операции open_container"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["action"] == "structured_fact_qa"
+    assert fake_rag.call_count == 2
+    for call in fake_rag.call_args_list:
+        assert call.args[1] == "", f"fallback search must drop session scope, got {call.args[1]!r}"
+
+
+def test_structured_fact_qa_prompt_contract_guard():
+    """Compression guard: structured_fact_qa must stay visible in code contracts.
+
+    Prompt-stack compression (#880) must not silently drop the intent: it lives
+    in VALID_INTENTS, aliases, the fact-prompt builder and the run_turn dispatch
+    (covered behaviourally by branch tests above).
+    """
+    from memory.chat import VALID_INTENTS, _build_structured_fact_prompt, _normalize_intent
+
+    assert "structured_fact_qa" in VALID_INTENTS
+    assert _normalize_intent("structured_fact_qa") == "structured_fact_qa"
+    prompt = _build_structured_fact_prompt("какие свойства у задачи", [{"chunk_text": "Факт из справочника"}])
+    assert "Факт из справочника" in prompt
+    assert "какие свойства у задачи" in prompt
+    assert "Факты:" in prompt
+
+
 def test_empty_schema_smalltalk_no_json(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
     """Acceptance: empty projection + smalltalk -> human text, no raw JSON."""
     mock_projection.return_value = {
