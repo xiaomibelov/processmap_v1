@@ -38,15 +38,27 @@ def _hybrid_fused_results(
     settings: Dict[str, Any],
     chunks: List[Dict[str, Any]],
     idx: BM25Index,
+    query_embed_future: Any = None,
 ) -> Optional[List[Dict[str, Any]]]:
     """Hybrid-нога: BM25-полка + vector-полка -> RRF-fusion -> score в шкале BM25.
 
     Возвращает None при любой деградации (sidecar недоступен / нет эмбеддингов):
     вызывающий код сохраняет сегодняшнее BM25-only поведение без изменений.
+
+    query_embed_future: результат prefetch_query_embedding(q), запущенного до
+    BM25-полки (overlap: общая latency ~ max(BM25, embed) вместо sum). Future,
+    вернувший None/ошибку, — обычная деградация в keyword-only.
     """
     from ..rag.embeddings import get_query_embedding
 
-    query_embedding = get_query_embedding(q)
+    if query_embed_future is not None:
+        try:
+            query_embedding = query_embed_future.result(timeout=30)
+        except Exception as exc:
+            logger.warning("rag hybrid query-embedding future failed: %s", exc)
+            return None
+    else:
+        query_embedding = get_query_embedding(q)
     if not query_embedding:
         return None
     query_vec, _model_id, _dims = query_embedding
@@ -149,13 +161,26 @@ def rag_search(
         limit=None if source_type else _MAX_CHUNKS_LOAD,
     )
 
+    # Префетч query-эмбеддинга до BM25-полки: overlap вместо sum латентностей
+    # (fix/rag-embedder-onnx-latency-v1). Только при включённом hybrid; любой
+    # сбой future обрабатывается в _hybrid_fused_results как деградация.
+    query_embed_future = None
+    if settings.get("hybrid_enabled"):
+        try:
+            from ..rag.embeddings import prefetch_query_embedding
+
+            query_embed_future = prefetch_query_embedding(q)
+        except Exception as exc:
+            logger.warning("rag hybrid prefetch start failed: %s", exc)
+            query_embed_future = None
+
     idx = BM25Index()
     idx.add_documents(chunks)
     raw_results = idx.search(q, org_id=org_id, top_k=_MAX_TOP_K, min_score=effective_min_score)
 
     if settings.get("hybrid_enabled"):
         try:
-            fused = _hybrid_fused_results(q, org_id, settings, chunks, idx)
+            fused = _hybrid_fused_results(q, org_id, settings, chunks, idx, query_embed_future=query_embed_future)
         except Exception as exc:
             logger.warning("rag hybrid search degraded to keyword-only: %s", exc)
             fused = None

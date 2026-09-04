@@ -110,6 +110,34 @@ def get_embeddings_for_texts(texts: list) -> Optional[QueryEmbedding]:
     return _post_embed(list(texts or []), "passage", _passage_timeout_seconds())
 
 
+_prefetch_pool = None
+_prefetch_pool_lock = threading.Lock()
+
+
+def prefetch_query_embedding(text: str):
+    """Запускает query-эмбеддинг в фоновом треде, пока идёт BM25-полка.
+
+    Поисковый запрос обычно медленнее BM25-ранжирования на малом корпусе; при
+    последовательном вызове их latencies складываются (×2 у hybrid-режима).
+    Префетч складывает max() вместо sum(). Любая ошибка/таймаут внутри future
+    обрабатывается вызывающим кодом как деградация на keyword-only.
+
+    Возвращает Future (result() -> Optional[QueryEmbedding]) либо None при
+    невозможности запустить пул.
+    """
+    global _prefetch_pool
+    try:
+        with _prefetch_pool_lock:
+            if _prefetch_pool is None:
+                from concurrent.futures import ThreadPoolExecutor
+
+                _prefetch_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-embed-prefetch")
+        return _prefetch_pool.submit(get_query_embedding, text)
+    except Exception as exc:  # pragma: no cover - оборонительная ветка
+        logger.warning("rag-embedder prefetch unavailable: %s", exc)
+        return None
+
+
 def encode_vector(values: Any) -> bytes:
     """[float] -> float32 little-endian bytes для rag_embeddings.vector_data (array('f'), без numpy)."""
     return array("f", [float(v) for v in (values or [])]).tobytes()
