@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import React, { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -35,6 +38,11 @@ register(`data:text/javascript,${encodeURIComponent(resolveHookSource)}`);
 const { default: useDiagramMutationLifecycle } = await import("../../hooks/useDiagramMutationLifecycle.js");
 const { default: useBpmnSync } = await import("../../hooks/useBpmnSync.js");
 const {
+  buildOptimisticSyncPayload,
+  buildPatchAckPayload,
+  buildSyncXmlPayload,
+} = await import("./sessionSyncBridge.js");
+const {
   asArray,
   asObject,
   interviewHasContent,
@@ -58,21 +66,25 @@ const PROJECTION_HELPERS = {
   parseBpmnToSessionGraph,
 };
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // ---------------------------------------------------------------------------
-// Characterization contour canvas-save-pipeline-extraction-v1 (Этап 0).
+// Characterization contour canvas-save-pipeline-extraction-v1 (Этап 0 → Этап 1).
 //
-// Будущий sessionSyncBridge: один commitDiagramAutosave в продакшн-сборке
-// порождает РОВНО 3 вызова onSessionSync:
+// sessionSyncBridge: один commitDiagramAutosave в продакшн-сборке порождает
+// РОВНО 3 вызова onSessionSync:
 //   1) useBpmnSync.syncXmlToSession (useBpmnSync.js:226) внутри saveFromModeler;
 //   2) optimistic session sync (useDiagramMutationLifecycle.js:145);
 //   3) patch-ack sync (useDiagramMutationLifecycle.js:205).
-// Харнесс полного коммита с реальным bpmnSync слишком тяжёл (требует полный
-// BPMN-стек ProcessStage), поэтому, как разрешено планом, фиксируем мост
-// двумя разрезами:
+// Этап 1 вынес пейлоады каскада в bpmn/save/sessionSyncBridge.js; хуки вызывают
+// builders вместо инлайн-литералов. Харнесс полного коммита с реальным
+// bpmnSync слишком тяжёл (требует полный BPMN-стек ProcessStage), поэтому,
+// как разрешено планом, фиксируем мост двумя разрезами:
 //   A) mutation-lifecycle разрез: ровно 2 sync (optimistic + ack) за один
 //      commitDiagramAutosave (через queueDiagramMutation + 350мс debounce);
 //   B) bpmnSync разрез: saveFromModeler дёргает syncXmlToSession → 1 sync.
-// Сумма 2 + 1 = 3 — эталон будущего модуля.
+// Сумма 2 + 1 = 3 — эталон модуля. Плюс байтовая эквивалентность builders.
 // ---------------------------------------------------------------------------
 
 const BRIDGE_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -314,7 +326,132 @@ test("bpmnSync slice: saveFromModeler triggers syncXmlToSession → 1 onSessionS
 });
 
 test("bridge total: mutation-lifecycle (2) + bpmnSync syncXmlToSession (1) = 3 syncs per commit", () => {
-  // Документирующий тест-инвариант будущего sessionSyncBridge-модуля.
+  // Документирующий тест-инвариант модуля sessionSyncBridge.
   // Значения зафиксированы двумя behavioral тестами выше.
   assert.equal(2 + 1, 3);
+});
+
+// --- Этап 1: байтовая эквивалентность builders sessionSyncBridge.js ---------
+
+test("buildSyncXmlPayload mirrors useBpmnSync.syncXmlToSession payload verbatim", () => {
+  const payload = buildSyncXmlPayload({
+    sid: "sid_1",
+    xml: "<bpmn:definitions id=\"x\"/>",
+    source: "autosave",
+    derivedActors: ["Актер А"],
+  });
+
+  assert.deepEqual(
+    Object.keys(payload),
+    ["id", "session_id", "bpmn_xml", "actors_derived", "_sync_source"],
+    "syncXml payload key order must match the original useBpmnSync.js literal",
+  );
+  assert.deepEqual(payload, {
+    id: "sid_1",
+    session_id: "sid_1",
+    bpmn_xml: "<bpmn:definitions id=\"x\"/>",
+    actors_derived: ["Актер А"],
+    _sync_source: "autosave",
+  });
+});
+
+test("buildOptimisticSyncPayload with xml carries projected interview/nodes/edges and patch", () => {
+  const draft = {
+    id: "sid_bridge",
+    bpmn_xml: BRIDGE_XML,
+    interview: { boundaries: { trigger: "", finish_state: "" }, steps: [], transitions: [], subprocesses: [] },
+    nodes: [],
+    edges: [],
+  };
+  const { optimisticSession, patch } = buildOptimisticSyncPayload({
+    sid: "sid_bridge",
+    draft,
+    xml: BRIDGE_XML,
+    projectionHelpers: PROJECTION_HELPERS,
+  });
+
+  assert.equal(optimisticSession.id, "sid_bridge");
+  assert.equal(optimisticSession.session_id, "sid_bridge");
+  assert.equal(optimisticSession.bpmn_xml, BRIDGE_XML);
+  assert.ok(optimisticSession.interview && typeof optimisticSession.interview === "object", "projected interview is embedded");
+  assert.ok(Array.isArray(optimisticSession.nodes), "projected nodes are embedded");
+  assert.ok(Array.isArray(optimisticSession.edges), "projected edges are embedded");
+  assert.ok(Array.isArray(optimisticSession.actors_derived), "derived actors are embedded");
+  assert.equal(optimisticSession._sync_source, undefined, "optimistic sync carries no _sync_source");
+  assert.ok(patch && typeof patch === "object", "patch by-product for the caller's PATCH stage");
+});
+
+test("buildOptimisticSyncPayload with empty xml keeps draft, empty actors and empty patch", () => {
+  const draft = { id: "sid_1", bpmn_xml: "", title: "Черновик" };
+  const { optimisticSession, patch } = buildOptimisticSyncPayload({
+    sid: "sid_1",
+    draft,
+    xml: "   ",
+    projectionHelpers: PROJECTION_HELPERS,
+  });
+
+  assert.equal(optimisticSession.title, "Черновик", "draft fields are preserved via spread");
+  assert.equal(optimisticSession.bpmn_xml, "   ");
+  assert.deepEqual(optimisticSession.actors_derived, []);
+  assert.deepEqual(patch, {});
+});
+
+test("buildPatchAckPayload mirrors patch-ack literal: version rounding, camel fallback, actors passthrough", () => {
+  const withVersion = buildPatchAckPayload({
+    sid: "sid_1",
+    patchSession: { diagram_state_version: 8.4 },
+    optimisticSession: { actors_derived: ["А", "Б"] },
+  });
+  assert.deepEqual(
+    Object.keys(withVersion),
+    ["id", "session_id", "actors_derived", "_sync_source", "diagram_state_version"],
+    "patch-ack payload key order must match the original useDiagramMutationLifecycle.js literal",
+  );
+  assert.equal(withVersion.diagram_state_version, 8, "version is rounded via Math.round");
+  assert.deepEqual(withVersion.actors_derived, ["А", "Б"]);
+
+  const camelCase = buildPatchAckPayload({
+    sid: "sid_1",
+    patchSession: { diagramStateVersion: 3 },
+    optimisticSession: {},
+  });
+  assert.equal(camelCase.diagram_state_version, 3, "camelCase diagramStateVersion fallback is preserved");
+
+  const withoutVersion = buildPatchAckPayload({
+    sid: "sid_1",
+    patchSession: {},
+    optimisticSession: null,
+  });
+  assert.equal("diagram_state_version" in withoutVersion, false, "no version key when ack carries none");
+  assert.deepEqual(withoutVersion.actors_derived, [], "actors fall back to empty array via asArray");
+  assert.equal(withoutVersion._sync_source, "diagram.autosave_patch_ack");
+});
+
+test("hooks consume sessionSyncBridge builders instead of inline payload literals", () => {
+  const readSource = (relativePath) =>
+    fs.readFileSync(path.join(__dirname, relativePath), "utf8");
+
+  const bpmnSyncSrc = readSource("../../hooks/useBpmnSync.js");
+  const mutationSrc = readSource("../../hooks/useDiagramMutationLifecycle.js");
+
+  for (const [name, src] of [
+    ["useBpmnSync.js", bpmnSyncSrc],
+    ["useDiagramMutationLifecycle.js", mutationSrc],
+  ]) {
+    assert.match(
+      src,
+      /from\s+["'][^"']*sessionSyncBridge\.js["']/,
+      `${name} must import payload builders from bpmn/save/sessionSyncBridge.js`,
+    );
+  }
+  assert.doesNotMatch(
+    mutationSrc,
+    /_sync_source:\s*"diagram\.autosave_patch_ack"/,
+    "patch-ack _sync_source literal must live in sessionSyncBridge.js",
+  );
+  assert.doesNotMatch(
+    bpmnSyncSrc,
+    /onSessionSync\?\.\(\{\s*id: sid,[\s\S]*?_sync_source: source/,
+    "syncXml payload literal must live in sessionSyncBridge.js",
+  );
 });
