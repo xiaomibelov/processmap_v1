@@ -2,7 +2,7 @@ function asText(value) {
   return String(value || "");
 }
 
-function fnv1aHex(input) {
+export function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
   for (let i = 0; i < src.length; i += 1) {
