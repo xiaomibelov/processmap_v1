@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
+import { buildSyncXmlPayload } from "../bpmn/save/sessionSyncBridge.js";
 import {
   isLifecycleFlushSource,
   resolveLifecycleFlushGuardSignal,
@@ -223,13 +224,12 @@ export default function useBpmnSync({
           + `stack=${shortStack()}`,
         );
       }
-      onSessionSync?.({
-        id: sid,
-        session_id: sid,
-        bpmn_xml: xml,
-        actors_derived: derivedActors,
-        _sync_source: source,
-      });
+      onSessionSync?.(buildSyncXmlPayload({
+        sid,
+        xml,
+        source,
+        derivedActors,
+      }));
     },
     [onSessionSync, sid],
   );

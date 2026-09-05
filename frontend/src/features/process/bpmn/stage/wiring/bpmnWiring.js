@@ -7,6 +7,7 @@ import {
   onDiagramDragStart,
   onDiagramDragEnd,
 } from "../diagramDragState.js";
+import { AUTOSAVE_CONFIG } from "../../save/autosaveConfig.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -207,10 +208,10 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       store,
       getRuntime: () => refs.modelerRuntimeRef?.current,
       getSessionId: () => String(refs.activeSessionRef?.current || ""),
-      debounceMs: 10_000,
+      debounceMs: AUTOSAVE_CONFIG.coordinator.debounceMs,
       getIsDragging: () => isDiagramDragging(),
-      dragThrottleMs: 5000,
-      dragFinalDebounceMs: 500,
+      dragThrottleMs: AUTOSAVE_CONFIG.coordinator.dragThrottleMs,
+      dragFinalDebounceMs: AUTOSAVE_CONFIG.coordinator.dragFinalDebounceMs,
       persistence: {
         saveRaw: (sid, xmlText, rev, reason, options) => persistence.saveRaw(sid, xmlText, rev, reason, options),
         loadRaw: (sid, optionsForLoad) => persistence.loadRaw(sid, optionsForLoad),

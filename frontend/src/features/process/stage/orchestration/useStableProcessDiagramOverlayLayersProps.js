@@ -5,6 +5,7 @@ import {
   buildHybridDiagramOverlayLayersProps,
 } from "./buildProcessDiagramOverlayLayersProps";
 import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.js";
+import { fnv1aHex } from "../../bpmn/store/createBpmnStore.js";
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -78,7 +79,7 @@ const BPMN_INPUT_KEYS = [
   "closeBpmnContextMenu",
   "closeBpmnSubprocessPreview",
   "diagramMode",
-  "draft",
+  "draftBpmnXmlHash",
   "handleAiQuestionsByElementChange",
   "handleBpmnSelectionChange",
   "isInterviewMode",
@@ -226,7 +227,7 @@ function selectHybridInput(input) {
   return selected;
 }
 
-function readMemoizedSegment(cache, input, build, perfKeyBase, changedKeyPrefix) {
+function readMemoizedSegment(cache, input, build, perfKeyBase, changedKeyPrefix, buildInput = input) {
   if (cache.output && areInputsShallowEqual(cache.input, input)) {
     bumpDrawioPerfCounter(`${perfKeyBase}.cacheHit`);
     return cache.output;
@@ -242,7 +243,7 @@ function readMemoizedSegment(cache, input, build, perfKeyBase, changedKeyPrefix)
       bumpDrawioPerfCounter(`${changedKeyPrefix}__other`);
     }
   }
-  const output = build(input);
+  const output = build(buildInput);
   cache.input = input;
   cache.output = output;
   return output;
@@ -261,7 +262,19 @@ export default function useStableProcessDiagramOverlayLayersProps(inputRaw) {
     functionRefs.current,
     stableFunctionByKey.current,
   );
-  const bpmnInput = pickInput(normalizedInput, BPMN_INPUT_KEYS);
+  // П.5 (canvas-save-pipeline-extraction-v1): identity объекта draft больше не
+  // является мемо-ключом bpmn-сегмента — вместо него примитивный
+  // draftBpmnXmlHash = fnv1aHex(draft?.bpmn_xml) (тот же FNV-1a, что в
+  // createBpmnStore.js). Сам проп draft по-прежнему передаётся в
+  // buildBpmnDiagramOverlayLayersProps (BpmnStage его потребляет) — через
+  // отдельный build-вход, не участвующий в сравнении ключа. sessionId (sid)
+  // уже входит в BPMN_INPUT_KEYS, поэтому в ключ не дублируется.
+  const bpmnBaseInput = pickInput(normalizedInput, BPMN_INPUT_KEYS);
+  const bpmnBuildInput = { ...bpmnBaseInput, draft: normalizedInput.draft };
+  const bpmnInput = {
+    ...bpmnBaseInput,
+    draftBpmnXmlHash: fnv1aHex(normalizedInput?.draft?.bpmn_xml),
+  };
   const drawioInput = selectDrawioInput(normalizedInput);
   const hybridInput = selectHybridInput(normalizedInput);
   const segments = segmentCacheRef.current;
@@ -272,6 +285,7 @@ export default function useStableProcessDiagramOverlayLayersProps(inputRaw) {
       buildBpmnDiagramOverlayLayersProps,
       "overlay.vm.diagramOverlayProps",
       "overlay.vm.input.changed.",
+      bpmnBuildInput,
     ),
     ...readMemoizedSegment(
       segments.drawio,
