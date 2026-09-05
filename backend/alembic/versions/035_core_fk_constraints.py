@@ -21,12 +21,23 @@ Fail-fast: перед созданием констрейнтов считаем
 с перечнем отношений и счётчиками; чистка — через
 backend/scripts/cleanup_orphans.sql (dry-run → apply → повторный upgrade).
 
+Блокировки (release-оценка): FK создаём в два этапа —
+`ADD CONSTRAINT ... NOT VALID`, затем `VALIDATE CONSTRAINT`. NOT VALID берёт
+ShareRowExclusive вместо ACCESS EXCLUSIVE (не ждёт длинных транзакций-читателей),
+VALIDATE — ShareUpdateExclusive. Prod-таблицы (bpmn_versions с TOAST-снапшотами
+bpmn_xml) крупнее dev — двухфазное создание сокращает окно блокировок.
+NB: FK NOT VALID в Postgres уже enforce'ится для НОВЫХ строк
+(нарушающие вставки отклоняются), не-валидность касается только старых данных —
+а их чистит fail-fast pre-check, поэтому VALIDATE фактически мгновенен.
+
 Устойчивость bootstrap: core-таблицы создаются runtime-DDL
 (CREATE IF NOT EXISTS) ПОСЛЕ alembic, поэтому на свежей/частичной БД
 часть таблиц может отсутствовать. Проверка висячих ссылок для
 отсутствующей таблицы = 0 (нечему быть висячим), FK на отсутствующую
 таблицу пропускается с warning (прецедент — 011: индекс пропускается
-при дублях вместо деструктивной чистки).
+при дублях вместо деструктивной чистки). downgrade() так же guard'ится
+по существованию child-таблицы (partial-схема — DROP CONSTRAINT без
+"relation does not exist").
 """
 from alembic import op
 import sqlalchemy as sa
@@ -103,12 +114,19 @@ def upgrade() -> None:
         if _constraint_exists(conn, name):
             print(f"WARNING: FK {name} already exists, skipped")
             continue
+        # Двухфазное создание: NOT VALID (ShareRowExclusive) + VALIDATE
+        # (ShareUpdateExclusive) — короткие блокировки на prod-таблицах.
         op.execute(
             f"ALTER TABLE {child} ADD CONSTRAINT {name} "
-            f"FOREIGN KEY ({ccol}) REFERENCES {parent} ({pcol}) ON DELETE {ondelete}"
+            f"FOREIGN KEY ({ccol}) REFERENCES {parent} ({pcol}) ON DELETE {ondelete} NOT VALID"
         )
+        op.execute(f"ALTER TABLE {child} VALIDATE CONSTRAINT {name}")
 
 
 def downgrade() -> None:
+    conn = op.get_bind()
     for child, ccol, *_ in _FKS:
+        if not _table_exists(conn, child):
+            print(f"WARNING: drop FK {child}_{ccol}_fkey skipped, table {child} missing (partial schema)")
+            continue
         op.execute(f"ALTER TABLE {child} DROP CONSTRAINT IF EXISTS {child}_{ccol}_fkey")

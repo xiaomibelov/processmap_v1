@@ -65,12 +65,15 @@ CREATE TABLE sessions (
 CREATE TABLE bpmn_versions (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    version_number INTEGER NOT NULL DEFAULT 1
+    version_number INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE session_state_versions (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    diagram_state_version INTEGER NOT NULL DEFAULT 1
+    diagram_state_version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE audit_log (
     id TEXT PRIMARY KEY,
@@ -78,18 +81,24 @@ CREATE TABLE audit_log (
     action TEXT NOT NULL DEFAULT '',
     entity_type TEXT NOT NULL DEFAULT '',
     entity_id TEXT NOT NULL DEFAULT '',
+    ts INTEGER NOT NULL DEFAULT 0,
     session_id TEXT
 );
 CREATE TABLE org_memberships (
     org_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'editor',
+    permissions_json TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (org_id, user_id)
 );
 CREATE TABLE workspaces (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL DEFAULT '',
-    name TEXT NOT NULL DEFAULT ''
+    name TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -191,9 +200,10 @@ class Migration035CoreFkTests(unittest.TestCase):
         con.execute("INSERT INTO users (id, email) VALUES ('user_1', 'u1@local')")
         con.execute("INSERT INTO sessions (id, title) VALUES ('sess_1', 'S')")
 
-    def _run_cleanup(self, dry_run: bool):
+    def _run_cleanup(self, dry_run: bool, cwd=None):
         r"""cleanup_orphans.sql с подставленным флагом (psql \set override'ит -v,
-        поэтому флаг подменяется в временной копии файла)."""
+        поэтому флаг подменяется в временной копии файла). cwd — рабочая
+        директория psql-клиента (\copy пишет архивы относительно неё)."""
         with open(self.cleanup_sql, "r", encoding="utf-8") as f:
             body = f.read()
         # Якорь на начало строки: в шапке скрипта есть пример sed с похожим текстом.
@@ -213,6 +223,7 @@ class Migration035CoreFkTests(unittest.TestCase):
                 ["psql", self.db_url, "-v", "ON_ERROR_STOP=1", "-q", "-f", tmp.name],
                 capture_output=True,
                 text=True,
+                cwd=cwd,
             )
         finally:
             os.unlink(tmp.name)
@@ -245,6 +256,12 @@ class Migration035CoreFkTests(unittest.TestCase):
         rc, out = self._alembic("upgrade", "head")
         self.assertEqual(rc, 0, f"upgrade failed:\n{out}")
         self.assertEqual(self._existing_fk_names(), FK_NAMES)
+        # двухфазное создание: ADD NOT VALID + VALIDATE → все FK convalidated
+        with psycopg.connect(self.db_url) as con:
+            unvalidated = con.execute(
+                "SELECT conname FROM pg_constraint WHERE contype = 'f' AND NOT convalidated"
+            ).fetchall()
+        self.assertEqual(unvalidated, [], f"FK не валидны: {unvalidated}")
 
         with psycopg.connect(self.db_url, autocommit=True) as con:
             self._seed_parents(con)
@@ -370,9 +387,44 @@ class Migration035CoreFkTests(unittest.TestCase):
                 "sess_missing",
             )
 
-        # apply: orphans удалены/обнулены, валидные строки целы
-        rc, out = self._run_cleanup(dry_run=False)
+        # apply: orphans удалены/обнулены, валидные строки целы;
+        # CSV-архивы созданы (psql cwd = временная директория, archive_dir относительный)
+        archive_root = tempfile.mkdtemp(prefix="orphans_archive_test.")
+        os.mkdir(os.path.join(archive_root, "orphans_archive"))
+        try:
+            rc, out = self._run_cleanup(dry_run=False, cwd=archive_root)
+        except Exception:
+            shutil.rmtree(archive_root, ignore_errors=True)
+            raise
         self.assertEqual(rc, 0, f"cleanup apply failed:\n{out}")
+        # CSV-архивы: 5 файлов, по 1 orphan-строке (header + 1 строка) в каждом;
+        # audit_log-архив содержит исходный session_id (до SET NULL)
+        csv_dir = os.path.join(archive_root, "orphans_archive")
+        for name in (
+            "bpmn_versions_orphans.csv",
+            "session_state_versions_orphans.csv",
+            "audit_log_orphans.csv",
+            "org_memberships_orphans.csv",
+            "workspaces_orphans.csv",
+        ):
+            path = os.path.join(csv_dir, name)
+            self.assertTrue(os.path.isfile(path), f"архив не создан: {path}")
+            with open(path, "r", encoding="utf-8") as f:
+                lines = [ln for ln in f.read().splitlines() if ln.strip()]
+            self.assertEqual(len(lines), 2, f"{name}: ожидалось header+1 строка, got {lines!r}")
+        with open(os.path.join(csv_dir, "audit_log_orphans.csv"), "r", encoding="utf-8") as f:
+            self.assertIn("sess_missing", f.read())
+        # dry-run не создаёт архивы: повторный dry-run в чистую директорию
+        dry_root = tempfile.mkdtemp(prefix="orphans_dry_test.")
+        os.mkdir(os.path.join(dry_root, "orphans_archive"))
+        try:
+            rc, out = self._run_cleanup(dry_run=True, cwd=dry_root)
+            dry_archive_listing = os.listdir(os.path.join(dry_root, "orphans_archive"))
+        finally:
+            shutil.rmtree(dry_root, ignore_errors=True)
+        self.assertEqual(rc, 0, f"cleanup dry-run failed:\n{out}")
+        self.assertEqual(dry_archive_listing, [])
+
         with psycopg.connect(self.db_url) as con:
             self.assertEqual(con.execute("SELECT COUNT(*) FROM bpmn_versions").fetchone()[0], 0)
             self.assertEqual(
@@ -394,7 +446,9 @@ class Migration035CoreFkTests(unittest.TestCase):
             )
 
         # идемпотентность: второй прогон — висячих ссылок не осталось
-        rc, out = self._run_cleanup(dry_run=False)
+        # (cwd=временная директория: \copy перезапишет архивы header-only)
+        rc, out = self._run_cleanup(dry_run=False, cwd=archive_root)
+        shutil.rmtree(archive_root, ignore_errors=True)
         self.assertEqual(rc, 0, f"cleanup повторный прогон failed:\n{out}")
         with psycopg.connect(self.db_url) as con:
             self.assertEqual(con.execute("SELECT COUNT(*) FROM bpmn_versions bv WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = bv.session_id)").fetchone()[0], 0)

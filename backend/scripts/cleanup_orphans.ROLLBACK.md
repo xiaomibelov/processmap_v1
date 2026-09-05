@@ -55,6 +55,22 @@ pg_restore -d processmap_restore --table=org_memberships processmap_pre_fk035_*.
 Для точечного отката `audit_log`: в бэкапе исходные `session_id` сохранены —
 восстанавливаются тем же механизмом (`UPDATE ... FROM` по `id` из restore-базы).
 
+## (c) CSV-архив cleanup_orphans.sql (быстрый просмотр без pg_restore)
+
+При apply-прогоне cleanup каждая порция orphan-строк перед DELETE/UPDATE
+выгружается через `\o <файл>` + `COPY ... TO STDOUT` в `orphans_archive/<table>_orphans.csv`
+(клиентские пути — относительно cwd psql; bpmn_xml и payload-колонки не входят
+в архив, они есть в pg_dump). Это НЕ canonical backup, а быстрый способ:
+
+- просмотреть/проверить удалённое без `pg_restore`;
+- вручную вернуть отдельные строки (сконвертировать CSV обратно в INSERT —
+  колонки в CSV совпадают с целевыми таблицами, кроме отсутствующих TOAST-полей).
+
+Canonical source of truth для восстановления — всё равно **pg_dump**
+(см. п. b): CSV не содержит `bpmn_versions.bpmn_xml` и payload
+`session_state_versions`, а повторный прогон cleanup перезаписывает архивы
+header-only.
+
 ## Порядок операций при откате
 
 1. `alembic downgrade 034` (снимаем FK — иначе повторная вставка «висячих» строк
