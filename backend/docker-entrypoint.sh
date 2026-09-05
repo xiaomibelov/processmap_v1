@@ -42,5 +42,9 @@ else
   echo "[entrypoint] ERROR: migrations FAILED — degraded start (схема БД старше кода)"
 fi
 
-echo "[entrypoint] starting uvicorn"
-exec uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+echo "[entrypoint] starting uvicorn (workers=${WEB_CONCURRENCY:-2})"
+# F6 (perf/save-put-parse-once-and-publish-scan-v1): sync handlers (save-путь)
+# блокируют воркера на ~десятки ms CPU; 1 воркер при load ~220 на 10-core хосте
+# даёт нелинейный взрыв латентности (audit/backend-save-put-latency-v1 §5).
+# WEB_CONCURRENCY=1 вернёт старое поведение.
+exec uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers "${WEB_CONCURRENCY:-2}"
