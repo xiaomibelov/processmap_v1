@@ -265,6 +265,13 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
         root = ET.fromstring(raw.encode("utf-8"))
     except Exception:
         return {}
+    return extract_camunda_extensions_from_root(root)
+
+
+def extract_camunda_extensions_from_root(root) -> Dict[str, Any]:
+    """extract_camunda_extensions_from_bpmn_xml для уже распарсенного корня."""
+    if root is None:
+        return {}
 
     platform_preference = _execution_platform_preference(root)
 
