@@ -211,6 +211,29 @@ def get_project(project_id: str, request: Request = None) -> dict:
 
 
 
+# Статусы проекта хранятся в passport.status. Канонические API-значения —
+# то, что реально шлёт фронт (mapCatalogStatusToProjectApi):
+# active / on_hold / done / archived (каталогный «Готово» → "done").
+# Alias'и completed/archive принимаются по отображающему контракту
+# (mapProjectStatusToCatalog) и нормализуются к каноническим значениям.
+_PROJECT_STATUS_ALIASES = {
+    "completed": "done",
+    "archive": "archived",
+}
+_PROJECT_STATUSES = ("active", "on_hold", "done", "archived")
+
+
+def _normalize_project_status(value: Any) -> str:
+    v = str(value or "").strip().lower()
+    v = _PROJECT_STATUS_ALIASES.get(v, v)
+    if v not in _PROJECT_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid project status: {value!r}; allowed: {', '.join(_PROJECT_STATUSES)}",
+        )
+    return v
+
+
   # DEPRECATED: moved to routers/orgs.py + org_service.py
 def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
@@ -248,7 +271,20 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
     if "executor_user_id" in payload:
         proj.executor_user_id = _validate_org_user_assignable(oid or get_default_org_id(), payload.get("executor_user_id")) or None
 
+    status_from = ""
+    status_to = ""
+    if "status" in payload and payload["status"] is not None:
+        status_from = str((proj.passport or {}).get("status") or "active")
+        status_to = _normalize_project_status(payload["status"])
+        merged = dict(proj.passport or {})
+        merged["status"] = status_to
+        proj.passport = merged
+
     st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
+    audit_meta: Dict[str, Any] = {"title": str(getattr(proj, "title", "") or "")}
+    if status_to:
+        audit_meta["status_from"] = status_from
+        audit_meta["status_to"] = status_to
     _audit_log_safe(
         request,
         org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
@@ -256,7 +292,7 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
         entity_type="project",
         entity_id=str(getattr(proj, "id", "") or project_id),
         project_id=str(getattr(proj, "id", "") or project_id),
-        meta={"title": str(getattr(proj, "title", "") or "")},
+        meta=audit_meta,
     )
     _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
     _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
