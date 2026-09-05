@@ -77,6 +77,8 @@ import {
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
+import { buildSaveAllBatchOptions } from "./features/process/save/saveAllBatch";
+import { buildPropertySaveOptions } from "./features/process/save/propertySaveBoundary";
 import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
@@ -1093,25 +1095,21 @@ export default function App() {
       return { ok: false, error: "Не удалось получить BPMN XML." };
     }
 
-    const xmlResult = await saveBpmnState({
-      operation: "session_save",
-      sessionId: sid,
-      isLocal: false,
-      baseDiagramStateVersion: bpmnStageRef.current?.getBaseDiagramStateVersion?.() ?? 0,
-      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
-      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
-      projectId: draft?.project_id,
-      xml,
-      nextMeta: draft?.bpmn_meta,
-      apiPutBpmnXml,
-      flushSave: bpmnStageRef.current?.flushSave,
-      apiGetSession,
-      apiGetBpmnXml,
-      onSessionSync,
-      overwriteBpmnSnapshot,
-      backgroundSessionRefresh: true,
-      syncSource: "saveBpmnState:save_all",
-    });
+    const xmlResult = await saveBpmnState(
+      buildSaveAllBatchOptions({
+        sid,
+        xml,
+        projectId: draft?.project_id,
+        bpmnMeta: draft?.bpmn_meta,
+        apiPutBpmnXml,
+        flushSave: bpmnStageRef.current?.flushSave,
+        apiGetSession,
+        apiGetBpmnXml,
+        onSessionSync,
+        overwriteBpmnSnapshot,
+        bpmnStageRef,
+      }),
+    );
     if (!xmlResult?.ok) {
       markFail(String(xmlResult?.error || "Не удалось сохранить BPMN."));
       return {
@@ -2954,36 +2952,28 @@ export default function App() {
       };
     }
 
-    const persistResult = await saveBpmnState({
-      operation,
-      sessionId: sid,
-      isLocal: isLocalSessionId(sid),
-      baseDiagramStateVersion,
-      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
-      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
-      projectId: draft?.project_id,
-      elementId,
-      currentCamundaExtensionsByElementId,
-      nextCamundaExtensionsByElementId,
-      currentMeta,
-      nextMeta: optimisticMeta,
-      getModelerXml: async () => {
-        const snap = await bpmnStageRef.current?.getRuntimeXmlSnapshot?.();
-        return snap?.ok ? snap.xml : "";
-      },
-      apiPutBpmnXml,
-      flushSave: bpmnStageRef.current?.flushSave,
-      apiGetSession,
-      apiGetBpmnXml,
-      onSessionSync,
-      overwriteBpmnSnapshot,
-      backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
-      onDurableSaveAck: options?.onDurableSaveAck,
-      onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
-      onBackgroundSessionSyncComplete: options?.onBackgroundSessionSyncComplete,
-      onBackgroundSessionSyncError: options?.onBackgroundSessionSyncError,
-      syncSource: "saveBpmnState:camunda_extensions",
-    });
+    const persistResult = await saveBpmnState(
+      buildPropertySaveOptions({
+        operation,
+        sid,
+        isLocal: isLocalSessionId(sid),
+        baseDiagramStateVersion,
+        projectId: draft?.project_id,
+        elementId,
+        currentCamundaExtensionsByElementId,
+        nextCamundaExtensionsByElementId,
+        currentMeta,
+        optimisticMeta,
+        apiPutBpmnXml,
+        flushSave: bpmnStageRef.current?.flushSave,
+        apiGetSession,
+        apiGetBpmnXml,
+        onSessionSync,
+        overwriteBpmnSnapshot,
+        options,
+        bpmnStageRef,
+      }),
+    );
     if (!persistResult?.ok) {
       const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
       // Rollback the live modeler to the pre-save extension state so the next

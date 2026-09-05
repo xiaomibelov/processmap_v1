@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 import { apiPatchSession } from "../../../lib/api/sessionApi";
 import useAutosaveQueue from "./useAutosaveQueue";
-import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
-import { buildDiagramSessionPatchFromProjection } from "./diagramSessionPatchContract";
 import { resolveDiagramMutationSecondaryPatchBaseVersion } from "./diagramMutationSecondaryBaseVersion";
-import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
 import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
+import { AUTOSAVE_CONFIG } from "../bpmn/save/autosaveConfig.js";
 import {
-  asArray,
+  buildOptimisticSyncPayload,
+  buildPatchAckPayload,
+} from "../bpmn/save/sessionSyncBridge.js";
+import {
   asObject,
 } from "../lib/processStageDomain";
 
@@ -86,61 +87,12 @@ export default function useDiagramMutationLifecycle({
           pending: saveRes?.pending ? 1 : 0,
         });
       }
-      const baseOptimistic = {
-        ...draftNow,
-        id: sid,
-        session_id: sid,
-        bpmn_xml: xml,
-      };
-
-      let optimisticSession = baseOptimistic;
-      let patch = {};
-      let derivedActors = [];
-
-      if (xml.trim()) {
-        derivedActors = deriveActorsFromBpmn(xml);
-        const projected = parseAndProjectBpmnToInterview({
-          xmlText: xml,
-          draft: baseOptimistic,
-          helpers: projectionHelpers,
-          preferBpmn: true,
-          forceTimelineFromBpmn: true,
-        });
-
-        if (projected.ok) {
-          const nextInterview = asObject(projected.nextInterview);
-          const nextNodes = asArray(projected.nextNodes);
-          const nextEdges = asArray(projected.nextEdges);
-          const patchPlan = buildDiagramSessionPatchFromProjection({
-            draftInterviewRaw: draftNow?.interview,
-            nextInterviewRaw: nextInterview,
-            nextNodesRaw: nextNodes,
-            draftNodesRaw: draftNow?.nodes,
-            nextEdgesRaw: nextEdges,
-            draftEdgesRaw: draftNow?.edges,
-          });
-          patch = patchPlan.patch;
-
-          optimisticSession = {
-            ...baseOptimistic,
-            interview: nextInterview,
-            nodes: nextNodes,
-            edges: nextEdges,
-            actors_derived: derivedActors,
-          };
-        }
-      }
-
-      if (!xml.trim()) {
-        derivedActors = [];
-      }
-
-      if (!optimisticSession.actors_derived) {
-        optimisticSession = {
-          ...optimisticSession,
-          actors_derived: derivedActors,
-        };
-      }
+      const { optimisticSession, patch } = buildOptimisticSyncPayload({
+        sid,
+        draft: draftNow,
+        xml,
+        projectionHelpers,
+      });
 
       onSessionSync?.(optimisticSession);
       traceProcess("diagram.autosave_optimistic_sync", {
@@ -191,20 +143,11 @@ export default function useDiagramMutationLifecycle({
       }
 
       if (isStale?.()) return true;
-      const patchAck = asObject(patchRes.session);
-      const patchAckVersion = Number(patchAck?.diagram_state_version ?? patchAck?.diagramStateVersion);
-      const patchAckPayload = {
-        id: sid,
-        session_id: sid,
-        actors_derived: asArray(optimisticSession?.actors_derived),
-        _sync_source: "diagram.autosave_patch_ack",
-      };
-      if (Number.isFinite(patchAckVersion) && patchAckVersion >= 0) {
-        patchAckPayload.diagram_state_version = Math.round(patchAckVersion);
-      }
-      onSessionSync?.({
-        ...patchAckPayload,
-      });
+      onSessionSync?.(buildPatchAckPayload({
+        sid,
+        patchSession: patchRes?.session,
+        optimisticSession,
+      }));
       return true;
     },
     [
@@ -226,7 +169,7 @@ export default function useDiagramMutationLifecycle({
     hasPending: hasPendingDiagramAutosave,
   } = useAutosaveQueue({
     enabled: !!sid,
-    debounceMs: 350,
+    debounceMs: AUTOSAVE_CONFIG.mutationQueue.debounceMs,
     onSave: commitDiagramAutosave,
   });
 

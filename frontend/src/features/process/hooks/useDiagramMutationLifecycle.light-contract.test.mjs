@@ -103,8 +103,19 @@ test("diagram projection patch can send nodes/edges without interview when inter
 
 test("diagram mutation patch ack uses lightweight sync payload instead of full patch session hydration", () => {
   const source = readHookSource();
+  // Этап 1 (canvas-save-pipeline-extraction-v1): пейлоад ack синка перенесён в
+  // bpmn/save/sessionSyncBridge.js; семантика контракта не меняется — ack идёт
+  // через buildPatchAckPayload (lightweight), hydration полной сессии нет.
+  const bridgeSource = fs.readFileSync(
+    path.join(__dirname, "../bpmn/save/sessionSyncBridge.js"),
+    "utf8",
+  );
   assert.equal(
-    source.includes('_sync_source: "diagram.autosave_patch_ack"'),
+    source.includes("buildPatchAckPayload"),
+    true,
+  );
+  assert.equal(
+    bridgeSource.includes('_sync_source: "diagram.autosave_patch_ack"'),
     true,
   );
   assert.equal(

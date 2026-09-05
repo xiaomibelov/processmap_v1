@@ -17,6 +17,7 @@ import {
   toNonNegativeIntOrNull,
   toText,
 } from "./saveBpmnState.helpers.js";
+import { AUTOSAVE_CONFIG } from "../bpmn/save/autosaveConfig.js";
 
 const XML_PIPELINE_NAME = "xml";
 const MODELER_XML_CAPTURE_TIMEOUT_MS = 8000;
@@ -110,11 +111,11 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
   onError: () => {
     // CAS rollback is handled by saveCoordinator._runPipeline.
   },
-  debounceMs: 0,
-  retryCount: 3,
-  retryDelayMs: 1000,
-  transportTimeoutMs: 10000,
-  maxRetryDelayMs: 4000,
+  debounceMs: AUTOSAVE_CONFIG.xmlPipeline.debounceMs,
+  retryCount: AUTOSAVE_CONFIG.xmlPipeline.retryCount,
+  retryDelayMs: AUTOSAVE_CONFIG.xmlPipeline.retryDelayMs,
+  transportTimeoutMs: AUTOSAVE_CONFIG.xmlPipeline.transportTimeoutMs,
+  maxRetryDelayMs: AUTOSAVE_CONFIG.xmlPipeline.maxRetryDelayMs,
 });
 
 function sleep(ms) {
