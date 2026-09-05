@@ -1,0 +1,29 @@
+{
+  "contour_id": "feature/agent-ui-pending-edits-panel-v1",
+  "created_at": "2026-09-05T12:11:52Z",
+  "updated_at": "2026-09-05T14:39:01Z",
+  "state": "ready_for_review",
+  "base_truth": "origin/main",
+  "control_plane": ".planning/contours/feature/agent-ui-pending-edits-panel-v1",
+  "head": "9693c6305c98401da3fc0c263f9a0809c2d375f5",
+  "origin_main": "9693c6305c98401da3fc0c263f9a0809c2d375f5",
+  "markers": {
+    "ready_for_execution": true,
+    "execution_started": true,
+    "ready_for_review": true,
+    "review_pass": false,
+    "changes_requested": false,
+    "closed": false
+  },
+  "scope_guard": {
+    "product_code_allowed": true,
+    "frontend_only_contract": true,
+    "backend_contract_changes_allowed": false,
+    "new_endpoints_allowed": false,
+    "deploy_allowed": false,
+    "merge_allowed": false
+  },
+  "artifacts": {
+    "PLAN.md": ".planning/contours/feature/agent-ui-pending-edits-panel-v1/PLAN.md"
+  }
+}

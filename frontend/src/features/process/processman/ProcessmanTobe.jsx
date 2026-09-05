@@ -261,13 +261,10 @@ export default function ProcessmanTobe({
     void run(msg.action, { force: 1, question: msg.question || "" });
   }, [run]);
 
-  const handleRejectEdit = useCallback((msg) => {
-    resumeAbortRef.current?.abort();
-    updatePendingEditStatus(sid, msg.id, { status: AGENT_STATUS.EDIT_REJECTED });
-    bump();
-  }, [sid]);
-
-  const handleConfirmEdit = useCallback(async (msg) => {
+  // AGENT-3 — единый SSE-resume для HITL: confirm и reject идут на бэкенд
+  // (D3: reject раньше обновлял статус только локально — статусы расходились
+  // с agent_pending_edits). Один resume в один момент времени.
+  const resumeEdit = useCallback(async (msg, decision) => {
     const pe = msg?.pendingEdit;
     if (!pe || pe.status !== AGENT_STATUS.EDIT_PENDING) return;
     const controller = new AbortController();
@@ -275,7 +272,7 @@ export default function ProcessmanTobe({
     try {
       const stream = await apiAgentResume(
         sid,
-        { pending_edit_id: pe.pendingEditId, decision: "confirm" },
+        { pending_edit_id: pe.pendingEditId, decision },
         { signal: controller.signal },
       );
       if (!stream.ok) {
@@ -289,11 +286,19 @@ export default function ProcessmanTobe({
           appendStreamingDelta(sid, msg.id, patch.delta);
           bump();
         } else if (patch.type === "done") {
-          const status = data?.status === "applied" ? AGENT_STATUS.EDIT_APPLIED : AGENT_STATUS.EDIT_REJECTED;
+          const doneStatus = String(data?.status || "");
+          const status = doneStatus === "applied" ? AGENT_STATUS.EDIT_APPLIED : AGENT_STATUS.EDIT_REJECTED;
           updatePendingEditStatus(sid, msg.id, { status, result: data });
           bump();
         } else if (patch.type === "error") {
-          const status = patch.errorStatus === "conflict_rev" ? AGENT_STATUS.EDIT_CONFLICT : AGENT_STATUS.ERROR;
+          const errorStatus = String(patch.errorStatus || "");
+          // conflict_rev — схема изменилась между propose и confirm; expired —
+          // TTL истёк до решения. Версии для UI — в result.details.
+          const status = errorStatus === "conflict_rev"
+            ? AGENT_STATUS.EDIT_CONFLICT
+            : errorStatus === "expired"
+              ? AGENT_STATUS.EDIT_EXPIRED
+              : AGENT_STATUS.ERROR;
           updatePendingEditStatus(sid, msg.id, { status, errorText: patch.errorText, result: data });
           bump();
         }
@@ -314,6 +319,16 @@ export default function ProcessmanTobe({
       bump();
     }
   }, [sid]);
+
+  const handleRejectEdit = useCallback((msg) => {
+    resumeAbortRef.current?.abort();
+    void resumeEdit(msg, "reject");
+  }, [resumeEdit]);
+
+  const handleConfirmEdit = useCallback((msg) => {
+    resumeAbortRef.current?.abort();
+    void resumeEdit(msg, "confirm");
+  }, [resumeEdit]);
 
   const handlePickExample = useCallback((text) => {
     setQuestion(text);

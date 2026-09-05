@@ -1,4 +1,4 @@
-// AGENT-3 — behavior-тест карточки подтверждения правки в ProcessmanChatFeed.
+// AGENT-3 — behavior-тесты панели pending edits (PendingEditCard) в ProcessmanChatFeed.
 // Запуск: node --test src/features/process/processman/ProcessmanEditCard.test.mjs
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
@@ -26,18 +26,6 @@ async function loadFeed() {
     });
   }
   return viteServer.ssrLoadModule("/src/features/process/processman/ProcessmanChatFeed.jsx");
-}
-
-async function loadStore() {
-  if (!viteServer) {
-    viteServer = await createServer({
-      root: FRONTEND_ROOT,
-      logLevel: "error",
-      server: { middlewareMode: true },
-      appType: "custom",
-    });
-  }
-  return viteServer.ssrLoadModule("/src/features/process/processman/chat/processmanChatStore.js");
 }
 
 after(async () => {
@@ -113,37 +101,48 @@ async function click(doc, win, testid) {
   return el;
 }
 
-test("карточка HITL рендерится с diff, кнопками и вызывает колбэки", async () => {
+const DIAGRAM_NODES = [
+  { id: "Task_1", name: "Проверить партию" },
+  { id: "Task_2", name: "Упаковка" },
+];
+
+function pendingEditMsg({ id = "m_1", editPlan, diff, status = "edit_pending", result = null, attachedAt = Date.now(), timeoutSec = 900 }) {
+  return {
+    id,
+    role: "agent",
+    status,
+    text: "Агент предлагает изменить схему",
+    at: Date.now(),
+    pendingEdit: {
+      pendingEditId: "pe_abc",
+      editPlan: editPlan || {},
+      diff: diff || [],
+      timeoutSec,
+      attachedAt,
+      status,
+      result,
+      errorText: "",
+    },
+  };
+}
+
+const RENAME_PLAN = {
+  note: "уточнить название шага",
+  operations: [{ op: "update_node", node_id: "Task_1", fields: { title: "Проверка партии сырья" } }],
+};
+
+test("rename-панель: структурированный diff (элемент/свойство/было→стало), note, таймер, кнопки", async () => {
   const mod = await loadFeed();
   const env = setupDom();
   let confirmed = false;
   let rejected = false;
-  const messages = [
-    {
-      id: "m_1",
-      role: "agent",
-      status: "edit_pending",
-      text: "Агент предлагает изменить схему",
-      at: Date.now(),
-      pendingEdit: {
-        pendingEditId: "pe_abc",
-        editPlan: { note: "добавить шаг" },
-        diff: [
-          { op: "add_node", node_id: "Task_7", title: "Новый шаг" },
-          { op: "update", node_id: "Task_1", field: "name", new_value: "Переименованный" },
-        ],
-        timeoutSec: 900,
-        status: "edit_pending",
-        result: null,
-        errorText: "",
-      },
-    },
-  ];
+  const messages = [pendingEditMsg({ editPlan: RENAME_PLAN, diff: [{ op: "update", node_id: "Task_1", field: "title", new_value: "Проверка партии сырья" }] })];
   try {
     await act(async () => {
       env.root.render(React.createElement(mod.default, {
         messages,
         sessionId: "sess_1",
+        nodes: DIAGRAM_NODES,
         onConfirmEdit: () => { confirmed = true; },
         onRejectEdit: () => { rejected = true; },
       }));
@@ -151,10 +150,16 @@ test("карточка HITL рендерится с diff, кнопками и в
     await flush();
     const doc = env.dom.window.document;
     assert.notEqual(doc.querySelector('[data-testid="processman-edit-card"]'), null, "карточка рендерится");
-    assert.notEqual(doc.querySelector('[data-testid="processman-edit-diff"]'), null, "diff рендерится");
-    assert.equal(doc.querySelectorAll('[data-testid="processman-edit-diff"] .pm-processman-edit-card__diff-item').length, 2, "два пункта diff");
-    assert.notEqual(doc.querySelector('[data-testid="processman-edit-confirm"]'), null, "кнопка Применить");
-    assert.notEqual(doc.querySelector('[data-testid="processman-edit-reject"]'), null, "кнопка Отклонить");
+    assert.ok(doc.querySelector('[data-testid="processman-edit-note"]').textContent.includes("уточнить название шага"), "note агента показан");
+    const rows = doc.querySelectorAll('[data-testid="processman-edit-op-row"]');
+    assert.equal(rows.length, 1, "одна строка операции");
+    const rowText = rows[0].textContent;
+    assert.ok(rowText.includes("Проверить партию"), "элемент с резолвленным именем");
+    assert.ok(rowText.includes("Название"), "свойство человекочитаемо");
+    assert.ok(rowText.includes("Проверка партии сырья"), "новое значение");
+    assert.ok(rowText.includes("Проверить партию"), "старое значение из модели");
+    assert.notEqual(doc.querySelector('[data-testid="processman-edit-timer"]'), null, "таймер подтверждения");
+    assert.equal(doc.querySelector('[data-testid="processman-edit-unsupported"]'), null, "баннер unsupported не нужен");
     await click(doc, env.dom.window, "processman-edit-confirm");
     assert.equal(confirmed, true, "confirm callback вызван");
     await click(doc, env.dom.window, "processman-edit-reject");
@@ -164,37 +169,125 @@ test("карточка HITL рендерится с diff, кнопками и в
   }
 });
 
-test("карточка HITL показывает статус applied без кнопок", async () => {
+test("неподдержанные операции: баннер с пояснением, кнопка «Применить» отсутствует, «Отклонить» жива", async () => {
   const mod = await loadFeed();
   const env = setupDom();
-  const messages = [
-    {
-      id: "m_2",
-      role: "agent",
-      status: "edit_applied",
-      text: "Правка применена",
-      at: Date.now(),
-      pendingEdit: {
-        pendingEditId: "pe_xyz",
-        editPlan: {},
-        diff: [],
-        timeoutSec: 0,
-        status: "edit_applied",
-        result: { operations_applied: 1 },
-        errorText: "",
-      },
-    },
-  ];
+  let rejected = false;
+  let confirmed = false;
+  const messages = [pendingEditMsg({
+    editPlan: { note: "", operations: [{ op: "add_node", node_id: "Task_9", title: "Новый шаг" }] },
+    diff: [{ op: "add_node", node_id: "Task_9", title: "Новый шаг" }],
+  })];
   try {
     await act(async () => {
-      env.root.render(React.createElement(mod.default, { messages, sessionId: "sess_1" }));
+      env.root.render(React.createElement(mod.default, {
+        messages,
+        sessionId: "sess_1",
+        nodes: DIAGRAM_NODES,
+        onConfirmEdit: () => { confirmed = true; },
+        onRejectEdit: () => { rejected = true; },
+      }));
+    });
+    await flush();
+    const doc = env.dom.window.document;
+    const banner = doc.querySelector('[data-testid="processman-edit-unsupported"]');
+    assert.notEqual(banner, null, "баннер про неподдержанные операции");
+    assert.equal(doc.querySelector('[data-testid="processman-edit-confirm"]'), null, "«Применить» скрыт — нет тихих частичных применений");
+    assert.notEqual(doc.querySelector('[data-testid="processman-edit-reject"]'), null, "«Отклонить» доступен");
+    assert.notEqual(doc.querySelector('[data-testid="processman-edit-op-badge"]'), null, "бейдж неподдержанной операции");
+    await click(doc, env.dom.window, "processman-edit-reject");
+    assert.equal(rejected, true, "reject вызван");
+    assert.equal(confirmed, false, "confirm не вызывался");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("истёкший TTL: кнопки скрыты, статус «время истекло»", async () => {
+  const mod = await loadFeed();
+  const env = setupDom();
+  const messages = [pendingEditMsg({
+    editPlan: RENAME_PLAN,
+    diff: [],
+    attachedAt: Date.now() - 60_000,
+    timeoutSec: 1,
+  })];
+  try {
+    await act(async () => {
+      env.root.render(React.createElement(mod.default, { messages, sessionId: "sess_1", nodes: DIAGRAM_NODES }));
+    });
+    await flush();
+    const doc = env.dom.window.document;
+    assert.equal(doc.querySelector('[data-testid="processman-edit-confirm"]'), null, "«Применить» скрыто после истечения");
+    assert.equal(doc.querySelector('[data-testid="processman-edit-reject"]'), null, "«Отклонить» скрыто после истечения");
+    assert.ok(doc.querySelector('[data-testid="processman-edit-status"]').textContent.includes("истекло"), "статус expired");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("статус applied без кнопок", async () => {
+  const mod = await loadFeed();
+  const env = setupDom();
+  const messages = [pendingEditMsg({
+    status: "edit_applied",
+    editPlan: RENAME_PLAN,
+    diff: [],
+    result: { status: "applied", operations_applied: 1 },
+  })];
+  try {
+    await act(async () => {
+      env.root.render(React.createElement(mod.default, { messages, sessionId: "sess_1", nodes: DIAGRAM_NODES }));
     });
     await flush();
     const doc = env.dom.window.document;
     assert.notEqual(doc.querySelector('[data-testid="processman-edit-card"]'), null, "карточка рендерится");
     assert.equal(doc.querySelector('[data-testid="processman-edit-confirm"]'), null, "кнопки скрыты");
-    assert.equal(doc.querySelector('[data-testid="processman-edit-reject"]'), null, "кнопки скрыты");
     assert.ok(doc.querySelector('[data-testid="processman-edit-status"]').textContent.includes("Правка применена"), "статус applied");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("conflict_rev: статус с версиями диаграммы из result.details", async () => {
+  const mod = await loadFeed();
+  const env = setupDom();
+  const messages = [pendingEditMsg({
+    status: "edit_conflict",
+    editPlan: RENAME_PLAN,
+    diff: [],
+    result: { status: "conflict_rev", details: { pending_base_version: 3, server_current_version: 5 } },
+  })];
+  try {
+    await act(async () => {
+      env.root.render(React.createElement(mod.default, { messages, sessionId: "sess_1", nodes: DIAGRAM_NODES }));
+    });
+    await flush();
+    const doc = env.dom.window.document;
+    const statusText = doc.querySelector('[data-testid="processman-edit-status"]').textContent;
+    assert.ok(statusText.includes("изменилась"), "статус конфликта");
+    assert.ok(statusText.includes("3") && statusText.includes("5"), "версии диаграммы показаны");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("две пачки правок рендерятся независимо", async () => {
+  const mod = await loadFeed();
+  const env = setupDom();
+  const messages = [
+    pendingEditMsg({ id: "m_a", editPlan: RENAME_PLAN, diff: [] }),
+    pendingEditMsg({ id: "m_b", pendingEditId: "pe_def", editPlan: RENAME_PLAN, diff: [] }),
+  ];
+  try {
+    await act(async () => {
+      env.root.render(React.createElement(mod.default, { messages, sessionId: "sess_1", nodes: DIAGRAM_NODES }));
+    });
+    await flush();
+    const doc = env.dom.window.document;
+    const cards = doc.querySelectorAll('[data-testid="processman-edit-card"]');
+    assert.equal(cards.length, 2, "две карточки");
+    assert.equal(doc.querySelectorAll('[data-testid="processman-edit-confirm"]').length, 2, "у каждой свои кнопки");
   } finally {
     await env.cleanup();
   }
