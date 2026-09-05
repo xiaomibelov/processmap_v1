@@ -137,6 +137,7 @@ export function attachPendingEdit(sessionId, messageId, payload = {}) {
     editPlan: payload.editPlan && typeof payload.editPlan === "object" ? payload.editPlan : {},
     diff: Array.isArray(payload.diff) ? payload.diff : [],
     timeoutSec: Number(payload.timeoutSec || 0),
+    attachedAt: Number(payload.attachedAt || Date.now()),
     status: AGENT_STATUS.EDIT_PENDING,
     result: null,
     errorText: "",

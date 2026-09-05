@@ -11,6 +11,7 @@ import {
   typewriterProgress,
 } from "./chat/processmanChatStore";
 import AgentMarkdown from "./AgentMarkdown";
+import PendingEditCard from "./chat/PendingEditCard";
 
 // PROCESSMAN-REDESIGN (PR-2) — лента диалога.
 // user-сообщения — вправо без label; agent — full-width карточка без
@@ -96,85 +97,6 @@ function PendingStages() {
           {t[key]}
         </span>
       ))}
-    </div>
-  );
-}
-
-function EditCard({ edit, onConfirm, onReject }) {
-  const isPending = edit.status === AGENT_STATUS.EDIT_PENDING;
-  const isApplied = edit.status === AGENT_STATUS.EDIT_APPLIED;
-  const isRejected = edit.status === AGENT_STATUS.EDIT_REJECTED;
-  const isExpired = edit.status === AGENT_STATUS.EDIT_EXPIRED;
-  const isConflict = edit.status === AGENT_STATUS.EDIT_CONFLICT;
-  const isError = edit.status === AGENT_STATUS.ERROR;
-
-  const statusText = isApplied
-    ? t.editCardApplied
-    : isRejected
-      ? t.editCardRejected
-      : isExpired
-        ? t.editCardExpired
-        : isConflict
-          ? t.editCardConflict
-          : isError
-            ? edit.errorText || t.errorTitle
-            : t.editCardPending;
-
-  return (
-    <div className="pm-processman-edit-card" data-testid="processman-edit-card">
-      <div className="pm-processman-edit-card__title">{t.editCardTitle}</div>
-      <div className="pm-processman-edit-card__diff" data-testid="processman-edit-diff">
-        <div className="pm-processman-edit-card__diff-title">{t.editCardDiffTitle}</div>
-        {edit.diff.length === 0 ? (
-          <div className="pm-processman-edit-card__diff-empty">—</div>
-        ) : (
-          <ul className="pm-processman-edit-card__diff-list">
-            {edit.diff.map((item, idx) => {
-              const key = `${item.op}-${item.node_id || item.from_id || "x"}-${idx}`;
-              let line = "";
-              if (item.op === "update") {
-                line = `${item.node_id}: ${item.field} ${t.editCardFieldWas} → ${t.editCardFieldWill}: ${String(item.new_value ?? "")}`;
-              } else if (item.op === "add_node") {
-                line = `+ ${item.node_id} (${item.title || "<без имени>"})`;
-              } else if (item.op === "add_edge") {
-                line = `+ связь ${item.from_id} → ${item.to_id}`;
-              } else if (item.op === "delete_node") {
-                line = `− ${item.node_id}`;
-              } else {
-                line = JSON.stringify(item);
-              }
-              return (
-                <li key={key} className={`pm-processman-edit-card__diff-item pm-processman-edit-card__diff-item--${item.op}`}>
-                  {line}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-      <div className="pm-processman-edit-card__status" data-testid="processman-edit-status">
-        {statusText}
-      </div>
-      {isPending ? (
-        <div className="pm-processman-edit-card__actions" data-testid="processman-edit-actions">
-          <button
-            type="button"
-            className="pm-processman-edit-card__confirm"
-            data-testid="processman-edit-confirm"
-            onClick={(e) => { e.stopPropagation(); onConfirm?.(); }}
-          >
-            {t.editCardConfirm}
-          </button>
-          <button
-            type="button"
-            className="pm-processman-edit-card__reject"
-            data-testid="processman-edit-reject"
-            onClick={(e) => { e.stopPropagation(); onReject?.(); }}
-          >
-            {t.editCardReject}
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -315,8 +237,9 @@ function AgentCard({
               </details>
             ) : null}
             {edit ? (
-              <EditCard
+              <PendingEditCard
                 edit={edit}
+                nodes={nodes}
                 onConfirm={() => onConfirmEdit?.(msg)}
                 onReject={() => onRejectEdit?.(msg)}
               />
