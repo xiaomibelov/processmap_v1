@@ -40,6 +40,14 @@ jobs:
           touch .env .env.stage
           docker compose -f docker-compose.yml -f docker-compose.stage.yml config --quiet
 
+      # Регресс-гард freshness-гейта deploy-stage.yml: каждый сервис из
+      # BUILD_SERVICES/UP_SERVICES обязан получить image с STAGE_IMAGE_TAG
+      # в merge-конфиге. Без оверрайда freshness-гейт невыполним и Deploy to
+      # Stage падает после успешного билда (runs 33930925383, 33964756507).
+      - name: Guard stage freshness-gate image tags
+        shell: bash
+        run: deploy/scripts/check_stage_image_tags.sh
+
   build:
     name: Build ${{ matrix.service }}
     runs-on: ubuntu-latest
