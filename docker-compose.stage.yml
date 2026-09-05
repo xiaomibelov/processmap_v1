@@ -39,6 +39,11 @@ services:
     env_file:
       - .env.stage
 
+  # Freshness-гейт deploy-stage.yml требует image == processmap_stage-rag-embedder:${STAGE_IMAGE_TAG}.
+  # Без оверрайда compose присваивает дефолтный тег :latest и гейт невыполним (runs 33930925383, 33964756507).
+  rag-embedder:
+    image: processmap_stage-rag-embedder:${STAGE_IMAGE_TAG:-local}
+
 networks:
   edge_shared:
     name: ${EDGE_NETWORK_NAME:?EDGE_NETWORK_NAME is required}
