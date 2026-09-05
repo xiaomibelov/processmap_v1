@@ -8,6 +8,7 @@ import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
 import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
+import { AUTOSAVE_CONFIG } from "../bpmn/save/autosaveConfig.js";
 import {
   asArray,
   asObject,
@@ -226,7 +227,7 @@ export default function useDiagramMutationLifecycle({
     hasPending: hasPendingDiagramAutosave,
   } = useAutosaveQueue({
     enabled: !!sid,
-    debounceMs: 350,
+    debounceMs: AUTOSAVE_CONFIG.mutationQueue.debounceMs,
     onSave: commitDiagramAutosave,
   });
 

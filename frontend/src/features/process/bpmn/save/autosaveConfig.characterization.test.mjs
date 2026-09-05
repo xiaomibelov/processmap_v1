@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import React, { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -23,6 +26,9 @@ import {
   enrichInterviewWithNodeBindings,
   parseBpmnToSessionGraph,
 } from "../../lib/processStageDomain.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PROJECTION_HELPERS = {
   asArray,
@@ -355,6 +361,66 @@ test("mutation-queue debounce is 350ms: queued diagram mutation does not commit 
   } finally {
     await cleanup();
   }
+});
+
+// --- Этап 1: конфиги централизованы в bpmn/save/autosaveConfig.js -----------
+
+test("autosaveConfig module exports frozen registry with reference values", async () => {
+  const { AUTOSAVE_CONFIG } = await import("./autosaveConfig.js");
+  assert.ok(AUTOSAVE_CONFIG, "AUTOSAVE_CONFIG must be exported from autosaveConfig.js");
+  assert.ok(Object.isFrozen(AUTOSAVE_CONFIG), "registry must be frozen");
+  assert.deepEqual(
+    AUTOSAVE_CONFIG.coordinator,
+    { debounceMs: 10_000, dragThrottleMs: 5000, dragFinalDebounceMs: 500 },
+    "coordinator constants (bpmnWiring.js:210-213)",
+  );
+  assert.deepEqual(
+    AUTOSAVE_CONFIG.mutationQueue,
+    { debounceMs: 350 },
+    "mutation-queue debounce (useDiagramMutationLifecycle.js:229; default useAutosaveQueue.js:9 = 380 НЕ трогаем)",
+  );
+  assert.deepEqual(
+    AUTOSAVE_CONFIG.xmlPipeline,
+    {
+      debounceMs: 0,
+      retryCount: 3,
+      retryDelayMs: 1000,
+      transportTimeoutMs: 10_000,
+      maxRetryDelayMs: 4000,
+    },
+    "xml-pipeline constants (saveBpmnState.js:113-117)",
+  );
+});
+
+test("consumers read autosave constants from the registry instead of inline literals", () => {
+  const readSource = (relativePath) =>
+    fs.readFileSync(path.join(__dirname, relativePath), "utf8");
+
+  const wiringSrc = readSource("../stage/wiring/bpmnWiring.js");
+  const mutationSrc = readSource("../../hooks/useDiagramMutationLifecycle.js");
+  const saveStateSrc = readSource("../../../process/save/saveBpmnState.js");
+
+  for (const [name, src] of [
+    ["bpmnWiring.js", wiringSrc],
+    ["useDiagramMutationLifecycle.js", mutationSrc],
+    ["saveBpmnState.js", saveStateSrc],
+  ]) {
+    assert.match(
+      src,
+      /from\s+["'][^"']*autosaveConfig\.js["']/,
+      `${name} must import AUTOSAVE_CONFIG from bpmn/save/autosaveConfig.js`,
+    );
+  }
+
+  assert.doesNotMatch(wiringSrc, /debounceMs:\s*10_000/, "coordinator debounce must come from the registry");
+  assert.doesNotMatch(wiringSrc, /dragThrottleMs:\s*5000/, "drag throttle must come from the registry");
+  assert.doesNotMatch(wiringSrc, /dragFinalDebounceMs:\s*500/, "drag final debounce must come from the registry");
+  assert.doesNotMatch(mutationSrc, /debounceMs:\s*350/, "mutation-queue debounce must come from the registry");
+  assert.doesNotMatch(
+    saveStateSrc,
+    /debounceMs:\s*0,[\s\S]*?retryCount:\s*3,[\s\S]*?transportTimeoutMs:\s*10000/,
+    "xml-pipeline config must come from the registry",
+  );
 });
 
 // --- xml-pipeline конфиг saveCoordinator (saveBpmnState.js:113-117) ---------
