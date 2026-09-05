@@ -4512,6 +4512,71 @@ def _storage_list_bpmn_version_numbers_by_source_actions(
     return [int(row["version_number"] or 0) for row in rows if int(row["version_number"] or 0) > 0]
 
 
+def _storage_latest_user_facing_bpmn_version(
+    self,
+    session_id: str,
+    *,
+    org_id: Optional[str] = None,
+    include_xml: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Самая свежая user-facing версия сессии (один запрос, LIMIT 1).
+
+    Эквивалент перебора ``list_bpmn_versions(limit=1000)`` по убыванию
+    ``version_number`` с фильтром ``_bpmn_version_row_is_user_facing``, но
+    без чтения тел XML снапшотов в память приложения (до ~260MB на запрос).
+    """
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    if not sid:
+        return None
+    scope_org = str(org_id or "").strip()
+    with _connect() as con:
+        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+        if not sess_row:
+            return None
+        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+        oid = scope_org or session_org
+        if oid != session_org:
+            return None
+        placeholders = ", ".join(["?"] * len(_USER_FACING_BPMN_VERSION_ACTIONS))
+        columns = (
+            "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, session_payload_hash, session_version, session_updated_at, source_action, import_note, created_at, created_by"
+            if include_xml
+            else "id, session_id, org_id, version_number, diagram_state_version, session_payload_hash, session_version, session_updated_at, source_action, import_note, created_at, created_by"
+        )
+        row = con.execute(
+            f"""
+            SELECT {columns}
+              FROM bpmn_versions
+             WHERE session_id = ?
+               AND org_id = ?
+               AND lower(trim(source_action)) IN ({placeholders})
+             ORDER BY version_number DESC
+             LIMIT 1
+            """,
+            [sid, oid, *_USER_FACING_BPMN_VERSION_ACTIONS],
+        ).fetchone()
+    if not row:
+        return None
+    item = {
+        "id": str(row["id"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "version_number": int(row["version_number"] or 0),
+        "diagram_state_version": int(row["diagram_state_version"] or 0),
+        "session_payload_hash": str(row["session_payload_hash"] or ""),
+        "session_version": int(row["session_version"] or 0),
+        "session_updated_at": int(row["session_updated_at"] or 0),
+        "source_action": str(row["source_action"] or ""),
+        "import_note": str(row["import_note"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+    }
+    if include_xml:
+        item["bpmn_xml"] = str(row["bpmn_xml"] or "")
+    return item
+
+
 def _storage_list_bpmn_versions(
     self,
     session_id: str,
