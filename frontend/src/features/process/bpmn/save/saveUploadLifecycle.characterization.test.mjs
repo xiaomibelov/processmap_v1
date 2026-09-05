@@ -8,6 +8,10 @@ import {
   buildSaveUploadStatusBadge,
   normalizeBpmnSaveLifecycleEvent,
 } from "../../navigation/saveUploadStatus.js";
+import {
+  createSaveUploadLifecycle,
+  IDLE_SAVE_UPLOAD_EVENT,
+} from "./saveUploadLifecycle.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,20 +23,23 @@ function readProcessStageSource() {
   );
 }
 
+function readModuleSource() {
+  return fs.readFileSync(path.join(__dirname, "saveUploadLifecycle.js"), "utf8");
+}
+
 // ---------------------------------------------------------------------------
-// Characterization contour canvas-save-pipeline-extraction-v1 (Этап 0).
+// Characterization contour canvas-save-pipeline-extraction-v1 (Этап 0 → Этап 1).
 //
-// Целевой будущий модуль: save/saveUploadLifecycle. Сегодня поведение живёт
-// внутри ProcessStage.jsx (onBpmnSaveLifecycleEvent, IDLE_SAVE_UPLOAD_EVENT).
-// У ProcessStage нет React-харнесса (god-компонент), поэтому фиксируем:
+// Логика перенесена из ProcessStage.jsx (onBpmnSaveLifecycleEvent,
+// IDLE_SAVE_UPLOAD_EVENT, таймер 4200мс) в saveUploadLifecycle.js (ядро,
+// не-React) + useSaveUploadLifecycle.js (React-обёртка). Тест фиксирует:
 //   1) наблюдаемое поведение реальной модели saveUploadStatus.js (экспорты
 //      реально используются компонентом);
-//   2) source-contract на ProcessStage.jsx (стиль соседнего
-//      ProcessStage.save-message-contract.test.mjs) — для логики, запертой
-//      внутри компонента (таймер 4200мс, порядок dismiss-conflict, frozen IDLE);
-//   3) исполняемую behavioral-модель таймера с fake timers: на переносе её
-//      заменяет импорт реального модуля. Порядок утверждений в source-contract
-//      секции подтверждает, что модель повторяет реальный код 1:1.
+//   2) source-contract на модуль saveUploadLifecycle.js (стиль прежних
+//      source-contract'ов на ProcessStage.jsx) — frozen IDLE, таймер 4200мс,
+//      порядок dismiss-conflict до установки события;
+//   3) исполняемое поведение РЕАЛЬНОГО модуля с fake timers (Этап 1 заменил
+//      behavioral-модель Этапа 0 импортом модуля 1:1).
 // ---------------------------------------------------------------------------
 
 test("persisted event maps to persisted stage and saved badge", () => {
@@ -129,9 +136,9 @@ test("normalize of empty payload keeps idle stage (component guard ignores it)",
 // --- Source contract: форма и frozen-гарантия IDLE_SAVE_UPLOAD_EVENT ---------
 
 test("source contract: IDLE_SAVE_UPLOAD_EVENT is a frozen literal with default fields", () => {
-  const source = readProcessStageSource();
+  const source = readModuleSource();
   const match = source.match(/const IDLE_SAVE_UPLOAD_EVENT = Object\.freeze\(\{([\s\S]*?)\}\);/);
-  assert.ok(match, "IDLE_SAVE_UPLOAD_EVENT literal must exist in ProcessStage.jsx");
+  assert.ok(match, "IDLE_SAVE_UPLOAD_EVENT literal must exist in saveUploadLifecycle.js");
   const body = match[1];
   for (const field of [
     'event: "",',
@@ -153,14 +160,14 @@ test("source contract: IDLE_SAVE_UPLOAD_EVENT is a frozen literal with default f
 });
 
 test("source contract: armed-clear timer is exactly 4200ms with at-guard for persisted/skipped_unchanged only", () => {
-  const source = readProcessStageSource();
+  const source = readModuleSource();
   // Арминг таймера только для persisted/skipped_unchanged.
   assert.ok(
     source.includes('if (next.stage === "persisted" || next.stage === "skipped_unchanged") {'),
     "armed-clear must be gated on persisted/skipped_unchanged",
   );
   assert.ok(
-    source.includes("Number(prev?.at || 0) === stableAt"),
+    source.includes("Number(event?.at || 0) === stableAt"),
     "armed-clear must guard on stableAt identity",
   );
   assert.ok(
@@ -168,23 +175,23 @@ test("source contract: armed-clear timer is exactly 4200ms with at-guard for per
     "armed-clear delay must be exactly 4200ms",
   );
   // Таймер сбрасывается перед установкой нового события.
-  const clearIdx = source.indexOf("globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);");
+  const clearIdx = source.indexOf("globalThis.clearTimeout(clearTimer);");
   const armIdx = source.indexOf("}, 4200);");
   assert.ok(clearIdx !== -1 && armIdx !== -1 && clearIdx < armIdx, "old timer cleared before arming a new one");
 });
 
 test("source contract: conflict event resets dismissed flag before installing the event", () => {
-  const source = readProcessStageSource();
-  const handlerStart = source.indexOf("const onBpmnSaveLifecycleEvent = useCallback(");
-  assert.ok(handlerStart !== -1, "onBpmnSaveLifecycleEvent must exist");
+  const source = readModuleSource();
+  const handlerStart = source.indexOf("handleLifecycleEvent(raw = null) {");
+  assert.ok(handlerStart !== -1, "handleLifecycleEvent must exist");
   const handlerBody = source.slice(handlerStart, handlerStart + 1200);
-  const dismissResetIdx = handlerBody.indexOf("setSaveConflictNoticeDismissed(false);");
-  const installIdx = handlerBody.indexOf("setSaveUploadLifecycleEvent(next);");
+  const dismissResetIdx = handlerBody.indexOf("onConflictEvent?.(next);");
+  const installIdx = handlerBody.indexOf("event = next;");
   assert.ok(dismissResetIdx !== -1, "conflict branch must reset dismissed flag");
   assert.ok(installIdx !== -1, "handler must install normalized event");
   assert.ok(
     dismissResetIdx < installIdx,
-    "dismissed flag reset must happen BEFORE setSaveUploadLifecycleEvent(next)",
+    "dismissed flag reset must happen BEFORE installing the event",
   );
   assert.ok(
     handlerBody.includes('if (next.stage === "conflict") {'),
@@ -192,94 +199,61 @@ test("source contract: conflict event resets dismissed flag before installing th
   );
 });
 
-// --- Behavioral-модель armed-clear таймера (fake timers) --------------------
-// Зеркало ProcessStage.jsx (onBpmnSaveLifecycleEvent). На переносе контракт
-// заменяется импортом реального модуля; source-contract тесты выше фиксируют
-// эквивалентность модели и текущего кода компонента.
+test("source contract: ProcessStage delegates to useSaveUploadLifecycle and wires conflict dismiss", () => {
+  const source = readProcessStageSource();
+  assert.ok(
+    source.includes('from "../features/process/bpmn/save/useSaveUploadLifecycle.js";'),
+    "ProcessStage must import useSaveUploadLifecycle",
+  );
+  assert.ok(
+    source.includes("useSaveUploadLifecycle({"),
+    "ProcessStage must call useSaveUploadLifecycle",
+  );
+  const callIdx = source.indexOf("useSaveUploadLifecycle({");
+  const callBody = source.slice(callIdx, callIdx + 400);
+  assert.ok(
+    callBody.includes("onConflictEvent") && callBody.includes("setSaveConflictNoticeDismissed(false)"),
+    "ProcessStage must wire onConflictEvent to setSaveConflictNoticeDismissed(false)",
+  );
+});
 
-function createSaveUploadLifecycleMachine({ now = () => Date.now() } = {}) {
-  const IDLE = Object.freeze({
-    event: "",
-    stage: "idle",
-    state: "saved",
-    at: 0,
-    reason: "",
-    sessionId: "",
-    rev: 0,
-    status: 0,
-    xmlBytes: 0,
-    errorCode: "",
-    error: "",
-    errorDetails: null,
-    conflict: null,
-  });
-  const machine = {
-    state: IDLE,
-    conflictDismissed: false,
-    clearTimer: 0,
-    events: [],
-    submit(eventRaw) {
-      const next = normalizeBpmnSaveLifecycleEvent(eventRaw);
-      machine.events.push(next);
-      if (!next.stage || next.stage === "idle") return;
-      if (next.stage === "conflict") {
-        machine.conflictDismissed = false;
-      }
-      machine.state = next;
-      if (machine.clearTimer) {
-        globalThis.clearTimeout(machine.clearTimer);
-        machine.clearTimer = 0;
-      }
-      if (next.stage === "persisted" || next.stage === "skipped_unchanged") {
-        const stableAt = Number(next.at || now());
-        machine.clearTimer = globalThis.setTimeout(() => {
-          if (Number(machine.state?.at || 0) === stableAt) {
-            machine.state = IDLE;
-          }
-          machine.clearTimer = 0;
-        }, 4200);
-      }
-    },
-    dismissConflict() {
-      machine.conflictDismissed = true;
-    },
-  };
-  return machine;
-}
+// --- Поведение РЕАЛЬНОГО модуля saveUploadLifecycle.js (fake timers) ----------
+// Эталон — прежний код ProcessStage.jsx (onBpmnSaveLifecycleEvent). Этап 0
+// фиксировал его behavioral-моделью; Этап 1 заменяет модель импортом модуля.
 
-test("model: armed-clear returns IDLE exactly after 4200ms for persisted", (t) => {
+test("module: armed-clear returns IDLE exactly after 4200ms for persisted", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"], now: 1_720_000_000_000 });
   try {
-    const machine = createSaveUploadLifecycleMachine();
-    machine.submit({ event: "SAVE_PERSIST_DONE", at: 1000, payload: { status: 200 } });
-    assert.equal(machine.state.stage, "persisted");
+    const lifecycle = createSaveUploadLifecycle({});
+    lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_DONE", at: 1000, payload: { status: 200 } });
+    assert.equal(lifecycle.getEvent().stage, "persisted");
 
     t.mock.timers.tick(4199);
-    assert.equal(machine.state.stage, "persisted", "no clear before 4200ms");
+    assert.equal(lifecycle.getEvent().stage, "persisted", "no clear before 4200ms");
     t.mock.timers.tick(1);
-    assert.equal(machine.state.stage, "idle", "cleared at exactly 4200ms");
-    assert.equal(machine.state.at, 0);
-    assert.equal(machine.state.rev, 0);
+    assert.equal(lifecycle.getEvent().stage, "idle", "cleared at exactly 4200ms");
+    assert.equal(lifecycle.getEvent().at, 0);
+    assert.equal(lifecycle.getEvent().rev, 0);
   } finally {
     t.mock.timers.reset();
   }
 });
 
-test("model: armed-clear returns IDLE after 4200ms for skipped_unchanged", (t) => {
+test("module: armed-clear returns IDLE after 4200ms for skipped_unchanged", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"], now: 1_720_000_000_000 });
   try {
-    const machine = createSaveUploadLifecycleMachine();
-    machine.submit({ event: "SAVE_PERSIST_SKIPPED_UNCHANGED", at: 1000, payload: { status: 200 } });
-    assert.equal(machine.state.stage, "skipped_unchanged");
+    const lifecycle = createSaveUploadLifecycle({});
+    lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_SKIPPED_UNCHANGED", at: 1000, payload: { status: 200 } });
+    assert.equal(lifecycle.getEvent().stage, "skipped_unchanged");
 
     t.mock.timers.tick(4200);
-    assert.equal(machine.state.stage, "idle");
+    assert.equal(lifecycle.getEvent().stage, "idle");
   } finally {
     t.mock.timers.reset();
   }
 });
 
-test("model: no armed-clear for failed/conflict/uploading events", (t) => {
+test("module: no armed-clear for failed/conflict/uploading events", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"], now: 1_720_000_000_000 });
   try {
     for (const eventRaw of [
@@ -291,68 +265,123 @@ test("model: no armed-clear for failed/conflict/uploading events", (t) => {
       },
       { event: "SAVE_PERSIST_STARTED", at: 1000, payload: {} },
     ]) {
-      const machine = createSaveUploadLifecycleMachine();
-      machine.submit(eventRaw);
-      const stageAfterSubmit = machine.state.stage;
+      const lifecycle = createSaveUploadLifecycle({});
+      lifecycle.handleLifecycleEvent(eventRaw);
+      const stageAfterSubmit = lifecycle.getEvent().stage;
       assert.notEqual(stageAfterSubmit, "idle");
       t.mock.timers.tick(10000);
-      assert.equal(machine.state.stage, stageAfterSubmit, `stage ${stageAfterSubmit} must not be auto-cleared`);
+      assert.equal(lifecycle.getEvent().stage, stageAfterSubmit, `stage ${stageAfterSubmit} must not be auto-cleared`);
     }
   } finally {
     t.mock.timers.reset();
   }
 });
 
-test("model: new event with new at cancels the old armed-clear timer", (t) => {
+test("module: new event with new at cancels the old armed-clear timer", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"], now: 1_720_000_000_000 });
   try {
-    const machine = createSaveUploadLifecycleMachine();
-    machine.submit({ event: "SAVE_PERSIST_DONE", at: 1000, payload: { status: 200, rev: 1 } });
+    const lifecycle = createSaveUploadLifecycle({});
+    lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_DONE", at: 1000, payload: { status: 200, rev: 1 } });
     t.mock.timers.tick(1000);
-    machine.submit({ event: "SAVE_PERSIST_DONE", at: 2000, payload: { status: 200, rev: 2 } });
+    lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_DONE", at: 2000, payload: { status: 200, rev: 2 } });
 
     // Старый таймер (at=1000) не должен сбросить более новое событие.
     t.mock.timers.tick(3200); // суммарно 4200 от первого события
-    assert.equal(machine.state.stage, "persisted");
-    assert.equal(machine.state.at, 2000);
+    assert.equal(lifecycle.getEvent().stage, "persisted");
+    assert.equal(lifecycle.getEvent().at, 2000);
 
     // Новый таймер (at=2000) сбрасывает состояние.
     t.mock.timers.tick(1000); // суммарно 4200 от второго события
-    assert.equal(machine.state.stage, "idle");
+    assert.equal(lifecycle.getEvent().stage, "idle");
   } finally {
     t.mock.timers.reset();
   }
 });
 
-test("model: conflict event resets dismissed flag (dismiss before event install)", (t) => {
+test("module: conflict event resets dismissed flag before event install, non-conflict does not touch it", () => {
+  const calls = [];
+  let conflictDismissed = true;
+  const lifecycle = createSaveUploadLifecycle({
+    onConflictEvent: () => {
+      calls.push("dismiss");
+      conflictDismissed = false;
+    },
+    onChange: () => calls.push("install"),
+  });
+
+  lifecycle.handleLifecycleEvent({
+    event: "SAVE_PERSIST_FAIL",
+    at: 1000,
+    payload: { status: 409, error_details: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 3 } },
+  });
+  assert.equal(lifecycle.getEvent().stage, "conflict");
+  assert.equal(conflictDismissed, false);
+  assert.deepEqual(calls, ["dismiss", "install"], "dismiss must precede event install");
+
+  conflictDismissed = true;
+  calls.length = 0;
+  lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_DONE", at: 2000, payload: { status: 200 } });
+  assert.equal(conflictDismissed, true, "persisted event must not touch dismissed flag");
+  assert.deepEqual(calls, ["install"], "non-conflict event must not invoke onConflictEvent");
+
+  conflictDismissed = true;
+  lifecycle.handleLifecycleEvent({
+    event: "SAVE_PERSIST_FAIL",
+    at: 3000,
+    payload: { status: 409, error_details: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 4 } },
+  });
+  assert.equal(conflictDismissed, false, "new conflict event must reset dismissed flag");
+  assert.equal(lifecycle.getEvent().stage, "conflict");
+  assert.equal(lifecycle.getEvent().conflict?.serverCurrentVersion, 4);
+});
+
+test("module: idle/empty events are ignored by the guard", () => {
+  const lifecycle = createSaveUploadLifecycle({});
+  lifecycle.handleLifecycleEvent(null);
+  assert.equal(lifecycle.getEvent(), IDLE_SAVE_UPLOAD_EVENT);
+  lifecycle.handleLifecycleEvent({ event: "", at: 0, payload: null });
+  assert.equal(lifecycle.getEvent(), IDLE_SAVE_UPLOAD_EVENT);
+});
+
+test("module: resetForRevisionPublish returns IDLE (previous 4 IDLE set-calls)", () => {
+  const lifecycle = createSaveUploadLifecycle({});
+  lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_FAIL", at: 1000, payload: { status: 500, error: "x" } });
+  assert.equal(lifecycle.getEvent().stage, "failed");
+  lifecycle.resetForRevisionPublish();
+  assert.equal(lifecycle.getEvent(), IDLE_SAVE_UPLOAD_EVENT);
+});
+
+test("module: applyConflictReset merges 409 payload over current event (previous prev-merge set-calls)", () => {
+  const lifecycle = createSaveUploadLifecycle({});
+  lifecycle.handleLifecycleEvent({
+    event: "SAVE_PERSIST_DONE",
+    at: 1000,
+    payload: { status: 200, rev: 3 },
+  });
+  const reason = { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9 };
+  lifecycle.applyConflictReset(reason);
+
+  const event = lifecycle.getEvent();
+  assert.equal(event.stage, "persisted", "stage/top-level fields untouched");
+  assert.equal(event.at, 1000);
+  // Bug-compatible: normalized-событие не несёт поля payload, поэтому
+  // прежний prev-merge (`...(prev?.payload || {})`) всегда расширял пустой
+  // объект — исходные payload-поля НЕ сохраняются (зафиксировано как эталон).
+  assert.deepEqual(event.payload, {
+    status: 409,
+    error_code: "DIAGRAM_STATE_CONFLICT",
+    error_details: reason,
+  });
+});
+
+test("module: dispose cancels armed timer (unmount cleanup)", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"], now: 1_720_000_000_000 });
   try {
-    const machine = createSaveUploadLifecycleMachine();
-    machine.submit({
-      event: "SAVE_PERSIST_FAIL",
-      at: 1000,
-      payload: { status: 409, error_details: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 3 } },
-    });
-    assert.equal(machine.state.stage, "conflict");
-    assert.equal(machine.conflictDismissed, false);
-
-    machine.dismissConflict();
-    assert.equal(machine.conflictDismissed, true);
-
-    // Повторный conflict-событие переводит dismissed обратно в false.
-    machine.submit({
-      event: "SAVE_PERSIST_FAIL",
-      at: 2000,
-      payload: { status: 409, error_details: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 4 } },
-    });
-    assert.equal(machine.conflictDismissed, false, "new conflict event must reset dismissed flag");
-    assert.equal(machine.state.stage, "conflict");
-    assert.equal(machine.state.conflict?.serverCurrentVersion, 4);
-
-    // Не-conflict событие dismissed-флаг не трогает.
-    machine.dismissConflict();
-    machine.submit({ event: "SAVE_PERSIST_DONE", at: 3000, payload: { status: 200 } });
-    assert.equal(machine.conflictDismissed, true, "persisted event must not touch dismissed flag");
+    const lifecycle = createSaveUploadLifecycle({});
+    lifecycle.handleLifecycleEvent({ event: "SAVE_PERSIST_DONE", at: 1000, payload: { status: 200 } });
+    lifecycle.dispose();
+    t.mock.timers.tick(10000);
+    assert.equal(lifecycle.getEvent().stage, "persisted", "dispose must cancel the armed-clear timer");
   } finally {
     t.mock.timers.reset();
   }
