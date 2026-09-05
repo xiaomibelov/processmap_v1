@@ -132,6 +132,11 @@ def find_subprocess_elements(xml_text: str) -> List[Dict[str, Optional[str]]]:
         root = ET.fromstring(xml_text)
     except Exception:
         return []
+    return find_subprocess_elements_from_root(root)
+
+
+def find_subprocess_elements_from_root(root) -> List[Dict[str, Optional[str]]]:
+    """find_subprocess_elements для уже распарсенного корня (parse-once путь)."""
     parent_map = {child: parent for parent in root.iter() for child in parent}
     out = []
     tag_subprocess = f"{{{BPMN_NS}}}subProcess"
@@ -164,6 +169,11 @@ def find_child_session_element_ids(xml_text: str) -> List[str]:
         root = ET.fromstring(xml_text)
     except Exception:
         return []
+    return find_child_session_element_ids_from_root(root)
+
+
+def find_child_session_element_ids_from_root(root) -> List[str]:
+    """find_child_session_element_ids для уже распарсенного корня (parse-once путь)."""
     out = []
     for el in root.iter():
         if _local_tag(el.tag) in {"subprocess", "callactivity"}:

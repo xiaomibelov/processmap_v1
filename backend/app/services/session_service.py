@@ -637,11 +637,16 @@ def bpmn_save(
     # so API consumers can detect a partial sync.
     try:
         xml = str(getattr(inp, "xml", "") or "")
-        parse_ok = _bpmn_xml_parseable(xml)
+        # F1 (parse-once): производные того же payload уже посчитаны внутри
+        # _legacy_main.session_bpmn_save — reuse вместо повторного парсинга.
+        from app.services.bpmn_xml_derivatives import get_bpmn_xml_derivatives
+
+        _deriv = get_bpmn_xml_derivatives(xml)
+        parse_ok = _deriv.parseable
         if parse_ok:
             s, oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
             if s:
-                summary = auto_create_subprocess_sessions(s, request, limit=None)
+                summary = auto_create_subprocess_sessions(s, request, limit=None, derivatives=_deriv)
                 total = summary["total"]
                 soft_deleted_count = len(summary.get("soft_deleted") or []) + int(summary.get("nested_soft_deleted") or 0)
                 if not total and not soft_deleted_count and not summary.get("nested_errors"):
@@ -1245,6 +1250,7 @@ def auto_create_subprocess_sessions(
     limit: Optional[int] = 10,
     *,
     _depth: int = 0,
+    derivatives: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Create or restore child sessions for top-level subprocess elements.
 
@@ -1257,11 +1263,25 @@ def auto_create_subprocess_sessions(
     current XML are soft-deleted ONLY when the XML parses cleanly. On any
     parse problem nothing is deleted.
 
+    ``derivatives`` (F1, parse-once): производные parent_session.bpmn_xml,
+    посчитанные вызывающим кодом. Используются только при совпадении sha1;
+    иначе — прежний путь с собственным парсингом.
+
     Returns a summary dict with created/restored/skipped ids and total element count.
     """
     xml = str(getattr(parent_session, "bpmn_xml", "") or "")
-    parse_ok = _bpmn_xml_parseable(xml)
-    elements = find_subprocess_elements(xml) if parse_ok else []
+    deriv = None
+    if derivatives is not None:
+        from app.services.bpmn_xml_derivatives import bpmn_xml_sha1
+
+        if getattr(derivatives, "sha1", "") == bpmn_xml_sha1(xml):
+            deriv = derivatives
+    if deriv is not None:
+        parse_ok = bool(deriv.parseable)
+        elements = list(deriv.subprocess_elements) if parse_ok else []
+    else:
+        parse_ok = _bpmn_xml_parseable(xml)
+        elements = find_subprocess_elements(xml) if parse_ok else []
     empty_summary = {
         "created": [],
         "restored": [],
@@ -1277,9 +1297,14 @@ def auto_create_subprocess_sessions(
             # The file legitimately contains zero (top-level) subprocesses:
             # every existing subprocess child is stale. Keep-list still covers
             # callActivity children (they materialize lazily via navigation).
+            keep_ids = (
+                list(deriv.child_session_element_ids)
+                if deriv is not None
+                else find_child_session_element_ids(xml)
+            )
             deletion = soft_delete_removed_subprocess_sessions(
                 parent_session,
-                find_child_session_element_ids(xml),
+                keep_ids,
                 request,
             )
             empty_summary["soft_deleted"] = deletion["soft_deleted"]

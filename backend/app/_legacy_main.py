@@ -1712,6 +1712,23 @@ def _collect_sequence_flow_meta(xml_text: str) -> Dict[str, Any]:
             "outgoing_by_source": {},
             "gateway_mode_by_node": {},
         }
+    return _collect_sequence_flow_meta_from_root(root)
+
+
+def _collect_sequence_flow_meta_from_root(root) -> Dict[str, Any]:
+    """_collect_sequence_flow_meta для уже распарсенного корня (parse-once путь).
+
+    Пустой dict-результат для None-корня повторяет ветку «не распарсилось».
+    """
+    if root is None:
+        return {
+            "flow_ids": set(),
+            "node_ids": set(),
+            "flow_source_by_id": {},
+            "flow_target_by_id": {},
+            "outgoing_by_source": {},
+            "gateway_mode_by_node": {},
+        }
 
     flow_node_kinds = {
         "startevent",
@@ -1807,6 +1824,13 @@ def _count_bpmn_activities(xml_text: str) -> int:
     try:
         root = ET.fromstring(raw)
     except Exception:
+        return 0
+    return _count_bpmn_activities_from_root(root)
+
+
+def _count_bpmn_activities_from_root(root) -> int:
+    """_count_bpmn_activities для уже распарсенного корня (parse-once путь)."""
+    if root is None:
         return 0
     count = 0
     for el in root.iter():
@@ -2803,6 +2827,8 @@ def _merge_and_normalize_bpmn_meta(
     incoming_meta: Any,
     xml_text: str,
     flow_ctx: Dict[str, Any],
+    *,
+    camunda_ext: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], bool]:
     """Merge incoming bpmn_meta on top of current meta and normalize.
 
@@ -2878,7 +2904,11 @@ def _merge_and_normalize_bpmn_meta(
     # Properties are derived from the XML payload, not from sidecar bpmn_meta.
     normalized_meta.pop("camunda_extensions_by_element_id", None)
     if xml_str:
-        normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(xml_str)
+        # F1: при вызове из save-пути camunda-расширения уже вычислены
+        # из общего дерева (parse-once); вне save-пути поведение прежнее.
+        normalized_meta["camunda_extensions_by_element_id"] = (
+            camunda_ext if camunda_ext is not None else extract_camunda_extensions_from_bpmn_xml(xml_str)
+        )
     return normalized_meta, auto_pass_state_write_requested
 
 
@@ -4619,12 +4649,18 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         previous_meta = getattr(s, "bpmn_meta", {}) or {}
         bpmn_version_snapshot = None
 
-        flow_ctx = _collect_sequence_flow_meta(xml)
+        # F1 (parse-once): один парсинг XML на PUT — flow_meta, activity_count
+        # и camunda-расширения из общего дерева (bpmn_xml_derivatives).
+        from app.services.bpmn_xml_derivatives import get_bpmn_xml_derivatives
+
+        _deriv = get_bpmn_xml_derivatives(xml)
+        flow_ctx = _deriv.flow_meta
         normalized_meta, auto_pass_state_write_requested = _merge_and_normalize_bpmn_meta(
             previous_meta,
             inp.bpmn_meta,
             xml,
             flow_ctx,
+            camunda_ext=_deriv.camunda_extensions,
         )
 
         # No-op guard: do not create a revision when neither XML nor normalized
@@ -4659,7 +4695,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         )
         s.bpmn_xml = xml
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
-        s.activity_count = _count_bpmn_activities(xml)
+        s.activity_count = _deriv.activity_count
         s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
         s.bpmn_meta = normalized_meta
         changed_keys = ["bpmn_meta"]
