@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { register } from "node:module";
 
 import React, { act, useEffect } from "react";
@@ -34,24 +37,25 @@ register(`data:text/javascript,${encodeURIComponent(resolveHookSource)}`);
 const { default: useStableProcessDiagramOverlayLayersProps } = await import("./useStableProcessDiagramOverlayLayersProps.js");
 
 // ---------------------------------------------------------------------------
-// Characterization contour canvas-save-pipeline-extraction-v1 (Этап 0).
+// Characterization contour canvas-save-pipeline-extraction-v1 (Этап 2, п.5).
 //
-// Текущее поведение сегментного мемо useStableProcessDiagramOverlayLayersProps:
-// readMemoizedSegment кэширует по areInputsShallowEqual — identity по каждому
-// ключу. Ключ "draft" входит в BPMN_INPUT_KEYS (useStableProcessDiagramOverlayLayersProps.js:81),
-// поэтому ЛЮБАЯ смена identity входного объекта draft (даже с идентичным
-// содержимым bpmn_xml) даёт cache miss. Это эталон текущего поведения
-// (в т.ч. известный промах мемо); будущая правка на примитивный ключ
-// (draft?.bpmn_xml) зафиксирована отдельным test.todo ниже.
+// Поведение сегментного мемо useStableProcessDiagramOverlayLayersProps ПОСЛЕ
+// п.5: memo-ключ bpmn-сегмента не зависит от identity входного объекта draft.
+// Вместо "draft" в BPMN_INPUT_KEYS используется примитивный ключ
+// "draftBpmnXmlHash" = fnv1aHex(draft?.bpmn_xml) (тот же FNV-1a, что и в
+// createBpmnStore.js). Сам проп draft в buildBpmnDiagramOverlayLayersProps
+// продолжает передаваться (BpmnStage его потребляет) — меняется только
+// ключ кэша. Промах теперь только при реальной смене draft.bpmn_xml.
 //
 // Наблюдаемость: perf-счётчики window.__FPC_DRAWIO_PERF__.counters
 // ("overlay.vm.diagramOverlayProps.cacheHit"/".cacheMiss",
-//  "overlay.vm.input.changed.draft") — тот же канал, что использует продакшн.
+//  "overlay.vm.input.changed.draftBpmnXmlHash") — тот же канал, что использует
+// продакшн.
 // ---------------------------------------------------------------------------
 
 const DIAGRAM_COUNTER_HIT = "overlay.vm.diagramOverlayProps.cacheHit";
 const DIAGRAM_COUNTER_MISS = "overlay.vm.diagramOverlayProps.cacheMiss";
-const CHANGED_DRAFT_COUNTER = "overlay.vm.input.changed.draft";
+const CHANGED_DRAFT_HASH_COUNTER = "overlay.vm.input.changed.draftBpmnXmlHash";
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true });
@@ -156,7 +160,7 @@ test("same input identity hits the bpmn segment cache on second render", async (
   }
 });
 
-test("new draft identity with identical bpmn_xml misses the bpmn segment cache (current bug-etalone)", async () => {
+test("new draft identity with identical bpmn_xml hits the bpmn segment cache (primitive draftBpmnXmlHash memo key)", async () => {
   const { root, cleanup, window } = setupDom();
   window.__FPC_DRAWIO_PERF_ENABLE__ = true;
   let latest = null;
@@ -172,7 +176,7 @@ test("new draft identity with identical bpmn_xml misses the bpmn segment cache (
     });
     const missAfterFirst = readPerfCounter(window, DIAGRAM_COUNTER_MISS);
 
-    // Новый объект draft с ТЕМ ЖЕ содержимым bpmn_xml — текущий эталон: промах.
+    // Новый объект draft с ТЕМ ЖЕ содержимым bpmn_xml — после п.5: попадание.
     const secondInput = makeInput({ draft: { id: "sid_overlay", bpmn_xml: bpmnXml } });
     assert.notEqual(secondInput.draft, firstInput.draft, "draft identity must differ");
     assert.equal(secondInput.draft.bpmn_xml, firstInput.draft.bpmn_xml, "draft content identical");
@@ -186,23 +190,126 @@ test("new draft identity with identical bpmn_xml misses the bpmn segment cache (
 
     assert.equal(
       readPerfCounter(window, DIAGRAM_COUNTER_MISS),
-      missAfterFirst + 1,
-      "new draft identity must produce exactly one more cache miss (identity-keyed memo)",
+      missAfterFirst,
+      "new draft identity with identical bpmn_xml must NOT miss the cache",
     );
     assert.ok(
-      readPerfCounter(window, CHANGED_DRAFT_COUNTER) >= 1,
-      "perf counter must attribute the miss to the draft key (BPMN_INPUT_KEYS :81)",
-    );
-    assert.equal(
-      readPerfCounter(window, DIAGRAM_COUNTER_HIT),
-      0,
-      "identity change must not be a cache hit in the current implementation",
+      readPerfCounter(window, DIAGRAM_COUNTER_HIT) >= 1,
+      "new draft identity with identical bpmn_xml must hit the cache",
     );
   } finally {
     await cleanup();
   }
 });
 
-test.todo(
-  "future fix: new draft identity with identical bpmn_xml must HIT the bpmn segment cache (primitive draft?.bpmn_xml memo key)",
-);
+test("changed draft.bpmn_xml misses the bpmn segment cache", async () => {
+  const { root, cleanup, window } = setupDom();
+  window.__FPC_DRAWIO_PERF_ENABLE__ = true;
+  let latest = null;
+  const firstInput = makeInput({
+    draft: { id: "sid_overlay", bpmn_xml: "<bpmn:definitions id=\"v1\"/>" },
+  });
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(Harness, { input: firstInput, expose: (v) => { latest = v; } }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+    const missAfterFirst = readPerfCounter(window, DIAGRAM_COUNTER_MISS);
+
+    const secondInput = makeInput({
+      draft: { id: "sid_overlay", bpmn_xml: "<bpmn:definitions id=\"v2\"/>" },
+    });
+
+    await act(async () => {
+      root.render(React.createElement(Harness, { input: secondInput, expose: (v) => { latest = v; } }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    assert.equal(
+      readPerfCounter(window, DIAGRAM_COUNTER_MISS),
+      missAfterFirst + 1,
+      "changed draft.bpmn_xml must produce exactly one more cache miss",
+    );
+    assert.ok(
+      readPerfCounter(window, CHANGED_DRAFT_HASH_COUNTER) >= 1,
+      "perf counter must attribute the miss to the draftBpmnXmlHash key",
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+test("changed draft fields other than bpmn_xml do not miss the bpmn segment cache", async () => {
+  const { root, cleanup, window } = setupDom();
+  window.__FPC_DRAWIO_PERF_ENABLE__ = true;
+  let latest = null;
+  const bpmnXml = "<bpmn:definitions id=\"stable\"/>";
+  const firstInput = makeInput({
+    draft: { id: "sid_overlay", bpmn_xml: bpmnXml, notes: "draft-notes-v1" },
+  });
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(Harness, { input: firstInput, expose: (v) => { latest = v; } }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+    const missAfterFirst = readPerfCounter(window, DIAGRAM_COUNTER_MISS);
+
+    const secondInput = makeInput({
+      draft: { id: "sid_overlay", bpmn_xml: bpmnXml, notes: "draft-notes-v2" },
+    });
+
+    await act(async () => {
+      root.render(React.createElement(Harness, { input: secondInput, expose: (v) => { latest = v; } }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    assert.equal(
+      readPerfCounter(window, DIAGRAM_COUNTER_MISS),
+      missAfterFirst,
+      "draft.notes change without bpmn_xml change must NOT miss the cache",
+    );
+    assert.ok(
+      readPerfCounter(window, DIAGRAM_COUNTER_HIT) >= 1,
+      "draft.notes change without bpmn_xml change must hit the cache",
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+test("source contract: draft identity is not a bpmn segment memo key (draftBpmnXmlHash is)", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "useStableProcessDiagramOverlayLayersProps.js"),
+    "utf8",
+  );
+  const keysMatch = source.match(/const BPMN_INPUT_KEYS = \[([\s\S]*?)\];/);
+  assert.ok(keysMatch, "BPMN_INPUT_KEYS array must be present in the hook source");
+  const keyList = [...keysMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(
+    keyList.includes("draft"),
+    false,
+    "identity key \"draft\" must not be in BPMN_INPUT_KEYS (п.5 плана)",
+  );
+  assert.equal(
+    keyList.includes("draftBpmnXmlHash"),
+    true,
+    "primitive key \"draftBpmnXmlHash\" must be in BPMN_INPUT_KEYS",
+  );
+  assert.ok(
+    /draftBpmnXmlHash\s*[:=]/.test(source),
+    "hook source must compute a draftBpmnXmlHash value",
+  );
+});
