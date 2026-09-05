@@ -4459,6 +4459,14 @@ def _latest_user_facing_bpmn_version(
     org_id: Optional[str] = None,
     include_xml: bool = True,
 ) -> Optional[Dict[str, Any]]:
+    # F2 (perf/save-put-parse-once-and-publish-scan-v1): скан перенесён в SQL
+    # (latest_user_facing_bpmn_version, LIMIT 1 без чтения тел снапшотов).
+    # Краевой случай «user-facing версия старше 1000 последних» теперь
+    # находится (раньше перебор limit=1000 возвращал None) — семантика
+    # «самая свежая user-facing версия» сохранена.
+    getter = getattr(storage, "latest_user_facing_bpmn_version", None)
+    if callable(getter):
+        return getter(session_id, org_id=org_id, include_xml=include_xml)
     for row in storage.list_bpmn_versions(session_id, org_id=org_id, limit=1000, include_xml=include_xml):
         if _bpmn_version_row_is_user_facing(row):
             return row
