@@ -47,6 +47,7 @@ import {
   summarizeSemanticDiff,
 } from "../features/process/bpmn/diff/semanticDiff.js";
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
+import { useSaveUploadLifecycle } from "../features/process/bpmn/save/useSaveUploadLifecycle.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import { detectCamundaNamespaceDivergence } from "../features/process/camunda/camundaExtensions.js";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
@@ -124,7 +125,6 @@ import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/
 import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
 import {
   buildSaveUploadStatusBadge,
-  normalizeBpmnSaveLifecycleEvent,
 } from "../features/process/navigation/saveUploadStatus";
 import {
   subscribePropertySaveEvents,
@@ -427,22 +427,6 @@ function normalizeBpmnVersionListItem(itemRaw) {
 
 
 
-const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
-  event: "",
-  stage: "idle",
-  state: "saved",
-  at: 0,
-  reason: "",
-  sessionId: "",
-  rev: 0,
-  status: 0,
-  xmlBytes: 0,
-  errorCode: "",
-  error: "",
-  errorDetails: null,
-  conflict: null,
-});
-
 function readServerLastWriteFromSession(sessionLikeRaw = null) {
   const sessionLike = sessionLikeRaw && typeof sessionLikeRaw === "object" ? sessionLikeRaw : {};
   const actorUserId = String(
@@ -641,7 +625,6 @@ function ProcessStage({
   const lastDrawioCompanionFocusKeyRef = useRef("");
   const lastDiscussionLinkedElementFocusKeyRef = useRef("");
   const diagramSearchNavigationRequestRef = useRef(0);
-  const saveUploadLifecycleClearTimerRef = useRef(0);
   const attentionPanelWasOpenRef = useRef(false);
   const autoPassToastJobIdRef = useRef("");
   const autoPassDocSyncInFlightRef = useRef(false);
@@ -673,8 +656,19 @@ function ProcessStage({
     return readOverlayPanVisibility();
   });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
-  const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
+  // Save-upload lifecycle перенесён в features/process/bpmn/save
+  // (canvas-save-pipeline-extraction-v1). MOVE, NOT REWRITE: ядро держит
+  // состояние/таймер, хук синкает в React-state; onConflictEvent повторяет
+  // прежний conflict-ветку обработчика (dismiss строго до установки события).
+  const {
+    saveUploadLifecycleEvent,
+    onBpmnSaveLifecycleEvent,
+    resetSaveUploadLifecycleForRevisionPublish,
+    applySaveUploadLifecycleConflictReset,
+  } = useSaveUploadLifecycle({
+    onConflictEvent: () => setSaveConflictNoticeDismissed(false),
+  });
   const sameTabAutoResolveAttemptedRef = useRef(false);
   // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
   const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
@@ -1618,7 +1612,7 @@ function ProcessStage({
         });
         if (saved?.ok && saved?.diagramStateVersion) {
           rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
-          setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+          resetSaveUploadLifecycleForRevisionPublish();
           setSaveConflictNoticeDismissed(true);
           setInfoMsg("Сессия сохранена после синхронизации версии.");
         }
@@ -2407,37 +2401,6 @@ function ProcessStage({
     };
   }, [hasSession, refreshDiagramUndoRedoState, sid, tab]);
 
-  useEffect(() => {
-    return () => {
-      if (saveUploadLifecycleClearTimerRef.current) {
-        globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
-        saveUploadLifecycleClearTimerRef.current = 0;
-      }
-    };
-  }, []);
-
-  const onBpmnSaveLifecycleEvent = useCallback((eventRaw = null) => {
-    const next = normalizeBpmnSaveLifecycleEvent(eventRaw);
-    if (!next.stage || next.stage === "idle") return;
-    if (next.stage === "conflict") {
-      setSaveConflictNoticeDismissed(false);
-    }
-    setSaveUploadLifecycleEvent(next);
-    if (saveUploadLifecycleClearTimerRef.current) {
-      globalThis.clearTimeout(saveUploadLifecycleClearTimerRef.current);
-      saveUploadLifecycleClearTimerRef.current = 0;
-    }
-    if (next.stage === "persisted" || next.stage === "skipped_unchanged") {
-      const stableAt = Number(next.at || Date.now());
-      saveUploadLifecycleClearTimerRef.current = globalThis.setTimeout(() => {
-        setSaveUploadLifecycleEvent((prev) => (
-          Number(prev?.at || 0) === stableAt ? IDLE_SAVE_UPLOAD_EVENT : prev
-        ));
-        saveUploadLifecycleClearTimerRef.current = 0;
-      }, 4200);
-    }
-  }, []);
-
   const dismissSaveConflictNotice = useCallback(() => {
     setSaveConflictNoticeDismissed(true);
   }, []);
@@ -2456,7 +2419,7 @@ function ProcessStage({
       }
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
-      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      resetSaveUploadLifecycleForRevisionPublish();
       setSaveConflictNoticeDismissed(true);
       setInfoMsg(
         discardLocal
@@ -2516,15 +2479,7 @@ function ProcessStage({
       if (!saved?.ok) {
         const status = Number(saved?.status || 0);
         if (status === 409) {
-          setSaveUploadLifecycleEvent((prev) => ({
-            ...prev,
-            payload: {
-              ...(prev?.payload || {}),
-              status: 409,
-              error_code: "DIAGRAM_STATE_CONFLICT",
-              error_details: saved?.data || saved,
-            },
-          }));
+          applySaveUploadLifecycleConflictReset(saved?.data || saved);
           setSaveConflictNoticeDismissed(false);
           setGenErr("Конфликт обновился. Повторите выбор.");
         } else {
@@ -2537,7 +2492,7 @@ function ProcessStage({
       }
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
-      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      resetSaveUploadLifecycleForRevisionPublish();
       setInfoMsg("Ваша версия сохранена поверх серверной. Действие зафиксировано в истории (overwrite).");
       onBpmnSaved?.(sid, activeProjectId);
     } catch (error) {
@@ -2607,15 +2562,7 @@ function ProcessStage({
       if (!saved?.ok) {
         const status = Number(saved?.status || 0);
         if (status === 409) {
-          setSaveUploadLifecycleEvent((prev) => ({
-            ...prev,
-            payload: {
-              ...(prev?.payload || {}),
-              status: 409,
-              error_code: "DIAGRAM_STATE_CONFLICT",
-              error_details: saved?.data || saved,
-            },
-          }));
+          applySaveUploadLifecycleConflictReset(saved?.data || saved);
           setSaveConflictNoticeDismissed(false);
           setGenErr("Конфликт обновился. Повторите выбор.");
           closeMergePanel();
@@ -2629,7 +2576,7 @@ function ProcessStage({
       }
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
-      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      resetSaveUploadLifecycleForRevisionPublish();
       setInfoMsg("Ваша версия сохранена поверх серверной. Создана новая версия в истории.");
       closeMergePanel();
       onBpmnSaved?.(sid, activeProjectId);
