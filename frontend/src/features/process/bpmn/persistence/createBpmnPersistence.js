@@ -4,6 +4,7 @@ import {
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
+import { fnv1aHex } from "../lib/bpmnXmlHash.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
@@ -147,16 +148,6 @@ function resolvePersistErrorText(saved = null, fallback = "", details = {}, stat
     return "Конфликт версии BPMN. Обновите сессию и повторите сохранение.";
   }
   return asText(fallback || "failed to save bpmn");
-}
-
-function fnv1aHex(input) {
-  const src = asText(input);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 const RUNTIME_CACHE_PREFIX = "fpc_bpmn_runtime_cache:";

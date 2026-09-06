@@ -1,15 +1,9 @@
+import { fnv1aHex } from "../lib/bpmnXmlHash.js";
+
+export { fnv1aHex };
+
 function asText(value) {
   return String(value || "");
-}
-
-export function fnv1aHex(input) {
-  const src = asText(input);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function asNumber(value, fallback = 0) {
