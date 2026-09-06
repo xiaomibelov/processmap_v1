@@ -5,21 +5,31 @@ import createBpmnStore from "../store/createBpmnStore.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
 
 // ---------------------------------------------------------------------------
-// Characterization contour canvas-save-hot-path-v1 (Группа 1).
+// Characterization contour canvas-save-hot-path-v1 (Группа 1) — ПЕРЕВЁРНУТО
+// коммитом 1 («сериализация вне кадра»).
 //
-// BASELINE: createLocalMutationStaging.stageRuntimeChange сериализует XML из
-// runtime (runtime.getXml({format:false})) ДО того, как определяется
-// positional-команда. Для позиционных команд (shape.move / elements.move /
-// lane.updaterefs) сериализация всё равно выполняется — проверка
-// isPositionalCommand идёт ПОСЛЕ getXml (createLocalMutationStaging.js:107-121
-// против :131-134). Контур намеренно меняет этот порядок (positional-команды
-// не должны тянуть сериализацию), поэтому тест фиксирует текущее поведение.
+// BASELINE (зафиксировано коммитом e1543631): stageRuntimeChange сериализовал
+// XML из runtime (runtime.getXml({format:false})) ДО определения
+// positional-команды — полная сериализация на каждый кадр drag.
+//
+// НОВОЕ ПОВЕДЕНИЕ: проверка isPositionalCommand/getIsDragging выполняется ДО
+// сериализации. На positional/drag-кадре getXml НЕ вызывается; dirty-mark
+// (rev-bump + dirty:true + fanout setXml) выполняется от текущего store-xml
+// (по содержимому no-op, но бампает rev/dirty и дергает подписчиков);
+// сериализация откладывается в throttled keep-latest (300мс trailing): один
+// getXml + store.setXml + cacheRaw. Structural shape.create — немедленно,
+// как раньше. Автосейв-skip для positional-кадров без изменений.
 // ---------------------------------------------------------------------------
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function makeStaging(store, overrides = {}) {
   const getXmlCalls = [];
   const autosaveReasons = [];
   const emitted = [];
+  const cacheCalls = [];
   const staging = createLocalMutationStaging({
     getStore: () => store,
     getRuntime: () => ({
@@ -30,22 +40,22 @@ function makeStaging(store, overrides = {}) {
       },
     }),
     getSessionId: () => "sid_positional_serialization",
-    cacheRaw: () => {},
+    cacheRaw: (sid, xml, rev, reason) => cacheCalls.push({ sid, xml, rev, reason }),
     emit: (event, payload) => emitted.push({ event, payload }),
     requestAutosave: (reason) => autosaveReasons.push(reason),
     ...overrides,
   });
-  return { staging, getXmlCalls, autosaveReasons, emitted };
+  return { staging, getXmlCalls, autosaveReasons, emitted, cacheCalls };
 }
 
-test("CURRENT: shape.move serializes runtime XML (getXml) before the positional skip decision", async () => {
+test("FIXED: shape.move does NOT serialize in-frame; dirty-mark happens; throttled snapshot fires once", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 5,
     dirty: false,
     lastSavedRev: 5,
   });
-  const { staging, getXmlCalls, autosaveReasons } = makeStaging(store);
+  const { staging, getXmlCalls, autosaveReasons, emitted, cacheCalls } = makeStaging(store);
 
   const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "shape.move" });
 
@@ -53,14 +63,29 @@ test("CURRENT: shape.move serializes runtime XML (getXml) before the positional 
   assert.equal(result.positional, true);
   assert.equal(result.autosaveRequested, false);
   assert.equal(result.skipReason, "positional_command");
-  // КЛЮЧЕВАЯ ФИКСАЦИЯ: сериализация выполнена, несмотря на positional-skip.
-  assert.deepEqual(getXmlCalls, [{ format: false }], "getXml({format:false}) is called even for positional shape.move");
-  assert.equal(result.xml, "<bpmn:definitions id=\"serialized\"/>");
-  assert.equal(result.xmlAuthority, "staged_local_runtime_snapshot");
+  // КЛЮЧЕВАЯ ФИКСАЦИЯ (новое поведение): в кадре сериализации НЕТ.
+  assert.deepEqual(getXmlCalls, [], "getXml({format:false}) is NOT called on a positional frame");
+  assert.equal(result.xml, "<bpmn:definitions id=\"old\"/>");
+  assert.equal(result.xmlAuthority, "staged_local_store_fallback");
+  assert.equal(result.xmlExportMode, "store_fallback");
+  // dirty-mark при этом выполнен: rev-bump + dirty + fanout.
+  assert.equal(store.getState().rev, 6);
+  assert.equal(store.getState().dirty, true);
   assert.deepEqual(autosaveReasons, [], "positional command must not request autosave");
+  assert.ok(emitted.some((e) => e.event === "STAGE_POSITIONAL_CHANGE" && e.payload.reason === "positional_command"));
+
+  // Throttled keep-latest: ровно одна сериализация после trailing-окна 300мс.
+  await sleep(360);
+  assert.equal(getXmlCalls.length, 1, "exactly one throttled serialization after the 300ms window");
+  assert.deepEqual(getXmlCalls[0], { format: false });
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"serialized\"/>");
+  assert.equal(store.getState().rev, 7, "throttled snapshot bumps rev once more");
+  assert.equal(cacheCalls.length, 1, "cacheRaw runs on the throttled serialization, not per frame");
+  assert.equal(cacheCalls[0].reason, "runtime_change_throttled");
+  assert.equal(cacheCalls[0].xml, "<bpmn:definitions id=\"serialized\"/>");
 });
 
-test("CURRENT: elements.move also serializes runtime XML before the positional skip decision", async () => {
+test("FIXED: elements.move also skips in-frame serialization", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 5,
@@ -73,11 +98,13 @@ test("CURRENT: elements.move also serializes runtime XML before the positional s
 
   assert.equal(result.positional, true);
   assert.equal(result.skipReason, "positional_command");
-  assert.equal(getXmlCalls.length, 1, "elements.move still triggers serialization");
-  assert.deepEqual(getXmlCalls[0], { format: false });
+  assert.equal(getXmlCalls.length, 0, "elements.move does not serialize in-frame");
+
+  await sleep(360);
+  assert.equal(getXmlCalls.length, 1, "throttled serialization follows after the window");
 });
 
-test("CURRENT: lane.updaterefs serializes runtime XML before the positional skip decision", async () => {
+test("FIXED: lane.updaterefs skips in-frame serialization too", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 5,
@@ -90,10 +117,38 @@ test("CURRENT: lane.updaterefs serializes runtime XML before the positional skip
 
   assert.equal(result.positional, true);
   assert.equal(result.skipReason, "positional_command");
-  assert.equal(getXmlCalls.length, 1, "lane.updaterefs still triggers serialization");
+  assert.equal(getXmlCalls.length, 0, "lane.updaterefs does not serialize in-frame");
+
+  await sleep(360);
+  assert.equal(getXmlCalls.length, 1);
 });
 
-test("CONTROL: structural command serializes AND requests autosave (harness sanity)", async () => {
+test("FIXED: structural command during drag is throttled (no in-frame serialization, autosave skipped)", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const { staging, getXmlCalls, autosaveReasons } = makeStaging(store, { getIsDragging: () => true });
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "shape.create" });
+
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.equal(result.skipReason, "drag_in_progress");
+  assert.equal(getXmlCalls.length, 0, "structural command during drag does not serialize in-frame");
+  assert.deepEqual(autosaveReasons, []);
+  // dirty-mark всё равно выполнен.
+  assert.equal(store.getState().rev, 6);
+  assert.equal(store.getState().dirty, true);
+
+  await sleep(360);
+  assert.equal(getXmlCalls.length, 1, "drag-frame serialization coalesced into one throttled snapshot");
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"serialized\"/>");
+});
+
+test("CONTROL: structural shape.create serializes immediately AND is not throttled", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 5,
@@ -106,6 +161,13 @@ test("CONTROL: structural command serializes AND requests autosave (harness sani
 
   assert.equal(result.positional, false);
   assert.equal(result.autosaveRequested, true);
-  assert.equal(getXmlCalls.length, 1);
+  assert.equal(getXmlCalls.length, 1, "structural command serializes immediately");
+  assert.deepEqual(getXmlCalls[0], { format: false });
   assert.deepEqual(autosaveReasons, ["autosave"]);
+  assert.equal(result.xml, "<bpmn:definitions id=\"serialized\"/>");
+  assert.equal(result.xmlAuthority, "staged_local_runtime_snapshot");
+
+  // Никакого throttled-дубля после окна.
+  await sleep(360);
+  assert.equal(getXmlCalls.length, 1, "structural path does not schedule a throttled serialization");
 });
