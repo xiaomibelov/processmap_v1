@@ -19,6 +19,8 @@
 // plane id (diPlaneId); re-inject restores the snapshot only when no live
 // edge for the flow survived (editor geometry is never overwritten).
 
+import { fnv1aHex } from "../lib/bpmnXmlHash.js";
+
 const BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 const BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI";
 
@@ -213,12 +215,39 @@ export function reinjectMessageFlowsIntoContainers(xmlText, state) {
 // loads one document at a time, so the last hoist is the reinject target.
 let lastImportState = null;
 
+// Export-dialect memo (save hot-path): один flush сериализует XML один раз,
+// но applyMessageFlowExportDialect вызывается для той же строки несколько
+// раз подряд (coordinator doFlush -> persistence saveRaw -> pipeline
+// transport -> api body). reinject неидемпотентен и парсит DOM, поэтому
+// повторные применения к той же строке — чистый выигрыш мемо.
+//
+// Кэш строго (входная строка -> выходная строка), ключ — fnv1a-хэш входа,
+// 2 записи (last + prev) — сериализации чередуются (raw -> dialect), одной
+// записи недостаточно. Проверка lastImportState.changed остаётся внутри
+// reinject; мемо лишь возвращает уже вычисленный результат. Сброс на любом
+// новом импорте: смена lastImportState по той же строке не должна отдавать
+// stale-результат (реимпорт документа после reload).
+let exportMemoPrev = null;
+let exportMemoLast = null;
+
+function resetExportMemo() {
+  exportMemoPrev = null;
+  exportMemoLast = null;
+}
+
 export function applyMessageFlowImportDialect(xmlText) {
   const result = hoistMessageFlowsFromContainers(xmlText);
   lastImportState = result;
+  resetExportMemo();
   return result.xml;
 }
 
 export function applyMessageFlowExportDialect(xmlText) {
-  return reinjectMessageFlowsIntoContainers(xmlText, lastImportState);
+  const key = fnv1aHex(String(xmlText ?? ""));
+  if (exportMemoLast && exportMemoLast.key === key) return exportMemoLast.result;
+  if (exportMemoPrev && exportMemoPrev.key === key) return exportMemoPrev.result;
+  const result = reinjectMessageFlowsIntoContainers(xmlText, lastImportState);
+  exportMemoPrev = exportMemoLast;
+  exportMemoLast = { key, result };
+  return result;
 }
