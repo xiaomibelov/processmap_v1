@@ -5,20 +5,18 @@ import createBpmnStore from "../store/createBpmnStore.js";
 import createBpmnCoordinator from "./createBpmnCoordinator.js";
 
 // ---------------------------------------------------------------------------
-// Characterization contour canvas-save-hot-path-v1 (Группа 4).
+// Characterization contour canvas-save-hot-path-v1 (Группа 4) — ПЕРЕВЁРНУТО
+// коммитом 1.4 (дешёвый пре-чек).
 //
-// BASELINE: doFlush (createBpmnCoordinator.js:482) вызывает
-// hasDuplicateCamundaProperties(xml) БЕЗ дешёвого пре-чека: парсинг через
-// DOMParser (camunda/camundaExtensions.js parseXmlDocument) выполняется даже
-// для XML, не содержащего подстроку "property" (т.е. дешёвый includes-чек
-// вида `xml.includes("property")` ДО парсинга отсутствует — он есть только в
-// regex-фолбэке hasDuplicateCamundaPropertiesWithRegex). Контур намеренно
-// добавляет такой пре-чек в hot-path, поэтому тест фиксирует текущее
-// поведение: spy-DOMParser конструируется на flush XML без "property".
+// BASELINE (зафиксировано коммитом e1543631): doFlush
+// (createBpmnCoordinator.js:482) и persistExplicitXml (:842) вызывали
+// hasDuplicateCamundaProperties(xml) БЕЗ дешёвого пре-чека — DOMParser
+// конструировался даже для XML без подстроки "property".
 //
-// В node:test DOMParser глобально отсутствует, поэтому шпион устанавливается
-// как globalThis.DOMParser и эмулирует минимальный DOM, достаточный для
-// hasDuplicateCamundaProperties (пустые списки нод => дубликатов нет).
+// НОВОЕ ПОВЕДЕНИЕ: перед вызовом hasDuplicateCamundaProperties стоит
+// fast-path `xml.includes("property")` (стиль — как regex-фолбэки
+// camundaExtensions.js:206/:261). DOMParser НЕ конструируется на XML без
+// "property"; на XML с "property" guard работает как раньше (DOM-путь).
 // ---------------------------------------------------------------------------
 
 let domParserConstructions = 0;
@@ -52,7 +50,15 @@ function installSpyDOMParser() {
   };
 }
 
-function createHarness() {
+const XML_NO_PROPERTY = "<bpmn:definitions id=\"no_props\"><bpmn:process id=\"P1\"/></bpmn:definitions>";
+const XML_WITH_PROPERTY = "<bpmn:definitions id=\"with_props\">"
+  + "<bpmn:process id=\"P1\">"
+  + "<bpmn:extensionElements>"
+  + "<camunda:properties><camunda:property name=\"k\" value=\"v\"/></camunda:properties>"
+  + "</bpmn:extensionElements>"
+  + "</bpmn:process></bpmn:definitions>";
+
+function createHarness({ runtimeXml = XML_NO_PROPERTY } = {}) {
   const store = createBpmnStore({
     xml: "",
     rev: 1,
@@ -65,12 +71,7 @@ function createHarness() {
     getSessionId: () => "sid_camunda_guard",
     getRuntime: () => ({
       getStatus: () => ({ ready: true, defs: true, token: 5 }),
-      // XML БЕЗ подстроки "property" — дешёвый includes-чек вернул бы false.
-      getXml: async () => ({
-        ok: true,
-        xml: "<bpmn:definitions id=\"no_props\"><bpmn:process id=\"P1\"/></bpmn:definitions>",
-        token: 5,
-      }),
+      getXml: async () => ({ ok: true, xml: runtimeXml, token: 5 }),
     }),
     persistence: {
       saveRaw: async (sid, xml, rev, reason) => {
@@ -82,7 +83,7 @@ function createHarness() {
   return { coordinator, saveRawCalls };
 }
 
-test("CURRENT: doFlush runs the DOMParser path even for XML without 'property'", async () => {
+test("FIXED: doFlush skips the DOMParser entirely for XML without 'property' (cheap pre-check)", async () => {
   const env = installSpyDOMParser();
   const { coordinator, saveRawCalls } = createHarness();
   try {
@@ -92,36 +93,32 @@ test("CURRENT: doFlush runs the DOMParser path even for XML without 'property'",
     assert.equal(saveRawCalls.length, 1, "flush persists the xml");
     assert.ok(!saveRawCalls[0].xml.includes("property"), "precondition: flushed xml contains no 'property' substring");
 
-    // КЛЮЧЕВАЯ ФИКСАЦИЯ: DOMParser сконструирован, парсинг выполнен — дешёвого
-    // пре-чека до парсинга нет.
-    assert.ok(domParserConstructions >= 1, "DOMParser is constructed for xml without 'property' (no cheap pre-check)");
-    assert.ok(domParserParseCalls >= 1, "parseFromString is invoked on the flush hot path");
+    // КЛЮЧЕВАЯ ФИКСАЦИЯ (новое поведение): DOMParser вообще не трогаем.
+    assert.equal(domParserConstructions, 0, "DOMParser is NOT constructed for xml without 'property'");
+    assert.equal(domParserParseCalls, 0, "no DOM parse on the flush hot path without properties");
   } finally {
     coordinator.destroy();
     env.restore();
   }
 });
 
-test("CURRENT: persistExplicitXml also runs the DOMParser path without a pre-check", async () => {
+test("FIXED: persistExplicitXml also skips the DOMParser for XML without 'property'", async () => {
   const env = installSpyDOMParser();
   const { coordinator } = createHarness();
   try {
-    const xmlNoProperty = "<bpmn:definitions id=\"explicit_no_props\"/>";
-    assert.ok(!xmlNoProperty.includes("property"));
-    const result = await coordinator.persistExplicitXml(xmlNoProperty, "explicit_persist");
+    const result = await coordinator.persistExplicitXml(XML_NO_PROPERTY, "explicit_persist");
     assert.equal(result.ok, true);
-    assert.ok(domParserConstructions >= 1, "persistExplicitXml parses xml without 'property' too");
+    assert.equal(domParserConstructions, 0, "persistExplicitXml does not parse xml without 'property'");
   } finally {
     coordinator.destroy();
     env.restore();
   }
 });
 
-test("GUARD-BEHAVIOR: duplicate camunda properties are still detected via DOM path (control)", async () => {
-  // Контроль: шпион возвращает непустой список «дублей» => doFlush дедуплицирует.
+test("GUARD-BEHAVIOR: XML containing 'property' still hits the DOMParser path on flush (dedup engaged)", async () => {
+  // Шпион возвращает непустой список «дублей» => hasDuplicate вернёт true,
+  // dedupCamundaProperties тоже идёт через DOM => >= 2 конструкции DOMParser.
   const env = installSpyDOMParser();
-  domParserConstructions = 0;
-  let detectDuplicates = true;
   globalThis.DOMParser = class {
     constructor() {
       domParserConstructions += 1;
@@ -132,27 +129,40 @@ test("GUARD-BEHAVIOR: duplicate camunda properties are still detected via DOM pa
         getElementsByTagName: () => [],
         getElementsByTagNameNS: () => [],
       };
-      if (!detectDuplicates) return emptyDoc;
+      // ВАЖНО: getElementsByTagName("parsererror") должен вернуть [],
+      // иначе parseXmlDocument отвергнет документ как битый.
       const sharedParent = {};
       const mk = (name) => ({
         parentNode: sharedParent,
         getAttribute: (attr) => (attr === "name" ? name : "v"),
       });
-      // ВАЖНО: getElementsByTagName("parsererror") должен вернуть [],
-      // иначе parseXmlDocument отвергнет документ как битый.
       return {
         getElementsByTagName: (tag) => (String(tag || "") === "parsererror" ? [] : [mk("k"), mk("k")]),
         getElementsByTagNameNS: () => [mk("k"), mk("k")],
       };
     }
   };
-  const { coordinator, saveRawCalls } = createHarness();
+  const { coordinator, saveRawCalls } = createHarness({ runtimeXml: XML_WITH_PROPERTY });
   try {
     await coordinator.flushSave("manual_save");
     assert.equal(saveRawCalls.length, 1);
-    // hasDuplicate вернул true, но dedupCamundaProperties тоже идёт через DOM;
-    // здесь важно лишь, что flush завершился ok и прошёл guard.
-    assert.ok(domParserConstructions >= 2, "both guard and dedup hit the DOM path when duplicates reported");
+    // Пре-чек пропускает XML с 'property' в guard, дедуп работает как раньше.
+    // (Содержимое persisted-xml здесь не проверяем: шпион-DOM не сериализует
+    // обратно исходный документ — важна сама engaged-цепочка guard+dedup.)
+    assert.ok(domParserConstructions >= 2, "guard and dedup both hit the DOM path when 'property' present");
+  } finally {
+    coordinator.destroy();
+    env.restore();
+  }
+});
+
+test("GUARD-BEHAVIOR: persistExplicitXml with 'property' xml still runs the DOMParser path", async () => {
+  const env = installSpyDOMParser();
+  const { coordinator } = createHarness();
+  try {
+    const result = await coordinator.persistExplicitXml(XML_WITH_PROPERTY, "explicit_persist");
+    assert.equal(result.ok, true);
+    assert.ok(domParserConstructions >= 1, "explicit persist with properties parses as before");
   } finally {
     coordinator.destroy();
     env.restore();

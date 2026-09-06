@@ -57,6 +57,10 @@ export default function createBpmnCoordinator(options = {}) {
   let singleWriterOwner = "";
   let singleWriterExpiresAt = 0;
   let diagramMutationSaveActive = false;
+  // Last fresh format:true serialization produced by the durable flush path
+  // (raw pre-dialect xml). Lets the manual-save probe reuse it instead of
+  // paying a second full saveXML within a short freshness window.
+  let lastSerializedXml = null;
   const localMutationStaging = createLocalMutationStaging({
     getStore: () => store,
     getRuntime,
@@ -287,6 +291,25 @@ export default function createBpmnCoordinator(options = {}) {
     return await loadRawFn(sid, optionsForLoad);
   }
 
+  function recordSerializedXml(sid, xml) {
+    const xmlText = asText(xml);
+    if (!xmlText) return;
+    lastSerializedXml = {
+      sid: asText(sid),
+      xml: xmlText,
+      at: Date.now(),
+    };
+  }
+
+  function getLastSerializedXml(options = {}) {
+    if (!lastSerializedXml) return null;
+    const sid = currentSid();
+    if (!sid || lastSerializedXml.sid !== sid) return null;
+    const maxAgeMs = asNumber(options?.maxAgeMs, 1000);
+    if (maxAgeMs > 0 && Date.now() - asNumber(lastSerializedXml.at, 0) > maxAgeMs) return null;
+    return { xml: lastSerializedXml.xml, at: lastSerializedXml.at };
+  }
+
   async function doFlush(reason = "manual", options = {}) {
     const sid = currentSid();
     if (!sid || !store) {
@@ -435,6 +458,7 @@ export default function createBpmnCoordinator(options = {}) {
       }
       rawXml = asText(xmlRes?.xml);
       runtimeToken = asNumber(xmlRes?.token, 0);
+      recordSerializedXml(sid, rawXml);
     }
     const prepared = preparePersistedXml(
       applyMessageFlowExportDialect(asText(rawXml)),
@@ -479,7 +503,10 @@ export default function createBpmnCoordinator(options = {}) {
         xmlAlreadyTransformed: prepared.transformed,
       };
     }
-    if (hasDuplicateCamundaProperties(xml)) {
+    // Cheap pre-check in the same style as the regex fallbacks in
+    // camundaExtensions: skip the full DOM parse entirely when the xml cannot
+    // contain camunda/zeebe properties.
+    if (xml.includes("property") && hasDuplicateCamundaProperties(xml)) {
       const dedupedXml = dedupCamundaProperties(xml);
       emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
         sid,
@@ -839,7 +866,9 @@ export default function createBpmnCoordinator(options = {}) {
           xml_len: xml.length,
         });
         const startedAt = Date.now();
-        if (hasDuplicateCamundaProperties(xml)) {
+        // Cheap pre-check (same style as doFlush and the regex fallbacks in
+        // camundaExtensions): skip the DOM parse when no properties present.
+        if (xml.includes("property") && hasDuplicateCamundaProperties(xml)) {
           const dedupedXml = dedupCamundaProperties(xml);
           emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
             sid,
@@ -1112,6 +1141,7 @@ export default function createBpmnCoordinator(options = {}) {
     clearPendingSave();
     clearConflictReplayReason();
     clearDragPending();
+    localMutationStaging.cancelPendingSerialization?.();
     const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
     saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
     emit("SAVE_QUEUE_CLEARED", {
@@ -1148,6 +1178,7 @@ export default function createBpmnCoordinator(options = {}) {
     endSingleWriter,
     reload,
     syncExternalXml,
+    getLastSerializedXml,
     getDebugState,
     isFlushing,
     clearPendingWork,

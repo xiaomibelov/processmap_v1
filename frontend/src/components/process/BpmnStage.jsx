@@ -5162,7 +5162,25 @@ const BpmnStage = forwardRef(function BpmnStage({
         );
       }
 
-      if (activeModeler && typeof activeModeler.saveXML === "function") {
+      // Reuse the flush-path serialization when it is still fresh (<=1s): the
+      // manual-save probe used to pay a second full saveXML right after the
+      // flush serialized the same modeler state. Fallback: probe as before.
+      const freshSerialized = typeof coordinator?.getLastSerializedXml === "function"
+        ? coordinator.getLastSerializedXml({ maxAgeMs: 1000 })
+        : null;
+      if (freshSerialized?.xml) {
+        preFlushXml = applyMessageFlowExportDialect(String(freshSerialized.xml));
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.debug(`[CAMUNDA_EXT] pre_flush_xml source=flush_serialized_reuse len=${preFlushXml.length} ageMs=${Date.now() - Number(freshSerialized.at || 0)} prop=${preFlushXml.includes("fromXmlProp")}`);
+        }
+        publishE2ESaveProbe({
+          sid,
+          source,
+          persistReason,
+          beforeFlushXml: preFlushXml,
+        });
+      } else if (activeModeler && typeof activeModeler.saveXML === "function") {
         try {
           const probeOut = await activeModeler.saveXML({ format: true });
           preFlushXml = applyMessageFlowExportDialect(String(probeOut?.xml || ""));
