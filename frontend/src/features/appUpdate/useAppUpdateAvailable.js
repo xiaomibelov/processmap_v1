@@ -66,7 +66,17 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
 
   useEffect(() => {
     const syncRefreshRisk = () => {
-      setRefreshRisk(getCurrentAppRefreshRisk());
+      const nextRisk = getCurrentAppRefreshRisk();
+      // Bail по семантическому равенству: getCurrentAppRefreshRisk возвращает
+      // свежий object-identity на каждый вызов, а notify идёт и при регистрации
+      // handler'а — без bail это setState-цикл ~270 commits/s (RC-A jank-аудита).
+      setRefreshRisk((prevRisk) => (
+        prevRisk
+        && prevRisk.status === nextRisk.status
+        && prevRisk.message === nextRisk.message
+          ? prevRisk
+          : nextRisk
+      ));
     };
     syncRefreshRisk();
     return subscribeAppSafeRefresh(syncRefreshRisk);

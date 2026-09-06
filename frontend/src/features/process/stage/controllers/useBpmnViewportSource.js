@@ -333,12 +333,24 @@ export default function useBpmnViewportSource({
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!enabled) {
-      matrixRef.current = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
-      setViewportSize({ width: 0, height: 0 });
-      setViewportMatrix({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
-      setViewbox({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
-      setContainerRect({ left: 0, top: 0, width: 0, height: 0 });
-      notifyViewportMatrix({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+      // fix/canvas-pan-overlay-jank-v1 (F2, RC-A): bail по значению — раньше
+      // каждый запуск эффекта ставил 4 setState со свежими object-identity.
+      // При нестабильных deps (см. wrapWithProfiler) это замыкало цикл рендеров.
+      const resetMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+      matrixRef.current = resetMatrix;
+      setViewportSize((prev) => (Number(prev?.width || 0) === 0 && Number(prev?.height || 0) === 0 ? prev : { width: 0, height: 0 }));
+      setViewportMatrix((prev) => (isSameMatrix(prev, resetMatrix) ? prev : resetMatrix));
+      setViewbox((prev) => {
+        const p2 = normalizeViewbox(prev);
+        return (isSameNumber(p2.x, 0, 0.05) && isSameNumber(p2.y, 0, 0.05) && isSameNumber(p2.width, 0, 0.05)
+          && isSameNumber(p2.height, 0, 0.05) && isSameNumber(p2.scale, 1, 0.0001)) ? prev : { x: 0, y: 0, width: 0, height: 0, scale: 1 };
+      });
+      setContainerRect((prev) => {
+        const p2 = normalizeRect(prev);
+        return (isSameNumber(p2.left, 0, 0.5) && isSameNumber(p2.top, 0, 0.5) && isSameNumber(p2.width, 0, 0.5)
+          && isSameNumber(p2.height, 0, 0.5)) ? prev : { left: 0, top: 0, width: 0, height: 0 };
+      });
+      notifyViewportMatrix(resetMatrix);
       return undefined;
     }
     const unbindViewbox = canvasApi?.onViewboxChanged?.((nextViewbox) => {
