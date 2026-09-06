@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import {
   buildBpmnDiagramOverlayLayersProps,
   buildDrawioDiagramOverlayLayersProps,
@@ -269,11 +269,20 @@ export default function useStableProcessDiagramOverlayLayersProps(inputRaw) {
   // buildBpmnDiagramOverlayLayersProps (BpmnStage его потребляет) — через
   // отдельный build-вход, не участвующий в сравнении ключа. sessionId (sid)
   // уже входит в BPMN_INPUT_KEYS, поэтому в ключ не дублируется.
+  //
+  // fix/canvas-pan-overlay-jank-v1 (F1, H1): хэш считается в useMemo с
+  // депсом только на строку bpmn_xml — PR #918 вмержен без этого
+  // CHANGES_REQUESTED-фикса и пересчитывал fnv1aHex(768KB) на каждый рендер.
+  const draftBpmnXml = normalizedInput?.draft?.bpmn_xml;
+  const draftBpmnXmlHash = useMemo(() => {
+    bumpDrawioPerfCounter("overlay.vm.draftBpmnXmlHash.computed");
+    return fnv1aHex(draftBpmnXml);
+  }, [draftBpmnXml]);
   const bpmnBaseInput = pickInput(normalizedInput, BPMN_INPUT_KEYS);
   const bpmnBuildInput = { ...bpmnBaseInput, draft: normalizedInput.draft };
   const bpmnInput = {
     ...bpmnBaseInput,
-    draftBpmnXmlHash: fnv1aHex(normalizedInput?.draft?.bpmn_xml),
+    draftBpmnXmlHash,
   };
   const drawioInput = selectDrawioInput(normalizedInput);
   const hybridInput = selectHybridInput(normalizedInput);
