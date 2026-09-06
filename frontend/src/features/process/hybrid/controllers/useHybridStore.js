@@ -142,6 +142,11 @@ export default function useHybridStore({
     const incomingSig = serializeHybridLayerMap(incoming);
     const currentSig = serializeHybridLayerMap(hybridLayerMapRef.current);
     const persistedSig = serializeHybridLayerMap(hybridLayerPersistedMapRef.current);
+    // fix/canvas-pan-overlay-jank-v1 (F2, RC-A): запись в session store
+    // пересоздаёт draft.bpmn_meta целиком (новая identity при неизменном
+    // значении). Без этого guard каждая такая запись ставила setState с новой
+    // identity → полный коммит ProcessStage без смены значения.
+    if (incomingSig === currentSig) return;
     if (incomingSig === persistedSig && currentSig !== incomingSig) return;
     setHybridLayerByElementId(incoming);
     hybridLayerMapRef.current = incoming;
@@ -162,6 +167,7 @@ export default function useHybridStore({
     const incomingCount = Number(asArray(incoming.elements).length) + Number(asArray(incoming.edges).length);
     const currentCount = Number(asArray(currentDoc.elements).length) + Number(asArray(currentDoc.edges).length);
     const persistedCount = Number(asArray(persistedDoc.elements).length) + Number(asArray(persistedDoc.edges).length);
+    if (incomingSig === currentSig) return;
     if (incomingSig === persistedSig && currentSig !== incomingSig) return;
     if (incomingCount <= 0 && incomingSig !== currentSig && (currentCount > 0 || persistedCount > 0)) return;
     setHybridV2Doc(incoming);

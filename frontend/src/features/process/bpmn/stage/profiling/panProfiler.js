@@ -304,16 +304,32 @@ export function getPanProfiler() {
   return profiler;
 }
 
+// fix/canvas-pan-overlay-jank-v1 (F2, RC-A): обёртка кэшируется per (name, fn).
+// Раньше каждый вызов wrapWithProfiler во время рендера возвращал новую
+// функцию — ломалась deps-стабильность useCallback/useEffect
+// (useBpmnViewportSource: applyViewbox/scheduleApply), эффект перезапускался
+// на каждом рендере и при enabled=false его не-охранённые setState'ы с новыми
+// identity замыкали бесконечный цикл рендеров.
+const wrapperCacheByName = new Map();
 export function wrapWithProfiler(name, fn) {
   if (typeof fn !== "function") return fn;
+  let cache = wrapperCacheByName.get(name);
+  if (!cache) {
+    cache = new WeakMap();
+    wrapperCacheByName.set(name, cache);
+  }
+  const cached = cache.get(fn);
+  if (cached) return cached;
   const p = getPanProfiler();
-  return function (...args) {
+  const wrapped = function (...args) {
     const s = now();
     const r = fn.apply(this, args);
     const e = now();
     p._recordFuncTime(name, e - s);
     return r;
   };
+  cache.set(fn, wrapped);
+  return wrapped;
 }
 
 export function instrumentBpmnInst(inst, mode) {
