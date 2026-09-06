@@ -400,7 +400,13 @@ export default function usePlaybackController({
   const playbackFrames = asArray(playbackPassState.frames);
   const playbackGatewayPending = playbackPassState.pendingGateway || null;
   const playbackGateways = asArray(playbackPassState.gateways);
-  const playbackGatewayChoices = normalizeGatewayChoiceMap(playbackPassState.manualGatewayChoices);
+  // fix/canvas-pan-overlay-jank-v1 (F2, RC-A): normalize возвращал новый объект
+  // на каждый рендер → эффект persist gateway choices (writeGatewayChoices)
+  // писал localStorage на каждый коммит. useMemo по исходному map.
+  const playbackGatewayChoices = useMemo(
+    () => normalizeGatewayChoiceMap(playbackPassState.manualGatewayChoices),
+    [playbackPassState.manualGatewayChoices],
+  );
   const playbackGraphError = toText(playbackPassState.graphError);
   const playbackIndex = Number(playbackPassState.index || 0);
 
