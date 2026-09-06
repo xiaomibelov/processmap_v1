@@ -20,6 +20,7 @@ function createStore(initialState = {}) {
     dirty: initialState.dirty === true,
     lastSavedRev: Number(initialState.lastSavedRev || 0),
     lastHash: fnv1aHex(String(initialState.xml || "")),
+    savedHash: fnv1aHex(String(initialState.xml || "")),
   };
   return {
     getState() {
@@ -42,6 +43,7 @@ function createStore(initialState = {}) {
         rev: Number(rev || state.rev),
         dirty: false,
         lastHash: String(hash || state.lastHash || ""),
+        savedHash: String(hash || state.lastHash || ""),
       };
     },
     markSaved(rev, hash) {
@@ -51,6 +53,7 @@ function createStore(initialState = {}) {
         dirty: false,
         lastSavedRev: Math.max(Number(state.lastSavedRev || 0), targetRev),
         lastHash: String(hash || state.lastHash || ""),
+        savedHash: String(hash || state.lastHash || ""),
       };
     },
   };
@@ -138,7 +141,7 @@ test("preferStore remains an explicit opt-in path", async () => {
 });
 
 test("flushSave propagates conflict status for tab-switch diagnostics classification", async () => {
-  const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true });
+  const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true });
   const coordinator = createBpmnCoordinator({
     store,
     getSessionId: () => "sid_conflict",
@@ -172,7 +175,7 @@ test("flushSave propagates conflict status for tab-switch diagnostics classifica
 
 test("stale conflict from other-user path resolves in single flush via deterministic auto-retry", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const saveCalls = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -217,7 +220,7 @@ test("stale conflict from other-user path resolves in single flush via determini
 
 test("stale conflict from same-user multi-tab path resolves in single flush via deterministic auto-retry", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const saveCalls = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -262,7 +265,7 @@ test("stale conflict from same-user multi-tab path resolves in single flush via 
 
 test("new explicit save action after stale conflict still persists normally", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const saveCalls = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -308,7 +311,7 @@ test("new explicit save action after stale conflict still persists normally", as
 
 test("stale conflict auto-retry preserves publish intent marker within same flush", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -350,7 +353,7 @@ test("stale conflict auto-retry preserves publish intent marker within same flus
 
 test("stale conflict auto-retry preserves manual save intent marker within same flush", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -392,7 +395,7 @@ test("stale conflict auto-retry preserves manual save intent marker within same 
 
 test("queued replay keeps publish_manual_save intent marker for explicit revision action", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -427,7 +430,7 @@ test("queued replay keeps publish_manual_save intent marker for explicit revisio
 
 test("conflict-like stale retry branch preserves publish_manual_save intent marker", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -467,7 +470,7 @@ test("conflict-like stale retry branch preserves publish_manual_save intent mark
 
 test("queued replay keeps manual_save intent marker for ordinary session save", async () => {
   await withWindowTimers(async () => {
-    const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
     const reasons = [];
     const coordinator = createBpmnCoordinator({
       debounceMs: 10_000,
@@ -501,7 +504,7 @@ test("queued replay keeps manual_save intent marker for ordinary session save", 
 });
 
 test("flushSave performs deterministic single stale conflict auto-retry and resolves without conflict fail event", async () => {
-  const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true });
+  const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true });
   const traces = [];
   let saveCalls = 0;
   const coordinator = createBpmnCoordinator({
@@ -550,7 +553,7 @@ test("flushSave performs deterministic single stale conflict auto-retry and reso
 });
 
 test("flushSave emits conflict fail when stale conflict auto-retry cannot recover", async () => {
-  const store = createStore({ xml: "<bpmn:new/>", rev: 9, dirty: true });
+  const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true });
   const traces = [];
   let saveCalls = 0;
   const coordinator = createBpmnCoordinator({

@@ -649,6 +649,7 @@ function ProcessStage({
   const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
   const bpmnVersionDetailRequestRef = useRef(new Map());
   const metaVersionHeadSeededRef = useRef(false);
+  const versionHeadSidRef = useRef("");
   const clientId = useMemo(() => getOrCreateClientId(), []);
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const [bpmnFileDragActive, setBpmnFileDragActive] = useState(false);
@@ -5419,7 +5420,7 @@ function ProcessStage({
       const displayedList = includeTechnical
         ? asArray(normalizedList).map((item) => meaningfulById.get(String(item?.id || "")) || item)
         : asArray(listWithUserFacingNumbers);
-      setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
+      setLatestBpmnVersionHead((prevHead) => asArray(listWithUserFacingNumbers)[0] || (trackHeadStatus ? prevHead : null));
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
       if (!updateList) return;
       // eslint-disable-next-line no-console
@@ -6386,6 +6387,7 @@ function ProcessStage({
       setLatestBpmnVersionHead(null);
       setLatestBpmnVersionHeadStatus("idle");
       metaVersionHeadSeededRef.current = false;
+      versionHeadSidRef.current = "";
       return;
     }
     // If /meta already seeded the head on initial load, skip the first versions call.
@@ -6393,7 +6395,14 @@ function ProcessStage({
       metaVersionHeadSeededRef.current = false;
       return;
     }
-    setLatestBpmnVersionHead(null);
+    const sidChanged = versionHeadSidRef.current !== sid;
+    versionHeadSidRef.current = sid;
+    // Save-ack changes draft identity and re-runs this effect. Keep the last-known
+    // head during that refetch (stale-while-revalidate) so the version chip does
+    // not flash «V. —»; only a sid switch resets the head outright.
+    if (sidChanged) {
+      setLatestBpmnVersionHead(null);
+    }
     setLatestBpmnVersionHeadStatus("loading");
     void refreshLatestBpmnRevisionHead();
   }, [sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshLatestBpmnRevisionHead]);
