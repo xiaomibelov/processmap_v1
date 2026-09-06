@@ -9,6 +9,27 @@ from starlette.middleware.base import BaseHTTPMiddleware
 logger = logging.getLogger(__name__)
 
 
+class _ExtrasFormatter(logging.Formatter):
+    """Рендерит extra-поля записи (duration_ms, stage_ms, user_id, ...) в конце
+    сообщения — стандартный Formatter выводит только %(message)s, поэтому
+    числа этапов save-пути в логе не были видны (дефект найден review/
+    stage-409-save-validation-v1). Значения repr'ятся; строки — в кавычках."""
+
+    _RESERVED = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+
+    def format(self, record: logging.LogRecord) -> str:
+        base = super().format(record)
+        extras = {
+            k: v
+            for k, v in record.__dict__.items()
+            if k not in self._RESERVED and not k.startswith("_")
+        }
+        if not extras:
+            return base
+        rendered = " ".join(f"{k}={v!r}" for k, v in sorted(extras.items()))
+        return f"{base} | {rendered}"
+
+
 def _ensure_handler() -> None:
     # uvicorn настраивает только свои логгеры: root без handler'ов глотает
     # app-level INFO (api_request никогда не доходил до stdout). Handler
@@ -17,7 +38,7 @@ def _ensure_handler() -> None:
     if logger.handlers:
         return
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    handler.setFormatter(_ExtrasFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
