@@ -28,6 +28,8 @@ from ..sessions_core import _legacy_load_session_scoped
 from ..services.bpmn_navigation import (
     called_element_id,
     extract_subprocess_xml,
+    extract_subprocess_xml_from_root,
+    _register_namespaces,
     resolve_target_element_id,
     element_type,
     find_subprocess_elements,
@@ -1319,10 +1321,26 @@ def auto_create_subprocess_sessions(
     nested_errors = 0
 
     selected = elements if limit is None else elements[:limit]
+    # Parse-once (fix/subprocess-sync-extract-cache-v1): один парсинг parent XML
+    # на весь sync-блок вместо полного перепарсивания на каждый элемент
+    # (замер review/stage-409-save-validation-v1: 94ms/элемент на 724KB,
+    # 33 элемента = +3.1s CPU за блок). Неймспейсы регистрируются один раз —
+    # результат идемпотентен по сравнению с прежним per-call регистрированием.
+    # При недоступности общего дерева — прежний путь (паритет поведения).
+    sync_root: Optional[ET.Element] = None
+    if parse_ok:
+        try:
+            _register_namespaces(xml)
+            sync_root = ET.fromstring(xml)
+        except Exception:
+            sync_root = None
     for element in selected:
         element_id = element["id"]
         title = element["name"] or f"Подпроцесс: {element_id}"
-        child_xml = extract_subprocess_xml(xml, element_id) or ""
+        if sync_root is not None:
+            child_xml = extract_subprocess_xml_from_root(sync_root, element_id) or ""
+        else:
+            child_xml = extract_subprocess_xml(xml, element_id) or ""
         navigation_stack = _build_child_navigation_stack(parent_session, element_id)
 
         existing = session_repo.find_by_parent_element(

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 import io
 import re
 import xml.etree.ElementTree as ET
@@ -73,6 +74,11 @@ def _element_id(el: ET.Element) -> str:
 
 def find_bpmn_element(xml_text: str, element_id: str) -> Optional[ET.Element]:
     root = ET.fromstring(xml_text)
+    return find_bpmn_element_from_root(root, element_id)
+
+
+def find_bpmn_element_from_root(root: ET.Element, element_id: str) -> Optional[ET.Element]:
+    """find_bpmn_element для уже распарсенного корня (parse-once путь)."""
     for el in root.iter():
         if _element_id(el) == element_id:
             return el
@@ -589,8 +595,11 @@ def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> s
     original_tag = _local_tag(process_el.tag)
     process_tag = _ns("process") if original_tag == "subprocess" else process_el.tag
     new_process = ET.SubElement(defs, process_tag, process_el.attrib)
+    # deepcopy вместо переподчинения: при parse-once пути source_root — общее
+    # дерево синка, move дочерних элементов портило бы его для следующих
+    # элементов цикла. Сериализуемый результат побайтово тот же.
     for child in process_el:
-        new_process.append(child)
+        new_process.append(copy.deepcopy(child))
 
     # Try to copy diagram for this process.
     diagram_el = _copy_diagram_for_process(source_root, process_id)
@@ -615,6 +624,11 @@ def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> s
 def extract_embedded_process_xml(xml_text: str, process_id: str) -> Optional[str]:
     _register_namespaces(xml_text)
     root = ET.fromstring(xml_text)
+    return extract_embedded_process_xml_from_root(root, process_id)
+
+
+def extract_embedded_process_xml_from_root(root: ET.Element, process_id: str) -> Optional[str]:
+    """extract_embedded_process_xml для уже распарсенного корня (parse-once путь)."""
     for el in root.iter():
         if _local_tag(el.tag) == "process" and _element_id(el) == process_id:
             return _wrap_process_fragment(el, root)
@@ -623,16 +637,27 @@ def extract_embedded_process_xml(xml_text: str, process_id: str) -> Optional[str
 
 def extract_subprocess_xml(xml_text: str, element_id: str) -> Optional[str]:
     _register_namespaces(xml_text)
-    el = find_bpmn_element(xml_text, element_id)
+    root = ET.fromstring(xml_text)
+    return extract_subprocess_xml_from_root(root, element_id)
+
+
+def extract_subprocess_xml_from_root(root: ET.Element, element_id: str) -> Optional[str]:
+    """extract_subprocess_xml для уже распарсенного корня (parse-once путь).
+
+    Побайтово идентичен extract_subprocess_xml при том же исходном XML:
+    неймспейсы регистрируются вызывающим кодом (extract_subprocess_xml делает
+    это сам за один парсинг на документ).
+    """
+    el = find_bpmn_element_from_root(root, element_id)
     if el is None:
         return None
     tag = _local_tag(el.tag)
     if tag == "subprocess":
-        return _wrap_process_fragment(el, ET.fromstring(xml_text))
+        return _wrap_process_fragment(el, root)
     if tag == "callactivity":
         called = str(el.attrib.get("calledElement") or "").strip()
         if called:
-            return extract_embedded_process_xml(xml_text, called)
+            return extract_embedded_process_xml_from_root(root, called)
     return None
 
 
