@@ -112,7 +112,16 @@ export default function useHybridSelectionController({
       ...asArray(docLive?.elements).map((rowRaw) => toText(asObject(rowRaw).id)),
       ...asArray(docLive?.edges).map((rowRaw) => toText(asObject(rowRaw).id)),
     ]);
-    setSelectedIds((prevRaw) => normalizeIds(prevRaw).filter((id) => validIds.has(id)));
+    // fix/canvas-pan-overlay-jank-v1 (F2, RC-A): filter всегда возвращает
+    // новый массив → новая identity selectedIds на каждую смену identity
+    // docLive (записи meta пересоздают draft). Bail-out: членство не изменилось
+    // → возвращаем prev, React не делает коммит.
+    setSelectedIds((prevRaw) => {
+      const prev = normalizeIds(prevRaw);
+      const filtered = prev.filter((id) => validIds.has(id));
+      if (filtered.length === prev.length) return prevRaw;
+      return filtered;
+    });
   }, [docLive]);
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);

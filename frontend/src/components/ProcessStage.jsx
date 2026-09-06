@@ -140,6 +140,7 @@ import usePlaybackController from "../features/process/stage/controllers/usePlay
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
+import useStableDiagramControlsView from "../features/process/stage/utils/useStableDiagramControlsView";
 import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
 import useBpmnPropertiesOverlayController from "../features/process/bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController";
 import useBpmnSubprocessPreview from "../features/process/stage/hooks/useBpmnSubprocessPreview";
@@ -7731,205 +7732,13 @@ function ProcessStage({
     asArray,
   });
 
-  return (
-    <ProcessStageShell className={shellClassName}>
-      {/* Часть А: в explorer-режиме (без сессии) тулбар-хедер с табами сессии
-          скрыт — навигационная зона живёт в общем слоте workspaceMain. */}
-      {hasSession ? <ProcessStageHeader view={headerView} /> : null}
-      {/* FIX-V (блок 2, U1/U2): единый toast-viewport — стек под тулбаром,
-          не перекрывает контролы, pointer-events только у карточек. */}
-      <ProcessToastViewport
-        visible={saveAckToast.visible === true
-          || (tab === "diagram" && !!hybridPersist.lockBusyNotice?.open)}
-      >
-        <ProcessSaveAckToast
-          layout="stack"
-          visible={saveAckToast.visible === true}
-          message={saveAckToast.message}
-          tone={saveAckToast.tone}
-          description={saveAckToast.description}
-          actionLabel={saveAckToast.kind === "remote_update" && remoteSaveHighlightBusy === true
-            ? "Обновляем..."
-            : saveAckToast.actionLabel}
-          onAction={saveAckToast.onAction}
-          actionDisabled={saveAckToast.kind === "remote_update"
-            ? remoteSaveHighlightBusy === true
-            : saveAckToast.actionDisabled === true}
-          persistent={saveAckToast.persistent === true}
-          onDismiss={saveAckToast.onDismiss}
-        />
-        <HybridPersistToast
-          layout="stack"
-          visible={tab === "diagram" && !!hybridPersist.lockBusyNotice?.open}
-          message={hybridPersist.lockBusyNotice?.message}
-          pendingDraft={!!hybridPersist.pendingDraft}
-          onRetry={() => {
-            void hybridPersist.retryLast?.();
-          }}
-          onDismiss={hybridPersist.dismissLockBusyNotice}
-        />
-      </ProcessToastViewport>
-
-      <div
-        className={finalBodyClassName}
-        ref={processBodyRef}
-      >
-        {!hasSession ? (
-          analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
-            <div className="analyticsSurfaceLayout">
-              <AnalyticsSectionTabs
-                activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
-                onChange={(key) => {
-                  if (key === "overview") openAnalyticsHub();
-                  else if (key === "actions") openProductActionsRegistry();
-                  else if (key === "properties") openPropertiesRegistry();
-                }}
-              />
-              {analyticsHubRoute.active ? (
-                <AnalyticsHub
-                  workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
-                  projectId={analyticsHubRoute.projectId || activeProjectId}
-                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
-                  sessionId=""
-                  sessionTitle=""
-                  onOpenProductActionsRegistry={openProductActionsRegistry}
-                  onOpenPropertiesRegistry={openPropertiesRegistry}
-                  onClose={closeAnalyticsHub}
-                />
-              ) : productActionsRegistryRoute.active ? (
-                <ProductActionsRegistry
-                  scope={productActionsRegistryRoute.scope}
-                  workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
-                  projectId={productActionsRegistryRoute.projectId || activeProjectId}
-                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
-                  sessionId=""
-                  sessionTitle=""
-                  onScopeChange={(scope) => openProductActionsRegistry({ scope })}
-                  onOpenProject={openProductActionsRegistryProject}
-                  onOpenSession={openProductActionsRegistrySession}
-                  onClose={closeProductActionsRegistry}
-                />
-              ) : (
-                <ProcessPropertiesRegistryPage
-                  scope="project"
-                  workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
-                  projectId={propertiesRegistryRoute.projectId || activeProjectId}
-                  sessionId=""
-                  onClose={closePropertiesRegistry}
-                />
-              )}
-            </div>
-          ) : (
-            <WorkspaceExplorer
-              activeOrgId={workspaceActiveOrgId}
-              requestProjectId={activeProjectId}
-              requestProjectWorkspaceId={activeProjectWorkspaceId}
-              requestProjectContext={activeProjectRouteContext}
-              onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
-              onClearRequestedProject={onClearWorkspaceProject}
-            />
-          )
-        ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
-          <div className="analyticsSurfaceLayout">
-            <AnalyticsSectionTabs
-              activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
-              onChange={(key) => {
-                if (key === "overview") openAnalyticsHub();
-                else if (key === "actions") openProductActionsRegistry();
-                else if (key === "properties") openPropertiesRegistry();
-              }}
-            />
-            {analyticsHubRoute.active ? (
-              <AnalyticsHub
-                workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
-                projectId={analyticsHubRoute.projectId || activeProjectId}
-                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
-                sessionId={sid}
-                sessionTitle={toText(draft?.title)}
-                onOpenProductActionsRegistry={openProductActionsRegistry}
-                onOpenPropertiesRegistry={openPropertiesRegistry}
-                onClose={closeAnalyticsHub}
-              />
-            ) : productActionsRegistryRoute.active ? (
-              <ProductActionsRegistry
-                scope={productActionsRegistryRoute.scope}
-                workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
-                projectId={productActionsRegistryRoute.projectId || activeProjectId}
-                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
-                sessionId={sid}
-                sessionTitle={toText(draft?.title)}
-                onScopeChange={(scope) => openProductActionsRegistry({ scope })}
-                onOpenProject={openProductActionsRegistryProject}
-                onOpenSession={openProductActionsRegistrySession}
-                onClose={closeProductActionsRegistry}
-              />
-            ) : (
-              <ProcessPropertiesRegistryPage
-                scope="session"
-                workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
-                projectId={propertiesRegistryRoute.projectId || activeProjectId}
-                sessionId={sid}
-                onClose={closePropertiesRegistry}
-              />
-            )}
-          </div>
-        ) : tab === "doc" ? (
-          <DocStage
-            sessionId={sid}
-            draft={draft}
-            qualityErrorCount={Number(qualitySummary?.errors || 0)}
-            onRecalculateRtiers={onRecalculateRtiers}
-            onClose={() => setTab("diagram")}
-          />
-        ) : tab === "dod" ? (
-          <DodStage readiness={dodReadinessV1} />
-        ) : tab === "analytics" ? (
-          <div className="h-full min-h-0 overflow-hidden">
-            <AnalyticsPage scope="session" scopeId={sid} module="overview" orgId={activeOrgId} embedded />
-          </div>
-        ) : (
-          <div className="pm-processman-layout">
-          <div className="pm-processman-layout__canvas">
-          <div className="relative h-full min-h-0">
-            {!isInterview && (
-            <div className="absolute inset-0">
-              <div
-                className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""} ${bpmnFileDragActive ? "ring-2 ring-accent ring-inset" : ""}`}
-                ref={bpmnStageHostRefCallback}
-                onDragEnter={handleBpmnFileDragEnter}
-                onDragOver={handleBpmnFileDragOver}
-                onDragLeave={handleBpmnFileDragLeave}
-                onDrop={handleBpmnFileDrop}
-              >
-                {bpmnFileDragActive ? (
-                  <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-accentSoft/70 backdrop-blur-[1px]" data-testid="bpmn-file-drop-overlay">
-                    <div className="rounded-xl border border-accent bg-panel px-4 py-3 text-sm font-semibold text-fg shadow-panel">
-                      Отпустите файл для импорта
-                    </div>
-                  </div>
-                ) : null}
-                {subprocessBreadcrumbs?.length > 1 && tab !== "xml" ? (
-                  <div className="subprocessBreadcrumbsBar">
-                    {subprocessBreadcrumbs.length > 1 ? (
-                      <button
-                        type="button"
-                        onClick={() => onReturnToParent?.(sid)}
-                        className="subprocessBackButton"
-                        title="Назад"
-                        data-testid="subprocess-back-button"
-                      >
-                        ←
-                      </button>
-                    ) : null}
-                    <SubprocessBreadcrumbs
-                      breadcrumbs={subprocessBreadcrumbs}
-                      onNavigate={onBreadcrumbNavigate}
-                    />
-                  </div>
-                ) : null}
-                {tab !== "xml" ? (
-                  <ProcessStageDiagramControls
-                    view={buildDiagramControlsView({
+  // fix/canvas-pan-overlay-jank-v1 (F2, RC-A): controls-view мемоизирован
+  // shallow-equal входом — билдеры (~740мс/8с pan в профиле аудита) не
+  // пересобираются на каждый idle/render коммит ProcessStage.
+  const openNotesDiscussionsFromDiagram = useCallback(() => {
+    onOpenNotesDiscussions?.({ scopeFilter: "all", source: "diagram_action_bar" });
+  }, [onOpenNotesDiscussions]);
+  const diagramControlsView = useStableDiagramControlsView(() => ({
                     tab,
                     diagramActionBarRef,
                     showOverlaysDuringPan,
@@ -7962,10 +7771,7 @@ function ProcessStage({
                     openTemplatesPicker,
                     canOpenTemplatesList,
                     sessionId: sid,
-                    openNotesDiscussions: () => onOpenNotesDiscussions?.({
-                      scopeFilter: "all",
-                      source: "diagram_action_bar",
-                    }),
+                    openNotesDiscussions: openNotesDiscussionsFromDiagram,
                     sessionSaveReadSnapshot,
                     sessionVersionReadSnapshot,
                     sessionTemplateProvenanceSnapshot,
@@ -8185,7 +7991,207 @@ function ProcessStage({
                     processmanNoKey: isLlmNotConfigured(processmanLlmStatus),
                     onAlignDiagram: handleAlignDiagram,
                     onResetCanvas: handleResetCanvas,
-                  })}
+  }));
+
+  return (
+    <ProcessStageShell className={shellClassName}>
+      {/* Часть А: в explorer-режиме (без сессии) тулбар-хедер с табами сессии
+          скрыт — навигационная зона живёт в общем слоте workspaceMain. */}
+      {hasSession ? <ProcessStageHeader view={headerView} /> : null}
+      {/* FIX-V (блок 2, U1/U2): единый toast-viewport — стек под тулбаром,
+          не перекрывает контролы, pointer-events только у карточек. */}
+      <ProcessToastViewport
+        visible={saveAckToast.visible === true
+          || (tab === "diagram" && !!hybridPersist.lockBusyNotice?.open)}
+      >
+        <ProcessSaveAckToast
+          layout="stack"
+          visible={saveAckToast.visible === true}
+          message={saveAckToast.message}
+          tone={saveAckToast.tone}
+          description={saveAckToast.description}
+          actionLabel={saveAckToast.kind === "remote_update" && remoteSaveHighlightBusy === true
+            ? "Обновляем..."
+            : saveAckToast.actionLabel}
+          onAction={saveAckToast.onAction}
+          actionDisabled={saveAckToast.kind === "remote_update"
+            ? remoteSaveHighlightBusy === true
+            : saveAckToast.actionDisabled === true}
+          persistent={saveAckToast.persistent === true}
+          onDismiss={saveAckToast.onDismiss}
+        />
+        <HybridPersistToast
+          layout="stack"
+          visible={tab === "diagram" && !!hybridPersist.lockBusyNotice?.open}
+          message={hybridPersist.lockBusyNotice?.message}
+          pendingDraft={!!hybridPersist.pendingDraft}
+          onRetry={() => {
+            void hybridPersist.retryLast?.();
+          }}
+          onDismiss={hybridPersist.dismissLockBusyNotice}
+        />
+      </ProcessToastViewport>
+
+      <div
+        className={finalBodyClassName}
+        ref={processBodyRef}
+      >
+        {!hasSession ? (
+          analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
+            <div className="analyticsSurfaceLayout">
+              <AnalyticsSectionTabs
+                activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
+                onChange={(key) => {
+                  if (key === "overview") openAnalyticsHub();
+                  else if (key === "actions") openProductActionsRegistry();
+                  else if (key === "properties") openPropertiesRegistry();
+                }}
+              />
+              {analyticsHubRoute.active ? (
+                <AnalyticsHub
+                  workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={analyticsHubRoute.projectId || activeProjectId}
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionId=""
+                  sessionTitle=""
+                  onOpenProductActionsRegistry={openProductActionsRegistry}
+                  onOpenPropertiesRegistry={openPropertiesRegistry}
+                  onClose={closeAnalyticsHub}
+                />
+              ) : productActionsRegistryRoute.active ? (
+                <ProductActionsRegistry
+                  scope={productActionsRegistryRoute.scope}
+                  workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={productActionsRegistryRoute.projectId || activeProjectId}
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionId=""
+                  sessionTitle=""
+                  onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+                  onOpenProject={openProductActionsRegistryProject}
+                  onOpenSession={openProductActionsRegistrySession}
+                  onClose={closeProductActionsRegistry}
+                />
+              ) : (
+                <ProcessPropertiesRegistryPage
+                  scope="project"
+                  workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={propertiesRegistryRoute.projectId || activeProjectId}
+                  sessionId=""
+                  onClose={closePropertiesRegistry}
+                />
+              )}
+            </div>
+          ) : (
+            <WorkspaceExplorer
+              activeOrgId={workspaceActiveOrgId}
+              requestProjectId={activeProjectId}
+              requestProjectWorkspaceId={activeProjectWorkspaceId}
+              requestProjectContext={activeProjectRouteContext}
+              onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
+              onClearRequestedProject={onClearWorkspaceProject}
+            />
+          )
+        ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active ? (
+          <div className="analyticsSurfaceLayout">
+            <AnalyticsSectionTabs
+              activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : "properties"}
+              onChange={(key) => {
+                if (key === "overview") openAnalyticsHub();
+                else if (key === "actions") openProductActionsRegistry();
+                else if (key === "properties") openPropertiesRegistry();
+              }}
+            />
+            {analyticsHubRoute.active ? (
+              <AnalyticsHub
+                workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={analyticsHubRoute.projectId || activeProjectId}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionId={sid}
+                sessionTitle={toText(draft?.title)}
+                onOpenProductActionsRegistry={openProductActionsRegistry}
+                onOpenPropertiesRegistry={openPropertiesRegistry}
+                onClose={closeAnalyticsHub}
+              />
+            ) : productActionsRegistryRoute.active ? (
+              <ProductActionsRegistry
+                scope={productActionsRegistryRoute.scope}
+                workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={productActionsRegistryRoute.projectId || activeProjectId}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionId={sid}
+                sessionTitle={toText(draft?.title)}
+                onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+                onOpenProject={openProductActionsRegistryProject}
+                onOpenSession={openProductActionsRegistrySession}
+                onClose={closeProductActionsRegistry}
+              />
+            ) : (
+              <ProcessPropertiesRegistryPage
+                scope="session"
+                workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={propertiesRegistryRoute.projectId || activeProjectId}
+                sessionId={sid}
+                onClose={closePropertiesRegistry}
+              />
+            )}
+          </div>
+        ) : tab === "doc" ? (
+          <DocStage
+            sessionId={sid}
+            draft={draft}
+            qualityErrorCount={Number(qualitySummary?.errors || 0)}
+            onRecalculateRtiers={onRecalculateRtiers}
+            onClose={() => setTab("diagram")}
+          />
+        ) : tab === "dod" ? (
+          <DodStage readiness={dodReadinessV1} />
+        ) : tab === "analytics" ? (
+          <div className="h-full min-h-0 overflow-hidden">
+            <AnalyticsPage scope="session" scopeId={sid} module="overview" orgId={activeOrgId} embedded />
+          </div>
+        ) : (
+          <div className="pm-processman-layout">
+          <div className="pm-processman-layout__canvas">
+          <div className="relative h-full min-h-0">
+            {!isInterview && (
+            <div className="absolute inset-0">
+              <div
+                className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""} ${bpmnFileDragActive ? "ring-2 ring-accent ring-inset" : ""}`}
+                ref={bpmnStageHostRefCallback}
+                onDragEnter={handleBpmnFileDragEnter}
+                onDragOver={handleBpmnFileDragOver}
+                onDragLeave={handleBpmnFileDragLeave}
+                onDrop={handleBpmnFileDrop}
+              >
+                {bpmnFileDragActive ? (
+                  <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-accentSoft/70 backdrop-blur-[1px]" data-testid="bpmn-file-drop-overlay">
+                    <div className="rounded-xl border border-accent bg-panel px-4 py-3 text-sm font-semibold text-fg shadow-panel">
+                      Отпустите файл для импорта
+                    </div>
+                  </div>
+                ) : null}
+                {subprocessBreadcrumbs?.length > 1 && tab !== "xml" ? (
+                  <div className="subprocessBreadcrumbsBar">
+                    {subprocessBreadcrumbs.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => onReturnToParent?.(sid)}
+                        className="subprocessBackButton"
+                        title="Назад"
+                        data-testid="subprocess-back-button"
+                      >
+                        ←
+                      </button>
+                    ) : null}
+                    <SubprocessBreadcrumbs
+                      breadcrumbs={subprocessBreadcrumbs}
+                      onNavigate={onBreadcrumbNavigate}
+                    />
+                  </div>
+                ) : null}
+                {tab !== "xml" ? (
+                  <ProcessStageDiagramControls
+                    view={diagramControlsView}
                   />
                 ) : null}
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
