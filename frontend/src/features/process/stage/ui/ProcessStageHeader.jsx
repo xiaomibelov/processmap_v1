@@ -99,9 +99,12 @@ export default function ProcessStageHeader({ view = {} }) {
     ? latestPublishedRevisionNumber
     : (latestRevisionNumber > 0 ? latestRevisionNumber : 0);
   const versionChipLabel = resolvedVersionNumber > 0 ? `V. ${resolvedVersionNumber}` : "V. —";
+  const latestPublishedRevisionStatus = toText(sessionRevisionHistorySnapshot?.latestPublishedRevisionStatus);
   const versionChipTitle = resolvedVersionNumber > 0
     ? `Текущая версия: ${resolvedVersionNumber}`
-    : (publishedRevisionBadge.title || "Версия пока не создана.");
+    : (latestPublishedRevisionStatus === "loading"
+      ? "Обновление версии…"
+      : (publishedRevisionBadge.title || "Версия пока не создана."));
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
   const uploadStatusState = toText(saveUploadStatus?.state);
