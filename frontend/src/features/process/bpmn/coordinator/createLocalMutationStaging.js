@@ -133,7 +133,7 @@ export default function createLocalMutationStaging(options = {}) {
       if (xmlRes?.ok) {
         const serializedXml = asTextOption(xmlRes.xml);
         const nextState = store.setXml(serializedXml, "runtime_change_throttled", { bumpRev: true, dirty: true });
-        cacheRaw?.(sid, serializedXml, asNumber(nextState?.rev, 0), "runtime_change_throttled");
+        cacheRaw?.(sid, serializedXml, asNumber(nextState?.rev, 0), "runtime_change_throttled", { hash: asTextOption(nextState?.hash) });
         emit?.("REV_BUMP", {
           sid,
           rev: asNumber(nextState?.rev, 0),
@@ -219,7 +219,7 @@ export default function createLocalMutationStaging(options = {}) {
     // skip cacheRaw — the recovery cache is fed by the throttled snapshot.
     const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
     if (!positional) {
-      cacheRaw?.(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change");
+      cacheRaw?.(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change", { hash: asTextOption(nextState?.hash) });
     } else {
       scheduleThrottledSerialization();
     }

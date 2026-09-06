@@ -66,7 +66,7 @@ export default function createBpmnCoordinator(options = {}) {
     getRuntime,
     getSessionId: currentSid,
     onRuntimeChange: (ev) => onRuntimeChange?.(ev),
-    cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
+    cacheRaw: (sid, xml, rev, reason, options) => cacheRaw(sid, xml, rev, reason, options),
     emit: (event, payload) => emit(event, payload),
     requestAutosave: (reason) => scheduleSave(reason),
     getIsDragging,
@@ -273,11 +273,11 @@ export default function createBpmnCoordinator(options = {}) {
     }
   }
 
-  function cacheRaw(sid, xml, rev, reason) {
+  function cacheRaw(sid, xml, rev, reason, options) {
     const cacheRawFn = persistence?.cacheRaw;
     if (typeof cacheRawFn !== "function") return { ok: false, source: "runtime_cache" };
     try {
-      return cacheRawFn(sid, xml, rev, reason);
+      return cacheRawFn(sid, xml, rev, reason, options);
     } catch {
       return { ok: false, source: "runtime_cache" };
     }
@@ -596,7 +596,7 @@ export default function createBpmnCoordinator(options = {}) {
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
-    cacheRaw(sid, xml, storedRev, reason);
+    cacheRaw(sid, xml, storedRev, reason, { hash: xmlHash });
     store.markSaved(storedRev, xmlHash);
     if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= targetRev) {
       clearPendingSave();
@@ -911,7 +911,7 @@ export default function createBpmnCoordinator(options = {}) {
         }
         const storedRev = asNumber(persisted?.storedRev, rev);
         const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
-        cacheRaw(sid, xml, storedRev, reason);
+        cacheRaw(sid, xml, storedRev, reason, { hash: xmlHash });
         store.markSaved(storedRev, xmlHash);
         emit("SAVE_PERSIST_DONE", {
           sid,

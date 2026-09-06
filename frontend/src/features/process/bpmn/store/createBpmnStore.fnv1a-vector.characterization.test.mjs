@@ -43,8 +43,17 @@ function persistenceHash(xml) {
   try {
     const persistence = createBpmnPersistence({});
     persistence.cacheRaw("sid_fnv1a_vector", xml, 1, "runtime_change");
-    assert.equal(setItemCalls.length, 1, "cacheRaw must write runtime cache");
-    return JSON.parse(setItemCalls[0].value).hash;
+    return new Promise((resolve, reject) => {
+      // Запись runtime cache дебаунсится (keep-latest) — ждём flush таймера.
+      setTimeout(() => {
+        try {
+          assert.equal(setItemCalls.length, 1, "cacheRaw must write runtime cache after the debounce window");
+          resolve(JSON.parse(setItemCalls[0].value).hash);
+        } catch (err) {
+          reject(err);
+        }
+      }, 3100);
+    });
   } finally {
     if (hadWindow) globalThis.window = prevWindow;
     else delete globalThis.window;
@@ -58,12 +67,12 @@ test("CURRENT: store/helpers fnv1a copies agree on the fixed vector", () => {
   }
 });
 
-test("CURRENT: persistence fnv1a copy (runtime cache hash) agrees on the vector", () => {
+test("CURRENT: persistence fnv1a copy (runtime cache hash) agrees on the vector", async () => {
   // Пустая строка исключена: writeRuntimeCache by design не пишет пустой xml
-  // в localStorage (createBpmnPersistence.js:201), поэтому копия persistence
+  // в localStorage (createBpmnPersistence.js), поэтому копия persistence
   // на "" косвенно не наблюдаема.
   for (const [input, expected] of VECTOR.filter(([s]) => s.length > 0)) {
-    assert.equal(persistenceHash(input), expected, `persistence cache hash(${JSON.stringify(input)})`);
+    assert.equal(await persistenceHash(input), expected, `persistence cache hash(${JSON.stringify(input)})`);
   }
 });
 
