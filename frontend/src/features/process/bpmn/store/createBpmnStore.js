@@ -27,6 +27,10 @@ export default function createBpmnStore(initial = {}) {
     lastSavedRev: asNumber(initial?.lastSavedRev, 0),
     lastLoadedRev: asNumber(initial?.lastLoadedRev, 0),
     lastHash: asText(initial?.lastHash || initial?.hash || initialHash),
+    // Hash of the xml last known to be persisted/loaded from the backend.
+    // Unlike lastHash it is NOT touched by local staging snapshots, so the
+    // coordinator can skip persisting when the flushed xml is unchanged.
+    savedHash: asText(initial?.savedHash || initialHash),
     source: asText(initial?.source || "init"),
     hash: initialHash,
   };
@@ -114,6 +118,7 @@ export default function createBpmnStore(initial = {}) {
       lastSavedRev: Math.max(state.lastSavedRev, targetRev),
       hash: nextHash,
       lastHash: nextHash,
+      savedHash: nextHash,
       source: "markSaved",
     };
     emit("markSaved");
@@ -128,6 +133,7 @@ export default function createBpmnStore(initial = {}) {
       lastLoadedRev: Math.max(state.lastLoadedRev, targetRev),
       hash: nextHash,
       lastHash: nextHash,
+      savedHash: nextHash,
       source: "markLoaded",
     };
     emit("markLoaded");

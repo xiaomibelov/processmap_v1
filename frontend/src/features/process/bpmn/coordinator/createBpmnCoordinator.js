@@ -448,31 +448,30 @@ export default function createBpmnCoordinator(options = {}) {
     });
     let xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
-    const localHash = asText(state?.lastHash || state?.hash || "");
-    const localDirty = state?.dirty === true;
-    const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
+    // Compare against the hash of the xml last known persisted/loaded on the
+    // backend (savedHash), not against lastHash — staging snapshots overwrite
+    // lastHash with unformatted xml and would defeat the unchanged check.
+    const savedHash = asText(state?.savedHash || "");
     const explicitPublishManualSave = isPublishManualSaveReason(reason);
     const isPropertyOperation = typeof reason === "string" && reason.startsWith("property_");
     if (
       !explicitPublishManualSave
       && !isPropertyOperation
-      && !localDirty
       && currentXmlHash
-      && localHash
-      && currentXmlHash === localHash
-      && localLastSavedRev >= rev
+      && savedHash
+      && currentXmlHash === savedHash
     ) {
       emit("SAVE_PERSIST_SKIPPED_UNCHANGED", {
         sid,
         reason,
         rev,
-        last_saved_rev: localLastSavedRev,
+        last_saved_rev: asNumber(state?.lastSavedRev, 0),
         xml_len: xml.length,
       });
       return {
         ok: true,
-        rev: localLastSavedRev || rev,
-        storedRev: localLastSavedRev || rev,
+        rev: asNumber(state?.lastSavedRev, 0) || rev,
+        storedRev: asNumber(state?.lastSavedRev, 0) || rev,
         skipped: true,
         unchanged: true,
         xml,
