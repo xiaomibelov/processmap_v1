@@ -5664,6 +5664,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           const isInternalModelerUpdate = reason === "setXml"
             && (
               source === "runtime_change"
+              || source === "runtime_change_throttled"
               || source === "flush_save"
               || source === "backend(saved)"
               || source === "local(saved)"

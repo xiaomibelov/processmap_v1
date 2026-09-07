@@ -332,6 +332,7 @@ export default function createBpmnCoordinator(options = {}) {
       sid: asText(sid),
       xml: xmlText,
       at: Date.now(),
+      rev: asNumber(store?.getState?.()?.rev, 0),
     };
   }
 
@@ -341,7 +342,13 @@ export default function createBpmnCoordinator(options = {}) {
     if (!sid || lastSerializedXml.sid !== sid) return null;
     const maxAgeMs = asNumber(options?.maxAgeMs, 1000);
     if (maxAgeMs > 0 && Date.now() - asNumber(lastSerializedXml.at, 0) > maxAgeMs) return null;
-    return { xml: lastSerializedXml.xml, at: lastSerializedXml.at };
+    // Reuse только при доказанном отсутствии правок: любая правка моделера
+    // доходит в store через staging setXml с bumpRev — если store rev сдвинулся
+    // с момента сериализации, отданный XML устарел, и probe-reuse подставил бы
+    // stale XML в xmlOverride (ручное сохранение молча уходило бы в
+    // SAVE_PERSIST_SKIPPED_UNCHANGED, F2).
+    if (asNumber(store?.getState?.()?.rev, 0) !== asNumber(lastSerializedXml.rev, 0)) return null;
+    return { xml: lastSerializedXml.xml, at: lastSerializedXml.at, rev: lastSerializedXml.rev };
   }
 
   async function doFlush(reason = "manual", options = {}) {
@@ -741,15 +748,9 @@ export default function createBpmnCoordinator(options = {}) {
     }
   }
 
-  function notifyDragEnd() {
-    if (!store) return;
-    // Cancel any in-flight drag throttle; the user has released the mouse.
-    if (dragThrottleTimer) {
-      window.clearTimeout(dragThrottleTimer);
-      dragThrottleTimer = 0;
-    }
-    // If there are structural or positional changes that never got flushed
-    // during the drag, schedule one final debounced save shortly after mouseup.
+  function armDragFinalTimer() {
+    // If there are structural or positional changes that never got flushed,
+    // schedule one final debounced save shortly after mouseup.
     if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer && !saveInFlight) {
       dragFinalTimer = window.setTimeout(() => {
         dragFinalTimer = 0;
@@ -762,6 +763,18 @@ export default function createBpmnCoordinator(options = {}) {
         }
       }, dragFinalDebounceMs);
     }
+  }
+
+  function notifyDragEnd() {
+    if (!store) return;
+    // Cancel any in-flight drag throttle; the user has released the mouse.
+    if (dragThrottleTimer) {
+      window.clearTimeout(dragThrottleTimer);
+      dragThrottleTimer = 0;
+    }
+    // Drag-end, пришедшийся на in-flight PUT, здесь таймер НЕ взводит
+    // (saveInFlight) — до-вооружение происходит в finally flushSave (F3).
+    armDragFinalTimer();
   }
 
   async function flushSave(reason = "manual", options = {}) {
@@ -842,6 +855,10 @@ export default function createBpmnCoordinator(options = {}) {
         return result;
       } finally {
         saveInFlight = false;
+        // Drag-end мог прийтись на in-flight PUT: notifyDragEnd не взвёл
+        // dragFinalTimer (saveInFlight), pending-флаги остались без таймера —
+        // до-вооружаем финальный flush после завершения PUT (F3).
+        armDragFinalTimer();
       }
     })();
     flushPromise = run;
