@@ -988,6 +988,11 @@ export default function createBpmnCoordinator(options = {}) {
         };
       } finally {
         saveInFlight = false;
+        // Drag-end мог прийтись на in-flight property PUT: notifyDragEnd не
+        // взвёл dragFinalTimer (saveInFlight), pending-флаги остались без
+        // таймера — до-вооружаем финальный flush после завершения explicit
+        // persist (F3-residual, зеркально finally flushSave).
+        armDragFinalTimer();
       }
     })();
     flushPromise = run;

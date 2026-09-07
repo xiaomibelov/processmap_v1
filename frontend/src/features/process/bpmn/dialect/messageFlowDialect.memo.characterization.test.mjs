@@ -7,6 +7,7 @@ import {
   hoistMessageFlowsFromContainers,
   reinjectMessageFlowsIntoContainers,
 } from "./messageFlowDialect.js";
+import { fnv1aHex } from "../lib/bpmnXmlHash.js";
 
 // ---------------------------------------------------------------------------
 // Characterization contour canvas-save-hot-path-v1 (Коммит 3) — мемо
@@ -222,6 +223,46 @@ test("memo: цепочка apply(apply(x)) идентична безмемо п�
       twiceMemo,
       twiceRef,
       "второй apply по цепочке совпадает с прямым reinject (мемо не меняет результат)",
+    );
+  } finally {
+    restore();
+  }
+});
+
+// Две короткие строки с РАВНЫМ fnv1a-32 (подобраны перебором, фиксируются
+// здесь как regression-вектор): хэш — только первый фильтр мемо, равенство
+// входной строки обязано подтверждаться identity-compare. Pre-fix мемо
+// ключевался одним хэшем: коллизия молча подменяла результат чужой строки
+// (silent corruption сохраняемого XML).
+const COLLISION_A = "cay_a]=yp)F";
+const COLLISION_B = "FcaFc]P[";
+
+test("memo: коллизия fnv1a-32 не подменяет результат — identity-compare входной строки", () => {
+  const restore = installFakeDom();
+  try {
+    importDialectDiagram();
+    assert.equal(
+      fnv1aHex(COLLISION_A),
+      fnv1aHex(COLLISION_B),
+      "regression-вектор: строки действительно коллизионные (fnv1a-32)",
+    );
+    // Обе строки — не маркерные документы: reinject возвращает вход без
+    // изменений (pass-through), поэтому результат apply обязан равняться
+    // СВОЕЙ входной строке.
+    parseCalls = 0;
+    const first = applyMessageFlowExportDialect(COLLISION_A);
+    assert.equal(first, COLLISION_A, "первая строка: pass-through результат");
+
+    const second = applyMessageFlowExportDialect(COLLISION_B);
+    assert.equal(
+      second,
+      COLLISION_B,
+      "коллизионная строка не должна получать результат первой (identity-guard)",
+    );
+    assert.equal(
+      parseCalls,
+      2,
+      "коллизионная строка: пересчёт (хэш совпал, строка — нет)",
     );
   } finally {
     restore();

@@ -221,12 +221,15 @@ let lastImportState = null;
 // transport -> api body). reinject неидемпотентен и парсит DOM, поэтому
 // повторные применения к той же строке — чистый выигрыш мемо.
 //
-// Кэш строго (входная строка -> выходная строка), ключ — fnv1a-хэш входа,
-// 2 записи (last + prev) — сериализации чередуются (raw -> dialect), одной
-// записи недостаточно. Проверка lastImportState.changed остаётся внутри
-// reinject; мемо лишь возвращает уже вычисленный результат. Сброс на любом
-// новом импорте: смена lastImportState по той же строке не должна отдавать
-// stale-результат (реимпорт документа после reload).
+// Кэш строго (входная строка -> выходная строка), первый фильтр — fnv1a-хэш
+// входа, подтверждение — identity-compare входной строки (хранится в записи):
+// 32-битный хэш без строки уязвим к коллизиям, а коллизия молча подменяла бы
+// результат reinject (порча сохраняемого XML). 2 записи (last + prev) —
+// сериализации чередуются (raw -> dialect), одной записи недостаточно.
+// Проверка lastImportState.changed остаётся внутри reinject; мемо лишь
+// возвращает уже вычисленный результат. Сброс на любом новом импорте: смена
+// lastImportState по той же строке не должна отдавать stale-результат
+// (реимпорт документа после reload).
 let exportMemoPrev = null;
 let exportMemoLast = null;
 
@@ -243,11 +246,16 @@ export function applyMessageFlowImportDialect(xmlText) {
 }
 
 export function applyMessageFlowExportDialect(xmlText) {
-  const key = fnv1aHex(String(xmlText ?? ""));
-  if (exportMemoLast && exportMemoLast.key === key) return exportMemoLast.result;
-  if (exportMemoPrev && exportMemoPrev.key === key) return exportMemoPrev.result;
-  const result = reinjectMessageFlowsIntoContainers(xmlText, lastImportState);
+  const input = String(xmlText ?? "");
+  const key = fnv1aHex(input);
+  if (exportMemoLast && exportMemoLast.key === key && exportMemoLast.input === input) {
+    return exportMemoLast.result;
+  }
+  if (exportMemoPrev && exportMemoPrev.key === key && exportMemoPrev.input === input) {
+    return exportMemoPrev.result;
+  }
+  const result = reinjectMessageFlowsIntoContainers(input, lastImportState);
   exportMemoPrev = exportMemoLast;
-  exportMemoLast = { key, result };
+  exportMemoLast = { key, input, result };
   return result;
 }
