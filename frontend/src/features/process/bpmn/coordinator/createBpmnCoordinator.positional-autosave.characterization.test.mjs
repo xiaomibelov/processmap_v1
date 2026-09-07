@@ -2,18 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import createBpmnStore from "../store/createBpmnStore.js";
+import { fnv1aHex } from "../lib/bpmnXmlHash.js";
 import createBpmnCoordinator from "./createBpmnCoordinator.js";
 
 // ---------------------------------------------------------------------------
-// Characterization contour canvas-save-hot-path-v1 (Группа 2).
+// Characterization contour canvas-save-hot-path-v1 (Группа 2, коммит 4).
 //
-// BASELINE: позиционная команда (shape.move / elements.move) проходит staging
-// (сериализация + rev bump + STAGE_POSITIONAL_CHANGE с reason
-// "positional_command"), но НЕ порождает autosave: coordinator.scheduleSave
-// не вызывается (requestAutosave в staging пропущен), flushSave не происходит,
-// persistence.saveRaw не дёргается. Даже после drag-end (notifyDragEnd)
-// positional-only драг не даёт flush. Контур намеренно меняет hot-path, поэтому
-// тест фиксирует текущее поведение через публичный API coordinator.
+// BASELINE (коммиты 1-3): позиционная команда проходит staging
+// (STAGE_POSITIONAL_CHANGE с reason "positional_command"), но autosave
+// запрошен не был — чисто-positional drag заканчивался БЕЗ final-flush
+// (замер: >60с молчания после drag-end).
+//
+// НОВОЕ ПОВЕДЕНИЕ (коммит 4, RC7): завершённые positional-изменения
+// приводят к autosave-flush:
+//   - standalone positional-серия (без drag-событий) → keep-latest throttle
+//     на dragFinalDebounceMs → flushSave("autosave");
+//   - positional drag → notifyDragEnd → dragFinalTimer → flushSave("autosave");
+//   - если XML фактически не изменился, skip-if-unchanged (#924) даёт 0 PUT.
+// Семантика пропуска сериализации positional-кадров в staging (К1) не меняется.
 // ---------------------------------------------------------------------------
 
 function sleep(ms) {
@@ -24,8 +30,11 @@ if (typeof globalThis.window === "undefined") {
   globalThis.window = globalThis;
 }
 
+const FRESH_XML = "<bpmn:definitions id=\"fresh\"/>";
+const SAME_XML = "<bpmn:definitions id=\"same\"/>";
+
 function createHarness(overrides = {}) {
-  const store = createBpmnStore({
+  const store = overrides.store || createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 1,
     dirty: false,
@@ -35,9 +44,10 @@ function createHarness(overrides = {}) {
   const traces = [];
   let dragging = false;
   let changeCb = null;
+  const runtimeXml = overrides.runtimeXml || FRESH_XML;
   const runtime = {
     getStatus: () => ({ ready: true, defs: true, token: 3 }),
-    getXml: async (options = {}) => ({ ok: true, xml: "<bpmn:definitions id=\"fresh\"/>", token: 3, options }),
+    getXml: async (options = {}) => ({ ok: true, xml: runtimeXml, token: 3, options }),
     onChange: (cb) => {
       changeCb = cb;
       return () => {};
@@ -75,26 +85,92 @@ function createHarness(overrides = {}) {
   };
 }
 
+function createUnchangedHarness() {
+  // XML рантайма совпадает с последним сохранённым → skip-if-unchanged.
+  return createHarness({
+    store: createBpmnStore({
+      xml: SAME_XML,
+      rev: 1,
+      dirty: false,
+      lastSavedRev: 1,
+      savedHash: fnv1aHex(SAME_XML),
+    }),
+    runtimeXml: SAME_XML,
+  });
+}
+
 function eventsOf(traces, name) {
   return traces.filter((t) => t.event === name);
 }
 
-test("CURRENT: positional shape.move stages change but never schedules autosave or flushes", async () => {
+test("NEW: standalone positional series flushes one autosave after positional debounce", async () => {
   const { coordinator, fireCommand, saveRawCalls, traces } = createHarness();
   try {
     fireCommand("shape.move");
     fireCommand("elements.move");
+
+    // Keep-latest throttle: серия коллапсируется в один flush.
     await sleep(150);
 
-    // Staging обработал события (иначе тест проверял бы no-op):
     const staged = eventsOf(traces, "STAGE_POSITIONAL_CHANGE");
     assert.equal(staged.length, 2, "both positional commands must reach staging");
     assert.ok(staged.every((t) => t.payload.reason === "positional_command"));
 
-    // КЛЮЧЕВАЯ ФИКСАЦИЯ: ни schedule, ни flush, ни persist.
-    assert.equal(eventsOf(traces, "SAVE_SCHEDULED").length, 0, "positional command must not schedule autosave");
-    assert.equal(eventsOf(traces, "SAVE_PERSIST_STARTED").length, 0, "positional command must not flush");
-    assert.equal(saveRawCalls.length, 0, "positional command must not hit persistence");
+    // Обычный scheduleSave по-прежнему не вызывается для positional-команд.
+    assert.equal(eventsOf(traces, "SAVE_SCHEDULED").length, 0, "positional path must not use the regular autosave schedule");
+    // Но positional final-flush происходит через dragFinalDebounceMs.
+    assert.equal(eventsOf(traces, "SAVE_PERSIST_STARTED").length, 1, "positional series must flush exactly once");
+    assert.equal(saveRawCalls.length, 1, "positional series must hit persistence once");
+    assert.equal(saveRawCalls[0].reason, "autosave");
+  } finally {
+    coordinator.destroy();
+  }
+});
+
+test("NEW: positional-only drag flushes after drag end via dragFinalTimer", async () => {
+  const { coordinator, fireCommand, saveRawCalls, traces, setDragging } = createHarness();
+  try {
+    setDragging(true);
+    fireCommand("shape.move");
+    fireCommand("elements.move");
+    await sleep(100);
+    assert.equal(saveRawCalls.length, 0, "no flush while dragging");
+
+    setDragging(false);
+    coordinator.notifyDragEnd();
+    await sleep(150);
+
+    assert.equal(saveRawCalls.length, 1, "positional drag end must flush one autosave");
+    assert.equal(saveRawCalls[0].reason, "autosave");
+    assert.equal(eventsOf(traces, "SAVE_PERSIST_STARTED").length, 1);
+    assert.equal(eventsOf(traces, "SAVE_SCHEDULED").length, 0);
+  } finally {
+    coordinator.destroy();
+  }
+});
+
+test("NEW: positional flush with unchanged XML is skipped by skip-if-unchanged (0 PUT)", async () => {
+  const { coordinator, fireCommand, saveRawCalls, traces } = createUnchangedHarness();
+  try {
+    fireCommand("shape.move");
+    await sleep(150);
+
+    assert.equal(eventsOf(traces, "SAVE_PERSIST_SKIPPED_UNCHANGED").length, 1, "unchanged positional flush must be skipped");
+    assert.equal(saveRawCalls.length, 0, "unchanged XML must produce zero PUT");
+  } finally {
+    coordinator.destroy();
+  }
+});
+
+test("NEW: positional burst within debounce window collapses into a single flush", async () => {
+  const { coordinator, fireCommand, saveRawCalls } = createHarness();
+  try {
+    for (let i = 0; i < 5; i += 1) {
+      fireCommand("shape.move");
+      await sleep(10);
+    }
+    await sleep(150);
+    assert.equal(saveRawCalls.length, 1, "burst of positional frames must collapse into one flush");
   } finally {
     coordinator.destroy();
   }
@@ -110,29 +186,6 @@ test("CONTROL: structural shape.create schedules autosave and flushes via deboun
     assert.equal(eventsOf(traces, "SAVE_PERSIST_STARTED").length, 1);
     assert.equal(saveRawCalls.length, 1, "harness can observe a real flush");
     assert.equal(saveRawCalls[0].reason, "autosave");
-  } finally {
-    coordinator.destroy();
-  }
-});
-
-test("CURRENT: positional-only drag produces no flush even after drag end", async () => {
-  const { coordinator, fireCommand, saveRawCalls, traces, setDragging } = createHarness();
-  try {
-    setDragging(true);
-    fireCommand("shape.move");
-    fireCommand("elements.move");
-    await sleep(100);
-    assert.equal(saveRawCalls.length, 0, "no flush while dragging");
-
-    // Drag end: notifyDragEnd смотрит dragPendingStructural, который
-    // positional-only драг не ставит.
-    setDragging(false);
-    coordinator.notifyDragEnd();
-    await sleep(150);
-
-    assert.equal(saveRawCalls.length, 0, "CURRENT BEHAVIOR: positional drag end flushes nothing");
-    assert.equal(eventsOf(traces, "SAVE_PERSIST_STARTED").length, 0);
-    assert.equal(eventsOf(traces, "SAVE_SCHEDULED").length, 0);
   } finally {
     coordinator.destroy();
   }

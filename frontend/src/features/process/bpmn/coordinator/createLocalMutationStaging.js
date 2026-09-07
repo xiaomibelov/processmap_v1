@@ -34,6 +34,11 @@ export default function createLocalMutationStaging(options = {}) {
   const cacheRaw = typeof options?.cacheRaw === "function" ? options.cacheRaw : null;
   const emit = typeof options?.emit === "function" ? options.emit : null;
   const requestAutosave = typeof options?.requestAutosave === "function" ? options.requestAutosave : null;
+  // RC7 (коммит 4): сообщить coordinator'у, что positional-изменение staged —
+  // он взведёт keep-final autosave-flush (drag-end или standalone-таймер).
+  const notifyPositionalPending = typeof options?.notifyPositionalPending === "function"
+    ? options.notifyPositionalPending
+    : null;
   const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
   const asTextOption = typeof options?.asText === "function" ? options.asText : asText;
   const asNumber = typeof options?.asNumber === "function"
@@ -236,6 +241,7 @@ export default function createLocalMutationStaging(options = {}) {
         reason: skipReason,
         autosaveSkipped: true,
       });
+      notifyPositionalPending?.();
     } else {
       requestAutosave?.("autosave");
     }
