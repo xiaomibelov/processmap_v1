@@ -48,6 +48,7 @@ import {
 } from "../features/process/bpmn/diff/semanticDiff.js";
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { useSaveUploadLifecycle } from "../features/process/bpmn/save/useSaveUploadLifecycle.js";
+import { createCtrlSaveKeydownHandler } from "../features/process/bpmn/save/ctrlSaveShortcut.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import { detectCamundaNamespaceDivergence } from "../features/process/camunda/camundaExtensions.js";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
@@ -2918,6 +2919,23 @@ function ProcessStage({
   async function handleCreateRevisionAction() {
     await runManualSaveAction({ createRevision: true });
   }
+
+  // Глобальный Ctrl/Cmd+S (canvas-save-hot-path-v1, коммит 4): тот же путь,
+  // что у кнопки сохранения; не перехватываем в editable-таргетах.
+  const runManualSaveActionRef = useRef(runManualSaveAction);
+  runManualSaveActionRef.current = runManualSaveAction;
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onCtrlSaveKeyDown = createCtrlSaveKeydownHandler({
+      onSave: () => {
+        void runManualSaveActionRef.current?.({ createRevision: false });
+      },
+    });
+    window.addEventListener("keydown", onCtrlSaveKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onCtrlSaveKeyDown);
+    };
+  }, []);
 
   // TODO(tech-debt): Review/LLM tabs are temporarily hidden from UI.
   // Clarification data pipeline is kept for later re-introduction.
