@@ -10,6 +10,13 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.storage import _connect, _now_ts  # noqa: E402
 
+# Порог «малого» корпуса для полнокорпусной (unfiltered) загрузки в list_rag_chunks:
+# source_type с суммарным числом чанков <= порога грузится целиком (референс-данные
+# не должны выпадать из окна по created_at); корпуса больше порога — под окном limit.
+# Следствие (зафиксировано в PR): при пересечении порога корпус «клиффом» переходит
+# под окно — его старые чанки могут выпасть из unfiltered-поиска.
+_FULL_CORPUS_MAX_CHUNKS = 1000
+
 
 def _row_to_dict(row) -> dict:
     if row is None:
@@ -213,14 +220,62 @@ def list_rag_chunks(
                 params.append(source_id)
             sql += " ORDER BY c.chunk_index"
         else:
-            sql = "SELECT * FROM rag_chunks WHERE org_id=? ORDER BY created_at"
-            params = [org_id]
-
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(limit)
-
-        rows = con.execute(sql, params).fetchall()
+            # Полнокорпусная загрузка (unfiltered-поиск, fix/rag-fullcorpus-window-v1).
+            # Окно `limit` применяется только к БОЛЬШИМ корпусам (монотонно растущим,
+            # напр. bpmn_xml от автоиндексации): иначе малые org-wide референс-корпуса
+            # (словари, note_thread и будущие типы) при ORDER BY created_at ASC LIMIT N
+            # навсегда выпадают из поиска, т.к. индексируются последними.
+            # Правило общее, без хардкода типов: корпус из <= _FULL_CORPUS_MAX_CHUNKS
+            # чанков грузится целиком; корпуса больше порога — под окном `limit`
+            # самых старых чанков (сохраняет защиту памяти/латентности).
+            counts = con.execute(
+                """
+                SELECT d.source_type, COUNT(*) AS n
+                FROM rag_chunks c
+                JOIN rag_documents d ON c.doc_id = d.doc_id
+                WHERE c.org_id = ? AND d.org_id = ? AND d.is_active = 1
+                GROUP BY d.source_type
+                """,
+                [org_id, org_id],
+            ).fetchall()
+            small_types = [
+                r[0] if not hasattr(r, "keys") else r["source_type"]
+                for r in counts
+                if (r[1] if not hasattr(r, "keys") else r["n"]) <= _FULL_CORPUS_MAX_CHUNKS
+            ]
+            rows = []
+            if small_types:
+                ph = ",".join("?" for _ in small_types)
+                rows += con.execute(
+                    f"""
+                    SELECT c.* FROM rag_chunks c
+                    JOIN rag_documents d ON c.doc_id = d.doc_id
+                    WHERE c.org_id = ? AND d.org_id = ? AND d.is_active = 1
+                      AND d.source_type IN ({ph})
+                    ORDER BY c.created_at
+                    """,
+                    [org_id, org_id, *small_types],
+                ).fetchall()
+            big_sql = """
+                SELECT c.* FROM rag_chunks c
+                JOIN rag_documents d ON c.doc_id = d.doc_id
+                WHERE c.org_id = ? AND d.org_id = ? AND d.is_active = 1
+            """
+            big_params: list[Any] = [org_id, org_id]
+            if small_types:
+                ph = ",".join("?" for _ in small_types)
+                big_sql += f" AND (d.source_type IS NULL OR d.source_type NOT IN ({ph}))"
+                big_params.extend(small_types)
+            big_sql += " ORDER BY c.created_at"
+            if limit is not None:
+                big_sql += " LIMIT ?"
+                big_params.append(limit)
+            rows += con.execute(big_sql, big_params).fetchall()
+        if doc_id or source_type or source_id:
+            if limit is not None:
+                sql += " LIMIT ?"
+                params.append(limit)
+            rows = con.execute(sql, params).fetchall()
     if not rows:
         return []
     if hasattr(rows[0], "keys"):
