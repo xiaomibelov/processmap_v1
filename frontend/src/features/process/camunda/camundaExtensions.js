@@ -1,5 +1,6 @@
 import { PM_ROBOT_META_NAMESPACE } from "../robotmeta/pmModdleDescriptor.js";
 import { dedupeExactPropertyRows } from "./dedupeExactPropertyRows.js";
+import { fnv1aHex } from "../bpmn/lib/bpmnXmlHash.js";
 
 export const CAMUNDA_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
 export const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
@@ -48,16 +49,6 @@ function asArray(value) {
 
 function asText(value) {
   return String(value ?? "").trim();
-}
-
-function fnv1aHex(input) {
-  const src = String(input || "");
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 // Content-derived row id: stable across re-derivations of the same

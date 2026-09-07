@@ -4,6 +4,7 @@ import {
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
+import { fnv1aHex } from "../lib/bpmnXmlHash.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
@@ -149,18 +150,13 @@ function resolvePersistErrorText(saved = null, fallback = "", details = {}, stat
   return asText(fallback || "failed to save bpmn");
 }
 
-function fnv1aHex(input) {
-  const src = asText(input);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 const RUNTIME_CACHE_PREFIX = "fpc_bpmn_runtime_cache:";
 const RUNTIME_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+const RUNTIME_CACHE_WRITE_DEBOUNCE_MS = 3000;
+
+// Debounced keep-latest writes: one setItem per window, latest payload wins.
+// Keyed by session id so concurrent sessions do not invalidate each other.
+const runtimeCacheWriteTimers = new Map();
 
 function runtimeCacheKey(sessionId) {
   const sid = asText(sessionId).trim();
@@ -193,32 +189,53 @@ function readRuntimeCache(sessionId) {
   }
 }
 
-function writeRuntimeCache(sessionId, xmlText, rev = 0, reason = "runtime_change") {
-  if (typeof window === "undefined") return null;
-  const sid = asText(sessionId).trim();
-  const key = runtimeCacheKey(sid);
-  const xml = asText(xmlText);
-  if (!sid || !key || !xml.trim()) return null;
+function flushRuntimeCacheWrite(sid, pending) {
+  // Double-flush guard: the map entry is removed before setItem, so a
+  // re-schedule inside the same tick starts a fresh window.
+  if (runtimeCacheWriteTimers.get(sid) !== pending) return;
+  runtimeCacheWriteTimers.delete(sid);
+  const windowRef = pending.windowRef;
+  if (!windowRef) return;
+  const xml = pending.xml;
   const payload = {
     xml,
-    rev: asNumber(rev, 0),
+    rev: asNumber(pending.rev, 0),
     ts: Date.now(),
-    hash: fnv1aHex(xml),
-    reason: asText(reason || "runtime_change"),
+    hash: asText(pending.hash) || fnv1aHex(xml),
+    reason: asText(pending.reason || "runtime_change"),
   };
   try {
-    window.localStorage?.setItem(key, JSON.stringify(payload));
-    return {
-      source: "runtime_cache",
-      xml: payload.xml,
-      rev: payload.rev,
-      ts: payload.ts,
-      hash: payload.hash,
-      reason: payload.reason,
-    };
+    windowRef.localStorage?.setItem(runtimeCacheKey(sid), JSON.stringify(payload));
   } catch {
-    return null;
+    // no-op: runtime cache is best-effort
   }
+}
+
+function writeRuntimeCache(sessionId, xmlText, rev = 0, reason = "runtime_change", options = {}) {
+  if (typeof window === "undefined") return null;
+  const sid = asText(sessionId).trim();
+  const xml = asText(xmlText);
+  if (!sid || !xml.trim()) return null;
+  const existing = runtimeCacheWriteTimers.get(sid);
+  if (existing?.timer) clearTimeout(existing.timer);
+  const pending = {
+    timer: null,
+    windowRef: window,
+    xml,
+    rev: asNumber(rev, 0),
+    reason: asText(reason || "runtime_change"),
+    hash: asText(options?.hash),
+  };
+  pending.timer = setTimeout(() => flushRuntimeCacheWrite(sid, pending), RUNTIME_CACHE_WRITE_DEBOUNCE_MS);
+  runtimeCacheWriteTimers.set(sid, pending);
+  return {
+    source: "runtime_cache",
+    xml,
+    rev: pending.rev,
+    ts: Date.now(),
+    hash: pending.hash || fnv1aHex(xml),
+    reason: pending.reason,
+  };
 }
 
 function pickFreshestCandidate(candidates = []) {
@@ -788,7 +805,7 @@ export default function createBpmnPersistence(options = {}) {
     } catch {
       // no-op
     }
-    writeRuntimeCache(sid, xml, storedRev, reason);
+    writeRuntimeCache(sid, xml, storedRev, reason, { hash: fnv1aHex(xml) });
     await maybeSaveSnapshot(sid, xml, "persist_ok", storedRev, true, { limit: 1 });
     return {
       ok: true,
@@ -807,8 +824,8 @@ export default function createBpmnPersistence(options = {}) {
   return {
     loadRaw,
     saveRaw,
-    cacheRaw: (sessionId, xmlText, rev = 0, reason = "runtime_change") => {
-      const cached = writeRuntimeCache(sessionId, xmlText, rev, reason);
+    cacheRaw: (sessionId, xmlText, rev = 0, reason = "runtime_change", options = {}) => {
+      const cached = writeRuntimeCache(sessionId, xmlText, rev, reason, options);
       return {
         ok: !!cached,
         source: cached?.source || "runtime_cache",

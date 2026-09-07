@@ -50,6 +50,12 @@ export default function createBpmnCoordinator(options = {}) {
   let dragThrottleTimer = 0;
   let dragFinalTimer = 0;
   let dragPendingStructural = false;
+  // RC7 (коммит 4): завершённые positional-изменения (shape.move/elements.move
+  // и др.) должны давать autosave-flush после отпускания drag'а; standalone
+  // positional-серии (без drag-событий) флашатся keep-latest таймером на
+  // dragFinalDebounceMs. Семантика skip-кадров в staging (К1) не меняется.
+  let pendingPositionalChange = false;
+  let positionalFinalTimer = 0;
   let lastDragSaveAt = 0;
   let saveQueuedRev = 0;
   let conflictReplayReason = "";
@@ -57,14 +63,19 @@ export default function createBpmnCoordinator(options = {}) {
   let singleWriterOwner = "";
   let singleWriterExpiresAt = 0;
   let diagramMutationSaveActive = false;
+  // Last fresh format:true serialization produced by the durable flush path
+  // (raw pre-dialect xml). Lets the manual-save probe reuse it instead of
+  // paying a second full saveXML within a short freshness window.
+  let lastSerializedXml = null;
   const localMutationStaging = createLocalMutationStaging({
     getStore: () => store,
     getRuntime,
     getSessionId: currentSid,
     onRuntimeChange: (ev) => onRuntimeChange?.(ev),
-    cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
+    cacheRaw: (sid, xml, rev, reason, options) => cacheRaw(sid, xml, rev, reason, options),
     emit: (event, payload) => emit(event, payload),
     requestAutosave: (reason) => scheduleSave(reason),
+    notifyPositionalPending: () => notePositionalChange(),
     getIsDragging,
     asText,
     asNumber,
@@ -109,6 +120,33 @@ export default function createBpmnCoordinator(options = {}) {
 
   function clearDragPending() {
     dragPendingStructural = false;
+  }
+
+  function clearPositionalPending() {
+    pendingPositionalChange = false;
+  }
+
+  function clearPositionalFinalTimer() {
+    if (!positionalFinalTimer) return;
+    window.clearTimeout(positionalFinalTimer);
+    positionalFinalTimer = 0;
+  }
+
+  function notePositionalChange() {
+    if (!store) return;
+    pendingPositionalChange = true;
+    // Во время drag'а финальный flush взводит notifyDragEnd (dragFinalTimer);
+    // standalone-серия без drag-событий флашится keep-latest таймером.
+    if (getIsDragging()) return;
+    clearPositionalFinalTimer();
+    positionalFinalTimer = window.setTimeout(() => {
+      positionalFinalTimer = 0;
+      const hadPending = pendingPositionalChange;
+      clearPositionalPending();
+      if (hadPending) {
+        void flushSave("autosave");
+      }
+    }, dragFinalDebounceMs);
   }
 
   function clearConflictReplayReason() {
@@ -269,11 +307,11 @@ export default function createBpmnCoordinator(options = {}) {
     }
   }
 
-  function cacheRaw(sid, xml, rev, reason) {
+  function cacheRaw(sid, xml, rev, reason, options) {
     const cacheRawFn = persistence?.cacheRaw;
     if (typeof cacheRawFn !== "function") return { ok: false, source: "runtime_cache" };
     try {
-      return cacheRawFn(sid, xml, rev, reason);
+      return cacheRawFn(sid, xml, rev, reason, options);
     } catch {
       return { ok: false, source: "runtime_cache" };
     }
@@ -285,6 +323,32 @@ export default function createBpmnCoordinator(options = {}) {
       return { ok: false, error: "loadRaw unavailable", status: 0 };
     }
     return await loadRawFn(sid, optionsForLoad);
+  }
+
+  function recordSerializedXml(sid, xml) {
+    const xmlText = asText(xml);
+    if (!xmlText) return;
+    lastSerializedXml = {
+      sid: asText(sid),
+      xml: xmlText,
+      at: Date.now(),
+      rev: asNumber(store?.getState?.()?.rev, 0),
+    };
+  }
+
+  function getLastSerializedXml(options = {}) {
+    if (!lastSerializedXml) return null;
+    const sid = currentSid();
+    if (!sid || lastSerializedXml.sid !== sid) return null;
+    const maxAgeMs = asNumber(options?.maxAgeMs, 1000);
+    if (maxAgeMs > 0 && Date.now() - asNumber(lastSerializedXml.at, 0) > maxAgeMs) return null;
+    // Reuse только при доказанном отсутствии правок: любая правка моделера
+    // доходит в store через staging setXml с bumpRev — если store rev сдвинулся
+    // с момента сериализации, отданный XML устарел, и probe-reuse подставил бы
+    // stale XML в xmlOverride (ручное сохранение молча уходило бы в
+    // SAVE_PERSIST_SKIPPED_UNCHANGED, F2).
+    if (asNumber(store?.getState?.()?.rev, 0) !== asNumber(lastSerializedXml.rev, 0)) return null;
+    return { xml: lastSerializedXml.xml, at: lastSerializedXml.at, rev: lastSerializedXml.rev };
   }
 
   async function doFlush(reason = "manual", options = {}) {
@@ -435,6 +499,7 @@ export default function createBpmnCoordinator(options = {}) {
       }
       rawXml = asText(xmlRes?.xml);
       runtimeToken = asNumber(xmlRes?.token, 0);
+      recordSerializedXml(sid, rawXml);
     }
     const prepared = preparePersistedXml(
       applyMessageFlowExportDialect(asText(rawXml)),
@@ -479,7 +544,10 @@ export default function createBpmnCoordinator(options = {}) {
         xmlAlreadyTransformed: prepared.transformed,
       };
     }
-    if (hasDuplicateCamundaProperties(xml)) {
+    // Cheap pre-check in the same style as the regex fallbacks in
+    // camundaExtensions: skip the full DOM parse entirely when the xml cannot
+    // contain camunda/zeebe properties.
+    if (xml.includes("property") && hasDuplicateCamundaProperties(xml)) {
       const dedupedXml = dedupCamundaProperties(xml);
       emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
         sid,
@@ -569,7 +637,7 @@ export default function createBpmnCoordinator(options = {}) {
     }
     const storedRev = asNumber(persisted?.storedRev, targetRev);
     const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
-    cacheRaw(sid, xml, storedRev, reason);
+    cacheRaw(sid, xml, storedRev, reason, { hash: xmlHash });
     store.markSaved(storedRev, xmlHash);
     if (pendingSave && pendingSave.sessionId === sid && pendingSave.targetRev <= targetRev) {
       clearPendingSave();
@@ -680,6 +748,23 @@ export default function createBpmnCoordinator(options = {}) {
     }
   }
 
+  function armDragFinalTimer() {
+    // If there are structural or positional changes that never got flushed,
+    // schedule one final debounced save shortly after mouseup.
+    if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer && !saveInFlight) {
+      dragFinalTimer = window.setTimeout(() => {
+        dragFinalTimer = 0;
+        const hadStructural = dragPendingStructural;
+        const hadPositional = pendingPositionalChange;
+        dragPendingStructural = false;
+        clearPositionalPending();
+        if (hadStructural || hadPositional) {
+          void flushSave("autosave");
+        }
+      }, dragFinalDebounceMs);
+    }
+  }
+
   function notifyDragEnd() {
     if (!store) return;
     // Cancel any in-flight drag throttle; the user has released the mouse.
@@ -687,15 +772,9 @@ export default function createBpmnCoordinator(options = {}) {
       window.clearTimeout(dragThrottleTimer);
       dragThrottleTimer = 0;
     }
-    // If there are structural changes that never got flushed during the drag,
-    // schedule one final debounced save shortly after mouseup.
-    if (dragPendingStructural && !dragFinalTimer && !saveInFlight) {
-      dragFinalTimer = window.setTimeout(() => {
-        dragFinalTimer = 0;
-        dragPendingStructural = false;
-        void flushSave("autosave");
-      }, dragFinalDebounceMs);
-    }
+    // Drag-end, пришедшийся на in-flight PUT, здесь таймер НЕ взводит
+    // (saveInFlight) — до-вооружение происходит в finally flushSave (F3).
+    armDragFinalTimer();
   }
 
   async function flushSave(reason = "manual", options = {}) {
@@ -776,6 +855,10 @@ export default function createBpmnCoordinator(options = {}) {
         return result;
       } finally {
         saveInFlight = false;
+        // Drag-end мог прийтись на in-flight PUT: notifyDragEnd не взвёл
+        // dragFinalTimer (saveInFlight), pending-флаги остались без таймера —
+        // до-вооружаем финальный flush после завершения PUT (F3).
+        armDragFinalTimer();
       }
     })();
     flushPromise = run;
@@ -839,7 +922,9 @@ export default function createBpmnCoordinator(options = {}) {
           xml_len: xml.length,
         });
         const startedAt = Date.now();
-        if (hasDuplicateCamundaProperties(xml)) {
+        // Cheap pre-check (same style as doFlush and the regex fallbacks in
+        // camundaExtensions): skip the DOM parse when no properties present.
+        if (xml.includes("property") && hasDuplicateCamundaProperties(xml)) {
           const dedupedXml = dedupCamundaProperties(xml);
           emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
             sid,
@@ -882,7 +967,7 @@ export default function createBpmnCoordinator(options = {}) {
         }
         const storedRev = asNumber(persisted?.storedRev, rev);
         const xmlHash = asText(persisted?.hash || fnv1aHex(xml));
-        cacheRaw(sid, xml, storedRev, reason);
+        cacheRaw(sid, xml, storedRev, reason, { hash: xmlHash });
         store.markSaved(storedRev, xmlHash);
         emit("SAVE_PERSIST_DONE", {
           sid,
@@ -903,6 +988,11 @@ export default function createBpmnCoordinator(options = {}) {
         };
       } finally {
         saveInFlight = false;
+        // Drag-end мог прийтись на in-flight property PUT: notifyDragEnd не
+        // взвёл dragFinalTimer (saveInFlight), pending-флаги остались без
+        // таймера — до-вооружаем финальный flush после завершения explicit
+        // persist (F3-residual, зеркально finally flushSave).
+        armDragFinalTimer();
       }
     })();
     flushPromise = run;
@@ -963,6 +1053,8 @@ export default function createBpmnCoordinator(options = {}) {
     clearPendingSave();
     clearDragTimers();
     clearDragPending();
+    clearPositionalFinalTimer();
+    clearPositionalPending();
     saveQueuedRev = 0;
     return store.setXml(xml, source, {
       bumpRev: options?.bumpRev === true,
@@ -1096,6 +1188,8 @@ export default function createBpmnCoordinator(options = {}) {
       saveInFlight,
       saveQueuedRev,
       conflictReplayReason,
+      dragPendingStructural,
+      pendingPositionalChange,
       singleWriterOwner: readSingleWriterOwner(),
       singleWriterExpiresAt,
       store: store?.getState?.() || null,
@@ -1112,6 +1206,9 @@ export default function createBpmnCoordinator(options = {}) {
     clearPendingSave();
     clearConflictReplayReason();
     clearDragPending();
+    clearPositionalFinalTimer();
+    clearPositionalPending();
+    localMutationStaging.cancelPendingSerialization?.();
     const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
     saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
     emit("SAVE_QUEUE_CLEARED", {
@@ -1127,6 +1224,8 @@ export default function createBpmnCoordinator(options = {}) {
     saveInFlight = false;
     saveQueuedRev = 0;
     lastDragSaveAt = 0;
+    positionalFinalTimer = 0;
+    clearPositionalPending();
     clearConflictReplayReason();
     clearSingleWriter("destroy");
   }
@@ -1148,6 +1247,7 @@ export default function createBpmnCoordinator(options = {}) {
     endSingleWriter,
     reload,
     syncExternalXml,
+    getLastSerializedXml,
     getDebugState,
     isFlushing,
     clearPendingWork,

@@ -9,25 +9,37 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createSaveUploadLifecycle, IDLE_SAVE_UPLOAD_EVENT } from "./saveUploadLifecycle.js";
+import { createSaveStatusEmitDebouncer } from "./saveStatusEmitDebounce.js";
 
 export function useSaveUploadLifecycle({ onConflictEvent } = {}) {
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const onConflictEventRef = useRef(onConflictEvent);
   onConflictEventRef.current = onConflictEvent;
 
+  // RC4-п.5: эмиты в React-state debounce'атся (≥300мс, не чаще раза в 500мс),
+  // conflict/failed проходят немедленно. Ядро жизненного цикла не меняется.
+  const emitDebouncerRef = useRef(null);
+  if (emitDebouncerRef.current === null) {
+    emitDebouncerRef.current = createSaveStatusEmitDebouncer({
+      onEmit: setSaveUploadLifecycleEvent,
+    });
+  }
+
   const lifecycleRef = useRef(null);
   if (lifecycleRef.current === null) {
     lifecycleRef.current = createSaveUploadLifecycle({
       onConflictEvent: (next) => onConflictEventRef.current?.(next),
-      onChange: setSaveUploadLifecycleEvent,
+      onChange: (next) => emitDebouncerRef.current?.schedule(next),
     });
   }
 
-  // Прежний cleanup-effect на unmount: только отмена armed-clear таймера.
+  // Прежний cleanup-effect на unmount: отмена armed-clear таймера + сброс
+  // pending-эмита debouncer'а.
   useEffect(() => {
     const lifecycle = lifecycleRef.current;
     return () => {
       lifecycle?.dispose();
+      emitDebouncerRef.current?.dispose();
     };
   }, []);
 

@@ -52,6 +52,9 @@ test("after remote save/read, stale runtime cache does not win over backend dura
   });
 
   persistence.cacheRaw("sid_cache", "<bpmn:old/>", 2, "runtime_change");
+  // Запись runtime cache дебаунсится (keep-latest): ждём flush, чтобы
+  // устаревший кэш был виден readRaw и отклонялся в пользу backend.
+  await new Promise((resolve) => setTimeout(resolve, 3100));
   const loaded = await persistence.loadRaw("sid_cache");
 
   assert.equal(loaded.ok, true);

@@ -16,6 +16,16 @@ function isPositionalCommand(commandRaw) {
   return POSITIONAL_COMMANDS.has(command);
 }
 
+// Positional/drag frames must not pay a full runtime.getXml per frame (a
+// saveXML on every mousemove frame is what tanks canvas FPS on large
+// diagrams). The snapshot is coalesced into a single keep-latest serialization
+// shortly after the frame instead.
+const THROTTLED_SERIALIZE_DELAY_MS = 300;
+// Same busy-modeler cap as the durable flush path: a stuck modeler must not
+// block the throttled snapshot either — the tick is skipped and the next
+// staged change schedules a fresh attempt.
+const THROTTLED_SERIALIZE_BUSY_CAP_MS = 5000;
+
 export default function createLocalMutationStaging(options = {}) {
   const getStore = typeof options?.getStore === "function" ? options.getStore : () => null;
   const getRuntime = typeof options?.getRuntime === "function" ? options.getRuntime : () => null;
@@ -24,6 +34,11 @@ export default function createLocalMutationStaging(options = {}) {
   const cacheRaw = typeof options?.cacheRaw === "function" ? options.cacheRaw : null;
   const emit = typeof options?.emit === "function" ? options.emit : null;
   const requestAutosave = typeof options?.requestAutosave === "function" ? options.requestAutosave : null;
+  // RC7 (коммит 4): сообщить coordinator'у, что positional-изменение staged —
+  // он взведёт keep-final autosave-flush (drag-end или standalone-таймер).
+  const notifyPositionalPending = typeof options?.notifyPositionalPending === "function"
+    ? options.notifyPositionalPending
+    : null;
   const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
   const asTextOption = typeof options?.asText === "function" ? options.asText : asText;
   const asNumber = typeof options?.asNumber === "function"
@@ -32,6 +47,10 @@ export default function createLocalMutationStaging(options = {}) {
       const n = Number(value);
       return Number.isFinite(n) ? n : fallback;
     };
+
+  let throttledSerializeTimer = 0;
+  let throttledSerializeInFlight = false;
+  let throttledSerializeReschedule = false;
 
   function currentSid() {
     return asTextOption(getSessionId?.() || "").trim();
@@ -84,6 +103,68 @@ export default function createLocalMutationStaging(options = {}) {
     });
   }
 
+  function scheduleThrottledSerialization() {
+    // Keep-latest trailing throttle: every new positional frame re-arms the
+    // timer so a burst of drag frames collapses into one serialization.
+    if (throttledSerializeTimer) {
+      clearTimeout(throttledSerializeTimer);
+    }
+    throttledSerializeTimer = setTimeout(() => {
+      throttledSerializeTimer = 0;
+      void runThrottledSerialization();
+    }, THROTTLED_SERIALIZE_DELAY_MS);
+  }
+
+  async function runThrottledSerialization() {
+    if (throttledSerializeInFlight) {
+      // A previous serialization is still waiting on the busy-modeler cap —
+      // skip this tick and re-arm once it settles.
+      throttledSerializeReschedule = true;
+      return;
+    }
+    const store = getStore();
+    const sid = currentSid();
+    if (!store || !sid) return;
+    const runtime = getRuntime();
+    const status = runtime?.getStatus?.();
+    if (!status?.ready || !status?.defs) return;
+    throttledSerializeInFlight = true;
+    try {
+      const xmlRes = await withTimeout(
+        () => runtime.getXml({ format: false }),
+        THROTTLED_SERIALIZE_BUSY_CAP_MS,
+        "stageThrottledSerialization.getXml",
+      );
+      if (xmlRes?.ok) {
+        const serializedXml = asTextOption(xmlRes.xml);
+        const nextState = store.setXml(serializedXml, "runtime_change_throttled", { bumpRev: true, dirty: true });
+        cacheRaw?.(sid, serializedXml, asNumber(nextState?.rev, 0), "runtime_change_throttled", { hash: asTextOption(nextState?.hash) });
+        emit?.("REV_BUMP", {
+          sid,
+          rev: asNumber(nextState?.rev, 0),
+          reason: "runtime_change_throttled",
+        });
+      }
+    } catch {
+      // Busy or transiently broken modeler: skip this tick without touching
+      // the store; the next staged change schedules a fresh attempt.
+    } finally {
+      throttledSerializeInFlight = false;
+    }
+    if (throttledSerializeReschedule) {
+      throttledSerializeReschedule = false;
+      scheduleThrottledSerialization();
+    }
+  }
+
+  function cancelPendingSerialization() {
+    if (throttledSerializeTimer) {
+      clearTimeout(throttledSerializeTimer);
+      throttledSerializeTimer = 0;
+    }
+    throttledSerializeReschedule = false;
+  }
+
   async function stageRuntimeChange(ev) {
     const store = getStore();
     if (!store) return { ok: false, reason: "missing_store" };
@@ -92,42 +173,8 @@ export default function createLocalMutationStaging(options = {}) {
 
     onRuntimeChange?.(ev);
 
-    const runtime = getRuntime();
-    const status = runtime?.getStatus?.();
-    let nextXml = asTextOption(store.getState?.()?.xml || "");
-    let xmlAuthority = "staged_local_store_fallback";
-    let xmlExportMode = "store_fallback";
-    if (status?.ready && status?.defs) {
-      // Local interactive staging needs a lightweight snapshot for continuity
-      // and autosave eligibility, but formatted export remains canonical only
-      // on the durable flush path.
-      // Cap the staging export so a transiently busy/broken modeler cannot block
-      // the autosave pipeline indefinitely (observed as a 10s transport timeout
-      // after property mutations that remove extension elements).
-      try {
-        const xmlRes = await withTimeout(
-          () => runtime.getXml({ format: false }),
-          1500,
-          "stageRuntimeChange.getXml",
-        );
-        if (xmlRes?.ok) {
-          nextXml = asTextOption(xmlRes.xml);
-          xmlAuthority = "staged_local_runtime_snapshot";
-          xmlExportMode = "runtime_unformatted";
-        }
-      } catch {
-        // Fallback to the store XML already captured above.
-      }
-    }
-
-    const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
-    cacheRaw?.(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change");
-    emit?.("REV_BUMP", {
-      sid,
-      rev: asNumber(nextState?.rev, 0),
-      reason: "runtime_change",
-    });
-
+    // Decide positional/drag BEFORE any serialization so hot positional frames
+    // never pay a full runtime.getXml (RC1: save hot-path on drag).
     const command = resolveCommand(ev);
     let positional = isPositionalCommand(command);
     let autosaveSkipped = positional;
@@ -141,6 +188,52 @@ export default function createLocalMutationStaging(options = {}) {
       skipReason = "drag_in_progress";
     }
 
+    let nextXml = asTextOption(store.getState?.()?.xml || "");
+    let xmlAuthority = "staged_local_store_fallback";
+    let xmlExportMode = "store_fallback";
+    if (!positional) {
+      const runtime = getRuntime();
+      const status = runtime?.getStatus?.();
+      if (status?.ready && status?.defs) {
+        // Local interactive staging needs a lightweight snapshot for continuity
+        // and autosave eligibility, but formatted export remains canonical only
+        // on the durable flush path.
+        // Cap the staging export so a transiently busy/broken modeler cannot block
+        // the autosave pipeline indefinitely (observed as a 10s transport timeout
+        // after property mutations that remove extension elements).
+        try {
+          const xmlRes = await withTimeout(
+            () => runtime.getXml({ format: false }),
+            1500,
+            "stageRuntimeChange.getXml",
+          );
+          if (xmlRes?.ok) {
+            nextXml = asTextOption(xmlRes.xml);
+            xmlAuthority = "staged_local_runtime_snapshot";
+            xmlExportMode = "runtime_unformatted";
+          }
+        } catch {
+          // Fallback to the store XML already captured above.
+        }
+      }
+    }
+
+    // Dirty-mark via setXml with the current store xml: content-wise a no-op,
+    // but it bumps rev/dirty and fans out to subscribers (invariant #924:
+    // staging setXml touches lastHash, never savedHash). Positional frames
+    // skip cacheRaw — the recovery cache is fed by the throttled snapshot.
+    const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
+    if (!positional) {
+      cacheRaw?.(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change", { hash: asTextOption(nextState?.hash) });
+    } else {
+      scheduleThrottledSerialization();
+    }
+    emit?.("REV_BUMP", {
+      sid,
+      rev: asNumber(nextState?.rev, 0),
+      reason: "runtime_change",
+    });
+
     if (autosaveSkipped) {
       emit?.("STAGE_POSITIONAL_CHANGE", {
         sid,
@@ -148,6 +241,7 @@ export default function createLocalMutationStaging(options = {}) {
         reason: skipReason,
         autosaveSkipped: true,
       });
+      notifyPositionalPending?.();
     } else {
       requestAutosave?.("autosave");
     }
@@ -169,5 +263,6 @@ export default function createLocalMutationStaging(options = {}) {
 
   return {
     stageRuntimeChange,
+    cancelPendingSerialization,
   };
 }

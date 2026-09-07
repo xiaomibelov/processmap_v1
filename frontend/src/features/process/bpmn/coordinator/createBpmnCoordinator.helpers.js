@@ -1,3 +1,5 @@
+export { fnv1aHex } from "../lib/bpmnXmlHash.js";
+
 /**
  * Coerce a value to a string.
  * @param {unknown} value
@@ -169,21 +171,6 @@ export function isStaleConflictFailure(saved = null) {
     || errorCode === "DIAGRAM_STATE_CONFLICT"
     || detailsCode === "DIAGRAM_STATE_CONFLICT"
   );
-}
-
-/**
- * Compute a 32-bit FNV-1a hash of a string and return it as zero-padded hex.
- * @param {unknown} input
- * @returns {string}
- */
-export function fnv1aHex(input) {
-  const src = asText(input);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 /**
