@@ -175,7 +175,14 @@ function buildConflictTitle(conflict = null, fallbackText = "") {
 
 function resolveSaveState(stage = "") {
   const normalized = toText(stage).toLowerCase();
-  if (normalized === "preparing" || normalized === "uploading") return "saving";
+  if (normalized === "preparing") return "saving";
+  // Optimistic (canvas-save-hot-path-v1, коммит 4): «applied» эмитится после
+  // локального применения (SAVE_EXECUTED), «uploading» — во время фонового
+  // PUT. Индикатор не блокируется фоновым PUT; честный откат приходит по
+  // conflict/failed. Ручное сохранение по-прежнему помечается busy отдельно
+  // (saveSnapshot.isSaving), leave-guard сохраняет dirty-ветку.
+  if (normalized === "applied") return "saved";
+  if (normalized === "uploading") return "saved";
   if (normalized === "persisted" || normalized === "skipped_unchanged") return "saved";
   if (normalized === "conflict") return "conflict";
   if (normalized === "failed") return "save_failed";
@@ -187,7 +194,10 @@ export function normalizeBpmnSaveLifecycleEvent(raw = null) {
   const payload = value.payload && typeof value.payload === "object" ? value.payload : {};
   const event = toText(value.event || payload.event).toUpperCase();
   let stage = "idle";
-  if (event === "SAVE_REQUESTED" || event === "SAVE_EXECUTED") stage = "preparing";
+  if (event === "SAVE_REQUESTED") stage = "preparing";
+  // SAVE_EXECUTED эмитится после локального setXml на save-пути — это якорь
+  // optimistic-статуса (canvas-save-hot-path-v1, коммит 4).
+  if (event === "SAVE_EXECUTED") stage = "applied";
   if (event === "SAVE_PERSIST_STARTED") stage = "uploading";
   if (event === "SAVE_PERSIST_DONE") stage = "persisted";
   if (event === "SAVE_PERSIST_FAIL") stage = "failed";
@@ -290,6 +300,18 @@ export function buildSaveUploadStatusBadge(raw = null) {
       tone: "warn",
       label: "Сохраняем сессию…",
       title: "Сохраняем черновик сессии.",
+      state,
+      conflict: null,
+    };
+  }
+  if (stage === "applied") {
+    // Optimistic-local: изменения применены локально, фоновый PUT ещё идёт.
+    // Снаружи выглядит как persisted (скрытый ok-бейдж).
+    return {
+      visible: false,
+      tone: "ok",
+      label: "Сессия сохранена",
+      title: "Черновик сессии сохранён.",
       state,
       conflict: null,
     };

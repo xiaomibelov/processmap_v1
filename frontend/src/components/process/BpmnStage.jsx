@@ -5055,6 +5055,11 @@ const BpmnStage = forwardRef(function BpmnStage({
       diagram_state_version: Number(r.diagramStateVersion || 0),
       xml_len: out.length,
     });
+    // Prime the modeler xml hash with the exact payload we just persisted so
+    // any post-save sync carrying the same XML (incl. formatted store
+    // snapshots after unformatted staging writes, К1/К2) is recognized as
+    // already loaded and does not trigger a full re-import (RC7).
+    lastModelerXmlHashRef.current = fnv1aHex(out);
     applyXmlSnapshot(out, `${hintBase}(saved)`);
     return {
       ok: true,
@@ -5288,6 +5293,8 @@ const BpmnStage = forwardRef(function BpmnStage({
         xml_len: finalOut.length,
       });
       const hint = isLocalSessionId(sid) ? "local(saved)" : "backend(saved)";
+      // Prime the hash of the flushed payload (RC7) — see persistXmlSnapshot.
+      lastModelerXmlHashRef.current = fnv1aHex(finalOut);
       applyXmlSnapshot(finalOut, hint);
       if (resolvedSaveOwner) {
         coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_done`);
@@ -5469,6 +5476,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         view: String(view || "diagram"),
         user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
       });
+      flushPendingCoordinatorSave();
     };
     const onPageHide = (event) => {
       traceProcess("bpmn.lifecycle.pagehide", {
@@ -5478,6 +5486,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         view: String(view || "diagram"),
         user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
       });
+      flushPendingCoordinatorSave();
     };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "hidden") return;
@@ -5487,6 +5496,23 @@ const BpmnStage = forwardRef(function BpmnStage({
         view: String(view || "diagram"),
         user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
       });
+    };
+    // Best-effort flush of the coordinator save queue on page exit — in
+    // ADDITION to the mutation-queue flush in useAutosaveQueue. Синхронный
+    // PUT при beforeunload не гарантирован; при pagehide/visibility-hidden
+    // (bfcache) запрос обычно успевает уйти. Без создания coordinator'а:
+    // используется только уже существующий инстанс.
+    const flushPendingCoordinatorSave = () => {
+      try {
+        const coordinator = bpmnCoordinatorRef.current;
+        if (!coordinator || typeof coordinator.flushSave !== "function") return;
+        if (typeof coordinator.isFlushing === "function" && coordinator.isFlushing()) return;
+        const state = bpmnStoreRef.current?.getState?.();
+        if (!state?.dirty) return;
+        void coordinator.flushSave("page_exit");
+      } catch {
+        // best-effort only
+      }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("pagehide", onPageHide);

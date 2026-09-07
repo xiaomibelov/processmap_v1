@@ -174,3 +174,46 @@ test("conflict badge preserves zero server version instead of replacing it with 
   assert.match(badge.title, /Серверная версия:\s*0\./);
   assert.match(badge.title, /Ваша базовая:\s*1\./);
 });
+
+// --- Optimistic status (canvas-save-hot-path-v1, коммит 4) -------------------
+// «Сохранено» после enqueue+локального применения (SAVE_EXECUTED), фоновый PUT
+// не блокирует индикатор (uploading → saved); честный откат по SAVE_PERSIST_FAIL.
+
+test("normalize maps SAVE_EXECUTED to applied stage with saved state (optimistic)", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_EXECUTED",
+    payload: { sid: "sid_1", reason: "autosave", rev: 7, xml_len: 128 },
+  });
+
+  assert.equal(event.stage, "applied");
+  assert.equal(event.state, "saved");
+});
+
+test("normalize keeps SAVE_REQUESTED as preparing/saving (serialization pending)", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_REQUESTED",
+    payload: { sid: "sid_1", reason: "autosave", rev: 7 },
+  });
+
+  assert.equal(event.stage, "preparing");
+  assert.equal(event.state, "saving");
+});
+
+test("uploading stage keeps stage name but resolves to saved state (background PUT must not block the indicator)", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_STARTED",
+    payload: { sid: "sid_1", reason: "autosave", rev: 7 },
+  });
+
+  assert.equal(event.stage, "uploading");
+  assert.equal(event.state, "saved");
+});
+
+test("applied badge is a hidden ok badge like persisted", () => {
+  const badge = buildSaveUploadStatusBadge({ stage: "applied", rev: 7 });
+
+  assert.equal(badge.visible, false);
+  assert.equal(badge.tone, "ok");
+  assert.equal(badge.state, "saved");
+  assert.match(badge.label, /Сессия сохранена/);
+});

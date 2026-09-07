@@ -50,6 +50,12 @@ export default function createBpmnCoordinator(options = {}) {
   let dragThrottleTimer = 0;
   let dragFinalTimer = 0;
   let dragPendingStructural = false;
+  // RC7 (коммит 4): завершённые positional-изменения (shape.move/elements.move
+  // и др.) должны давать autosave-flush после отпускания drag'а; standalone
+  // positional-серии (без drag-событий) флашатся keep-latest таймером на
+  // dragFinalDebounceMs. Семантика skip-кадров в staging (К1) не меняется.
+  let pendingPositionalChange = false;
+  let positionalFinalTimer = 0;
   let lastDragSaveAt = 0;
   let saveQueuedRev = 0;
   let conflictReplayReason = "";
@@ -69,6 +75,7 @@ export default function createBpmnCoordinator(options = {}) {
     cacheRaw: (sid, xml, rev, reason, options) => cacheRaw(sid, xml, rev, reason, options),
     emit: (event, payload) => emit(event, payload),
     requestAutosave: (reason) => scheduleSave(reason),
+    notifyPositionalPending: () => notePositionalChange(),
     getIsDragging,
     asText,
     asNumber,
@@ -113,6 +120,33 @@ export default function createBpmnCoordinator(options = {}) {
 
   function clearDragPending() {
     dragPendingStructural = false;
+  }
+
+  function clearPositionalPending() {
+    pendingPositionalChange = false;
+  }
+
+  function clearPositionalFinalTimer() {
+    if (!positionalFinalTimer) return;
+    window.clearTimeout(positionalFinalTimer);
+    positionalFinalTimer = 0;
+  }
+
+  function notePositionalChange() {
+    if (!store) return;
+    pendingPositionalChange = true;
+    // Во время drag'а финальный flush взводит notifyDragEnd (dragFinalTimer);
+    // standalone-серия без drag-событий флашится keep-latest таймером.
+    if (getIsDragging()) return;
+    clearPositionalFinalTimer();
+    positionalFinalTimer = window.setTimeout(() => {
+      positionalFinalTimer = 0;
+      const hadPending = pendingPositionalChange;
+      clearPositionalPending();
+      if (hadPending) {
+        void flushSave("autosave");
+      }
+    }, dragFinalDebounceMs);
   }
 
   function clearConflictReplayReason() {
@@ -714,13 +748,18 @@ export default function createBpmnCoordinator(options = {}) {
       window.clearTimeout(dragThrottleTimer);
       dragThrottleTimer = 0;
     }
-    // If there are structural changes that never got flushed during the drag,
-    // schedule one final debounced save shortly after mouseup.
-    if (dragPendingStructural && !dragFinalTimer && !saveInFlight) {
+    // If there are structural or positional changes that never got flushed
+    // during the drag, schedule one final debounced save shortly after mouseup.
+    if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer && !saveInFlight) {
       dragFinalTimer = window.setTimeout(() => {
         dragFinalTimer = 0;
+        const hadStructural = dragPendingStructural;
+        const hadPositional = pendingPositionalChange;
         dragPendingStructural = false;
-        void flushSave("autosave");
+        clearPositionalPending();
+        if (hadStructural || hadPositional) {
+          void flushSave("autosave");
+        }
       }, dragFinalDebounceMs);
     }
   }
@@ -992,6 +1031,8 @@ export default function createBpmnCoordinator(options = {}) {
     clearPendingSave();
     clearDragTimers();
     clearDragPending();
+    clearPositionalFinalTimer();
+    clearPositionalPending();
     saveQueuedRev = 0;
     return store.setXml(xml, source, {
       bumpRev: options?.bumpRev === true,
@@ -1125,6 +1166,8 @@ export default function createBpmnCoordinator(options = {}) {
       saveInFlight,
       saveQueuedRev,
       conflictReplayReason,
+      dragPendingStructural,
+      pendingPositionalChange,
       singleWriterOwner: readSingleWriterOwner(),
       singleWriterExpiresAt,
       store: store?.getState?.() || null,
@@ -1141,6 +1184,8 @@ export default function createBpmnCoordinator(options = {}) {
     clearPendingSave();
     clearConflictReplayReason();
     clearDragPending();
+    clearPositionalFinalTimer();
+    clearPositionalPending();
     localMutationStaging.cancelPendingSerialization?.();
     const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
     saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
@@ -1157,6 +1202,8 @@ export default function createBpmnCoordinator(options = {}) {
     saveInFlight = false;
     saveQueuedRev = 0;
     lastDragSaveAt = 0;
+    positionalFinalTimer = 0;
+    clearPositionalPending();
     clearConflictReplayReason();
     clearSingleWriter("destroy");
   }

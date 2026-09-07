@@ -3,6 +3,10 @@
  * No React hooks, no component state/refs, only browser globals.
  */
 
+// Единая fnv1a (К3, bpmn/lib/bpmnXmlHash.js): BpmnStage и все pure-helpers
+// используют тот же хэш, что store/persistence/coordinator.
+import { fnv1aHex } from "../../lib/bpmnXmlHash.js";
+
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
@@ -352,16 +356,6 @@ function validateBpmnXmlText(rawXml) {
     return "XML содержит синтаксические ошибки";
   }
   return "";
-}
-
-function fnv1aHex(input) {
-  const src = String(input || "");
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 export {
