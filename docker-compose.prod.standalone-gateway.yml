@@ -1,0 +1,38 @@
+# Standalone TLS-гейт processmap.ru (паритет со stage-gateway).
+# Полностью переопределяет сервис gateway: официальный nginx вместо кастомной
+# сборки processmap-gateway:dev. Статику отдаёт app-frontend-1 (frontend/nginx.conf),
+# гейт только терминирует TLS и проксирует. Контейнер сохраняет имя app-gateway-1.
+# Сертификаты: certbot webroot -> deploy/prod-gateway/certs/letsencrypt,
+# активные файлы -> deploy/prod-gateway/certs/active/ (deploy/prod-gateway/README.md).
+# Bootstrap до выпуска серта: самоподписанный active/fullchain.pem + privkey.pem.
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: !override
+      - "80:80"
+      - "${PUBLIC_HTTPS_PORT:-443}:443"
+    volumes: !override
+      - ./deploy/prod-gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/prod-gateway/certs/active:/etc/nginx/certs/active:ro
+      - ./deploy/prod-gateway/certbot-webroot:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 && nc -z 127.0.0.1 443 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    depends_on: !override
+      frontend:
+        condition: service_healthy
+    networks:
+      - default
+      - edge_shared
+
+# Декларация сохранена из docker-compose.prod.yml (self-contained override,
+# паритет с docker-compose.prod.gateway.yml): гейт остаётся доступен
+# потребителям edge-сети (agent-chat/n8n) как и раньше.
+networks:
+  edge_shared:
+    name: ${EDGE_NETWORK_NAME:?EDGE_NETWORK_NAME is required}
+    external: true
