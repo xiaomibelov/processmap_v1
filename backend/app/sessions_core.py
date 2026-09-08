@@ -397,12 +397,19 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
         sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
-        flow_ctx = _lm._collect_sequence_flow_meta(sess_xml)
+        # perf/bpmn-meta-parse-cache-v1: LRU-кэш производных по sha1(XML) (F1
+        # parse-once). Паритет поведения: flow_meta идентичен
+        # _collect_sequence_flow_meta, camunda_extensions — результату
+        # extract_camunda_extensions_from_bpmn_xml (см. bpmn_xml_derivatives).
+        from .services.bpmn_xml_derivatives import get_bpmn_xml_derivatives
+
+        _deriv = get_bpmn_xml_derivatives(sess_xml)
         normalized_meta, auto_pass_state_write_requested = _lm._merge_and_normalize_bpmn_meta(
             getattr(sess, "bpmn_meta", {}),
             data.get("bpmn_meta"),
             sess_xml,
-            flow_ctx,
+            _deriv.flow_meta,
+            camunda_ext=_deriv.camunda_extensions,
         )
         sess.bpmn_meta = normalized_meta
         handled = True
@@ -516,7 +523,11 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     sess.edges = _norm_edges(data.get("edges"))
     sess.questions = _norm_questions(data.get("questions"))
     sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
-    flow_ctx = _lm._collect_sequence_flow_meta(sess_xml)
+    # perf/bpmn-meta-parse-cache-v1: производные из LRU-кэша по sha1(XML).
+    from .services.bpmn_xml_derivatives import get_bpmn_xml_derivatives
+
+    _deriv = get_bpmn_xml_derivatives(sess_xml)
+    flow_ctx = _deriv.flow_meta
     flow_ids = flow_ctx.get("flow_ids")
     node_ids = flow_ctx.get("node_ids")
     raw_bpmn_meta = data.get("bpmn_meta") if data.get("bpmn_meta") is not None else getattr(sess, "bpmn_meta", {})

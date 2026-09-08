@@ -1346,3 +1346,4 @@ class BpmnMetaMergeHelperTests(unittest.TestCase):
         saved = self.session_bpmn_meta_get(self.sid)
         self.assertEqual(saved.get("viewport"), patched.get("viewport"))
         self.assertEqual(saved.get("custom_key"), patched.get("custom_key"))
+
