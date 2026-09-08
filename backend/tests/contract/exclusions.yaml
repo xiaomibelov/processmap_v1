@@ -236,6 +236,9 @@ spec_gap_status_operations:
   - id: auto_pass_status_api_sessions__session_id__auto_pass_get
     statuses: [404]
     reason: "Доменный 404 (job_id не найден); spec-gap."
+  - id: agent_analysis_status_api_sessions__session_id__agent_analysis_get
+    statuses: [404]
+    reason: "Доменный 404 (job_id не найден / Celery backend недоступен); spec-gap."
   - id: list_audit_log_endpoint_api_audit_log_get
     statuses: [422]
     reason: "Доменный 422 'Некорректная дата: null' с detail:str — не матчит HTTPValidationError; spec-gap."

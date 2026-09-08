@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI
 
 from .. import _legacy_main
+from ..agent_analysis.bootstrap import seed_agent_analysis_feature_flag as _agent_analysis_seed
 from ..auth import bearer_auth, optional_access_token_payload, seed_admin_user_if_enabled
 from ..middleware.logging_middleware import LoggingMiddleware
 from ..routers import ROUTERS
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
         app,
         seed_admin=seed_admin_user_if_enabled,
         validate_invite_email_config=_legacy_main._validate_invite_email_config_on_boot,
+        seed_agent_analysis=_agent_analysis_seed,
     )
 
     # Системный фикс класса «int-параметр > int64 → OverflowError на sqlite-bind
