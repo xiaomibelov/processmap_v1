@@ -16,10 +16,16 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=30),
         "options": {"queue": "celery"},
     },
+    "agent-analysis-nightly-refresh": {
+        "task": "processmap.agent_analysis.nightly_refresh_task",
+        "schedule": crontab(hour=4, minute=40),
+        "options": {"queue": "celery"},
+    },
 }
 app.conf.timezone = "Europe/Moscow"
 
 # Import task modules so workers discover them
 from . import tasks  # noqa: E402
 from . import rag_tasks  # noqa: F401,E402
+from .agent_analysis import tasks as agent_analysis_tasks  # noqa: F401,E402
 from .save_services.analytics_aggregator import tasks as analytics_tasks  # noqa: F401,E402
