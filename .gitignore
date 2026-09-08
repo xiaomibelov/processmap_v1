@@ -93,4 +93,7 @@ docs/e35/golden_report.json
 # Stage standalone host (architecture/stage-separate-host): server-local only
 deploy/stage-gateway/certs/
 deploy/stage-gateway/certbot-webroot/
+# Prod standalone gateway (architecture/prod-standalone-gateway): server-local only
+deploy/prod-gateway/certs/
+deploy/prod-gateway/certbot-webroot/
 runtime/stage/
