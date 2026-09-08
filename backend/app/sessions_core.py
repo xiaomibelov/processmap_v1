@@ -330,35 +330,41 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             sess = sess2
             handled = True
 
+    # perf/save-noop-fastpath-v1: need_recompute только при реальном изменении
+    # нормализованного значения — no-op autosave (фронт шлёт полные массивы)
+    # не должен гонять _recompute_session (questions×3, mermaid×2, analytics).
+    # Нормализация остаётся обязательной — это единственный входной санитайзер.
     if "roles" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        sess.roles = _norm_roles(data.get("roles"))
-        if sess.start_role and sess.roles and sess.start_role not in sess.roles:
-            sess.start_role = None
+        new_roles = _norm_roles(data.get("roles"))
+        if new_roles != sess.roles:
+            sess.roles = new_roles
+            if sess.start_role and sess.roles and sess.start_role not in sess.roles:
+                sess.start_role = None
+            need_recompute = True
         handled = True
-        need_recompute = True
 
     if "start_role" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
         sr = data.get("start_role")
-        if sr is None or str(sr).strip() == "":
-            sess.start_role = None
-        else:
-            sr = str(sr).strip()
-            if sess.roles and sr not in sess.roles:
-                return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
+        sr = None if sr is None or str(sr).strip() == "" else str(sr).strip()
+        if sr is not None and sess.roles and sr not in sess.roles:
+            return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
+        if sr != sess.start_role:
             sess.start_role = sr
+            need_recompute = True
         handled = True
-        need_recompute = True
 
     if "notes" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        sess.notes = _notes_encode(data.get("notes"))
+        new_notes = _notes_encode(data.get("notes"))
+        if new_notes != sess.notes:
+            sess.notes = new_notes
+            need_recompute = True
         handled = True
-        need_recompute = True
 
     if "notes_by_element" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
@@ -375,23 +381,41 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     if "nodes" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        sess.nodes = _norm_nodes(data.get("nodes"))
+        new_nodes = _norm_nodes(data.get("nodes"))
+        nodes_changed = new_nodes != sess.nodes
+        if nodes_changed:
+            # recompute обогащает parameters (_norm/_sched) in-place и кладёт
+            # граф в sess.normalized — хранимые nodes всегда в обогащённой
+            # форме. Точный критерий «изменилось ли»: совпал бы ли граф
+            # нормализации с текущим sess.normalized.
+            from .normalizer import load_seed_glossary, normalize_nodes
+            from .startup.static_mounts import GLOSSARY_SEED
+
+            _copies = [n.model_copy(deep=True) for n in new_nodes]
+            _graph = normalize_nodes(_copies, load_seed_glossary(GLOSSARY_SEED))
+            nodes_changed = _graph != getattr(sess, "normalized", None)
+        if nodes_changed:
+            sess.nodes = new_nodes
+            need_recompute = True
         handled = True
-        need_recompute = True
 
     if "edges" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        sess.edges = _norm_edges(data.get("edges"))
+        new_edges = _norm_edges(data.get("edges"))
+        if new_edges != sess.edges:
+            sess.edges = new_edges
+            need_recompute = True
         handled = True
-        need_recompute = True
 
     if "questions" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        sess.questions = _norm_questions(data.get("questions"))
+        new_questions = _norm_questions(data.get("questions"))
+        if new_questions != sess.questions:
+            sess.questions = new_questions
+            need_recompute = True
         handled = True
-        need_recompute = True
 
     if "bpmn_meta" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
