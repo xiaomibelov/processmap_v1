@@ -29,9 +29,11 @@ jobs:
             # tools/ обязателен: Dockerfile (COPY tools/graphify-*) запекает его в образ;
             # без checkout этого пути на проде остаются протухшие файлы
             # (audit/prod-stage-divergence-409, 2026-08-30).
+            # Гейт = standalone (architecture/prod-standalone-gateway): официальный nginx,
+            # кастомная сборка gateway (ssl.yml / prod.gateway.yml / Dockerfile.gateway.prod)
+            # в прод-стеке больше не используется (файлы сохранены в репо для rollback-периода).
             git checkout origin/main -- backend frontend Dockerfile deploy tools \
-              docker-compose.yml docker-compose.prod.yml docker-compose.prod.gateway.yml \
-              docker-compose.ssl.yml Dockerfile.gateway.prod
+              docker-compose.yml docker-compose.prod.yml docker-compose.prod.standalone-gateway.yml
 
             # Resolve git metadata from origin/main (HEAD may be on a different branch)
             GIT_SHA=$(git rev-parse origin/main)
@@ -58,8 +60,9 @@ jobs:
               echo "PREVIOUS_BUILD_ID=${PREVIOUS_BUILD_ID}"
             } >> "${ENV_FILE}"
 
-            # Save current images as rollback point before rebuilding
-            for img in processmap-gateway:dev app-api:latest app-celery-worker:latest app-agent:latest app-notifications:latest app-frontend:latest; do
+            # Save current images as rollback point before rebuilding.
+            # Gateway — пиновый официальный образ (nginx:1.27-alpine), rollback-тег не нужен.
+            for img in app-api:latest app-celery-worker:latest app-agent:latest app-notifications:latest app-frontend:latest; do
               tag="${img##*:}"
               name="${img%:*}"
               docker tag "${img}" "${name}:rollback" 2>/dev/null || echo "[deploy-prod] WARN: could not tag ${img} as rollback"
@@ -74,8 +77,7 @@ jobs:
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
+              -f docker-compose.prod.standalone-gateway.yml \
               -p app \
               build \
                 --build-arg BUILD_ID="${GIT_SHA}" \
@@ -84,30 +86,13 @@ jobs:
                 --build-arg BUILD_ENV=prod \
                 api celery-worker agent notifications
 
-            # Rebuild frontend (prod gateway image) without cache so fresh statics + fingerprint are baked in.
+            # Rebuild frontend — теперь ОН подаёт трафик прода (standalone gateway
+            # проксирует во frontend:80), свежие статики + fingerprint обязательны.
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
-              -p app \
-              build --no-cache \
-                --build-arg VITE_BUILD_ID="${GIT_SHA}" \
-                --build-arg VITE_BUILD_BRANCH="${GIT_REF}" \
-                --build-arg VITE_BUILD_TIME="${BUILD_TIME}" \
-                --build-arg VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}" \
-                --build-arg VITE_DEPLOY_REQUESTED_REF="${GIT_REF}" \
-                --build-arg VITE_DEPLOY_RESOLVED_SHA="${GIT_SHA}" \
-                gateway
-
-            # Rebuild standalone frontend service so it matches the same SHA (does not serve traffic in prod).
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
+              -f docker-compose.prod.standalone-gateway.yml \
               -p app \
               build --no-cache \
                 --build-arg VITE_BUILD_ID="${GIT_SHA}" \
@@ -123,8 +108,7 @@ jobs:
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
+              -f docker-compose.prod.standalone-gateway.yml \
               -p app \
               rm -fsv gateway frontend 2>/dev/null || true
             # Drop any project named volume that could mask /usr/share/nginx/html
@@ -135,8 +119,7 @@ jobs:
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
+              -f docker-compose.prod.standalone-gateway.yml \
               -p app \
               up -d --no-deps --force-recreate -V ${PROD_SERVICES}
 
@@ -154,6 +137,21 @@ jobs:
               fi
             done
             echo "OK: all prod services run the freshly built images"
+
+            # Gateway — пиновый официальный образ (без свежей сборки): проверяем
+            # image + валидность конфига вместо сравнения свежесобранного образа.
+            GATEWAY_IMAGE="$(docker inspect app-gateway-1 --format '{{.Config.Image}}' 2>/dev/null || echo missing)"
+            echo "[deploy-prod] gateway: image=${GATEWAY_IMAGE}"
+            if [ "${GATEWAY_IMAGE}" != "nginx:1.27-alpine" ]; then
+              echo "ERROR: gateway runs '${GATEWAY_IMAGE}', expected nginx:1.27-alpine" >&2
+              exit 1
+            fi
+            docker exec app-gateway-1 nginx -t || { echo "ERROR: gateway nginx -t failed" >&2; exit 1; }
+
+            # Renew-цепочка standalone-gateway обязана стоять на хосте (cron deploy-пользователя).
+            crontab -l 2>/dev/null | grep -q 'prod-gateway/certbot-renew.sh' \
+              || { echo "ERROR: prod-gateway certbot-renew cron missing (см. deploy/prod-gateway/README.md)" >&2; exit 1; }
+            echo "OK: gateway image/config + renew cron verified"
 
             # Post-deploy freshness proof: poll /version (api стартует не мгновенно —
             # entrypoint гонит миграции/сиды; 502 первые N секунд — норма, не fail).
