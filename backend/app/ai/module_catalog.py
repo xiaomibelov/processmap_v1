@@ -254,6 +254,34 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
             ],
             migration_priority="P3",
         ),
+        _module(
+            module_id="ai.agent_analysis",
+            name="Агентный анализ схемы",
+            description="Фоновый анализ сессии: precheck проходимости + RAG-контекст + LLM-анализ (риски, рекомендации). Результат — bpmn_meta.agent_analysis_v1 (аналитический data-layer, не gate).",
+            enabled=False,
+            status="future",
+            scope=["session"],
+            prompt_source="prompt_registry+code_fallback",
+            writes_domain_state=True,
+            review_apply_required=False,
+            current_sources=[
+                "backend/app/agent_analysis/processor.py",
+                "backend/app/agent_analysis/publisher.py",
+                "backend/app/agent_analysis/tasks.py",
+            ],
+            endpoints=[
+                "POST /api/sessions/{session_id}/agent-analysis",
+                "GET /api/sessions/{session_id}/agent-analysis",
+            ],
+            risks=[
+                "LLM cost/latency при массовом фоновом запуске — mitigated by debounce + nightly beat limits",
+                "must never touch bpmn_xml / live canvas (write-time contract)",
+            ],
+            migration_priority="P2",
+            has_prompt_registry=True,
+            has_execution_log=True,
+            has_rate_limits=True,
+        ),
     ]
 
 

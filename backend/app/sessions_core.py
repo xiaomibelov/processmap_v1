@@ -452,6 +452,16 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         str(getattr(sess, "id", "") or session_id),
         oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
     )
+    from .agent_analysis import publisher as _agent_analysis_pub
+    try:
+        _agent_analysis_pub.publish_agent_analysis_scheduled(
+            str(getattr(sess, "id", "") or session_id),
+            oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            user_id=user_id,
+        )
+    except Exception:
+        # Live-safety: analysis scheduling must never break a save (plan §5.1).
+        logger.warning("agent_analysis scheduling failed for %s", session_id, exc_info=True)
     return _session_api_dump(sess)
 
 
@@ -568,6 +578,16 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         str(getattr(sess, "id", "") or session_id),
         oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
     )
+    from .agent_analysis import publisher as _agent_analysis_pub
+    try:
+        _agent_analysis_pub.publish_agent_analysis_scheduled(
+            str(getattr(sess, "id", "") or session_id),
+            oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            user_id=user_id,
+        )
+    except Exception:
+        # Live-safety: analysis scheduling must never break a save (plan §5.1).
+        logger.warning("agent_analysis scheduling failed for %s", session_id, exc_info=True)
     return _session_api_dump(sess)
 
 
