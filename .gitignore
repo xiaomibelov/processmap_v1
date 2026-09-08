@@ -89,3 +89,8 @@ docs/e35/golden_report.json
 !deploy/.env.server.example
 !frontend/src/features/process/coverage/
 !frontend/src/features/process/coverage/**
+
+# Stage standalone host (architecture/stage-separate-host): server-local only
+deploy/stage-gateway/certs/
+deploy/stage-gateway/certbot-webroot/
+runtime/stage/
