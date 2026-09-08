@@ -16,11 +16,14 @@ def register_boot_events(
     *,
     seed_admin: Callable[[], None],
     validate_invite_email_config: Callable[[], None],
+    seed_agent_analysis: Callable[[], None] | None = None,
 ) -> None:
     @app.on_event("startup")
     def _startup_bootstrap() -> None:
         seed_admin()
         validate_invite_email_config()
+        if seed_agent_analysis is not None:
+            seed_agent_analysis()
 
         info = get_db_runtime_info()
         _logger.info("DB runtime config: %s", info)

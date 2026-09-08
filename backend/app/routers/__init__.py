@@ -1,4 +1,5 @@
 from .auto_pass import router as auto_pass_router
+from ..agent_analysis.router import router as agent_analysis_router
 from .admin import router as admin_router
 from .admin_llm import router as admin_llm_router
 from .admin_testgen import router as admin_testgen_router
@@ -71,6 +72,7 @@ ROUTERS = (
     (notes_router, ["notes"]),
     (clipboard_router, ["clipboard"]),
     (auto_pass_router, ["auto-pass"]),
+    (agent_analysis_router, ["agent-analysis"]),
     (reports_router, ["reports"]),
     (templates_router, ["templates"]),
     (org_invites_router, ["org-invites"]),
