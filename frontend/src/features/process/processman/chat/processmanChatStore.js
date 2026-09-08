@@ -8,7 +8,7 @@ export const CHAT_ROLE = Object.freeze({ USER: "user", AGENT: "agent" });
 
 export const AGENT_STATUS = Object.freeze({
   PENDING: "pending",   // запрос в полёте (индикатор этапов)
-  STREAMING: "streaming", // typewriter-reveal полного текста
+  STREAMING: "streaming", // живой append SSE-дельт (token events)
   DONE: "done",
   STOPPED: "stopped",   // пользователь оборвал (Стоп)
   ERROR: "error",
@@ -100,7 +100,7 @@ export function stopAgentMessage(sessionId, messageId, { visibleText = "" } = {}
   return msg;
 }
 
-/** Завершение typewriter: streaming → done. */
+/** Завершение стрима: streaming → done. */
 export function finishAgentMessage(sessionId, messageId) {
   const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
   if (!msg || msg.role !== CHAT_ROLE.AGENT) return null;
@@ -177,20 +177,4 @@ export function resetChatHistories(sessionId = "") {
   const sid = String(sessionId || "").trim();
   if (sid) histories.delete(sid);
   else histories.clear();
-}
-
-// ---------------------------------------------------------------- typewriter
-// Быстрый reveal: не посимвольный, а порциями (feedback из review плана).
-export const TYPEWRITER_CHARS_PER_TICK = 22;
-export const TYPEWRITER_TICK_MS = 32;
-
-/** Сколько символов показано после ticks тиков (монотонно, кап = длина). */
-export function typewriterProgress(fullText, ticks) {
-  const total = String(fullText || "").length;
-  const n = Math.max(0, Math.round(Number(ticks) || 0));
-  return Math.min(total, n * TYPEWRITER_CHARS_PER_TICK);
-}
-
-export function typewriterDone(fullText, ticks) {
-  return typewriterProgress(fullText, ticks) >= String(fullText || "").length;
 }
