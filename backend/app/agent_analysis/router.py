@@ -71,16 +71,21 @@ def agent_analysis_status(session_id: str, request: Request, job_id: str = Query
     jid = str(job_id or "").strip()
     if not jid:
         return _legacy_main._enterprise_error(422, "validation_error", "job_id is required")
-    result = app.AsyncResult(jid)
-    state = str(getattr(result, "state", "") or "PENDING")
-    if state == "SUCCESS":
-        payload = result.result if isinstance(result.result, dict) else {}
-        status = str(payload.get("status") or "done")
-        return {"job_id": jid, "status": status, "result": payload}
-    if state == "FAILURE":
-        return {
-            "job_id": jid,
-            "status": "failed",
-            "error": str(getattr(result, "traceback", "") or "task failed"),
-        }
-    return {"job_id": jid, "status": _STATE_MAP.get(state, "queued"), "state": state}
+    try:
+        result = app.AsyncResult(jid)
+        state = str(getattr(result, "state", "") or "PENDING")
+        if state == "SUCCESS":
+            payload = result.result if isinstance(result.result, dict) else {}
+            status = str(payload.get("status") or "done")
+            return {"job_id": jid, "status": status, "result": payload}
+        if state == "FAILURE":
+            return {
+                "job_id": jid,
+                "status": "failed",
+                "error": str(getattr(result, "traceback", "") or "task failed"),
+            }
+        return {"job_id": jid, "status": _STATE_MAP.get(state, "queued"), "state": state}
+    except Exception:
+        # Celery backend недоступен/невалидный job_id — доменный not_found
+        # (по образцу auto_pass_status, см. contract spec_gap).
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")

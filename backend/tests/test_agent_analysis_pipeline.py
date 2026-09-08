@@ -366,6 +366,30 @@ class TestManualEndpoints(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["status"], "done")
 
+    @patch("backend.app.agent_analysis.router.app")
+    def test_status_endpoint_returns_404_when_celery_backend_raises(self, mock_celery_app):
+        """Contract-fuzz regression: недоступный Celery backend / мусорный job_id
+        не должны давать 500 — доменный not_found (по образцу auto_pass_status)."""
+        llm_store.patch_feature_flag(FEATURE, enabled=True, actor="test")
+        from fastapi.testclient import TestClient
+
+        from backend.app.auth import create_access_token
+        from backend.app.main import app
+
+        fx = _make_session()
+        client = TestClient(app)
+        token = create_access_token(fx.user_id)
+
+        mock_celery_app.AsyncResult.side_effect = RuntimeError("backend unavailable")
+
+        response = client.get(
+            f"/api/sessions/{fx.session_id}/agent-analysis",
+            params={"job_id": "b°0"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

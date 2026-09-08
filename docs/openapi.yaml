@@ -261,6 +261,10 @@ components:
           type: boolean
       title: AdminUserPermissionSet
       type: object
+    AgentAnalysisRunIn:
+      properties: {}
+      title: AgentAnalysisRunIn
+      type: object
     AgentChatIn:
       properties:
         client_turn_id:
@@ -15048,6 +15052,96 @@ paths:
       summary: Сохранить сессию процесса целиком
       tags:
       - sessions
+  /api/sessions/{session_id}/agent-analysis:
+    get:
+      description: 'Получить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: agent_analysis_status_api_sessions__session_id__agent_analysis_get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: query
+        name: job_id
+        required: false
+        schema:
+          default: ''
+          title: Job Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Agent Analysis Status Api Sessions  Session Id  Agent
+                  Analysis Get
+                type: object
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить сессию процесса
+      tags:
+      - agent-analysis
+      - agent-analysis
+    post:
+      description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);
+        404 — ресурс не найден/вне scope.'
+      operationId: run_agent_analysis_api_sessions__session_id__agent_analysis_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/AgentAnalysisRunIn'
+              title: Inp
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Run Agent Analysis Api Sessions  Session Id  Agent
+                  Analysis Post
+                type: object
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить сессию процесса
+      tags:
+      - agent-analysis
+      - agent-analysis
   /api/sessions/{session_id}/agent/audit:
     post:
       description: Write an audit log entry for an agent edit (best-effort, never
@@ -19095,6 +19189,8 @@ tags:
   name: admin
 - description: agent
   name: agent
+- description: agent-analysis
+  name: agent-analysis
 - description: Аналитика процессов и орг-дашборды
   name: analytics
 - description: Журнал аудита действий
