@@ -5,7 +5,7 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_DIR="$(cd "$DIR/../../.." && pwd)"
+APP_DIR="$(cd "$DIR/../.." && pwd)"
 cd "$APP_DIR"
 
 mkdir -p deploy/stage-gateway/certs/active
