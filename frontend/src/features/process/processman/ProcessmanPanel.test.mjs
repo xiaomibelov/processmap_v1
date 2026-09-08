@@ -590,8 +590,8 @@ test("AGENT-1: свободный вопрос → POST /agent/stream, токе�
     assert.equal(streamCalls.length, 1, "1 POST /agent/stream");
     assert.equal(String(streamCalls[0].opts?.method || "GET").toUpperCase(), "POST");
     const body = JSON.parse(streamCalls[0].opts?.body || "{}");
-    assert.equal(body.question, "Что происходит на этом шаге?");
-    assert.equal(body.selected_node_id, "Act_1");
+    assert.equal(body.message, "Что происходит на этом шаге?");
+    assert.equal(body.selected_step_id, "Act_1");
     // ждём появления agent-сообщения и финального текста
     assert.equal(await waitFor(doc, "processman-msg-agent"), true, "agent-сообщение появилось");
     await flush(200);
@@ -600,6 +600,83 @@ test("AGENT-1: свободный вопрос → POST /agent/stream, токе�
     assert.equal(answer.textContent, "Первый ответ.", "текст собран из токенов");
     const userMsg = doc.querySelector('[data-testid="processman-msg-user"]');
     assert.equal(userMsg?.textContent, "Что происходит на этом шаге?", "вопрос пользователя в ленте");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+// Управляемый вручную SSE-поток: тест сам решает, когда пушить события.
+function manualStream() {
+  const encoder = new TextEncoder();
+  const queue = [];
+  let waiter = null;
+  const deliver = (item) => {
+    if (waiter) { const w = waiter; waiter = null; w(item); } else queue.push(item);
+  };
+  return {
+    push: (ev) => deliver({ done: false, value: encoder.encode(`event: ${ev.event}\ndata: ${JSON.stringify(ev.data)}\n\n`) }),
+    close: () => deliver({ done: true, value: undefined }),
+    response: () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (k) => (String(k).toLowerCase() === "content-type" ? "text/event-stream" : null) },
+      body: {
+        getReader: () => ({
+          read: () => (queue.length ? Promise.resolve(queue.shift()) : new Promise((r) => { waiter = r; })),
+          cancel: async () => {},
+        }),
+      },
+    }),
+  };
+}
+
+test("AGENT-1 live: дельта видна сразу и целиком ДО done (без typewriter-реveal), курсор во время стрима", async () => {
+  const mod = await loadPanel();
+  await resetChat();
+  const stream = manualStream();
+  const env = setupDom({
+    fetchImpl: async (url) => {
+      if (String(url).includes("/agent/stream")) return stream.response();
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  try {
+    const doc = await renderPanel(env, mod);
+    await click(doc, env.dom.window, "processman-example-q1");
+    await click(doc, env.dom.window, "processman-action-qa");
+    const longDelta = `Д${"линный фрагмент ответа. ".repeat(8)}`; // заведомо длиннее одной typewriter-порции
+    stream.push({ event: "start", data: { turn_id: "t1" } });
+    stream.push({ event: "token", data: { delta: longDelta } });
+    await flush(60);
+    const textEl = doc.querySelector(".pm-processman-msg--streaming .pm-processman-msg__text");
+    assert.notEqual(textEl, null, "streaming-сообщение рендерится до done");
+    assert.ok(textEl.textContent.includes(longDelta), "первая дельта видна целиком сразу, без порционного reveal");
+    assert.notEqual(doc.querySelector(".pm-processman-caret"), null, "курсор ▍ во время стрима");
+    assert.equal(doc.querySelector('[data-testid="processman-answer-text"]'), null, "до done нет финального testid");
+    stream.push({ event: "done", data: { usage: {} } });
+    await flush(60);
+    assert.notEqual(doc.querySelector('[data-testid="processman-answer-text"]'), null, "после done — финальный рендер");
+    assert.ok(doc.querySelector('[data-testid="processman-answer-text"]')?.textContent.includes(longDelta), "текст не потерян на done");
+    assert.equal(doc.querySelector(".pm-processman-caret"), null, "курсор снят после done");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("action-ответ (explain): полный текст виден сразу после ответа API, без reveal-задержки", async () => {
+  const mod = await loadPanel();
+  await resetChat();
+  const longText = `робот кладёт контейнер в СВЧ. ${"Подробное объяснение шага. ".repeat(10)}`;
+  const env = setupDom({
+    fetchImpl: jsonResponse({ ok: true, status: "ok", explanation: longText, usage: {} }),
+  });
+  try {
+    const doc = await renderPanel(env, mod);
+    await click(doc, env.dom.window, "processman-action-explain");
+    await flush(80);
+    const answer = doc.querySelector('[data-testid="processman-answer-text"]');
+    assert.notEqual(answer, null, "ответ отрендерен сразу, без ожидания reveal");
+    assert.ok(answer.textContent.includes(longText.trim()), "текст показан целиком, не порциями");
   } finally {
     await env.cleanup();
   }

@@ -1,4 +1,4 @@
-// PROCESSMAN-REDESIGN — unit-тесты chat store (reducer/history/typewriter).
+// PROCESSMAN-REDESIGN — unit-тесты chat store (reducer/history/streaming).
 import test from "node:test";
 
 import assert from "node:assert/strict";
@@ -17,9 +17,6 @@ import {
   resetChatHistories,
   resolveAgentMessage,
   stopAgentMessage,
-  typewriterDone,
-  typewriterProgress,
-  TYPEWRITER_CHARS_PER_TICK,
   updateAgentMessage,
   updatePendingEditStatus,
 } from "./processmanChatStore.js";
@@ -70,15 +67,6 @@ test("fail: error не перезаписывается поздним resolve",
   const late = resolveAgentMessage("s1", pending.id, { text: "x" });
   assert.equal(late.status, AGENT_STATUS.ERROR);
   assert.equal(late.errorStatus, "no_provider");
-});
-
-test("typewriter: монотонный прогресс порциями + done", () => {
-  const text = "x".repeat(TYPEWRITER_CHARS_PER_TICK * 3 + 5);
-  assert.equal(typewriterProgress(text, 0), 0);
-  assert.equal(typewriterProgress(text, 1), TYPEWRITER_CHARS_PER_TICK);
-  assert.equal(typewriterDone(text, 3), false);
-  assert.equal(typewriterDone(text, 4), true);
-  assert.equal(typewriterProgress(text, 100), text.length, "кап = длина текста");
 });
 
 test("appendStreamingDelta: pending → streaming, delta накапливается", () => {

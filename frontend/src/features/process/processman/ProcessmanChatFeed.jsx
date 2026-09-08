@@ -6,9 +6,6 @@ import { formatClock } from "./processmanView";
 import {
   AGENT_STATUS,
   PENDING_STAGES,
-  TYPEWRITER_TICK_MS,
-  typewriterDone,
-  typewriterProgress,
 } from "./chat/processmanChatStore";
 import AgentMarkdown from "./AgentMarkdown";
 import PendingEditCard from "./chat/PendingEditCard";
@@ -53,32 +50,6 @@ function IconStop() {
   );
 }
 
-/** Быстрый typewriter: порции символов на тик; клик/скип — весь текст сразу. */
-function useTypewriter(fullText, active) {
-  const [ticks, setTicks] = useState(0);
-  const [skipped, setSkipped] = useState(false);
-  const text = String(fullText || "");
-
-  useEffect(() => {
-    setTicks(0);
-    setSkipped(false);
-  }, [text]);
-
-  useEffect(() => {
-    if (!active || skipped || typewriterDone(text, ticks)) return undefined;
-    const timer = setTimeout(() => setTicks((v) => v + 1), TYPEWRITER_TICK_MS);
-    return () => clearTimeout(timer);
-  }, [active, skipped, text, ticks]);
-
-  const done = skipped || !active || typewriterDone(text, ticks);
-  const visibleCount = done ? text.length : typewriterProgress(text, ticks);
-  return {
-    visibleText: text.slice(0, visibleCount),
-    done,
-    skip: () => setSkipped(true),
-  };
-}
-
 function PendingStages() {
   const [stageIdx, setStageIdx] = useState(0);
   useEffect(() => {
@@ -116,17 +87,10 @@ function AgentCard({
   const [selectedCandidate, setSelectedCandidate] = useState(0);
   const streaming = msg.status === AGENT_STATUS.STREAMING;
   const pending = msg.status === AGENT_STATUS.PENDING;
-  const { visibleText, done, skip } = useTypewriter(msg.text, streaming);
-
-  // сигналим родителю о завершении reveal (streaming → done)
-  const finishedRef = useRef(false);
-  useEffect(() => {
-    if (streaming && done && !finishedRef.current) {
-      finishedRef.current = true;
-      msg.onRevealDone?.();
-    }
-    if (!streaming) finishedRef.current = false;
-  }, [streaming, done, msg]);
+  // Живой стрим: текст показывается целиком по мере прихода SSE-дельт,
+  // без typewriter-реveal. Во время стрима — plain text (незакрытый markdown
+  // ломал бы парсер), на done — один перерендер в AgentMarkdown.
+  const done = !streaming;
 
   const stopped = msg.status === AGENT_STATUS.STOPPED;
   const failed = msg.status === AGENT_STATUS.ERROR;
@@ -134,7 +98,7 @@ function AgentCard({
   const trace = meta.trace && typeof meta.trace === "object" ? meta.trace : null;
   const complete = !pending && !failed && done && !stopped;
   const candidates = Array.isArray(meta.suggestions?.candidates) ? meta.suggestions.candidates : [];
-  const displayText = candidates.length ? String(meta.suggestions?.note || "").trim() : visibleText;
+  const displayText = candidates.length ? String(meta.suggestions?.note || "").trim() : String(msg.text || "");
   const edit = msg.pendingEdit;
   const hasAgentContent = pending || failed || stopped || String(displayText || "").trim() || candidates.length || trace || !!edit;
 
@@ -155,10 +119,7 @@ function AgentCard({
     <div
       className={`pm-processman-msg pm-processman-msg--agent${streaming ? " pm-processman-msg--streaming" : ""}${failed ? " pm-processman-msg--error" : ""}`}
       data-testid="processman-msg-agent"
-      onClick={() => {
-        if (streaming && !done) skip();
-      }}
-      title={title || (streaming && !done ? t.skipRevealAria : undefined)}
+      title={title}
     >
       <div className="pm-processman-msg__avatar-row" aria-hidden="true">
         <span className="pm-processman-msg__avatar" aria-hidden="true"
@@ -198,8 +159,14 @@ function AgentCard({
               className="pm-processman-msg__text"
               data-testid={isLast && done && !stopped ? "processman-answer-text" : undefined}
             >
-              <AgentMarkdown text={displayText} nodes={nodes} onNodeClick={onNodeClick} />
-              {streaming && !done ? <span className="pm-processman-caret" aria-hidden="true">▍</span> : null}
+              {streaming ? (
+                <span className="pm-processman-msg__stream-text">
+                  {displayText}
+                  <span className="pm-processman-caret" aria-hidden="true">▍</span>
+                </span>
+              ) : (
+                <AgentMarkdown text={displayText} nodes={nodes} onNodeClick={onNodeClick} />
+              )}
             </div>
             {candidates.length ? (
               <div className="pm-processman-candidates" role="radiogroup" aria-label={t.suggestLabel}>
@@ -247,7 +214,7 @@ function AgentCard({
           </>
         ) : null}
 
-        {pending || (streaming && !done) ? (
+        {pending || streaming ? (
           <button
             type="button"
             className="pm-processman-stop"
@@ -255,7 +222,7 @@ function AgentCard({
             aria-label={t.stopAria}
             onClick={(e) => {
               e.stopPropagation();
-              onStop?.(msg, streaming ? visibleText : "");
+              onStop?.(msg, streaming ? String(msg.text || "") : "");
             }}
           >
             <IconStop />
@@ -326,14 +293,32 @@ export default function ProcessmanChatFeed({
     return "";
   })();
 
-  // автопрокрутка к последнему сообщению
+  // Автопрокрутка: следуем за стримом (новые сообщения, смена статуса,
+  // рост текста по дельтам), но НЕ дёргаем ленту, если пользователь
+  // проскроллил вверх читать историю. Сброс — при новом сообщении или
+  // ручном возврате к низу.
+  const userScrolledUpRef = useRef(false);
+  const lastMsg = messages[messages.length - 1];
+  const lastTextLen = String(lastMsg?.text || "").length;
+
+  useEffect(() => {
+    userScrolledUpRef.current = false;
+  }, [messages.length]);
+
   useEffect(() => {
     const el = feedRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, messages[messages.length - 1]?.status]);
+    if (el && !userScrolledUpRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages.length, lastMsg?.status, lastTextLen]);
+
+  const handleFeedScroll = () => {
+    const el = feedRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    userScrolledUpRef.current = !nearBottom;
+  };
 
   return (
-    <div className="pm-processman-feed" data-testid="processman-chat-feed" ref={feedRef} aria-live="polite">
+    <div className="pm-processman-feed" data-testid="processman-chat-feed" ref={feedRef} aria-live="polite" onScroll={handleFeedScroll}>
       <div className="pm-processman-feed__ambient" aria-hidden="true" />
       {messages.map((msg) => (msg.role === "user" ? (
         <div key={msg.id} className="pm-processman-msg pm-processman-msg--user" data-testid="processman-msg-user" title={formatClock(msg.at)}>
