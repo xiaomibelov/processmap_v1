@@ -224,11 +224,8 @@ export default function ProcessmanTobe({
         };
         cache?.set(key, { text, meta, at: Date.now() });
         resolveAgentMessage(sid, pendingMsg.id, { text, meta });
-        // typewriter завершён (клик-скип или конец reveal) → done
-        pendingMsg.onRevealDone = () => {
-          finishAgentMessage(sid, pendingMsg.id);
-          bump();
-        };
+        // нестриминговый action: ответ пришёл целиком — сразу done, без reveal
+        finishAgentMessage(sid, pendingMsg.id);
       } else {
         failAgentMessage(sid, pendingMsg.id, {
           errorText: mapped.errorText,
