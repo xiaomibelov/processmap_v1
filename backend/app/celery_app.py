@@ -29,3 +29,4 @@ from . import tasks  # noqa: E402
 from . import rag_tasks  # noqa: F401,E402
 from .agent_analysis import tasks as agent_analysis_tasks  # noqa: F401,E402
 from .save_services.analytics_aggregator import tasks as analytics_tasks  # noqa: F401,E402
+from .save_services.audit_publisher import tasks as audit_tasks  # noqa: F401,E402
