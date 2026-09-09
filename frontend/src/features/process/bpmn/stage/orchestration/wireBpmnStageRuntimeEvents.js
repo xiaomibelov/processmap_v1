@@ -665,7 +665,10 @@ export function bindModelerStageEvents({
     eventBus.on(event, 4900, () => setDiagramDragging(true));
   });
   dragEndEvents.forEach((event) => {
-    eventBus.on(event, 4900, () => setDiagramDragging(false));
+    eventBus.on(event, 4900, () => {
+      setDiagramDragging(false);
+      viewportCuller?.scheduleCull?.();
+    });
   });
 
   eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
