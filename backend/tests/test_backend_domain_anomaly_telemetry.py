@@ -267,6 +267,21 @@ class BackendDomainAnomalyTelemetryTest(unittest.TestCase):
 
         self.assertEqual(self._domain_rows(), [])
 
+    def test_empty_auto_pass_state_does_not_become_persisted_failure(self):
+        from app._legacy_main import UpdateSessionIn, get_storage, patch_session
+
+        st = get_storage()
+        sid = st.create(title="empty auto pass state", project_id="proj_empty_auto_pass")
+
+        patched = patch_session(
+            sid,
+            UpdateSessionIn(bpmn_meta={"auto_pass_v1": {}}),
+            request=None,
+        )
+
+        self.assertNotIn("auto_pass_v1", patched.get("bpmn_meta") or {})
+        self.assertEqual(self._domain_rows(), [])
+
     def test_request_path_backend_exception_taxonomy_is_not_changed(self):
         from app.error_events import build_backend_exception_event
 
