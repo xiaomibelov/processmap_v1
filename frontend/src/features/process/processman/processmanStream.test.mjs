@@ -93,3 +93,27 @@ test("mapStreamEventToMessage: AGENT-3 confirm_required", () => {
     timeoutSec: 900,
   });
 });
+
+test("mapStreamEventToMessage: feat/canvas-edit-highlight focus_elements", () => {
+  const payload = {
+    mode: "active",
+    elements: [
+      { op: "update_node", element_id: "Task_1" },
+      { op: "add_node", element_id: "Task_2" },
+    ],
+  };
+  assert.deepEqual(mapStreamEventToMessage("focus_elements", payload), {
+    type: "focus_elements",
+    mode: "active",
+    elements: [
+      { op: "update_node", element_id: "Task_1" },
+      { op: "add_node", element_id: "Task_2" },
+    ],
+  });
+  // битый payload → noop-совместимый пустой список, старый фронт не ломается
+  assert.deepEqual(mapStreamEventToMessage("focus_elements", {}), {
+    type: "focus_elements",
+    mode: "active",
+    elements: [],
+  });
+});

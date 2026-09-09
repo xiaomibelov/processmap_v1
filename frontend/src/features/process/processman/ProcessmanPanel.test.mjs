@@ -682,6 +682,130 @@ test("action-ответ (explain): полный текст виден сразу
   }
 });
 
+// ------------------------------------------------- feat/canvas-edit-highlight
+test("canvas-edit-highlight: focus_elements → onHighlightElements(active); confirm → applied; reject → clear", async () => {
+  const mod = await loadPanel();
+  await resetChat();
+  const chatStream = manualStream();
+  const resumeStream = manualStream();
+  const env = setupDom({
+    fetchImpl: async (url) => {
+      const u = String(url);
+      if (u.includes("/agent/resume")) return resumeStream.response();
+      if (u.includes("/agent/stream")) return chatStream.response();
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  const highlightCalls = [];
+  try {
+    const doc = await renderPanel(env, mod, {
+      onHighlightElements: (elements, options) => highlightCalls.push({ elements, options }),
+    });
+    await click(doc, env.dom.window, "processman-example-q1");
+    await click(doc, env.dom.window, "processman-action-qa");
+    const editPlan = {
+      note: "Переименую два шага",
+      operations: [
+        { op: "update_node", node_id: "Act_1", fields: { title: "Новое имя 1" } },
+        { op: "update_node", node_id: "Act_2", fields: { title: "Новое имя 2" } },
+      ],
+    };
+    chatStream.push({ event: "start", data: { turn_id: "t1" } });
+    chatStream.push({ event: "token", data: { delta: "Предлагаю правку.\n\n" } });
+    chatStream.push({
+      event: "focus_elements",
+      data: { mode: "active", elements: [
+        { op: "update_node", element_id: "Act_1" },
+        { op: "update_node", element_id: "Act_2" },
+      ] },
+    });
+    chatStream.push({
+      event: "confirm_required",
+      data: { pending_edit_id: "pe_1", edit_plan: editPlan, diff: [], timeout_sec: 900 },
+    });
+    await flush(60);
+    assert.deepEqual(highlightCalls.length >= 1, true, "active-подсветка вызвана");
+    const active = highlightCalls[0];
+    assert.deepEqual(active.elements, [
+      { op: "update_node", element_id: "Act_1" },
+      { op: "update_node", element_id: "Act_2" },
+    ]);
+    assert.equal(active.options?.mode, "active");
+    // confirm → applied-вспышка по операциям из editPlan + снятие active-подсветки
+    const confirmBtn = doc.querySelector('[data-testid="processman-edit-confirm"]');
+    assert.notEqual(confirmBtn, null, "карточка HITL с кнопкой confirm");
+    highlightCalls.length = 0;
+    await act(async () => {
+      confirmBtn.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    resumeStream.push({ event: "token", data: { delta: "Применяю…" } });
+    resumeStream.push({ event: "done", data: { status: "applied", operations_applied: 2 } });
+    await flush(60);
+    const modes = highlightCalls.map((c) => c.options?.mode);
+    assert.ok(modes.includes("applied"), `applied-вспышка вызвана, modes: ${modes}`);
+    const applied = highlightCalls.find((c) => c.options?.mode === "applied");
+    assert.deepEqual(applied.elements, [
+      { op: "update_node", element_id: "Act_1" },
+      { op: "update_node", element_id: "Act_2" },
+    ], "applied берёт операции из editPlan карточки");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("canvas-edit-highlight: reject → clear-подсветка", async () => {
+  const mod = await loadPanel();
+  await resetChat();
+  const chatStream = manualStream();
+  const resumeStream = manualStream();
+  const env = setupDom({
+    fetchImpl: async (url) => {
+      const u = String(url);
+      if (u.includes("/agent/resume")) return resumeStream.response();
+      if (u.includes("/agent/stream")) return chatStream.response();
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  const highlightCalls = [];
+  try {
+    const doc = await renderPanel(env, mod, {
+      onHighlightElements: (elements, options) => highlightCalls.push({ elements, options }),
+    });
+    await click(doc, env.dom.window, "processman-example-q1");
+    await click(doc, env.dom.window, "processman-action-qa");
+    chatStream.push({ event: "start", data: { turn_id: "t1" } });
+    chatStream.push({
+      event: "focus_elements",
+      data: { mode: "active", elements: [{ op: "update_node", element_id: "Act_1" }] },
+    });
+    chatStream.push({
+      event: "confirm_required",
+      data: {
+        pending_edit_id: "pe_2",
+        edit_plan: { note: "x", operations: [{ op: "update_node", node_id: "Act_1", fields: {} }] },
+        diff: [],
+        timeout_sec: 900,
+      },
+    });
+    await flush(60);
+    const rejectBtn = doc.querySelector('[data-testid="processman-edit-reject"]');
+    assert.notEqual(rejectBtn, null, "кнопка reject");
+    highlightCalls.length = 0;
+    await act(async () => {
+      rejectBtn.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    resumeStream.push({ event: "done", data: { status: "rejected" } });
+    await flush(60);
+    const modes = highlightCalls.map((c) => c.options?.mode);
+    assert.ok(modes.includes("clear"), `clear вызван после reject, modes: ${modes}`);
+    assert.equal(modes.includes("applied"), false, "applied НЕ вызывается при reject");
+  } finally {
+    await env.cleanup();
+  }
+});
+
 test("AGENT-1: streaming error event → S6 с [Повторить]", async () => {
   const mod = await loadPanel();
   await resetChat();
