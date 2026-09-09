@@ -46,3 +46,13 @@ test("native contextmenu excludes overlay toolbar surfaces", () => {
     "runtime-target seam must be the owner of body-vs-label semantic scope classification",
   );
 });
+
+test("modeling start restores only the active operation dependency closure", () => {
+  const source = readSource();
+  assert.ok(source.includes("viewportCuller.restoreElements(collectOperationElementIds(event))"));
+  assert.equal(
+    /eventBus\.on\("(?:shape\.move|create|connect|resize|replace)\.start"[\s\S]{0,100}restoreAll/.test(source),
+    false,
+    "modeling start must not synchronously restore every culled element",
+  );
+});
