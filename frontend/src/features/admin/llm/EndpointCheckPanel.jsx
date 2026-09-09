@@ -32,6 +32,20 @@ const FILTERS = [
   { id: ENDPOINT_CHECK_FILTER_FLAKY, label: t("endpointCheck.filter.flaky") },
 ];
 
+const PROFILES = [
+  { id: "read_only", label: t("endpointCheck.profile.readOnly") },
+  { id: "save_pipeline", label: t("endpointCheck.profile.savePipeline") },
+  { id: "full", label: t("endpointCheck.profile.full") },
+];
+
+const SAVE_STEPS = [
+  { id: "xml", label: "XML" },
+  { id: "xml_meta", label: "XML + BPMN meta" },
+  { id: "parallel_xml_raw_xml", label: "XML + rawXml race" },
+  { id: "timeout_lock_conflict", label: "Timeout / 423 / 409" },
+  { id: "final_save", label: t("endpointCheck.pipeline.finalSave"), required: true },
+];
+
 function errorText(res, fallback) {
   const err = res?.error;
   if (err && typeof err === "object") return toText(err.message || err.code || fallback);
@@ -76,6 +90,8 @@ export default function EndpointCheckPanel() {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(true);
   const [runsError, setRunsError] = useState("");
+  const [profile, setProfile] = useState("read_only");
+  const [saveChain, setSaveChain] = useState(SAVE_STEPS.map((step) => step.id));
   const hadActiveRef = useRef(false);
 
   const loadStatus = useCallback(async () => {
@@ -157,7 +173,8 @@ export default function EndpointCheckPanel() {
     if (starting || active) return;
     setStarting(true);
     setNotice("");
-    const res = await runCheck();
+    const orderedSaveChain = SAVE_STEPS.filter((step) => saveChain.includes(step.id)).map((step) => step.id);
+    const res = await runCheck({ profile, saveChain: profile === "read_only" ? [] : orderedSaveChain });
     if (res?.ok) {
       await loadStatus();
       await loadRuns();
@@ -223,6 +240,37 @@ export default function EndpointCheckPanel() {
           <ErrorState message={statusError} />
         ) : (
           <div className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3" data-testid="endpoint-check-profile-controls">
+              <label className="grid gap-1 text-xs font-medium text-slate-700">
+                {t("endpointCheck.profile.label")}
+                <select
+                  className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                  value={profile}
+                  onChange={(event) => setProfile(event.target.value)}
+                  disabled={starting || Boolean(active)}
+                  data-testid="endpoint-check-profile-select"
+                >
+                  {PROFILES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              {profile !== "read_only" ? (
+                <div className="flex flex-wrap gap-x-3 gap-y-2" data-testid="endpoint-check-save-chain">
+                  {SAVE_STEPS.map((step) => (
+                    <label key={step.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={saveChain.includes(step.id)}
+                        disabled={step.required || starting || Boolean(active)}
+                        onChange={(event) => setSaveChain((current) => (
+                          event.target.checked ? [...current.filter((id) => id !== step.id), step.id] : current.filter((id) => id !== step.id)
+                        ))}
+                      />
+                      {step.label}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             {active ? (
               <div className="text-xs text-slate-600" data-testid="endpoint-check-progress">
                 {t("endpointCheck.progress.running")}
