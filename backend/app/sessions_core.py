@@ -34,6 +34,7 @@ from .redis_cache import (
     session_open_cache_ttl_sec,
     session_open_version_token,
 )
+from .redis_lock import acquire_session_lock
 from .schemas.legacy_api import (
     CreateSessionIn,
     SessionPresenceTouchIn,
@@ -305,6 +306,33 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
 
 
 def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
+    import app._legacy_main as _lm
+
+    data = inp.model_dump(exclude_unset=True)
+    diagram_write_requested = any(key in _lm._DIAGRAM_TRUTH_PATCH_KEYS for key in data)
+    if not diagram_write_requested:
+        return _patch_session_impl(session_id, inp, request)
+
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        sess, _, _ = _legacy_load_session_scoped(session_id, request)
+        if not sess:
+            raise_session_not_found(session_id)
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "code": "SESSION_LOCK_BUSY",
+                "message": "Session is being updated, retry",
+                "server_current_version": int(getattr(sess, "diagram_state_version", 0) or 0),
+            },
+        )
+    try:
+        return _patch_session_impl(session_id, inp, request)
+    finally:
+        lock.release()
+
+
+def _patch_session_impl(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
     import app._legacy_main as _lm
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -766,5 +794,4 @@ def leave_session_presence_api(
         "session_id": sid,
         "removed": removed,
     }
-
 
