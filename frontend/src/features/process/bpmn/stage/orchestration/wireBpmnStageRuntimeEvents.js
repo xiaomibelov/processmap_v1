@@ -1,6 +1,7 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
 import { resolveProcessLikeRootElement } from "../interaction/processRootSelection.js";
 import { collectOperationElementIds } from "../viewport/cullBpmnViewport.js";
+import { shouldRefreshDecorForCommand } from "../fanout/postStagingFanout.js";
 
 const CANVAS_PROCESS_HOVER_CLASS = "fpcCanvasProcessHoverHint";
 
@@ -674,10 +675,22 @@ export function bindModelerStageEvents({
   eventBus.on("commandStack.shape.replace.postExecute", 2200, (ev) => {
     applyShapeReplacePost(inst, ev, "commandStack.shape.replace.postExecute");
   });
-  eventBus.on("commandStack.changed", 900, () => {
-    invalidateShapeTitleLookup(inst.get("elementRegistry"));
+  eventBus.on("commandStack.changed", 900, (event) => {
+    let command = String(event?.command || event?.context?.command || "").trim();
+    if (!command) {
+      try {
+        const stack = inst.get("commandStack")?._stack;
+        const top = Array.isArray(stack) && stack.length ? stack[stack.length - 1] : null;
+        command = String(top?.command || top?.id || "").trim();
+      } catch {
+        command = "";
+      }
+    }
+    const refreshDecor = shouldRefreshDecorForCommand(command);
+    if (refreshDecor) invalidateShapeTitleLookup(inst.get("elementRegistry"));
     runImmediateEditorFanout({
       inst,
+      refreshDecor,
       applyTaskTypeDecor,
       applyLinkEventDecor,
       applyHappyFlowDecor,
