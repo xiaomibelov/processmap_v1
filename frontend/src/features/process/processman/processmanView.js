@@ -218,6 +218,7 @@ export const SSE_EVENT = Object.freeze({
   TOKEN: "token",
   ACTION: "action",
   CONFIRM_REQUIRED: "confirm_required",
+  FOCUS_ELEMENTS: "focus_elements",
   DONE: "done",
   ERROR: "error",
 });
@@ -297,6 +298,19 @@ export function mapStreamEventToMessage(event, data) {
       editPlan: data?.edit_plan && typeof data.edit_plan === "object" ? data.edit_plan : {},
       diff: Array.isArray(data?.diff) ? data.diff : [],
       timeoutSec: Number(data?.timeout_sec || 0),
+    };
+  }
+  if (event === SSE_EVENT.FOCUS_ELEMENTS) {
+    // feat/canvas-edit-highlight: подсветка затронутых элементов на канвасе.
+    // Битый payload → пустой список (старый фронт/бэк не ломаются).
+    const elements = Array.isArray(data?.elements) ? data.elements : [];
+    return {
+      type: "focus_elements",
+      mode: String(data?.mode || "active"),
+      elements: elements
+        .filter((e) => e && typeof e === "object")
+        .map((e) => ({ op: String(e.op || ""), element_id: String(e.element_id || "") }))
+        .filter((e) => e.op && e.element_id),
     };
   }
   if (event === SSE_EVENT.DONE) {

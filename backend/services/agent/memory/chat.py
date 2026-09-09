@@ -21,6 +21,7 @@ from edit import (
     build_human_diff,
     create_pending_edit,
     EditApplyError,
+    extract_focus_elements,
     propose_edit_plan,
     validate_edit_plan,
 )
@@ -920,6 +921,12 @@ def _run_edit_canvas_branch_stream(
     )
 
     yield ("token", {"delta": assistant_message + "\n\n"})
+    # feat/canvas-edit-highlight: фронт подсвечивает затронутые элементы
+    # на канвасе до решения пользователя (mode=active).
+    yield (
+        "focus_elements",
+        {"mode": "active", "elements": extract_focus_elements(edit_plan)},
+    )
     yield (
         "confirm_required",
         {
