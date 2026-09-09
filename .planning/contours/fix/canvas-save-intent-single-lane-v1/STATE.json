@@ -1,0 +1,12 @@
+{
+  "contour": "fix/canvas-save-intent-single-lane-v1",
+  "status": "ready_for_review",
+  "tests": {
+    "save_regression": "71 passed",
+    "persistence": "15 passed",
+    "frontend_build": "passed"
+  },
+  "remaining": [
+    "stage end-to-end verification after deployment"
+  ]
+}
