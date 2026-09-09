@@ -683,9 +683,12 @@ export default function createBpmnCoordinator(options = {}) {
     // If a save is already in-flight, don't start a new timer — the in-flight
     // flushSave will check saveQueuedRev after completion and re-flush if needed.
     if (saveInFlight) {
+      const state = store.getState();
+      saveQueuedRev = Math.max(saveQueuedRev, asNumber(state?.rev, 0));
       emit("SAVE_SCHEDULE_COALESCED", {
         sid: currentSid(),
         reason: asText(reason || "autosave"),
+        queued_rev: saveQueuedRev,
       });
       return;
     }
@@ -795,12 +798,7 @@ export default function createBpmnCoordinator(options = {}) {
     clearSaveTimer();
     if (!store) return { ok: false, rev: 0, error: "store unavailable" };
     if (flushPromise) {
-      const hasXmlOverride = asText(options?.xmlOverride).trim().length > 0;
-      const maxWaitMs = hasXmlOverride ? 4000 : 8000;
-      await Promise.race([
-        flushPromise,
-        new Promise((resolve) => setTimeout(resolve, maxWaitMs)),
-      ]);
+      await flushPromise;
     }
     const run = (async () => {
       saveInFlight = true;
