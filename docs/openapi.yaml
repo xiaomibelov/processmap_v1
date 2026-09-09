@@ -1304,6 +1304,19 @@ components:
       - created_at
       title: DeploymentNoticeOut
       type: object
+    EndpointCheckRunIn:
+      properties:
+        profile:
+          default: read_only
+          title: Profile
+          type: string
+        save_chain:
+          items:
+            type: string
+          title: Save Chain
+          type: array
+      title: EndpointCheckRunIn
+      type: object
     ErrorEventIn:
       additionalProperties: false
       description: Input payload for ingesting an error/telemetry event.
@@ -4185,6 +4198,16 @@ paths:
       description: 'Создать/выполнить run. Особенности: доступ: администратор платформы/организации;
         тело валидируется схемой (422 при несоответствии).'
       operationId: admin_endpoint_check_run_api_admin_endpoint_check_run_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/EndpointCheckRunIn'
+              default:
+                profile: read_only
+                save_chain: []
+              title: Inp
       responses:
         '200':
           content:
@@ -4199,6 +4222,12 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
       security:
       - bearerAuth: []
       summary: Создать/выполнить run
