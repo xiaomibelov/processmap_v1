@@ -4637,7 +4637,14 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
 
     lock = acquire_session_lock(session_id, ttl_ms=15000)
     if not lock.acquired:
-        raise HTTPException(status_code=423, detail="Session is being updated, retry")
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "code": "SESSION_LOCK_BUSY",
+                "message": "Session is being updated, retry",
+                "server_current_version": int(getattr(sess_pre, "diagram_state_version", 0) or 0),
+            },
+        )
 
     try:
         st = get_storage()

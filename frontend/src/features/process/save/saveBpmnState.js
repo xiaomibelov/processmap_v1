@@ -84,6 +84,9 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
     if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
     return null;
   },
+  applyBaseVersion: (payload, baseVersion) => {
+    payload.baseDiagramStateVersion = baseVersion;
+  },
   onSuccess: (response, sessionId, payload) => {
     // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
     // Only sync the version to external React state here.
