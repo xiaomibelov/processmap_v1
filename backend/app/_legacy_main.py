@@ -2655,11 +2655,14 @@ def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
     }
     if (
         not graph_hash
+        and not run_id
         and not generated_at
         and not complete_variants
         and not debug_failed_variants
         and not warnings
-        and not status
+        and not failed_reasons
+        and total_variants <= 0
+        and total_failed <= 0
     ):
         return {}
     return out
