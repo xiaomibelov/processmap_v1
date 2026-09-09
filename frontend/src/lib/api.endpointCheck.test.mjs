@@ -30,6 +30,7 @@ test("runCheck: POST /api/admin/endpoint-check/run", async () => {
     assert.equal(String(mock.calls[0].init?.method || ""), "POST");
     const url = new URL(mock.calls[0].url, "http://local");
     assert.equal(url.pathname, "/api/admin/endpoint-check/run");
+    assert.equal(mock.calls[0].init.headers.get("Content-Type"), "application/json");
     assert.deepEqual(JSON.parse(mock.calls[0].init.body), { profile: "read_only", save_chain: [] });
   } finally {
     mock.restore();
