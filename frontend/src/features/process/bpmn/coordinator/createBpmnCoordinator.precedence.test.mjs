@@ -503,6 +503,87 @@ test("queued replay keeps manual_save intent marker for ordinary session save", 
   });
 });
 
+test("manual save never starts a second flush while autosave is still active", async () => {
+  const prevWindow = globalThis.window;
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...args) => realSetTimeout(fn, ms === 8000 ? 5 : ms, ...args);
+  globalThis.window = {
+    setTimeout: (...args) => globalThis.setTimeout(...args),
+    clearTimeout: (...args) => clearTimeout(...args),
+  };
+  try {
+    const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true, lastSavedRev: 8 });
+    let releaseFirst;
+    const firstBlocked = new Promise((resolve) => { releaseFirst = resolve; });
+    const reasons = [];
+    const coordinator = createBpmnCoordinator({
+      store,
+      getSessionId: () => "sid_single_flush_lane",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 9 }),
+        getXml: async () => ({ ok: true, xml: "<bpmn:new/>", token: 9 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, _xml, _rev, reason) => {
+          reasons.push(String(reason || ""));
+          if (reasons.length === 1) await firstBlocked;
+          return { ok: true, status: 200, storedRev: 9 };
+        },
+      },
+    });
+
+    const autosave = coordinator.flushSave("autosave");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const manual = coordinator.flushSave("manual_save");
+    await new Promise((resolve) => realSetTimeout(resolve, 20));
+
+    assert.deepEqual(reasons, ["autosave"]);
+    releaseFirst();
+    await Promise.all([autosave, manual]);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    if (prevWindow === undefined) delete globalThis.window;
+    else globalThis.window = prevWindow;
+  }
+});
+
+test("canvas changes during an active save produce one keep-latest replay", async () => {
+  await withWindowTimers(async () => {
+    const store = createStore({ xml: "<bpmn:v8/>", rev: 8, dirty: false, lastSavedRev: 8 });
+    store.setXml("<bpmn:v9/>", "test_mutation", { loadedRev: 9, dirty: true });
+    let runtimeXml = "<bpmn:v9/>";
+    let releaseFirst;
+    const firstBlocked = new Promise((resolve) => { releaseFirst = resolve; });
+    const persistedXml = [];
+    const coordinator = createBpmnCoordinator({
+      debounceMs: 10_000,
+      store,
+      getSessionId: () => "sid_keep_latest_replay",
+      getRuntime: () => ({
+        getStatus: () => ({ ready: true, defs: true, token: 10 }),
+        getXml: async () => ({ ok: true, xml: runtimeXml, token: 10 }),
+      }),
+      persistence: {
+        saveRaw: async (_sid, xml) => {
+          persistedXml.push(xml);
+          if (persistedXml.length === 1) await firstBlocked;
+          return { ok: true, status: 200, storedRev: persistedXml.length === 1 ? 9 : 10 };
+        },
+      },
+    });
+
+    const first = coordinator.flushSave("autosave");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    runtimeXml = "<bpmn:v10/>";
+    store.setXml(runtimeXml, "test_mutation", { loadedRev: 10, dirty: true });
+    coordinator.scheduleSave("autosave");
+    releaseFirst();
+    await first;
+
+    assert.deepEqual(persistedXml, ["<bpmn:v9/>", "<bpmn:v10/>"]);
+  });
+});
+
 test("flushSave performs deterministic single stale conflict auto-retry and resolves without conflict fail event", async () => {
   const store = createStore({ xml: "<bpmn:old/>", rev: 9, dirty: true });
   const traces = [];
