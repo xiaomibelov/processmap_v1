@@ -159,15 +159,41 @@ def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
     invalidate_session_open(sid)
 
 
+def _publish_session_update_audit(*, user_id: str, oid: Any, sess: Any, session_id: str, meta: Dict[str, Any]) -> None:
+    """Audit session.update через Celery-очередь (hot save-path).
+
+    perf/save-path-decoupling-v1 (P3): паритет publish_session_saved —
+    enqueue best-effort, sync INSERT не блокирует save-запрос.
+    Без actor (анонимный контекст) запись пропускается (паритет _audit_log_safe).
+    """
+    if not user_id:
+        return
+    from .save_services.audit_publisher.publisher import publish_audit_log
+
+    publish_audit_log(
+        actor_user_id=user_id,
+        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+        action="session.update",
+        entity_type="session",
+        entity_id=str(getattr(sess, "id", "") or session_id),
+        project_id=str(getattr(sess, "project_id", "") or ""),
+        session_id=str(getattr(sess, "id", "") or session_id),
+        meta=meta,
+    )
+
+
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     import app._legacy_main as _lm
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
     project_id = str(getattr(session_obj, "project_id", "") or "").strip()
     _invalidate_workspace_cache_for_org(oid)
+    # perf/save-path-decoupling-v1 (P1): targets уже содержат workspace_id —
+    # повторный DB-read через _workspace_id_for_project не нужен.
+    _explorer_targets: Optional[Dict[str, Any]] = None
     if project_id:
         explorer_invalidate_sessions(project_id)
-        _invalidate_explorer_children_for_project(project_id, oid)
+        _explorer_targets = _invalidate_explorer_children_for_project(project_id, oid)
     if sid:
         _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
@@ -181,7 +207,11 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
             invalidate_analytics_scope("session", sid, oid)
         if project_id:
             invalidate_analytics_scope("project", project_id, oid)
-            workspace_id = _lm._workspace_id_for_project(project_id)
+            workspace_id = ""
+            if isinstance(_explorer_targets, dict):
+                workspace_id = str(_explorer_targets.get("workspace_id") or "").strip()
+            if not workspace_id:
+                workspace_id = str(_lm._workspace_id_for_project(project_id) or "").strip()
             if workspace_id:
                 invalidate_analytics_scope("workspace", workspace_id, oid)
     except Exception as exc:
@@ -467,14 +497,11 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             user_id=user_id,
         )
 
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-        action="session.update",
-        entity_type="session",
-        entity_id=str(getattr(sess, "id", "") or session_id),
-        project_id=str(getattr(sess, "project_id", "") or ""),
-        session_id=str(getattr(sess, "id", "") or session_id),
+    _publish_session_update_audit(
+        user_id=user_id,
+        oid=oid,
+        sess=sess,
+        session_id=session_id,
         meta={"keys": sorted(list(data.keys()))},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
@@ -597,14 +624,11 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
             org_id=oid,
             user_id=user_id,
         )
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-        action="session.update",
-        entity_type="session",
-        entity_id=str(getattr(sess, "id", "") or session_id),
-        project_id=str(getattr(sess, "project_id", "") or ""),
-        session_id=str(getattr(sess, "id", "") or session_id),
+    _publish_session_update_audit(
+        user_id=user_id,
+        oid=oid,
+        sess=sess,
+        session_id=session_id,
         meta={"put": True},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
