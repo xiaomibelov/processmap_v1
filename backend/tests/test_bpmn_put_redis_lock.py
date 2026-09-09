@@ -70,8 +70,11 @@ class BpmnPutRedisLockIntegrationTests(unittest.TestCase):
         self.main_mod = main_mod
         self.BpmnXmlIn = main_mod.BpmnXmlIn
         self.CreateSessionIn = main_mod.CreateSessionIn
+        self.UpdateSessionIn = main_mod.UpdateSessionIn
         self.create_session = main_mod.create_session
         self.session_bpmn_save = main_mod.session_bpmn_save
+        from app.sessions_core import patch_session
+        self.patch_session = patch_session
         created = self.create_session(self.CreateSessionIn(title="lock-test"))
         self.sid = str(created.get("id") or "")
         self.assertTrue(self.sid)
@@ -143,6 +146,30 @@ class BpmnPutRedisLockIntegrationTests(unittest.TestCase):
         self.assertEqual(error.status_code, 423)
         self.assertEqual(error.detail.get("code"), "SESSION_LOCK_BUSY")
         self.assertEqual(error.detail.get("server_current_version"), expected_version)
+
+    def test_diagram_patch_uses_same_lock_as_bpmn_put(self):
+        current = self.main_mod.get_storage().load(self.sid)
+        expected_version = int(getattr(current, "diagram_state_version", 0) or 0)
+
+        with patch(
+            "app.sessions_core.acquire_session_lock",
+            return_value=SimpleNamespace(acquired=False),
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                self.patch_session(
+                    self.sid,
+                    self.UpdateSessionIn(
+                        bpmn_meta={"version": 1},
+                        base_diagram_state_version=expected_version,
+                    ),
+                )
+
+        error = raised.exception
+        self.assertEqual(error.status_code, 423)
+        self.assertEqual(error.detail.get("code"), "SESSION_LOCK_BUSY")
+        self.assertEqual(error.detail.get("server_current_version"), expected_version)
+        after = self.main_mod.get_storage().load(self.sid)
+        self.assertEqual(int(getattr(after, "diagram_state_version", 0) or 0), expected_version)
 
 
 if __name__ == "__main__":
