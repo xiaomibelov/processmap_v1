@@ -203,6 +203,43 @@ test("saveRaw keeps structured conflict details from backend 409 payload", async
   assert.equal(saved.errorDetails?.server_current_version, 11);
 });
 
+test("saveRaw reconciles a timeout commit when authoritative XML exactly matches", async () => {
+  window.localStorage.clear();
+  let getCalls = 0;
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ diagram_state_version: 5 }),
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 409,
+      data: {
+        detail: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          client_base_version: 5,
+          server_current_version: 6,
+        },
+      },
+    }),
+    apiGetBpmnXml: async (_sid, options) => {
+      getCalls += 1;
+      assert.deepEqual(options, { raw: true, includeOverlay: false, cacheBust: true });
+      return { ok: true, status: 200, xml: "<bpmn:committed/>" };
+    },
+  });
+
+  const saved = await persistence.saveRaw(
+    "sid_reconcile_commit",
+    "<bpmn:committed/>",
+    6,
+    "manual_save",
+  );
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.diagramStateVersion, 6);
+  assert.equal(getTrackedVersion("sid_reconcile_commit"), 6);
+  assert.equal(saveCoordinator.getConflict("sid_reconcile_commit"), null);
+  assert.equal(getCalls, 1);
+});
+
 test("saveRaw sends base diagram state version and updates it from successful ack", async () => {
   window.localStorage.clear();
   const putCalls = [];

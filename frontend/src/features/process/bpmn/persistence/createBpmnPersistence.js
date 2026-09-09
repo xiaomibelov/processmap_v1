@@ -36,16 +36,47 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
       options.bpmnMeta = payload.bpmnMeta;
     }
     return {
+      apiGetBpmnXml: payload.apiGetBpmnXml,
       apiPutBpmnXml: payload.apiPutBpmnXml,
       xml: payload.xml,
       options,
     };
   },
+  reconcileConflict: async (response, sessionId, payload) => {
+    const apiGetBpmnXml = payload?.apiGetBpmnXml;
+    if (typeof apiGetBpmnXml !== "function") return null;
+    const detail = response?.data?.detail || response?.data || {};
+    const serverVersion = Number(
+      detail?.server_current_version
+      ?? detail?.serverCurrentVersion
+      ?? response?.server_current_version
+      ?? response?.serverCurrentVersion,
+    );
+    if (!Number.isFinite(serverVersion) || serverVersion < 0) return null;
+    const loaded = await apiGetBpmnXml(sessionId, {
+      raw: true,
+      includeOverlay: false,
+      cacheBust: true,
+    });
+    if (!loaded?.ok) return null;
+    const authoritativeXml = applyMessageFlowExportDialect(asText(loaded?.xml));
+    const submittedXml = applyMessageFlowExportDialect(asText(payload?.xml));
+    if (authoritativeXml !== submittedXml) return null;
+    return {
+      ok: true,
+      status: 200,
+      reconciled: true,
+      storedRev: Number(payload?.options?.rev || 0),
+      diagramStateVersion: Math.round(serverVersion),
+    };
+  },
   getBaseVersion: (sessionId, payload) => {
     const tracked = getTrackedDiagramStateVersion(sessionId);
-    if (tracked !== null) return tracked;
     const base = Number(payload?.baseDiagramStateVersion);
-    return Number.isFinite(base) && base >= 0 ? Math.round(base) : null;
+    const candidates = [tracked, base]
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    return candidates.length ? Math.round(Math.max(...candidates)) : null;
   },
   applyBaseVersion: (payload, baseVersion) => {
     if (payload?.options) payload.options.baseDiagramStateVersion = baseVersion;
@@ -757,6 +788,7 @@ export default function createBpmnPersistence(options = {}) {
       baseDiagramStateVersion,
       sourceAction,
       bpmnMeta,
+      apiGetBpmnXml,
       apiPutBpmnXml,
       rememberDiagramStateVersion: rememberExternalDiagramStateVersion,
     });
