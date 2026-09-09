@@ -1,5 +1,6 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
 import { resolveProcessLikeRootElement } from "../interaction/processRootSelection.js";
+import { collectOperationElementIds } from "../viewport/cullBpmnViewport.js";
 
 const CANVAS_PROCESS_HOVER_CLASS = "fpcCanvasProcessHoverHint";
 
@@ -627,24 +628,17 @@ export function bindModelerStageEvents({
     OVERLAY_PAN_DEBOUNCE_MS,
   );
 
-  // Restore culled elements before any modeling operation to avoid
-  // bpmn-js DOM errors (e.g. insertBefore on detached nodes).
-  if (viewportCuller?.restoreAll) {
-    eventBus.on("shape.move.start", 5000, () => {
-      viewportCuller.restoreAll();
-    });
-    eventBus.on("create.start", 5000, () => {
-      viewportCuller.restoreAll();
-    });
-    eventBus.on("connect.start", 5000, () => {
-      viewportCuller.restoreAll();
-    });
-    eventBus.on("resize.start", 5000, () => {
-      viewportCuller.restoreAll();
-    });
-    eventBus.on("replace.start", 5000, () => {
-      viewportCuller.restoreAll();
-    });
+  // Modeling only needs the active element and its direct graph dependencies.
+  // Reattaching every culled gfx here creates a large synchronous first frame.
+  if (viewportCuller?.restoreElements) {
+    const restoreOperationElements = (event) => {
+      viewportCuller.restoreElements(collectOperationElementIds(event));
+    };
+    eventBus.on("shape.move.start", 5000, restoreOperationElements);
+    eventBus.on("create.start", 5000, restoreOperationElements);
+    eventBus.on("connect.start", 5000, restoreOperationElements);
+    eventBus.on("resize.start", 5000, restoreOperationElements);
+    eventBus.on("replace.start", 5000, restoreOperationElements);
   }
 
   // Drag lifecycle: notify the rest of the stage so autosave/sidebar can pause.
