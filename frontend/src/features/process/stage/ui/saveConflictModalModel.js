@@ -55,6 +55,7 @@ function resolveConflictActorIdentitySet(conflict = {}) {
 }
 
 function hasNumericVersion(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return false;
   const num = Number(value);
   return Number.isFinite(num) && num >= 0;
 }
