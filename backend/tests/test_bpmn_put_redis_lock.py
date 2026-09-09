@@ -5,6 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 
 from fastapi import HTTPException
@@ -126,6 +127,22 @@ class BpmnPutRedisLockIntegrationTests(unittest.TestCase):
         ]
         self.assertEqual(len(ok_rows), 1, outcomes)
         self.assertEqual(len(lock_rows), 1, outcomes)
+
+    def test_lock_busy_response_includes_current_diagram_version(self):
+        current = self.main_mod.get_storage().load(self.sid)
+        expected_version = int(getattr(current, "diagram_state_version", 0) or 0)
+
+        with patch(
+            "app._legacy_main.acquire_session_lock",
+            return_value=SimpleNamespace(acquired=False),
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=SAMPLE_BPMN_XML))
+
+        error = raised.exception
+        self.assertEqual(error.status_code, 423)
+        self.assertEqual(error.detail.get("code"), "SESSION_LOCK_BUSY")
+        self.assertEqual(error.detail.get("server_current_version"), expected_version)
 
 
 if __name__ == "__main__":

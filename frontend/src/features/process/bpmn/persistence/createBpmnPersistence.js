@@ -41,9 +41,14 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
       options,
     };
   },
-  getBaseVersion: (_sessionId, payload) => {
+  getBaseVersion: (sessionId, payload) => {
+    const tracked = getTrackedDiagramStateVersion(sessionId);
+    if (tracked !== null) return tracked;
     const base = Number(payload?.baseDiagramStateVersion);
     return Number.isFinite(base) && base >= 0 ? Math.round(base) : null;
+  },
+  applyBaseVersion: (payload, baseVersion) => {
+    if (payload?.options) payload.options.baseDiagramStateVersion = baseVersion;
   },
   onSuccess: (response, sessionId, payload) => {
     // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
