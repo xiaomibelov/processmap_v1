@@ -1,0 +1,14 @@
+{
+  "contour": "uiux/low-fps-canvas-indicator-v1",
+  "status": "ready_for_review",
+  "thresholds": {
+    "enter_fps": 10,
+    "exit_fps": 15,
+    "required_samples": 2
+  },
+  "tests": {
+    "focused_ui": "7 passed",
+    "new_module_lint": "passed",
+    "frontend_build": "passed"
+  }
+}
