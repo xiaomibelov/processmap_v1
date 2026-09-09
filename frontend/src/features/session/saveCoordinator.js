@@ -39,8 +39,8 @@ function debounceKey(pipelineName, sessionId) {
   return `${pipelineName}::${asText(sessionId)}`;
 }
 
-function queueKey(pipelineName, sessionId) {
-  return `${asText(pipelineName)}::${asText(sessionId)}`;
+function queueKey(_pipelineName, sessionId) {
+  return asText(sessionId);
 }
 
 function isConflictResponse(response) {
@@ -115,6 +115,7 @@ class SaveCoordinator {
    * @param {Function} config.transport - (sessionId, payload) => Promise<response>
    * @param {Function} [config.buildPayload] - (payload, sessionId) => request payload
    * @param {Function} [config.getBaseVersion] - (sessionId) => number | null
+   * @param {Function} [config.applyBaseVersion] - mutates the transport payload with a refreshed base
    * @param {Function} [config.onSuccess] - (response, sessionId) => void
    * @param {Function} [config.on409] - (response, sessionId) => void
    * @param {Function} [config.onError] - (errorOrResponse, sessionId) => void
@@ -136,6 +137,7 @@ class SaveCoordinator {
       buildPayload: typeof config.buildPayload === "function" ? config.buildPayload : (payload) => payload,
       transport: config.transport,
       getBaseVersion: typeof config.getBaseVersion === "function" ? config.getBaseVersion : null,
+      applyBaseVersion: typeof config.applyBaseVersion === "function" ? config.applyBaseVersion : null,
       onSuccess: typeof config.onSuccess === "function" ? config.onSuccess : null,
       on409: typeof config.on409 === "function" ? config.on409 : null,
       onError: typeof config.onError === "function" ? config.onError : null,
@@ -474,12 +476,18 @@ class SaveCoordinator {
       builtPayload = {};
     }
 
-    if (pipeline.getBaseVersion) {
+    const refreshBaseVersion = () => {
+      if (!pipeline.getBaseVersion) return;
       const baseVersion = pipeline.getBaseVersion(sid, payload);
       if (baseVersion !== null && baseVersion !== undefined) {
-        builtPayload.base_diagram_state_version = Math.round(asNumber(baseVersion, -1));
+        const normalizedBase = Math.round(asNumber(baseVersion, -1));
+        builtPayload.base_diagram_state_version = normalizedBase;
+        if (pipeline.applyBaseVersion) {
+          pipeline.applyBaseVersion(builtPayload, normalizedBase);
+        }
       }
-    }
+    };
+    refreshBaseVersion();
 
     recordSaveDiagnostic("pipeline_start", {
       sid,
@@ -583,6 +591,7 @@ class SaveCoordinator {
           const delay = Math.min(pipeline.maxRetryDelayMs, pipeline.retryDelayMs * 2 ** attempt);
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "retry", attempt, delayMs: delay });
           await sleep(delay);
+          refreshBaseVersion();
           continue;
         }
 

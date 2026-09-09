@@ -1,0 +1,7 @@
+{
+  "contour": "fix/save-pipeline-self-conflict-v1",
+  "phase": "review",
+  "status": "ready_for_review",
+  "base_commit": "5552932ac44e81d9fd2288bfc8f6689afa50e76f",
+  "updated_at": "2026-09-09"
+}
