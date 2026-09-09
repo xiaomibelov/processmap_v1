@@ -56,3 +56,9 @@ test("modeling start restores only the active operation dependency closure", () 
     "modeling start must not synchronously restore every culled element",
   );
 });
+
+test("modeling end schedules viewport reculling after bpmn cleanup", () => {
+  const source = readSource();
+  assert.ok(source.includes("viewportCuller?.scheduleCull?.()"));
+  assert.ok(source.includes("dragEndEvents.forEach"));
+});
