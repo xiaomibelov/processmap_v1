@@ -5108,6 +5108,29 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
+      // Контур fix/canvas-250-editing-performance: пока открыт direct-editing,
+      // модель ещё не содержит набираемый текст — сериализовать и пушить её
+      // посреди редактирования бессмысленно и дорого (полный saveXML O(n) на
+      // схемах 250+ элементов). Autosave-job откладывается: после завершения
+      // редактирования commandStack.changed запросит autosave координатора.
+      // Принудительный (ручной) save наоборот автозавершает редактирование —
+      // набранный текст коммитится в модель и попадает в сохранение.
+      const directEditingService = activeModeler?.get?.("directEditing");
+      const directEditingActive = (
+        directEditingService
+        && typeof directEditingService.isActive === "function"
+        && directEditingService.isActive()
+      );
+      if (directEditingActive && !force) {
+        return { ok: true, pending: true, deferred: true, reason: "direct_editing_active" };
+      }
+      if (directEditingActive && force) {
+        try {
+          directEditingService.complete?.();
+        } catch {
+          // complete недоступен — сохраняем текущее состояние модели как есть.
+        }
+      }
       const viewportSnapshot = (activeModeler && modelerReadyRef.current)
         ? getCanvasSnapshot(activeModeler)
         : null;

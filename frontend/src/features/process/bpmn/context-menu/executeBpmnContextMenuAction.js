@@ -696,6 +696,20 @@ export async function executeBpmnContextMenuAction({
       emitElementSelection,
       buildInsertBetweenCandidate,
     });
+    // Сразу открываем direct-editing для созданного элемента — как экшен
+    // rename/edit_label: без этого «Создать задачу» требует второго клика
+    // по новому шейпу (контур fix/canvas-250-editing-performance).
+    if (
+      shape
+      && directEditing
+      && typeof directEditing.activate === "function"
+    ) {
+      try {
+        directEditing.activate(shape);
+      } catch {
+        // Элемент без провайдера direct-editing — остаёмся в режиме выделения.
+      }
+    }
     emitMutation({ type });
     return {
       ok: true,

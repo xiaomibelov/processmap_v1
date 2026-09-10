@@ -16,10 +16,10 @@ function isPositionalCommand(commandRaw) {
   return POSITIONAL_COMMANDS.has(command);
 }
 
-// Positional/drag frames must not pay a full runtime.getXml per frame (a
-// saveXML on every mousemove frame is what tanks canvas FPS on large
-// diagrams). The snapshot is coalesced into a single keep-latest serialization
-// shortly after the frame instead.
+// Command frames must not pay a full runtime.getXml per command (a saveXML on
+// every command is what tanks canvas editing on large diagrams). The snapshot
+// is coalesced into a single keep-latest serialization shortly after the
+// frame instead — for positional/drag frames and for structural edits alike.
 const THROTTLED_SERIALIZE_DELAY_MS = 300;
 // Same busy-modeler cap as the durable flush path: a stuck modeler must not
 // block the throttled snapshot either — the tick is skipped and the next
@@ -188,46 +188,26 @@ export default function createLocalMutationStaging(options = {}) {
       skipReason = "drag_in_progress";
     }
 
-    let nextXml = asTextOption(store.getState?.()?.xml || "");
-    let xmlAuthority = "staged_local_store_fallback";
-    let xmlExportMode = "store_fallback";
-    if (!positional) {
-      const runtime = getRuntime();
-      const status = runtime?.getStatus?.();
-      if (status?.ready && status?.defs) {
-        // Local interactive staging needs a lightweight snapshot for continuity
-        // and autosave eligibility, but formatted export remains canonical only
-        // on the durable flush path.
-        // Cap the staging export so a transiently busy/broken modeler cannot block
-        // the autosave pipeline indefinitely (observed as a 10s transport timeout
-        // after property mutations that remove extension elements).
-        try {
-          const xmlRes = await withTimeout(
-            () => runtime.getXml({ format: false }),
-            1500,
-            "stageRuntimeChange.getXml",
-          );
-          if (xmlRes?.ok) {
-            nextXml = asTextOption(xmlRes.xml);
-            xmlAuthority = "staged_local_runtime_snapshot";
-            xmlExportMode = "runtime_unformatted";
-          }
-        } catch {
-          // Fallback to the store XML already captured above.
-        }
-      }
-    }
+    // In-frame мы НЕ сериализуем модель ни для одного типа команд: и positional,
+    // и structural правки на схемах 250+ элементов оплачиваются полным saveXML
+    // (O(n) по элементам) на КАЖДУЮ команду. Вместо этого делаем синхронный
+    // dirty-mark текущим store xml (rev-bump + fanout подписчикам — кнопки
+    // «Сохранить»/«Новая версия» активируются без await), а полный снапшот
+    // коалесцируется в один keep-latest throttled-serialization на trailing-
+    // краю окна (см. scheduleThrottledSerialization). До края окла авторитет —
+    // прежний store xml; свежий снапшот с cacheRaw приходит с reason
+    // "runtime_change_throttled". Дurable flush-путь координатора сериализует
+    // модель напрямую из runtime и не зависит от этого снапшота.
+    const nextXml = asTextOption(store.getState?.()?.xml || "");
+    const xmlAuthority = "staged_local_store_fallback";
+    const xmlExportMode = "store_fallback";
 
     // Dirty-mark via setXml with the current store xml: content-wise a no-op,
     // but it bumps rev/dirty and fans out to subscribers (invariant #924:
-    // staging setXml touches lastHash, never savedHash). Positional frames
-    // skip cacheRaw — the recovery cache is fed by the throttled snapshot.
+    // staging setXml touches lastHash, never savedHash). cacheRaw — только
+    // в throttled-снапшоте.
     const nextState = store.setXml(nextXml, "runtime_change", { bumpRev: true, dirty: true });
-    if (!positional) {
-      cacheRaw?.(sid, nextXml, asNumber(nextState?.rev, 0), "runtime_change", { hash: asTextOption(nextState?.hash) });
-    } else {
-      scheduleThrottledSerialization();
-    }
+    scheduleThrottledSerialization();
     emit?.("REV_BUMP", {
       sid,
       rev: asNumber(nextState?.rev, 0),
