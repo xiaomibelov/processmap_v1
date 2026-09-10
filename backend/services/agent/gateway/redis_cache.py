@@ -2,7 +2,8 @@
 
 Оставлены только get_client (env REDIS_URL) + cache_get_json/cache_set_json,
 нужные gateway.complete_cached. Ключи идентичны монолиту
-(`pm:cache:llm:{feature}:v1:{digest}`) — перенос НЕ инвалидирует кэш (0.4 плана).
+(`pm:cache:llm:{feature}:v2:{org_id}:pv{prompt_version}:{ov}:{digest}`) —
+перенос НЕ инвалидирует кэш; старые v1-ключи вымирают по TTL (7 дней).
 """
 from __future__ import annotations
 

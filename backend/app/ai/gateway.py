@@ -3,6 +3,9 @@
 Единая точка вызова LLM для новых фич (LLM1–LLM3):
   complete(feature, payload, ...)          — прямой вызов через фолбэк-цепочку провайдеров;
   complete_cached(feature, cache_key, ...) — Redis-кэш; hit = 0 токенов (cached=true).
+    Ключ v2: pm:cache:llm:{feature}:v2:{org_id}:pv{prompt_version}:{ov}:{digest}
+    (org-scope + prompt-version-scope; v1 вымирает по TTL). Порядок: гейт фичи
+    (enabled + лимит) ДО cache-lookup — disabled-фича из кэша не обслуживается.
 
 Поток complete():
   1. feature flag enabled? иначе status="disabled";
@@ -19,6 +22,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -101,6 +105,30 @@ def _result(status: str, **extra: Any) -> Dict[str, Any]:
     return out
 
 
+def _feature_gate_violation(feature: str, org_id: str) -> Optional[Dict[str, Any]]:
+    """Гейт фичи: enabled + суточный лимит токенов. None = гейт пройден.
+
+    Единая реализация для complete() и complete_cached() (kill-switch должен
+    работать и на cache-hit, поэтому complete_cached проверяет гейт ДО lookup).
+    """
+    flag = llm_store.get_feature_flag(feature)
+    if flag is None:
+        return None
+    if not flag.get("enabled"):
+        return {"status": "disabled", "error": f"feature '{feature}' is disabled"}
+    limit = int(flag.get("daily_token_limit") or 0)
+    if limit > 0:
+        used = llm_store.usage_daily_tokens(feature, org_id, int(time.time()) - 24 * 3600)
+        if used >= limit:
+            return {
+                "status": "rate_limited",
+                "error": f"daily token limit reached ({used}/{limit})",
+                "used_tokens_24h": used,
+                "daily_token_limit": limit,
+            }
+    return None
+
+
 def complete(
     feature: str,
     payload: Any = None,
@@ -130,19 +158,11 @@ def complete(
         )
         return _result(status, latency_ms=latency_ms, **extra)
 
-    # 1. feature flag
-    flag = llm_store.get_feature_flag(feature)
-    if flag is not None and not flag.get("enabled"):
-        return _finish("disabled", error=f"feature '{feature}' is disabled")
-
-    # 2. суточный лимит токенов
-    if flag is not None:
-        limit = int(flag.get("daily_token_limit") or 0)
-        if limit > 0:
-            used = llm_store.usage_daily_tokens(feature, org_id, int(time.time()) - 24 * 3600)
-            if used >= limit:
-                return _finish("rate_limited", error=f"daily token limit reached ({used}/{limit})",
-                               used_tokens_24h=used, daily_token_limit=limit)
+    # 1–2. feature flag (enabled + суточный лимит)
+    violation = _feature_gate_violation(feature, org_id)
+    if violation is not None:
+        status = violation.pop("status")
+        return _finish(status, **violation)
 
     # 3. активный промт (prompt_override позволяет caller подменить system/template/max_tokens)
     prompt = _resolve_prompt(feature, prompt_override)
@@ -228,8 +248,33 @@ def complete(
     )
 
 
-def llm_cache_key(feature: str, digest: str) -> str:
-    return f"pm:cache:llm:{feature}:v1:{digest}"
+def _prompt_override_marker(prompt_override: Optional[Dict[str, Any]]) -> str:
+    """Детерминированный маркер prompt_override: разные override-варианты не делят кэш."""
+    if not prompt_override:
+        return "ov0"
+    canonical = json.dumps(prompt_override, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return f"ov{hashlib.md5(canonical.encode('utf-8')).hexdigest()[:12]}"
+
+
+def llm_cache_key(
+    feature: str,
+    digest: str,
+    *,
+    org_id: str,
+    prompt_version: int = 0,
+    prompt_override: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Ключ кэша v2: org-scoped + prompt-version-scoped.
+
+    M1: digest projection намеренно без org/session → org_id обязан быть в ключе,
+    иначе две org с одинаковой схемой делят cache-hit. L1: версия активного промпта
+    в ключе → активация новой версии инвалидирует кэш мгновенно, не через TTL.
+    v1-ключи вымирают по TTL (7 дней), массовый flush не нужен.
+    """
+    return (
+        f"pm:cache:llm:{feature}:v2:{org_id}"
+        f":pv{int(prompt_version or 0)}:{_prompt_override_marker(prompt_override)}:{digest}"
+    )
 
 
 def complete_cached(
@@ -241,8 +286,30 @@ def complete_cached(
     cache_client: Any = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Кэшированный вызов: hit → 0 токенов (llm_usage cached=true), miss → complete()."""
-    key = llm_cache_key(feature, cache_digest)
+    """Кэшированный вызов: hit → 0 токенов (llm_usage cached=true), miss → complete().
+
+    Порядок проверок: гейт фичи (enabled + лимит) ДО cache-lookup — выключенная
+    фича не обслуживается из кэша (kill-switch реален на hit'ах).
+    """
+    org_id = kwargs.get("org_id", "org_default")
+    violation = _feature_gate_violation(feature, org_id)
+    if violation is not None:
+        latency_start = time.monotonic()
+        llm_store.record_usage(
+            org_id=org_id, feature=feature, model="", provider_id="",
+            cached=False, user_id=kwargs.get("user_id", ""),
+            project_id=kwargs.get("project_id", ""), session_id=kwargs.get("session_id", ""),
+            latency_ms=int((time.monotonic() - latency_start) * 1000),
+            status=violation["status"],
+        )
+        return _result(violation.pop("status"), **violation)
+
+    prompt = _resolve_prompt(feature, prompt_override)
+    key = llm_cache_key(
+        feature, cache_digest, org_id=org_id,
+        prompt_version=int((prompt or {}).get("version") or 0),
+        prompt_override=prompt_override,
+    )
     cached_payload = cache_get_json(key, client=cache_client)
     if cached_payload is not None:
         latency_start = time.monotonic()
