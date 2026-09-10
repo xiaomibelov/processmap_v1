@@ -35,8 +35,12 @@ function debounceKey(pipelineName, sessionId) {
   return `${pipelineName}::${asText(sessionId)}`;
 }
 
-function queueKey(pipelineName, sessionId) {
-  return `${asText(pipelineName)}::${asText(sessionId)}`;
+function queueKey(_pipelineName, sessionId) {
+  // fix/save-single-writer-and-unified-cas-base (Task 1): транспортная очередь
+  // сквозная per-session — pipelines одной сессии сериализуются, иначе два
+  // in-flight save с одинаковым base дают self-409 и conflict gate (R1 аудита
+  // save-pipeline-full-map). Debounce и статусы остаются per-pipeline.
+  return `save::${asText(sessionId)}`;
 }
 
 function isConflictResponse(response) {

@@ -1,5 +1,6 @@
 import { apiPatchSession as defaultApiPatchSession } from "../../../lib/api.js";
 import { saveCoordinator } from "../../../features/session/saveCoordinator.js";
+import { resolveBaseVersionAtSendTime } from "../../../features/session/casResponse.js";
 
 const PIPELINE_NAME = "analysis";
 const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
@@ -29,15 +30,15 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
       onSessionSync: payload?.onSessionSync,
     };
   },
-  getBaseVersion: (_sessionId, payload) => {
-    const fromGetter = typeof payload?.getBaseDiagramStateVersion === "function"
-      ? Number(payload.getBaseDiagramStateVersion())
-      : NaN;
-    if (Number.isFinite(fromGetter) && fromGetter >= 0) return Math.round(fromGetter);
-    const fromOption = Number(payload?.baseDiagramStateVersion);
-    if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
-    return null;
-  },
+  getBaseVersion: (sessionId, payload) =>
+    // fix/save-single-writer-and-unified-cas-base (Task 2): tracker-first
+    // resolver из casResponse.js в момент отправки; getter из React-окружения
+    // и payload option — fallback на переходный период.
+    resolveBaseVersionAtSendTime({
+      sessionId,
+      payload,
+      getBaseDiagramStateVersion: payload?.getBaseDiagramStateVersion,
+    }),
   onSuccess: (response, sessionId, payload) => {
     const version = response?.session?.diagram_state_version ?? response?.session?.diagramStateVersion ?? null;
     if (version !== null) {

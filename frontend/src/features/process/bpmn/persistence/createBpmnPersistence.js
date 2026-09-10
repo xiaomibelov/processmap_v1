@@ -3,6 +3,7 @@ import {
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
+import { resolveBaseVersionAtSendTime } from "../../../../features/session/casResponse.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
@@ -19,7 +20,15 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
     if (typeof apiPutBpmnXml !== "function") {
       return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
     }
-    return apiPutBpmnXml(sessionId, payload.xml, { ...payload.options, signal });
+    const options = { ...payload.options, signal };
+    // fix/save-single-writer-and-unified-cas-base (Task 2): saveCoordinator
+    // штампует base_diagram_state_version из tracker-first resolver в момент
+    // отправки — он свежее enqueue-time options.baseDiagramStateVersion.
+    const stampedBase = Number(payload?.base_diagram_state_version);
+    if (Number.isFinite(stampedBase) && stampedBase >= 0) {
+      options.baseDiagramStateVersion = Math.round(stampedBase);
+    }
+    return apiPutBpmnXml(sessionId, payload.xml, options);
   },
   buildPayload: (payload) => {
     const options = {
@@ -39,10 +48,11 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
       options,
     };
   },
-  getBaseVersion: (_sessionId, payload) => {
-    const base = Number(payload?.baseDiagramStateVersion);
-    return Number.isFinite(base) && base >= 0 ? Math.round(base) : null;
-  },
+  getBaseVersion: (sessionId, payload) =>
+    // fix/save-single-writer-and-unified-cas-base (Task 2): tracker-first
+    // resolver из casResponse.js в момент отправки (после сериализации очереди),
+    // fallback — enqueue-time payload.baseDiagramStateVersion.
+    resolveBaseVersionAtSendTime({ sessionId, payload }),
   onSuccess: (response, sessionId, payload) => {
     // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
     // Only sync the version to external React state here.
