@@ -27,6 +27,7 @@ from ..utils.session_helpers import raise_session_not_found
 from ..validation.service import ALLOWED_OPERATION_CODES, FORBIDDEN_OPERATION_CODES
 from .gateway import complete, complete_cached
 from . import llm_internal_client
+from .error_sanitize import sanitize_llm_error
 from .process_projection import build_process_projection, projection_digest
 
 FEATURE = "process_analysis"
@@ -178,11 +179,13 @@ def llm_process_analysis(session_id: str, request: Request = None, force: int = 
         "cached": bool(result.get("cached")),
     }
     if not result.get("ok"):
-        # disabled / rate_limited / no_provider / error — честный статус наружу
+        # disabled / rate_limited / no_provider / error — честный статус наружу.
+        # S1: текст status="error" (URL upstream-роутера) заменяем на generic.
+        status = str(result.get("status") or "error")
         return {
             "ok": False,
-            "status": str(result.get("status") or "error"),
-            "error": str(result.get("error") or ""),
+            "status": status,
+            "error": sanitize_llm_error(status, str(result.get("error") or "")),
             **base,
         }
 

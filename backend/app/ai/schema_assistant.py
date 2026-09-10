@@ -28,6 +28,7 @@ from ..utils.session_helpers import raise_session_not_found
 from ..validation.service import FORBIDDEN_OPERATION_CODES, load_catalog_from_db
 from .gateway import complete, complete_cached
 from . import llm_internal_client
+from .error_sanitize import sanitize_llm_error
 from .process_analysis import _extract_json
 from .process_projection import build_process_projection, projection_digest
 
@@ -101,11 +102,13 @@ def _usage_extra(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _not_ok(result: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
-    # disabled / rate_limited / no_provider / error — честный статус наружу (HTTP 200)
+    # disabled / rate_limited / no_provider / error — честный статус наружу (HTTP 200).
+    # S1: текст status="error" (URL upstream-роутера) заменяем на generic.
+    status = str(result.get("status") or "error")
     return {
         "ok": False,
-        "status": str(result.get("status") or "error"),
-        "error": str(result.get("error") or ""),
+        "status": status,
+        "error": sanitize_llm_error(status, str(result.get("error") or "")),
         **base,
     }
 
