@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   enqueueSessionPatchCasWrite,
+  hasDiagramPatchKeys,
   readSessionPatchAckDiagramStateVersion,
   readSessionPatchConflictServerCurrentVersion,
   resetSessionPatchCasCoordinator,
@@ -204,4 +205,24 @@ test("session PATCH coordinator does NOT adopt tracked base on 409; conflict gat
   const resolved = saveCoordinator.resolveConflict("sid_conflict_track", "overwrite");
   assert.equal(resolved.ok, true);
   assert.equal(getTrackedVersion("sid_conflict_track"), 12);
+});
+
+test("hasDiagramPatchKeys: diagram keys route to CAS pipeline, meta keys do not", () => {
+  // fix/save-single-writer-and-unified-cas-base (Task 4): единый gate для
+  // generic patchDraft — только diagram-truth ключи идут через meta pipeline.
+  assert.equal(hasDiagramPatchKeys({ interview: { steps: [] } }), true);
+  assert.equal(hasDiagramPatchKeys({ nodes: [] }), true);
+  assert.equal(hasDiagramPatchKeys({ edges: [] }), true);
+  assert.equal(hasDiagramPatchKeys({ questions: [] }), true);
+  assert.equal(hasDiagramPatchKeys({ bpmn_meta: { version: 1 } }), true);
+  assert.equal(hasDiagramPatchKeys({ bpmnMeta: { version: 1 } }), true);
+  assert.equal(hasDiagramPatchKeys({ title: "x", interview: {} }), true);
+  // meta-ключи — остаются на прямом PATCH
+  assert.equal(hasDiagramPatchKeys({ title: "x" }), false);
+  assert.equal(hasDiagramPatchKeys({ roles: [], start_role: "r1" }), false);
+  assert.equal(hasDiagramPatchKeys({ notes_by_element: {} }), false);
+  assert.equal(hasDiagramPatchKeys({ status: "in_progress" }), false);
+  assert.equal(hasDiagramPatchKeys({}), false);
+  assert.equal(hasDiagramPatchKeys(null), false);
+  assert.equal(hasDiagramPatchKeys("bad"), false);
 });

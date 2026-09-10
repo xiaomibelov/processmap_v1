@@ -124,6 +124,26 @@ export function resetSessionPatchCasCoordinator(sessionId = "") {
   saveCoordinator.clearSession(normalizeDiagramSessionId(sessionId));
 }
 
+/**
+ * Diagram-truth ключи session-PATCH: любая запись с ними обязана идти через
+ * meta pipeline (CAS base + per-session очередь). Meta-ключи (title,
+ * notes_by_element, roles, status) CAS не требуют и могут идти напрямую.
+ * fix/save-single-writer-and-unified-cas-base (Task 4).
+ */
+const DIAGRAM_PATCH_KEYS = new Set([
+  "bpmn_meta",
+  "bpmnMeta",
+  "interview",
+  "nodes",
+  "edges",
+  "questions",
+]);
+
+export function hasDiagramPatchKeys(patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return false;
+  return Object.keys(patch).some((key) => DIAGRAM_PATCH_KEYS.has(key));
+}
+
 export function enqueueSessionPatchCasWrite({
   sessionId,
   patch,
