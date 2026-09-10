@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Request
 
+from ..ai.error_sanitize import sanitize_llm_error
 from ..ai.gateway import complete
 from ..schemas.agent_chat import AgentChatIn, AgentChatOut
 from .action_runners import run_explain_step, run_step_qa, run_suggest_next
@@ -210,7 +211,8 @@ def run_turn(
     # Handle gateway-level non-ok statuses: still persist assistant turn for retry context.
     if not result.get("ok"):
         status = str(result.get("status") or "error")
-        error_text = str(result.get("error") or "")
+        # S1: сырой текст ошибки провайдера (URL upstream) не прокидываем наружу.
+        error_text = sanitize_llm_error(status, str(result.get("error") or ""))
         assistant_text = f"[{status}] {error_text}" if error_text else status
         append_turn(
             sid,
