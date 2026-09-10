@@ -22,6 +22,7 @@ llm_store / llm_http_client / redis_cache).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -29,8 +30,11 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 import requests
 
 from . import llm_store
+from .error_sanitize import sanitize_llm_error
 from .llm_http_client import _deepseek_chat_request, _deepseek_chat_request_stream
 from .redis_cache import cache_get_json, cache_set_json
+
+logger = logging.getLogger(__name__)
 
 CACHE_TTL_SEC = 7 * 24 * 3600  # 7 дней
 DEFAULT_TIMEOUT_SEC = 30
@@ -234,7 +238,14 @@ def complete(
             json_mode_used=json_mode_used,
         )
 
-    return _finish("error", error=last_error or "all providers failed")
+    # R3: сырой last_error — в логи (диагностика), пользователю — generic (S1).
+    logger.warning(
+        "llm gateway chain failed: feature=%s org=%s providers=%s last_error=%s",
+        feature, org_id, len(chain), last_error,
+    )
+    # S1: сырой текст провайдерской ошибки (содержит URL upstream-роутера)
+    # пользователю не отдаём — заменяем на generic (gateway/error_sanitize.py).
+    return _finish("error", error=sanitize_llm_error("error", last_error or "all providers failed"))
 
 
 def llm_cache_key(feature: str, digest: str) -> str:
@@ -464,11 +475,17 @@ def complete_stream(
                 continue
             continue
 
+    # R3: сырой last_error — в логи (диагностика), в SSE — generic (S1).
+    logger.warning(
+        "llm gateway stream chain failed: feature=%s org=%s last_error=%s",
+        feature, org_id, last_error,
+    )
     yield (
         "error",
         _record(
             "error",
-            error=last_error or "all providers failed",
+            # S1: сырой текст ошибки (URL upstream) пользователю не отдаём.
+            error=sanitize_llm_error("error", last_error or "all providers failed"),
             provider_id=last_provider_id,
             model=last_model,
         ),
