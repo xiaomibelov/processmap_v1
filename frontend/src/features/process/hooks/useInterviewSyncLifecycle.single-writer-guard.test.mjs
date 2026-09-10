@@ -39,6 +39,9 @@ test("L1 non-semantic allowlist for report_build_debug is preserved", () => {
 
 test("canonical XML-first writer path remains intact", () => {
   const source = readPersistenceSource();
-  assert.equal(source.includes("async function saveRaw(sessionId, xmlText, rev, reason = \"save\")"), true);
-  assert.equal(source.includes("const saved = await apiPutBpmnXml(sid, xml, {"), true);
+  assert.equal(source.includes("async function saveRaw(sessionId, xmlText, rev, reason = \"save\""), true);
+  // saveRaw пишет через rawXml pipeline saveCoordinator (единая очередь +
+  // tracker-first CAS base), а не прямым apiPutBpmnXml — актуализировано под
+  // unified-save-coordinator архитектуру.
+  assert.equal(source.includes("await saveCoordinator.execute(RAW_XML_PIPELINE_NAME, {"), true);
 });
