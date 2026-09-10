@@ -5,10 +5,12 @@ import {
   readAckDiagramStateVersion,
   readConflictServerCurrentVersion,
   resolveBaseVersionAtSendTime,
+  applyAckToTracker,
 } from "./casResponse.js";
 
 import {
   setVersion as setTrackedDiagramStateVersion,
+  getVersion,
   clearSession as clearTrackedSession,
   __resetForTests as resetCasTracker,
 } from "../../lib/casVersionTracker.js";
@@ -78,4 +80,18 @@ test("casResponse: resolveBaseVersionAtSendTime falls back to getter, then paylo
   assert.equal(fromPayloadSnake, 38);
   const none = resolveBaseVersionAtSendTime({ sessionId: "sess_t5", payload: {} });
   assert.equal(none, null);
+});
+
+test("casResponse: applyAckToTracker sets tracker from ack and returns version", () => {
+  resetCasTracker();
+  const applied = applyAckToTracker("sess_ack", { ok: true, diagram_state_version: 42 });
+  assert.equal(applied, 42);
+  assert.equal(getVersion("sess_ack"), 42);
+  const camel = applyAckToTracker("sess_ack2", { session: { diagramStateVersion: 7 } });
+  assert.equal(camel, 7);
+  assert.equal(getVersion("sess_ack2"), 7);
+  const skipped = applyAckToTracker("sess_ack3", { ok: false, status: 409 });
+  assert.equal(skipped, null);
+  assert.equal(getVersion("sess_ack3"), null);
+  resetCasTracker();
 });

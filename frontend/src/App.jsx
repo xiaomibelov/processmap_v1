@@ -56,6 +56,7 @@ import {
   apiNavigateToSubprocess,
   apiReturnToParent,
 } from "./lib/api";
+import { applyAckToTracker } from "./features/session/casResponse";
 import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
@@ -3706,7 +3707,10 @@ export default function App() {
       );
       const newSid = String(created?.session_id || created?.data?.id || "").trim();
       if (!created?.ok || !newSid) return;
-      await apiPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
+      // fix/save-single-writer-and-unified-cas-base (Task 3): прямой PUT мимо
+      // pipeline — tracker sync обязателен (TODO architecture T3/T5: rawXml pipeline).
+      const saved = await apiPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
+      if (saved?.ok) applyAckToTracker(newSid, saved);
     } catch {
       // best-effort: связанная сессия — не блокер публикации
     }
