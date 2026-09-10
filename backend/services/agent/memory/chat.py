@@ -26,6 +26,7 @@ from edit import (
     validate_edit_plan,
 )
 from gateway import llm_store
+from gateway.error_sanitize import sanitize_llm_error
 from gateway.gateway import complete, complete_cached, complete_stream
 from runners.action_runners import run_explain_step, run_step_qa, run_suggest_next
 from runners.monolith_client import get_session as monolith_get_session, search_rag
@@ -1017,7 +1018,10 @@ def _run_structured_fact_qa_branch_stream(
             }
 
     if stream_error is not None:
-        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
+        # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
+        err_status = str(stream_error.get("status") or "error")
+        err_text = sanitize_llm_error(err_status, str(stream_error.get("error", "") or ""))
+        text = f"[{err_status}] {err_text}"
         _ = _persist_assistant_turn(
             session_id,
             user_id,
@@ -1030,7 +1034,7 @@ def _run_structured_fact_qa_branch_stream(
             action_payload={"status": "error"},
             now_ms=_now_ms(),
         )
-        yield ("error", {"status": stream_error.get("status"), "error": stream_error.get("error", "")})
+        yield ("error", {"status": err_status, "error": err_text})
         return
 
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
@@ -1059,7 +1063,8 @@ def _gateway_error_out(
     client_turn_id: Optional[str] = None,
 ) -> AgentChatOut:
     status = str(result.get("status") or "error")
-    error_text = str(result.get("error") or "")
+    # S1: сырой текст ошибки провайдера (URL upstream) пользователю не отдаём.
+    error_text = sanitize_llm_error(status, str(result.get("error") or ""))
     assistant_text = f"[{status}] {error_text}" if error_text else status
     usage = _usage_out(result)
     append_turn(
@@ -1301,7 +1306,10 @@ def run_turn_stream(
             }
 
     if stream_error is not None:
-        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
+        # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
+        err_status = str(stream_error.get("status") or "error")
+        err_text = sanitize_llm_error(err_status, str(stream_error.get("error", "") or ""))
+        text = f"[{err_status}] {err_text}"
         provider_id = stream_error.get("provider_id") or final_usage.get("provider_id") or ""
         model_name = stream_error.get("model") or final_usage.get("model") or ""
         logger.warning(
@@ -1327,8 +1335,8 @@ def run_turn_stream(
         yield (
             "error",
             {
-                "status": stream_error.get("status"),
-                "error": stream_error.get("error", ""),
+                "status": err_status,
+                "error": err_text,
                 "provider_id": provider_id,
                 "model": model_name,
             },

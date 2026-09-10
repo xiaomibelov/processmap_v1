@@ -12,9 +12,14 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
+
+from .error_sanitize import sanitize_llm_error
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SEC = 30  # как gateway.DEFAULT_TIMEOUT_SEC
 
@@ -29,10 +34,13 @@ def _base_url() -> str:
 
 
 def _error_result(error: str, started: float) -> Dict[str, Any]:
+    # R3: сырой текст — в логи, пользователю — generic (S1).
+    logger.warning("agent-svc llm call failed: %s", error)
     return {
         "ok": False,
         "status": "error",
-        "error": error,
+        # S1: детали недоступности agent-svc (httpx-текст) пользователю не отдаём.
+        "error": sanitize_llm_error("error", error),
         "latency_ms": int((time.monotonic() - started) * 1000),
     }
 

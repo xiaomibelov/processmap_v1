@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -29,6 +30,9 @@ import requests
 from ..redis_cache import cache_get_json, cache_set_json
 from . import llm_store
 from .deepseek_questions import _deepseek_chat_request
+from .error_sanitize import sanitize_llm_error
+
+logger = logging.getLogger(__name__)
 
 CACHE_TTL_SEC = 7 * 24 * 3600  # 7 дней
 DEFAULT_TIMEOUT_SEC = 30
@@ -220,9 +224,14 @@ def complete(
         )
 
 
+    # R3: сырой last_error — в логи (диагностика), пользователю — generic (S1).
+    logger.warning(
+        "llm gateway chain failed: feature=%s org=%s providers=%s last_error=%s",
+        feature, org_id, len(chain), last_error,
+    )
     return _finish(
         "error",
-        error=last_error or "all providers failed",
+        error=sanitize_llm_error("error", last_error or "all providers failed"),
         provider_id=str((chain[-1] if chain else {}).get("id") or ""),
         model=str((chain[-1] if chain else {}).get("model") or ""),
     )

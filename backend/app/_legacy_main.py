@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse
 
 from .exporters.mermaid import render_mermaid
 from .migration_state import get_migration_state
+from .ai.error_sanitize import sanitize_llm_error
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
@@ -3755,7 +3756,9 @@ def llm_session_title_questions(inp: SessionTitleQuestionsIn) -> Dict[str, Any]:
                 result.setdefault("prompt_version", str(prompt_item.get("version") or ""))
         return result
     except Exception as e:
-        return {"error": f"deepseek failed: {e}"}
+        # S1: URL upstream-роутера пользователю не отдаём; сырой текст — в логи.
+        logger.warning("session-title questions deepseek failed: %s", e, exc_info=True)
+        return {"error": sanitize_llm_error("error", f"deepseek failed: {e}")}
 
 
 @app.post("/api/glossary/add")
