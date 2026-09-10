@@ -1,0 +1,17 @@
+{
+  "contour": "fix/llm-cache-org-scope-v1",
+  "type": "fix",
+  "branch": "fix/llm-cache-org-scope-v1",
+  "baseline": "3defec225deeda25789824cee2119d01d7c88cf0",
+  "audit_source": "audit/llm-agent-audit-v1 (DIAGNOSIS.md M1, L1, L13; evidence-p3 §5, evidence-p5)",
+  "findings": ["M1", "L1", "L13"],
+  "phase": "READY_FOR_REVIEW",
+  "phase_history": [
+    {"phase": "PLANNED", "at": "2026-09-10", "note": "RED-тесты написаны до кода (TDD)"},
+    {"phase": "RED", "at": "2026-09-10", "note": "3 новых теста падают на текущем коде по правильной причине"},
+    {"phase": "GREEN", "at": "2026-09-10", "note": "v2-ключ + гейт до cache-lookup в монолите и agent-svc"},
+    {"phase": "READY_FOR_REVIEW", "at": "2026-09-10", "note": "Регрессия backend/tests: дельта против baseline = 0 новых падений"}
+  ],
+  "merge_gate": "merge/deploy/PR — только по явному approve владельца",
+  "owner_approval": null
+}

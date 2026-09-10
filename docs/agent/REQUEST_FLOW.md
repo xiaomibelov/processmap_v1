@@ -16,7 +16,10 @@ LLM, где лежит промпт, где провайдер, кэширует
 
 ## Кэширование
 
-- Ключ: `pm:cache:llm:{feature}:v1:{digest}`.
+- Ключ: `pm:cache:llm:{feature}:v2:{org_id}:pv{prompt_version}:{ov}:{digest}`
+  (org-scope + версия активного промпта + маркер prompt_override; v1 вымирает по TTL).
+- Порядок: гейт фичи (enabled + суточный лимит) проверяется ДО cache-lookup —
+  выключенная фича из кэша не обслуживается.
 - Redis-клиент живёт в том же процессе, что и gateway (монолит или agent-сервис).
 - При `LLM_VIA_AGENT_SVC=1` монолит вызывает `/internal/llm/complete_cached`, digest
   пробрасывается до сервисного gateway и бьёт в тот же Redis.

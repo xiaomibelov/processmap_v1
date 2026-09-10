@@ -435,6 +435,84 @@ def test_complete_cached_miss_per_digest(sandbox):
     assert mocked.call_count == 2, "другой digest = новый вызов"
 
 
+def test_complete_cached_no_cross_org_hit(sandbox):
+    """M1 (audit llm-agent-audit-v1): две org с идентичной схемой (один digest,
+    projection намеренно без org/session) не делят кэш-запись."""
+    org1 = sandbox["org_id"]
+    org2 = f"{org1}_b"
+    feature = sandbox["feature"]
+    llm_store.create_provider(org_id=org1, name="p1", base_url="https://a", model="m",
+                              api_key="key-a")
+    fake_redis = _FakeRedis()
+    with mock.patch.object(gateway, "_deepseek_chat_request",
+                           return_value=_llm_response()) as mocked:
+        r1 = gateway.complete_cached(feature, "same-digest", {"a": 1},
+                                   org_id=org1, cache_client=fake_redis)
+        r2 = gateway.complete_cached(feature, "same-digest", {"a": 1},
+                                   org_id=org2, cache_client=fake_redis)
+
+    assert r1["ok"] is True and r1["cached"] is False
+    assert r2["ok"] is True and r2["cached"] is False, \
+        "чужая org не должна получать cache-hit по общему digest"
+    assert mocked.call_count == 2, "каждая org = отдельный LLM-вызов"
+    keys = list(fake_redis.store)
+    assert len(keys) == 2, "две org = два разных ключа"
+    assert all(":v2:" in k for k in keys), "ключ v2 с org-scope"
+    assert any(org1 in k for k in keys) and any(org2 in k for k in keys), \
+        "org_id входит в состав ключа"
+
+
+def test_complete_cached_prompt_version_invalidates(sandbox):
+    """L1 (audit llm-agent-audit-v1): активация новой версии промпта инвалидирует
+    кэш немедленно, а не через TTL 7 суток."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="m",
+                              api_key="key-a")
+    p1 = llm_store.create_prompt_draft(feature=feature, system="SYS-v1", template="T1")
+    llm_store.activate_prompt(p1["id"])
+    fake_redis = _FakeRedis()
+    with mock.patch.object(gateway, "_deepseek_chat_request",
+                           return_value=_llm_response()) as mocked:
+        r1 = gateway.complete_cached(feature, "d-prompt", {}, org_id=org, cache_client=fake_redis)
+        assert r1["ok"] is True and r1["cached"] is False and r1["prompt_version"] == 1
+        r_hit = gateway.complete_cached(feature, "d-prompt", {}, org_id=org, cache_client=fake_redis)
+        assert r_hit["cached"] is True, "та же версия промпта = hit"
+
+        p2 = llm_store.create_prompt_draft(feature=feature, system="SYS-v2", template="T2")
+        llm_store.activate_prompt(p2["id"])
+        r2 = gateway.complete_cached(feature, "d-prompt", {}, org_id=org, cache_client=fake_redis)
+        assert r2["ok"] is True and r2["cached"] is False, \
+            "смена active-версии промпта = miss, stale-кэш не отдаётся"
+        assert r2["prompt_version"] == 2
+
+        r3 = gateway.complete_cached(feature, "d-prompt", {}, org_id=org, cache_client=fake_redis)
+        assert r3["cached"] is True and r3["prompt_version"] == 2, \
+            "новая версия кэшируется отдельно"
+    assert mocked.call_count == 2, "LLM вызван только на miss'ах"
+
+
+def test_complete_cached_disabled_after_fill(sandbox):
+    """L13 (audit llm-agent-audit-v1): выключенная фича НЕ обслуживается из кэша —
+    flag-check (enabled + лимит) идёт ДО cache-lookup, kill-switch реален."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="m",
+                              api_key="key-a")
+    fake_redis = _FakeRedis()
+    with mock.patch.object(gateway, "_deepseek_chat_request",
+                           return_value=_llm_response()) as mocked:
+        r1 = gateway.complete_cached(feature, "d-flag", {}, org_id=org, cache_client=fake_redis)
+        assert r1["ok"] is True and r1["cached"] is False
+
+        llm_store.patch_feature_flag(feature, enabled=False)
+        r2 = gateway.complete_cached(feature, "d-flag", {}, org_id=org, cache_client=fake_redis)
+
+    assert r2["ok"] is False and r2["status"] == "disabled", \
+        "disabled-фича не отдаётся из кэша (деградация disabled, не hit)"
+    assert not r2.get("cached")
+    assert mocked.call_count == 1, "после выключения — 0 обслуживания"
+    assert _usage_rows(feature)[-1]["status"] == "disabled"
+
+
 # --------------------------------------------------------------------- промт
 
 def test_active_prompt_used_and_versioned(sandbox):
