@@ -6,6 +6,7 @@ import {
   apiListProjects,
   apiPutBpmnXml,
 } from "../lib/api.js";
+import { applyAckToTracker } from "../features/session/casResponse.js";
 import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
@@ -300,6 +301,9 @@ export default function useSessionActivationOrchestration({
           sessionLike: nextRaw,
           restoredSnapshot,
         }));
+        // fix/save-single-writer-and-unified-cas-base (Task 3): прямой PUT мимо
+        // pipeline — tracker sync обязателен (TODO architecture T3/T5: rawXml pipeline).
+        if (putRes?.ok) applyAckToTracker(sid, putRes);
         logSnapshotTrace("restore_persist_backend", {
           sid,
           ok: putRes?.ok ? 1 : 0,

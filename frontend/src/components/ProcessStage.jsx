@@ -199,6 +199,7 @@ import {
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
 import { saveCoordinator } from "../features/session/saveCoordinator";
+import { applyAckToTracker } from "../features/session/casResponse";
 import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
 import {
   isDrawioXml,
@@ -1493,6 +1494,9 @@ function ProcessStage({
         sourceAction: "dead_session_restore_draft",
       });
       if (!saved?.ok) throw new Error(saved?.error || "save_failed");
+      // fix/save-single-writer-and-unified-cas-base (Task 3): прямой PUT мимо
+      // pipeline — tracker sync обязателен (TODO architecture T3/T5: rawXml pipeline).
+      applyAckToTracker(newSid, saved);
       if (typeof onOpenWorkspaceSession === "function") {
         onOpenWorkspaceSession({
           id: newSid,
@@ -2439,6 +2443,9 @@ function ProcessStage({
       if (saved?.diagramStateVersion) {
         rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
       }
+      // fix/save-single-writer-and-unified-cas-base (Task 3): прямой PUT мимо
+      // pipeline — tracker sync обязателен (TODO architecture T3/T5: rawXml pipeline).
+      applyAckToTracker(sid, saved);
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
@@ -2528,6 +2535,9 @@ function ProcessStage({
       if (saved?.diagramStateVersion) {
         rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
       }
+      // fix/save-single-writer-and-unified-cas-base (Task 3): прямой PUT мимо
+      // pipeline — tracker sync обязателен (TODO architecture T3/T5: rawXml pipeline).
+      applyAckToTracker(sid, saved);
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);

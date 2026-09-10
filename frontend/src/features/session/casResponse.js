@@ -20,6 +20,7 @@
 
 import {
   getVersion as getTrackedDiagramStateVersion,
+  setVersion as setTrackedDiagramStateVersion,
 } from "../../lib/casVersionTracker.js";
 
 function asNonNegativeInt(value) {
@@ -107,4 +108,21 @@ export function resolveBaseVersionAtSendTime({
   const fromPayloadCamel = asNonNegativeInt(payload?.baseDiagramStateVersion);
   if (fromPayloadCamel !== null) return fromPayloadCamel;
   return asNonNegativeInt(payload?.base_diagram_state_version);
+}
+
+/**
+ * Обязательный tracker sync для write-path'ов, которые пока идут мимо
+ * saveCoordinator pipelines (прямые PUT /bpmn; TODO architecture T3/T5 —
+ * перевести их на rawXml pipeline). Читает diagram_state_version из ack и
+ * выставляет его как авторитетный tracked base.
+ *
+ * @param {string} sessionId
+ * @param {Object|null} response
+ * @returns {number|null} применённая версия или null, если в ack её нет
+ */
+export function applyAckToTracker(sessionId, response) {
+  const version = readAckDiagramStateVersion(response);
+  if (version === null) return null;
+  setTrackedDiagramStateVersion(sessionId, version);
+  return version;
 }
