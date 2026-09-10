@@ -40,7 +40,22 @@ from .memory_store import (
     get_or_create_conversation,
 )
 from .prompt_builder import PromptBuilder
-from .schema_memory import load_schema_memory, schedule_memory_update
+from .schema_memory import load_schema_memory, save_schema_memory, schedule_memory_update
+
+
+def _save_schema_memory_sync(session_id: str, org_id: str, summary: str, digest: str) -> None:
+    """Синхронная материализация short-circuit памяти.
+
+    Hit-ветка schema_overview обязана работать, даже когда весь асинхронный
+    путь (Redis-очередь, фоновый worker, LLM agent_memory) недоступен — иначе
+    каждый повторный вопрос идёт полным LLM-вызовом (audit llm-agent-audit-v1,
+    evidence-p4 §7.4). Фоновый worker дополняет facts/decisions, но hit-ветка
+    от него больше не зависит.
+    """
+    try:
+        save_schema_memory(session_id, org_id, summary, [], [], digest)
+    except Exception as exc:
+        logger.warning("schema memory sync save failed: %s", exc)
 
 
 FEATURE = "processman_agent"
@@ -446,6 +461,8 @@ def _run_schema_overview_branch(
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
     message = str(result.get("text") or "").strip()
+    if message:
+        _save_schema_memory_sync(session_id, org_id, message, ctx.digest)
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
     _, out = _persist_assistant_turn(
         session_id,
@@ -1333,6 +1350,9 @@ def run_turn_stream(
                     action_payload = action_result
                     assistant_message = str(action_result.get("message") or action_result.get("note") or collected_text)
                     yield ("action", {"action": action_name, "payload": action_payload})
+
+    if intent == "schema_overview" and assistant_message:
+        _save_schema_memory_sync(sid, oid, assistant_message, ctx.digest)
 
     _ = _persist_assistant_turn(
         sid,
