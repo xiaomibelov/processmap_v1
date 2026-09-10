@@ -33,6 +33,7 @@ import {
   apiCreateSubprocessSessions,
 } from "./explorerApi.js";
 import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { enqueueSessionPatchCasWrite } from "../process/stage/utils/sessionPatchCasCoordinator";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -2442,9 +2443,17 @@ function SessionRow({
                   return;
                 }
 
-                const resp = await apiPatchSession(session.id, {
-                  status: next,
-                  base_diagram_state_version: baseVersion,
+                // fix/save-single-writer-and-unified-cas-base (Task 4): статусный
+                // переход CAS-защищён на бэке — через meta pipeline (tracker-first
+                // base; свежепрочитанный baseVersion остаётся fallback, если tracker
+                // пуст для неоткрытой сессии). UX (alert/rollback) не меняется.
+                const resp = await enqueueSessionPatchCasWrite({
+                  sessionId: session.id,
+                  patch: {
+                    status: next,
+                    base_diagram_state_version: baseVersion,
+                  },
+                  apiPatchSession,
                 });
                 if (!resp?.ok) {
                   setPendingStatus(String(session.status || "draft"));

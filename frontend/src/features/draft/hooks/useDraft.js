@@ -8,6 +8,10 @@ import {
   writeDraft,
 } from "../../../lib/draft";
 import { apiPatchSession, apiPostNote } from "../../../lib/api";
+import {
+  enqueueSessionPatchCasWrite,
+  hasDiagramPatchKeys,
+} from "../../process/stage/utils/sessionPatchCasCoordinator";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -64,7 +68,17 @@ export default function useDraft({ onOk, onFail } = {}) {
       const sid = shaped.session_id || "";
       if (!sid || isLocalSessionId(sid)) return { ok: true, local: true };
 
-      const r = await apiPatchSession(sid, shaped);
+      // fix/save-single-writer-and-unified-cas-base (Task 4): diagram-truth
+      // ключи — через meta pipeline (tracker-first CAS base + очередь),
+      // meta-ключи — напрямую.
+      const r = hasDiagramPatchKeys(shaped)
+        ? await enqueueSessionPatchCasWrite({
+            sessionId: sid,
+            patch: shaped,
+            apiPatchSession,
+            isXmlTruthSession: String(shaped?.bpmn_xml || "").trim() !== "",
+          })
+        : await apiPatchSession(sid, shaped);
       if (!r.ok) {
         onFail?.(String(r.error || "Не удалось сохранить изменения в сессии."));
         return { ok: false };

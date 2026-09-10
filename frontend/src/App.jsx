@@ -58,6 +58,10 @@ import {
 } from "./lib/api";
 import { applyAckToTracker } from "./features/session/casResponse";
 import {
+  enqueueSessionPatchCasWrite,
+  hasDiagramPatchKeys,
+} from "./features/process/stage/utils/sessionPatchCasCoordinator";
+import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
   overwriteBpmnSnapshot,
@@ -1901,7 +1905,18 @@ export default function App() {
       return { ok: true, local: true };
     }
 
-    const r = await apiPatchSession(sid, partial);
+    // fix/save-single-writer-and-unified-cas-base (Task 4): diagram-truth
+    // ключи (interview/nodes/edges/questions/bpmn_meta) идут через meta
+    // pipeline (tracker-first CAS base + per-session очередь), meta-ключи
+    // (title/roles/notes) — напрямую, как раньше.
+    const r = hasDiagramPatchKeys(partial)
+      ? await enqueueSessionPatchCasWrite({
+          sessionId: sid,
+          patch: partial,
+          apiPatchSession,
+          isXmlTruthSession: String(draft?.bpmn_xml || "").trim() !== "",
+        })
+      : await apiPatchSession(sid, partial);
     if (!r.ok) {
       markFail(r.error);
       return { ok: false, error: String(r.error || "patch_failed") };
@@ -2568,7 +2583,15 @@ export default function App() {
       markOk("Время шага сохранено.");
       return { ok: true, local: true };
     }
-    const r = await apiPatchSession(sid, payload);
+    // fix/save-single-writer-and-unified-cas-base (Task 4): diagram-truth
+    // PATCH (nodes/interview) — через meta pipeline (tracker-first CAS base
+    // + per-session очередь с rawXml/analysis записями).
+    const r = await enqueueSessionPatchCasWrite({
+      sessionId: sid,
+      patch: payload,
+      apiPatchSession,
+      isXmlTruthSession,
+    });
     if (!r.ok) {
       setDraftPersisted((prev) => ({
         ...prev,
@@ -3114,7 +3137,14 @@ export default function App() {
       return { ok: true };
     }
 
-    const r = await apiPatchSession(sid, { interview: nextInterview });
+    // fix/save-single-writer-and-unified-cas-base (Task 4): interview-PATCH —
+    // через meta pipeline (tracker-first CAS base + per-session очередь).
+    const r = await enqueueSessionPatchCasWrite({
+      sessionId: sid,
+      patch: { interview: nextInterview },
+      apiPatchSession,
+      isXmlTruthSession: String(draft?.bpmn_xml || "").trim() !== "",
+    });
     if (!r.ok) {
       setDraftPersisted((d) => ({
         ...d,
