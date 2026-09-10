@@ -2,8 +2,55 @@
 
 - **Reviewer:** Agent 3 (независимая верификация, READ → VERIFY)
 - **Ветка:** `fix/llm-gateway-error-sanitization`, HEAD `07893152` (1 коммит поверх `origin/main 3defec22`)
-- **Вердикт:** **REQUEST_CHANGES**
+- **Вердикт (итерация 1):** REQUEST_CHANGES
 - **Дата:** 2026-09-10
+
+> ## RE-REVIEW (итерация 2, 2026-09-10) — **ВЕРДИКТ: APPROVE**
+>
+> Исполнитель закрыл все 3 блокирующих пункта в amend `e889cad7` (1 коммит поверх
+> `origin/main 3defec22`). Независимая проверка:
+>
+> 1. **git diff 07893152 e889cad7** — правки ровно по R1–R3 + тесты/артефакты
+>    (12 файлов: `_legacy_main.py`, `ai/error_sanitize.py`, `ai/gateway.py`,
+>    `ai/llm_internal_client.py`, `ai_questions.py`, оба gateway, 2 тестовых файла,
+>    CHANGES/TESTS/STATE + этот отчёт). Лишнего нет.
+> 2. **R1** — `ai_questions.py:509-520` и `:601-611`: обе ветки →
+>    `logger.warning(..., exc_info=True)` + `sanitize_llm_error("error", …)` в теле
+>    ответа; `error_message=str(e)` остался только в `record_ai_execution` (БД,
+>    admin-диагностика; в HTTP-ответ `_finish` возвращает только `response` —
+>    проверено по коду). Контракт эндпоинта (error_code, output_summary, HTTP 200)
+>    не тронут.
+> 3. **R2** — `_legacy_main.py:3758-3761`: `logger.warning` + sanitize;
+>    `logger` в модуле есть (`:456`).
+> 4. **R3** — raw `last_error` логируется до санитизации во всех ветках полного
+>    отказа: `app/ai/gateway.py:227-231` (complete), `services/agent/gateway/gateway.py`
+>    `:241-245` (complete) и `:478-482` (complete_stream), плюс
+>    `llm_internal_client.py:37` (`_error_result`). Docstring `error_sanitize.py`
+>    переписан и теперь точен (логи/llm_usage/ai_execution_log разведены по местам).
+> 5. **Тесты не тривиальны**: R1-тесты бьют по реальным endpoint'ам через TestClient
+>    (mock raise_for_status-текста с URL → assert generic + `_assert_no_infra` по
+>    всему ответу, включая ветку node_step); R2 — handler + `_assert_no_infra`;
+>    R3 — `caplog` с assert, что `INTERNAL_ROUTER_URL` есть в логах при
+>    санитизированном ответе.
+> 6. **Независимые прогоны** (docker run --rm, read-only mount, стек не мутировался):
+>    - монолит `test_llm_error_sanitization.py`: **12 passed**;
+>    - agent-сервис `test_error_sanitization.py`: **6 passed**;
+>    - регрессия затронутого: `test_ai_questions_timeout.py`,
+>      `test_llm_provider_resolution.py`, `test_ai_execution_log_foundation.py` —
+>      **13 passed**.
+>
+> **Остатки (не блокируют merge):**
+> - STATE.json: строка `head` содержит пре-amend хэш `07893152` — осознанный
+>   self-reference парадокс (amend меняет хэш коммита, в который входит STATE.json);
+>   note это объявляет. Принято как рабочее решение.
+> - Path-report generation (`_legacy_main.py:1556,1563` в новой нумерации) по-прежнему
+>   пишет raw-текст в `report_versions.error_message` — в serving-app не смонтировано
+>   (подтверждено в итерации 1); остаётся рекомендацией S1-followup.
+> - REVIEW_REPORT.md (это обновление) не закоммичено — закоммитить при финализации
+>   контура (amend в `e889cad7` невозможен без смены хэша — фиксируется отдельным
+>   коммитом артефактов или оставляется оркестратору).
+>
+> **APPROVE.** Контур готов к предложению опций завершения (merge/PR) пользователю.
 
 ## Суть вердикта
 
