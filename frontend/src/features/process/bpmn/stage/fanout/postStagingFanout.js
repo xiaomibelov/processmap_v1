@@ -4,6 +4,12 @@ function asText(value) {
 
 const IMMEDIATE_FANOUT_PERF_KEY = "__FPC_IMMEDIATE_FANOUT_PERF__";
 const SETTLED_FANOUT_PERF_KEY = "__FPC_SETTLED_FANOUT_PERF__";
+const POSITIONAL_COMMANDS = new Set(["shape.move", "elements.move", "spacetool", "lane.updaterefs"]);
+
+export function shouldRefreshDecorForCommand(commandRaw = "") {
+  const command = asText(commandRaw).trim().toLowerCase();
+  return !command || !POSITIONAL_COMMANDS.has(command);
+}
 
 function canMeasure() {
   return typeof globalThis?.performance?.now === "function";
@@ -139,15 +145,17 @@ export function runImmediateEditorFanout(options = {}) {
   const inst = options?.inst || null;
   if (!inst) return;
   const meta = { kind: "editor" };
-  measureImmediateStep("immediate.taskTypeDecor", () => {
-    options.applyTaskTypeDecor?.(inst, "editor");
-  }, meta);
-  measureImmediateStep("immediate.linkEventDecor", () => {
-    options.applyLinkEventDecor?.(inst, "editor");
-  }, meta);
-  measureImmediateStep("immediate.happyFlowDecor", () => {
-    options.applyHappyFlowDecor?.(inst, "editor");
-  }, meta);
+  if (options?.refreshDecor !== false) {
+    measureImmediateStep("immediate.taskTypeDecor", () => {
+      options.applyTaskTypeDecor?.(inst, "editor");
+    }, meta);
+    measureImmediateStep("immediate.linkEventDecor", () => {
+      options.applyLinkEventDecor?.(inst, "editor");
+    }, meta);
+    measureImmediateStep("immediate.happyFlowDecor", () => {
+      options.applyHappyFlowDecor?.(inst, "editor");
+    }, meta);
+  }
   const realtimeOpsEnabled = resolveImmediateRealtimeOpsEnabled(options?.realtimeOpsEnabled);
   if (!realtimeOpsEnabled) {
     writeImmediatePerf("immediate.realtimeOpsEmit.skipped", 0, {
