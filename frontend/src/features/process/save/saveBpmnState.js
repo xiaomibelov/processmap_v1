@@ -1,7 +1,7 @@
 import { isLocalSessionId } from "../../../components/process/interview/utils.js";
 import { normalizeCamundaExtensionsMap } from "../camunda/camundaExtensions.js";
-import { getVersion as getTrackedDiagramStateVersion } from "../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../session/saveCoordinator.js";
+import { resolveBaseVersionAtSendTime } from "../../session/casResponse.js";
 import {
   asObject,
   buildFallbackSessionPatch,
@@ -51,11 +51,16 @@ function withTimeout(promiseFactory, ms, context) {
 
 saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
   transport: async (sessionId, payload, signal) => {
+    // fix/save-single-writer-and-unified-cas-base: saveCoordinator штампует
+    // base_diagram_state_version из tracker-first resolver в момент отправки —
+    // он свежее enqueue-time payload.baseDiagramStateVersion.
+    const stampedBase = toNonNegativeIntOrNull(payload?.base_diagram_state_version);
+    const effectiveBase = stampedBase ?? payload.baseDiagramStateVersion;
     const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
     if (useFlushSave) {
       return payload.flushSave(payload.sourceAction, {
         xmlOverride: payload.xml,
-        baseDiagramStateVersion: payload.baseDiagramStateVersion,
+        baseDiagramStateVersion: effectiveBase,
         sourceAction: payload.sourceAction,
         bpmnMeta: payload.bpmnMeta,
         signal,
@@ -64,7 +69,7 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
     if (typeof payload.apiPutBpmnXml === "function") {
       return payload.apiPutBpmnXml(sessionId, payload.xml, {
         sourceAction: payload.sourceAction,
-        baseDiagramStateVersion: payload.baseDiagramStateVersion,
+        baseDiagramStateVersion: effectiveBase,
         bpmnMeta: payload.bpmnMeta,
         signal,
       });
@@ -72,17 +77,14 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
     return { ok: false, status: 0, error: "xml transport unavailable" };
   },
   buildPayload: (payload) => payload,
-  getBaseVersion: (sessionId, payload) => {
-    const tracked = getTrackedDiagramStateVersion(sessionId);
-    if (tracked !== null) return tracked;
-    const fromGetter = typeof payload?.getBaseDiagramStateVersion === "function"
-      ? Number(payload.getBaseDiagramStateVersion())
-      : NaN;
-    if (Number.isFinite(fromGetter) && fromGetter >= 0) return Math.round(fromGetter);
-    const fromOption = Number(payload?.baseDiagramStateVersion);
-    if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
-    return null;
-  },
+  getBaseVersion: (sessionId, payload) =>
+    // Канонический tracker-first resolver (casResponse.js, дисциплина п.10
+    // processmap-agents) в момент отправки; getter/payload — fallback.
+    resolveBaseVersionAtSendTime({
+      sessionId,
+      payload,
+      getBaseDiagramStateVersion: payload?.getBaseDiagramStateVersion,
+    }),
   onSuccess: (response, sessionId, payload) => {
     // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
     // Only sync the version to external React state here.

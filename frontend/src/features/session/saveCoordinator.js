@@ -13,6 +13,10 @@ import {
   setVersion as setTrackedDiagramStateVersion,
 } from "../../lib/casVersionTracker.js";
 import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+} from "./casResponse.js";
+import {
   SAVE_CONFLICT_RESOLUTION,
   isSaveConflictStatus,
   isSaveXmlTruthGuardResponse,
@@ -50,43 +54,12 @@ function isConflictResponse(response) {
   return text.includes("DIAGRAM_STATE_CONFLICT");
 }
 
-function pickServerCurrentVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const candidates = [
-    response.server_current_version,
-    response.serverCurrentVersion,
-    response.data?.server_current_version,
-    response.data?.serverCurrentVersion,
-    response.data?.detail?.server_current_version,
-    response.data?.detail?.serverCurrentVersion,
-    response.errorDetails?.server_current_version,
-    response.errorDetails?.serverCurrentVersion,
-    response.details?.server_current_version,
-    response.details?.serverCurrentVersion,
-  ];
-  for (const raw of candidates) {
-    const n = asNumber(raw, -1);
-    if (n >= 0) return Math.round(n);
-  }
-  return null;
-}
-
-function pickDiagramStateVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const candidates = [
-    response.diagram_state_version,
-    response.diagramStateVersion,
-    response.session?.diagram_state_version,
-    response.session?.diagramStateVersion,
-    response.data?.diagram_state_version,
-    response.data?.diagramStateVersion,
-  ];
-  for (const raw of candidates) {
-    const n = asNumber(raw, -1);
-    if (n >= 0) return Math.round(n);
-  }
-  return null;
-}
+// Канонические читатели CAS-полей — casResponse.js (дисциплина п.10
+// processmap-agents: правило единой реализации). Локальные копии
+// pickServerCurrentVersion/pickDiagramStateVersion удалены
+// (fix/save-single-writer-and-unified-cas-base).
+const pickServerCurrentVersion = readConflictServerCurrentVersion;
+const pickDiagramStateVersion = readAckDiagramStateVersion;
 
 function sleep(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });

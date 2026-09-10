@@ -4,9 +4,13 @@ import {
   upsertCamundaExtensionStateByElementId,
 } from "../camunda/camundaExtensions.js";
 import {
-  getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../lib/casVersionTracker.js";
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+  resolveBaseVersionAtSendTime,
+} from "../../session/casResponse.js";
 
 /**
  * Coerce a value to a trimmed string.
@@ -39,29 +43,25 @@ export function asObject(value) {
 }
 
 /**
- * Extract diagram_state_version from a save response, supporting both snake_case and camelCase keys.
+ * Extract diagram_state_version from a save response.
+ * Каноническая реализация — features/session/casResponse.js (дисциплина п.10
+ * processmap-agents); экспорт сохранён как делегат для callers
+ * (fix/save-single-writer-and-unified-cas-base).
  * @param {unknown} response
  * @returns {number | null}
  */
 export function pickDiagramStateVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const raw = response.diagram_state_version ?? response.diagramStateVersion;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+  return readAckDiagramStateVersion(response);
 }
 
 /**
  * Read the server's current version from a conflict/error response.
+ * Делегат канонической реализации (casResponse.js).
  * @param {unknown} saveResult
  * @returns {number | null}
  */
 export function pickServerCurrentVersionFromError(saveResult) {
-  const detail = saveResult?.data?.detail;
-  if (detail && typeof detail === "object") {
-    const v = Number(detail.server_current_version ?? detail.serverCurrentVersion ?? -1);
-    if (Number.isFinite(v) && v >= 0) return Math.round(v);
-  }
-  return null;
+  return readConflictServerCurrentVersion(saveResult);
 }
 
 /**
@@ -90,16 +90,12 @@ export function isLockFailure(saveResult) {
 
 /**
  * Extract server version from an error response if present.
+ * Делегат канонической реализации (casResponse.js).
  * @param {unknown} saveResult
  * @returns {number | null}
  */
 export function extractServerVersionFromError(saveResult) {
-  const detail = saveResult?.data?.detail;
-  if (detail && typeof detail === "object") {
-    const v = Number(detail.server_current_version ?? detail.serverCurrentVersion ?? -1);
-    if (Number.isFinite(v) && v >= 0) return v;
-  }
-  return null;
+  return readConflictServerCurrentVersion(saveResult);
 }
 
 /**
@@ -164,6 +160,8 @@ export function derivePropertySourceAction(currentMap, nextMap, elementId) {
 /**
  * Resolve the authoritative base diagram-state version for a save attempt.
  * Priority: tracked CAS version > getter > explicit option > 0.
+ * Делегат канонического resolver'а (casResponse.js) + fallback в 0 для
+ * обратной совместимости контракта (возвращает number, не null).
  * @param {string} sessionId
  * @param {Object} [options]
  * @param {Function} [options.getBaseDiagramStateVersion]
@@ -171,14 +169,12 @@ export function derivePropertySourceAction(currentMap, nextMap, elementId) {
  * @returns {number}
  */
 export function resolveBaseDiagramStateVersion(sessionId, options = {}) {
-  const tracked = getTrackedDiagramStateVersion(sessionId);
-  const fromGetter = toNonNegativeIntOrNull(
-    typeof options.getBaseDiagramStateVersion === "function"
-      ? options.getBaseDiagramStateVersion()
-      : null,
-  );
-  const fromOption = toNonNegativeIntOrNull(options.baseDiagramStateVersion);
-  return tracked ?? fromGetter ?? fromOption ?? 0;
+  const resolved = resolveBaseVersionAtSendTime({
+    sessionId,
+    getBaseDiagramStateVersion: options.getBaseDiagramStateVersion,
+    payload: { baseDiagramStateVersion: options.baseDiagramStateVersion },
+  });
+  return resolved ?? 0;
 }
 
 /**
