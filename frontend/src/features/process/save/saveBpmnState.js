@@ -295,7 +295,9 @@ export async function saveBpmnState(options = {}) {
     if (isDiagramStateConflict(saveRes)) {
       options.onConflict?.({
         sessionId: sid,
-        serverVersion: toNonNegativeIntOrNull(saveRes?.data?.detail?.server_current_version),
+        // Канонический читатель (casResponse.js): покрывает и data.detail,
+        // и top-level server_current_version синтетического conflict-gate 409.
+        serverVersion: pickServerCurrentVersionFromError(saveRes),
         serverLastWrite: saveRes?.data?.detail?.server_last_write,
         clientBaseVersion: baseDiagramStateVersion,
       });
