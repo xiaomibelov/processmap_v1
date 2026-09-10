@@ -232,6 +232,23 @@ def route_intent(
         return "smalltalk"
 
 
+_ACTION_FALLBACK_TEXTS = {
+    "ru": (
+        "Не смог выполнить действие на схеме: похоже, схема пустая или указанный шаг не найден. "
+        "Добавьте шаги на схему и повторите вопрос."
+    ),
+    "en": (
+        "I couldn't run that action on the diagram: it looks empty or the step wasn't found. "
+        "Add steps to the diagram and try again."
+    ),
+}
+
+
+def _action_fallback_text(user_message: str) -> str:
+    lang = "ru" if re.search(r"[А-Яа-яЁё]", str(user_message or "")) else "en"
+    return _ACTION_FALLBACK_TEXTS[lang]
+
+
 def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
     raw = str(text or "").strip()
     if not raw:
@@ -703,6 +720,7 @@ def _run_free_answer_branch(
     action_name: Optional[str] = None
     action_payload: Dict[str, Any] = {}
     assistant_message = llm_text
+    has_fence = bool(re.search(r"```", llm_text))
 
     if action_obj and isinstance(action_obj, dict):
         possible_action = str(action_obj.get("action") or "").strip()
@@ -712,6 +730,16 @@ def _run_free_answer_branch(
                 action_name = possible_action
                 action_payload = action_result
                 assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
+            else:
+                # action валиден, но не выполнился (пустая схема/unknown step):
+                # сырой JSON не показываем (N1/M3, audit llm-agent-audit-v1).
+                assistant_message = _action_fallback_text(payload.message)
+        elif possible_action or has_fence:
+            # не-whitelist action-JSON или fenced-блок без ключа action
+            assistant_message = _action_fallback_text(payload.message)
+    elif has_fence:
+        # fenced-блок, который не распарсился как JSON
+        assistant_message = _action_fallback_text(payload.message)
 
     _, out = _persist_assistant_turn(
         session_id,
