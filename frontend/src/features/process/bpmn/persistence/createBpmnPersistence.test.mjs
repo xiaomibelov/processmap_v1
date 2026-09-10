@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import createBpmnPersistence from "./createBpmnPersistence.js";
 import { saveCoordinator } from "../../../session/saveCoordinator.js";
-import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../../lib/casVersionTracker.js";
+import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion, setVersion as setTrackedVersion } from "../../../../lib/casVersionTracker.js";
 
 test.beforeEach(() => {
   resetCasVersionTracker();
@@ -266,7 +266,12 @@ test("saveRaw uses externally updated diagram state context for subsequent write
   assert.equal(externalVersion, 1);
 
   // Simulate another accepted diagram-truth write path that advanced server/client version.
+  // fix/save-single-writer-and-unified-cas-base (Task 2/3): по новому контракту
+  // внешний write-path ОБЯЗАН синкать tracker (Task 3 делает это для прямых
+  // PUT /bpmn) — tracker-first resolver в момент отправки читает только его,
+  // а getter/payload остаются fallback на случай пустого tracker.
   externalVersion = 3;
+  setTrackedVersion("sid_ext_ctx", 3);
 
   const second = await persistence.saveRaw("sid_ext_ctx", "<bpmn:second/>", 2, "manual_save");
   assert.equal(second.ok, true);
@@ -387,4 +392,42 @@ test("saveRaw does NOT adopt tracked base on 409; conflict gate blocks next save
   const resolved = saveCoordinator.resolveConflict("sid_track_rollback", "overwrite");
   assert.equal(resolved.ok, true);
   assert.equal(getTrackedVersion("sid_track_rollback"), 9);
+});
+
+test("queued rawXml save re-resolves CAS base at send time from tracker (no stale enqueue-time base)", async () => {
+  // fix/save-single-writer-and-unified-cas-base (Task 2): save B ждёт в
+  // per-session очереди, пока save A в полёте. Ack A поднимает tracker 40→41.
+  // B обязан уйти с base=41 (send-time tracker), а не с enqueue-time base=40,
+  // иначе сервер отвечает самопроизвольным 409 (R1 аудита save-pipeline-full-map).
+  window.localStorage.clear();
+  const sid = "sid_sendtime_base";
+  setTrackedVersion(sid, 40);
+  const putCalls = [];
+  let releaseFirst;
+  const firstCallGate = new Promise((resolve) => { releaseFirst = resolve; });
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({}),
+    apiPutBpmnXml: async (_sid, _xml, options) => {
+      putCalls.push({ ...options });
+      if (putCalls.length === 1) {
+        await firstCallGate;
+        return { ok: true, status: 200, storedRev: 1, diagramStateVersion: 41 };
+      }
+      return { ok: true, status: 200, storedRev: 2, diagramStateVersion: 42 };
+    },
+  });
+
+  const saveA = persistence.saveRaw(sid, "<bpmn:a/>", 1, "manual_save");
+  while (putCalls.length === 0) {
+    await new Promise((resolve) => { setImmediate(resolve); });
+  }
+  const saveB = persistence.saveRaw(sid, "<bpmn:b/>", 2, "manual_save");
+  releaseFirst();
+  const [resA, resB] = await Promise.all([saveA, saveB]);
+
+  assert.equal(resA.ok, true);
+  assert.equal(resB.ok, true);
+  assert.equal(putCalls.length, 2);
+  assert.equal(putCalls[0]?.baseDiagramStateVersion, 40);
+  assert.equal(putCalls[1]?.baseDiagramStateVersion, 41);
 });

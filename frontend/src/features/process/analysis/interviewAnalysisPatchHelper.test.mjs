@@ -11,6 +11,10 @@ import {
   sanitizeInterviewAnalysisPatch,
 } from "./interviewAnalysisPatchHelper.js";
 import { resetSessionPatchCasCoordinator } from "../stage/utils/sessionPatchCasCoordinator.js";
+import {
+  __resetForTests as resetCasTracker,
+  setVersion as setTrackedVersion,
+} from "../../../lib/casVersionTracker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -168,4 +172,35 @@ test("patchInterviewAnalysis rejects malformed or empty patches before network",
   assert.equal(empty.ok, false);
   assert.equal(empty.error, "empty_analysis_patch");
   assert.equal(calls, 0);
+});
+
+test("patchInterviewAnalysis resolves CAS base from tracker at send time (tracker wins over stale option)", async () => {
+  // fix/save-single-writer-and-unified-cas-base (Task 2): tracker — единственный
+  // авторитетный источник CAS base. Option/getter — fallback на переходный
+  // период, пока tracker пуст (hydration).
+  resetSessionPatchCasCoordinator();
+  resetCasTracker();
+  const sid = "sid_analysis_tracker";
+  setTrackedVersion(sid, 41);
+  const sent = [];
+  const response = await patchInterviewAnalysis(sid, { custom_marker: "updated" }, {
+    baseDiagramStateVersion: 40,
+    apiPatchSession: async (_sid, payload) => {
+      sent.push(payload);
+      return {
+        ok: true,
+        status: 200,
+        session: {
+          id: _sid,
+          diagram_state_version: 42,
+          interview: { analysis: { custom_marker: "updated" } },
+        },
+      };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]?.base_diagram_state_version, 41);
+  resetCasTracker();
 });
