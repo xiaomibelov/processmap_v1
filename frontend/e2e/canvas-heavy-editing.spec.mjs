@@ -114,12 +114,15 @@ async function openCanvasContextMenu(page) {
       await page.mouse.click(box.x + dx, box.y + dy, { button: "right" });
       await page.waitForTimeout(300);
       const menu = page.getByTestId("bpmn-context-menu");
-      if (await menu.isVisible().catch(() => false)) return { menu, point: { x: box.x + dx, y: box.y + dy } };
+      // Меню элемента (правый клик по шейпу) не содержит «Создать задачу» —
+      // такие меню пропускаем и идём к следующей кандидатной точке.
+      const createBtn = menu.getByTestId("bpmn-context-menu-action-create_task");
+      if (await createBtn.isVisible().catch(() => false)) return { menu, point: { x: box.x + dx, y: box.y + dy } };
       await page.keyboard.press("Escape").catch(() => {});
       await page.waitForTimeout(200);
     }
   }
-  throw new Error("canvas context menu did not open at any candidate point");
+  throw new Error("canvas context menu with «Создать задачу» did not open at any candidate point");
 }
 
 async function createTaskViaContextMenu(page) {
@@ -146,25 +149,19 @@ async function readSelectedElementId(page) {
   });
 }
 
-// Путь к свойствам выбранного элемента (проверенный паттерн bpmn-property-pipeline-smoke).
+// Путь к свойствам выбранного элемента (актуальный UI): клик по rail-кнопке
+// «Свойства» свёрнутого левого сайдбара — панель открывается сразу к секции
+// «Свойства» выбранного элемента, с кнопкой «+ Добавить BPMN-свойство».
+// Прежний паттерн (кнопка rail «Выбранный узел» → accordion → тоггл
+// «Дополнительные BPMN-свойства») устарел: rail-секция удалена в редизайне
+// сайдбара (drift с bpmn-property-pipeline-smoke, см. EXEC_REPORT).
 async function openNodeProperties(page) {
-  const discussionsBtn = page.getByRole("button", { name: "Обсуждения" });
-  await expect(discussionsBtn).toBeVisible();
-  await discussionsBtn.click();
+  const railPropsBtn = page.locator("[data-testid='left-sidebar-handle'] button[aria-label='Свойства']");
+  await expect(railPropsBtn, "rail-кнопка «Свойства» должна быть видима (сайдбар свёрнут)").toBeVisible();
+  await railPropsBtn.click();
 
-  const nodeSectionBtn = page.locator("[data-testid='left-sidebar-handle'] button[aria-label='Выбранный узел']");
-  await expect(nodeSectionBtn).toBeVisible();
-  await nodeSectionBtn.click();
-
-  const propertiesAccordion = page.locator(".sidebarAccordionHead").filter({ hasText: /^Свойства$/ }).first();
-  await expect(propertiesAccordion).toBeVisible();
-  await propertiesAccordion.click();
-
-  const sectionToggle = page.locator("button.sidebarPropertiesBlockToggle", { hasText: "Дополнительные BPMN-свойства" });
-  await expect(sectionToggle).toBeVisible();
-  if ((await sectionToggle.getAttribute("aria-expanded")) !== "true") {
-    await sectionToggle.click();
-  }
+  const addBtn = page.getByRole("button", { name: /Добавить BPMN-свойство/ });
+  await expect(addBtn.first(), "кнопка «Добавить BPMN-свойство» должна появиться в панели «Свойства»").toBeVisible();
 }
 
 // ---------------------------------------------------------------------------
