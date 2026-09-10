@@ -1,6 +1,10 @@
 import { apiPatchSession as defaultApiPatchSession } from "../../../lib/api.js";
 import { saveCoordinator } from "../../../features/session/saveCoordinator.js";
-import { resolveBaseVersionAtSendTime } from "../../../features/session/casResponse.js";
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+  resolveBaseVersionAtSendTime,
+} from "../../../features/session/casResponse.js";
 
 const PIPELINE_NAME = "analysis";
 const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
@@ -40,23 +44,22 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
       getBaseDiagramStateVersion: payload?.getBaseDiagramStateVersion,
     }),
   onSuccess: (response, sessionId, payload) => {
-    const version = response?.session?.diagram_state_version ?? response?.session?.diagramStateVersion ?? null;
+    // Канонический читатель ack-версии (casResponse.js, дисциплина п.10).
+    const version = readAckDiagramStateVersion(response);
     if (version !== null) {
       try {
-        payload?.rememberDiagramStateVersion?.(Number(version), { sessionId });
+        payload?.rememberDiagramStateVersion?.(version, { sessionId });
       } catch {
         // no-op
       }
     }
   },
   on409: (response, sessionId, payload) => {
-    const details = response?.data?.detail ?? response?.data ?? {};
-    const serverVersion = Number(
-      details.server_current_version ?? details.serverCurrentVersion ?? response?.server_current_version ?? response?.serverCurrentVersion,
-    );
-    if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+    // Канонический читатель server_current_version (casResponse.js).
+    const serverVersion = readConflictServerCurrentVersion(response);
+    if (serverVersion !== null) {
       try {
-        payload?.rememberDiagramStateVersion?.(Math.round(serverVersion), { sessionId });
+        payload?.rememberDiagramStateVersion?.(serverVersion, { sessionId });
       } catch {
         // no-op
       }

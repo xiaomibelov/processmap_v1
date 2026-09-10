@@ -3,16 +3,17 @@ import {
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
-import { resolveBaseVersionAtSendTime } from "../../../../features/session/casResponse.js";
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+  resolveBaseVersionAtSendTime,
+} from "../../../../features/session/casResponse.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
-function pickDiagramStateVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const raw = response.diagram_state_version ?? response.diagramStateVersion;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
-}
+// Канонические читатели CAS-полей — casResponse.js (дисциплина п.10
+// processmap-agents). Локальная копия pickDiagramStateVersion удалена
+// (fix/save-single-writer-and-unified-cas-base).
 
 saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
   transport: async (sessionId, payload, signal) => {
@@ -56,7 +57,7 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
   onSuccess: (response, sessionId, payload) => {
     // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
     // Only sync the version to external React state here.
-    const version = pickDiagramStateVersion(response);
+    const version = readAckDiagramStateVersion(response);
     if (version !== null) {
       if (typeof payload?.rememberDiagramStateVersion === "function") {
         try {
@@ -70,16 +71,11 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
   on409: (response, sessionId, payload) => {
     // P1: tracked-base НЕ подменяется (conflict gate в saveCoordinator).
     // Only sync the server version to external React state here.
-    const data = response?.data ?? {};
-    const detail = data?.detail ?? data ?? {};
-    const serverVersion = Number(
-      detail.server_current_version ?? detail.serverCurrentVersion ?? response?.server_current_version ?? response?.serverCurrentVersion ?? -1,
-    );
-    if (Number.isFinite(serverVersion) && serverVersion >= 0) {
-      const normalized = Math.round(serverVersion);
+    const serverVersion = readConflictServerCurrentVersion(response);
+    if (serverVersion !== null) {
       if (typeof payload?.rememberDiagramStateVersion === "function") {
         try {
-          payload.rememberDiagramStateVersion(normalized, { sessionId });
+          payload.rememberDiagramStateVersion(serverVersion, { sessionId });
         } catch {
           // no-op
         }
