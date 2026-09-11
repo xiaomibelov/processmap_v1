@@ -359,6 +359,13 @@ test.describe("api-polling-reduction", () => {
       });
     }
     await expect(threadList).toBeVisible({ timeout: 30_000 });
+    // Карточка треда в списке → клик → детальный вид треда с комментариями.
+    // (Превью последнего комментария на карточке не всегда в DOM при
+    // открытой плавающей панели — комментарий гарантированно рендерится
+    // в детальном виде треда.)
+    const threadCard = page.getByText("E2E polling thread").first();
+    await expect(threadCard).toBeVisible({ timeout: 30_000 });
+    await threadCard.click();
     await expect(page.getByText("E2E polling comment body").first()).toBeVisible({ timeout: 30_000 });
 
     // Чип версии присутствует в шапке/панели версий.
