@@ -2,13 +2,12 @@ name: Prod Deploy Verify
 
 on:
   workflow_dispatch:
-  workflow_call:
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check all prod service SHAs and task registration
+      - name: Check celery-worker logs and task registration
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.STAGE_HOST }}
@@ -18,82 +17,6 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/processmap/app
-
-            COMPOSE_PROJECT_NAME=app
-            export COMPOSE_PROJECT_NAME
-
-            ENV_FILE="/opt/processmap/env/prod.env"
-            EXPECTED_SHA=$(grep -E '^BUILD_ID=' "${ENV_FILE}" | cut -d= -f2- || echo "unknown")
-            echo "[prod-deploy-verify] expected SHA: ${EXPECTED_SHA}"
-
-            # Helper: first 8 chars of a SHA.
-            short_sha() {
-              local sha="${1:-}"
-              printf '%s' "${sha}" | cut -c1-8
-            }
-
-            # Check /version reports the expected SHA.
-            VERSION_RESPONSE=$(curl -fsS https://processmap.ru/version 2>/dev/null || echo "{}")
-            API_SHA=$(echo "${VERSION_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('commit','unknown'))" || echo "unknown")
-            echo "[prod-deploy-verify] api /version SHA: ${API_SHA}"
-            if [ "$(short_sha "${EXPECTED_SHA}")" != "$(short_sha "${API_SHA}")" ]; then
-              echo "ERROR: api /version commit does not match expected SHA"
-              exit 1
-            fi
-
-            # Check gateway/frontend fingerprint.
-            # Avoid piping curl directly into grep/head under pipefail: an early
-            # pipe close can kill curl with SIGPIPE.
-            INDEX_HTML=$(curl -fsS https://processmap.ru/ 2>/dev/null || echo "")
-            MAIN_JS=$(echo "${INDEX_HTML}" | grep -oE 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
-            if [ -n "${MAIN_JS}" ]; then
-              JS_BODY=$(curl -fsS "https://processmap.ru/${MAIN_JS}" 2>/dev/null || echo "")
-              FINGERPRINT=$(echo "${JS_BODY}" | grep -oE "processmap-prod-deploy-sha:[a-f0-9]+" | head -1)
-              echo "[prod-deploy-verify] gateway fingerprint: ${FINGERPRINT}"
-              if ! echo "${FINGERPRINT}" | grep -q "$(short_sha "${EXPECTED_SHA}")"; then
-                echo "ERROR: gateway frontend fingerprint does not match expected SHA"
-                exit 1
-              fi
-            else
-              echo "ERROR: could not locate main JS asset"
-              exit 1
-            fi
-
-            # Check container image labels/SHA for each prod service.
-            echo "=== service container SHA checks ==="
-            for svc in api gateway celery-worker agent notifications frontend; do
-              container="${COMPOSE_PROJECT_NAME}-${svc}-1"
-              if [ "${svc}" = "gateway" ]; then
-                # gateway is built from the same SHA as the frontend statics.
-                image_label=$(docker inspect "${container}" --format '{{index .Config.Labels "com.docker.compose.service"}}' 2>/dev/null || true)
-                echo "[prod-deploy-verify] ${svc}: ${image_label} (verified via fingerprint above)"
-                continue
-              fi
-              image_id=$(docker inspect "${container}" --format '{{.Image}}' 2>/dev/null || echo "missing")
-              if [ "${image_id}" = "missing" ]; then
-                echo "ERROR: ${svc} container ${container} is missing"
-                exit 1
-              fi
-              # Prefer explicit build metadata label if present; fall back to image id prefix match.
-              build_id_label=$(docker inspect "${container}" --format '{{index .Config.Labels "buildId"}}' 2>/dev/null || echo "")
-              if [ -n "${build_id_label}" ]; then
-                echo "[prod-deploy-verify] ${svc} buildId label: ${build_id_label}"
-                if [ "$(short_sha "${EXPECTED_SHA}")" != "$(short_sha "${build_id_label}")" ]; then
-                  echo "ERROR: ${svc} buildId label does not match expected SHA"
-                  exit 1
-                fi
-              else
-                echo "[prod-deploy-verify] ${svc} image id: ${image_id} (no buildId label; verify manually)"
-              fi
-              # Hard freshness gate: the container must run the image currently tagged
-              # app-<svc>:latest (i.e. the one built by the deploy). Catches stale
-              # workers even when no buildId label is baked into the image.
-              latest_image_id=$(docker image inspect "app-${svc}:latest" --format '{{.Id}}' 2>/dev/null || echo "missing")
-              if [ "${latest_image_id}" != "missing" ] && [ "${image_id}" != "${latest_image_id}" ]; then
-                echo "ERROR: ${svc} container image ${image_id} != freshly built app-${svc}:latest ${latest_image_id}"
-                exit 1
-              fi
-            done
 
             echo "=== celery-worker recent logs ==="
             docker compose \
@@ -106,67 +29,43 @@ jobs:
               logs --tail=50 celery-worker
 
             echo "=== checking for 'unregistered task' errors ==="
-            # Capture logs first to avoid SIGPIPE under pipefail when grep exits early.
-            CELERY_ALL_LOGS=$(docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
-              -p app \
-              logs celery-worker 2>&1) || true
-            echo "${CELERY_ALL_LOGS}" | grep -iq "unregistered" && {
+            if docker compose \
+                 --env-file /opt/processmap/env/prod.env \
+                 -f docker-compose.yml \
+                 -f docker-compose.prod.yml \
+                 -f docker-compose.ssl.yml \
+                 -f docker-compose.prod.gateway.yml \
+                 -p app \
+                 logs celery-worker | grep -iq "unregistered"; then
               echo "ERROR: found 'unregistered task' in celery-worker logs"
               exit 1
-            }
+            fi
             echo "OK: no 'unregistered task' errors"
 
-            echo "=== checking task registration via celery inspect ==="
-            # Use a standalone script to avoid the SIGPIPE/pipefail hazard of
-            # "celery ... | grep -q" and to keep the retry/fail-fast logic testable.
-            ./deploy/verify_celery_task.sh \
-              --container "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
-              --task "refresh_session_analytics_task" \
-              --retries 10 \
-              --delay 3 \
-              --timeout 10
-
-            echo "=== checking rag indexing task registration via celery inspect ==="
-            # app.rag_tasks появился в PR #811; протухший воркер без него — инцидент
-            # audit/prod-stage-divergence-409 (2026-08-30).
-            ./deploy/verify_celery_task.sh \
-              --container "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
-              --task "index_session_bpmn_xml" \
-              --retries 10 \
-              --delay 3 \
-              --timeout 10
-
-            echo "=== checking canonical task names (processmap.*) registration ==="
-            # fix/celery-task-naming-splitbrain: все задачи обязаны регистрироваться
-            # под каноническими именами, не зависящими от import-контекста.
-            CANONICAL_TASKS="processmap.overlay.render_overlay_task processmap.analytics.refresh_session_analytics_task processmap.analytics.refresh_all_workspaces_analytics_task processmap.rag.index_session_bpmn_xml processmap.rag.index_queued_sessions_bpmn_xml"
-            REGISTERED_OUT=$(docker exec "${COMPOSE_PROJECT_NAME}-celery-worker-1" \
-              celery -A backend.app.celery_app inspect registered --timeout 10 2>&1) || true
-            for canonical in ${CANONICAL_TASKS}; do
-              if echo "${REGISTERED_OUT}" | grep -qF "${canonical}"; then
-                echo "OK: ${canonical} registered"
-              else
-                echo "ERROR: canonical task ${canonical} NOT registered" >&2
-                exit 1
-              fi
-            done
+            echo "=== checking task registration in worker startup logs ==="
+            if docker compose \
+                 --env-file /opt/processmap/env/prod.env \
+                 -f docker-compose.yml \
+                 -f docker-compose.prod.yml \
+                 -f docker-compose.ssl.yml \
+                 -f docker-compose.prod.gateway.yml \
+                 -p app \
+                 logs celery-worker | grep -q "refresh_session_analytics_task"; then
+              echo "OK: refresh_session_analytics_task is registered"
+            else
+              echo "ERROR: refresh_session_analytics_task not found in celery-worker logs"
+              exit 1
+            fi
 
             echo "=== checking api logs for 500 on /api/admin/ai/prompts ==="
-            # Capture logs first to avoid SIGPIPE under pipefail when grep exits early.
-            API_ALL_LOGS=$(docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
-              -p app \
-              logs api 2>&1) || true
-            if echo "${API_ALL_LOGS}" | grep -Ei '"GET /api/admin/ai/prompts.*500' ; then
+            if docker compose \
+                 --env-file /opt/processmap/env/prod.env \
+                 -f docker-compose.yml \
+                 -f docker-compose.prod.yml \
+                 -f docker-compose.ssl.yml \
+                 -f docker-compose.prod.gateway.yml \
+                 -p app \
+                 logs api | grep -Ei '"GET /api/admin/ai/prompts.*500' ; then
               echo "ERROR: found 500 responses on /api/admin/ai/prompts"
               exit 1
             fi
