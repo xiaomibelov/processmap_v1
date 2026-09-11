@@ -4,7 +4,7 @@ import logging
 import time
 
 from .celery_app import app
-from .overlay_cache import _enc, _k, r, render_overlay_xml
+from . import overlay_cache as _overlay_cache
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,20 @@ def render_overlay_task(
 ) -> None:
     start = time.monotonic()
     try:
-        xml = render_overlay_xml(sid, bpmn_xml)
+        # Разрешение через модуль, а не from-import: иначе имя связывается со
+        # stub'ом на момент импорта и wiring (overlay_wiring.wire) не действует
+        # (fix/overlay-render-notimplemented).
+        xml = _overlay_cache.render_overlay_xml(sid, bpmn_xml)
         payload = {
             "xml": xml,
             "fresh_until": time.time() + 60,
             "stale_until": time.time() + 90,
         }
-        r.set(_k(sid, ver, qx, qy, qs), _enc(payload), ex=90)
+        _overlay_cache.r.set(
+            _overlay_cache._k(sid, ver, qx, qy, qs),
+            _overlay_cache._enc(payload),
+            ex=90,
+        )
     except Exception as exc:
         from .metrics import inc_task_failure
         inc_task_failure("render_overlay_task")
