@@ -144,27 +144,56 @@ export default function useSessionEvents(sessionIdRaw, handlers = {}, options = 
     }
 
     // ── Polling fallback ───────────────────────────────────────
-    function startPolling() {
-      if (stopped) return;
-      pollTimer = setTimeout(async () => {
-        if (stopped) return;
-        try {
-          const resp = await fetch(url, { method: "HEAD", credentials: "include" });
-          if (resp.status === 404) {
+    let pollingActive = false;
+
+    function headCheckOnce() {
+      return fetch(url, { method: "HEAD", credentials: "include" })
+        .then((resp) => {
+          if (resp.status === 404 && !stopped) {
             markSessionNotFound(sid, { source: "session_events_poll" });
             if (onDeletedRef.current) {
               onDeletedRef.current(sid);
             }
             stopped = true;
-            return;
+            pollingActive = false;
           }
-        } catch {
+        })
+        .catch(() => {
           // Network error — try again next interval.
+        });
+    }
+
+    function startPolling() {
+      if (stopped) return;
+      pollingActive = true;
+      pollTimer = setTimeout(async () => {
+        pollTimer = null;
+        if (stopped) return;
+        // Hidden-пауза: в фоне HEAD-поллинг не крутим, ждём
+        // visibilitychange→visible (one-shot ниже).
+        if (typeof document !== "undefined" && document.hidden) {
+          startPolling();
+          return;
         }
+        await headCheckOnce();
         if (!stopped) {
           startPolling();
         }
       }, POLL_INTERVAL_MS);
+    }
+
+    function onVisibilityChangeToVisible() {
+      if (stopped || !pollingActive) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      void headCheckOnce().then(() => {
+        if (!stopped) {
+          startPolling();
+        }
+      });
     }
 
     // ── Start ──────────────────────────────────────────────────
@@ -172,11 +201,17 @@ export default function useSessionEvents(sessionIdRaw, handlers = {}, options = 
       startEventSource();
     } else {
       startPolling();
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", onVisibilityChangeToVisible);
+      }
     }
 
     // ── Cleanup ────────────────────────────────────────────────
     return () => {
       stopped = true;
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChangeToVisible);
+      }
       if (eventSource) {
         eventSource.close();
         eventSource = null;
