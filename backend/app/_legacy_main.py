@@ -6047,37 +6047,12 @@ def export_legacy_routes() -> Tuple[APIRoute, ...]:
     return LEGACY_ROUTE_EXPORT
 
 # ── Wire overlay_cache stubs ──
-from .exporters.bpmn import _collect_interview_comments
-from . import overlay_cache as _oc_mod
+# Каноническая реализация wiring'а — в overlay_wiring.py (единая для API-процесса
+# и celery-worker'а, см. fix/overlay-render-notimplemented). Здесь только
+# делегирование, чтобы поведение API-процесса не изменилось.
+from . import overlay_wiring as _overlay_wiring
 
-def _wired_fetch_session_bpmn(sid: str, request=None) -> str:
-    s = _legacy_load_session_scoped(sid, request)[0]
-    return str(getattr(s, "bpmn_xml", "") or "")
-
-def _wired_fetch_annotations(sid: str, request=None) -> list:
-    s = _legacy_load_session_scoped(sid, request)[0]
-    model = s.model_dump() if hasattr(s, "model_dump") else {}
-    return _collect_interview_comments(model, model.get("nodes") or [])
-
-def _wired_compute_overlays_json(sid: str, request=None) -> list[dict[str, Any]]:
-    s = _legacy_load_session_scoped(sid, request)[0]
-    if not s:
-        return []
-    xml = str(getattr(s, "bpmn_xml", "") or "")
-    if not xml:
-        return []
-    return _compute_overlays_json(s, xml)
-
-def _wired_render_overlay_xml(sid: str, bpmn_xml: str, request=None) -> str:
-    s = _legacy_load_session_scoped(sid, request)[0]
-    if not s:
-        return bpmn_xml
-    return _overlay_interview_annotations_on_bpmn_xml(s, bpmn_xml)
-
-_oc_mod.fetch_session_bpmn = _wired_fetch_session_bpmn
-_oc_mod.fetch_annotations = _wired_fetch_annotations
-_oc_mod.compute_overlays_json = _wired_compute_overlays_json
-_oc_mod.render_overlay_xml = _wired_render_overlay_xml
+_overlay_wiring.wire()
 
 
 

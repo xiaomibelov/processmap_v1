@@ -30,3 +30,11 @@ from . import rag_tasks  # noqa: F401,E402
 from .agent_analysis import tasks as agent_analysis_tasks  # noqa: F401,E402
 from .save_services.analytics_aggregator import tasks as analytics_tasks  # noqa: F401,E402
 from .save_services.audit_publisher import tasks as audit_tasks  # noqa: F401,E402
+
+# Wire app-provided stubs overlay_cache для worker-контекста
+# (fix/overlay-render-notimplemented). Без этого render_overlay_task падал с
+# NotImplementedError: stubs заменялись только при импорте _legacy_main, которого
+# в воркере нет. Явный вызов, а не side-effect-on-import.
+from . import overlay_wiring  # noqa: E402
+
+overlay_wiring.wire()
