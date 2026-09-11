@@ -354,6 +354,18 @@ export default function createBpmnRuntime(options = {}) {
     if (!inst || destroyed || !ready || !defs) {
       return { ok: false, reason: "not_ready", token: Number(activeToken || 0) };
     }
+    // Perf instrumentation (контур fix/canvas-250-editing-performance): единый
+    // счётчик ПОЛНЫХ сериализаций модели. Читается E2E как
+    // window.__PM_DIFF_CALLS__; бюджет — не больше одной сериализации на
+    // правку одного элемента. Инкремент до вызова saveXML, чтобы считать и
+    // отклонённые по busy-капу попытки.
+    try {
+      if (typeof window !== "undefined") {
+        window.__PM_DIFF_CALLS__ = Number(window.__PM_DIFF_CALLS__ || 0) + 1;
+      }
+    } catch {
+      // instrumentation must never break the export path
+    }
     const opToken = Number(activeToken || 0);
     try {
       const saveXmlTimeout = Number(opts?.timeoutMs) > 0 ? Number(opts.timeoutMs) : 5000;

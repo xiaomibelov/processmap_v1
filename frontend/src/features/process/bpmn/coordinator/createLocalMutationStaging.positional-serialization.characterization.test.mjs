@@ -17,8 +17,13 @@ import createLocalMutationStaging from "./createLocalMutationStaging.js";
 // (rev-bump + dirty:true + fanout setXml) выполняется от текущего store-xml
 // (по содержимому no-op, но бампает rev/dirty и дергает подписчиков);
 // сериализация откладывается в throttled keep-latest (300мс trailing): один
-// getXml + store.setXml + cacheRaw. Structural shape.create — немедленно,
-// как раньше. Автосейв-skip для positional-кадров без изменений.
+// getXml + store.setXml + cacheRaw. Автосейв-skip для positional-кадров без
+// изменений.
+//
+// ОБНОВЛЕНО контуром fix/canvas-250-editing-performance: structural-команды
+// (shape.create и др.) больше НЕ сериализуются немедленно — они уходят в тот
+// же throttled keep-latest путь (in-frame только синхронный dirty-mark).
+// Полный saveXML на каждую команду был O(n) на схемах 250+ элементов.
 // ---------------------------------------------------------------------------
 
 function sleep(ms) {
@@ -148,26 +153,30 @@ test("FIXED: structural command during drag is throttled (no in-frame serializat
   assert.equal(store.getState().xml, "<bpmn:definitions id=\"serialized\"/>");
 });
 
-test("CONTROL: structural shape.create serializes immediately AND is not throttled", async () => {
+test("CHANGED: structural shape.create is throttled too (no in-frame serialization, autosave requested)", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 5,
     dirty: false,
     lastSavedRev: 5,
   });
-  const { staging, getXmlCalls, autosaveReasons } = makeStaging(store);
+  const { staging, getXmlCalls, autosaveReasons, cacheCalls } = makeStaging(store);
 
   const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "shape.create" });
 
   assert.equal(result.positional, false);
   assert.equal(result.autosaveRequested, true);
-  assert.equal(getXmlCalls.length, 1, "structural command serializes immediately");
-  assert.deepEqual(getXmlCalls[0], { format: false });
-  assert.deepEqual(autosaveReasons, ["autosave"]);
-  assert.equal(result.xml, "<bpmn:definitions id=\"serialized\"/>");
-  assert.equal(result.xmlAuthority, "staged_local_runtime_snapshot");
+  assert.deepEqual(autosaveReasons, ["autosave"], "structural command still requests autosave in-frame");
+  assert.equal(getXmlCalls.length, 0, "structural command does not serialize in-frame anymore");
+  assert.equal(result.xml, "<bpmn:definitions id=\"old\"/>");
+  assert.equal(result.xmlAuthority, "staged_local_store_fallback");
+  assert.equal(store.getState().dirty, true, "in-frame dirty-mark is synchronous");
 
-  // Никакого throttled-дубля после окна.
+  // Ровно одна сериализация на trailing-краю окна, без in-frame дубля.
   await sleep(360);
-  assert.equal(getXmlCalls.length, 1, "structural path does not schedule a throttled serialization");
+  assert.equal(getXmlCalls.length, 1, "structural command coalesces into one throttled serialization");
+  assert.deepEqual(getXmlCalls[0], { format: false });
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"serialized\"/>");
+  assert.equal(cacheCalls.length, 1);
+  assert.equal(cacheCalls[0].reason, "runtime_change_throttled");
 });
