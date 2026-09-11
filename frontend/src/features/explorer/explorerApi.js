@@ -6,7 +6,9 @@ import { apiRequest } from "../../lib/api.js";
 function q(params) {
   const pairs = Object.entries(params || {})
     .filter(([, v]) => v !== undefined && v !== null && String(v) !== "")
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+    .flatMap(([k, v]) => (Array.isArray(v)
+      ? v.map((item) => `${encodeURIComponent(k)}=${encodeURIComponent(String(item))}`)
+      : [`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`]));
   return pairs.length ? "?" + pairs.join("&") : "";
 }
 
@@ -26,8 +28,8 @@ export async function apiRenameWorkspace(workspaceId, name) {
   return call(`/api/workspaces/${encodeURIComponent(workspaceId)}`, { method: "PATCH", body: { name } });
 }
 
-export async function apiGetExplorerPage(workspaceId, folderId = "") {
-  return call(`/api/explorer${q({ workspace_id: workspaceId, folder_id: folderId || "" })}`);
+export async function apiGetExplorerPage(workspaceId, folderId = "", { stage = [] } = {}) {
+  return call(`/api/explorer${q({ workspace_id: workspaceId, folder_id: folderId || "", stage })}`);
 }
 
 export async function apiSearchExplorer(workspaceId, query, { limit = 50 } = {}) {

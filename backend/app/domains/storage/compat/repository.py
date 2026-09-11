@@ -472,6 +472,24 @@ def _bpmn_local_name(tag: str) -> str:
     return tag.lower()
 
 
+def _stage_badges_from_counts(as_is_count: Any, to_be_count: Any) -> List[str]:
+    """Производное множество контуров, присутствующих в поддереве узла."""
+    badges: List[str] = []
+    try:
+        as_is_n = int(as_is_count)
+    except Exception:
+        as_is_n = 0
+    try:
+        to_be_n = int(to_be_count)
+    except Exception:
+        to_be_n = 0
+    if as_is_n > 0:
+        badges.append("as_is")
+    if to_be_n > 0:
+        badges.append("to_be")
+    return badges
+
+
 def _clamp_int64(value: Any, default: int = 0) -> int:
     try:
         n = int(value)

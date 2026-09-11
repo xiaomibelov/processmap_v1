@@ -29,6 +29,24 @@ except Exception:
     PsycopgIntegrityError = None
     ConnectionPool = None
 
+def _stage_badges_from_counts(as_is_count: Any, to_be_count: Any) -> List[str]:
+    """Производное множество контуров, присутствующих в поддереве узла."""
+    badges: List[str] = []
+    try:
+        as_is_n = int(as_is_count)
+    except Exception:
+        as_is_n = 0
+    try:
+        to_be_n = int(to_be_count)
+    except Exception:
+        to_be_n = 0
+    if as_is_n > 0:
+        badges.append("as_is")
+    if to_be_n > 0:
+        badges.append("to_be")
+    return badges
+
+
 def _get_folder_descendant_ids(con: Any, org_id: str, workspace_id: str, folder_id: str) -> List[str]:
     """Return all descendant folder IDs (not including folder_id itself)."""
     cfg = get_db_runtime_config()
@@ -419,6 +437,7 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
                 FROM sessions s
                 WHERE s.project_id = p.id
                   AND COALESCE(s.parent_session_id, '') = ''
+                  AND (s.deleted_at = 0 OR s.deleted_at IS NULL)
               ) AS sessions_count
             FROM projects p
             WHERE p.org_id = ? AND p.workspace_id = ?
@@ -428,7 +447,8 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         ).fetchall()
         session_rows = con.execute(
             """
-            SELECT s.project_id, s.id, s.title, s.updated_at, s.version, s.bpmn_xml_version, s.interview_json, s.deleted_at
+            SELECT s.project_id, s.id, s.title, s.updated_at, s.version, s.bpmn_xml_version,
+                   s.interview_json, s.deleted_at, s.process_layer, s.derived_from_session_id
             FROM sessions s
             JOIN projects p ON p.id = s.project_id
             WHERE p.org_id = ? AND p.workspace_id = ?
@@ -460,6 +480,11 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
     session_latest_by_project: Dict[str, Dict[str, Any]] = {}
     done_sessions_by_project: Dict[str, int] = {}
     trackable_sessions_by_project: Dict[str, int] = {}
+    # TO BE overview (workspace as-is/to-be): счётчики описаний по контурам —
+    # строго живые root-сессии, сплит по process_layer.
+    as_is_count_by_project: Dict[str, int] = {}
+    to_be_count_by_project: Dict[str, int] = {}
+    to_be_latest_by_project: Dict[str, int] = {}
     for row in session_rows:
         project_id = str(row["project_id"] or "")
         if not project_id:
@@ -474,6 +499,14 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         # исключаются из ОБОИХ чисел, иначе прогресс никогда не достигнет 100%.
         if _safe_int(row["deleted_at"], 0) > 0:
             continue
+        layer = str(row["process_layer"] or "as_is") or "as_is"
+        if layer == "to_be":
+            to_be_count_by_project[project_id] = to_be_count_by_project.get(project_id, 0) + 1
+            updated = _safe_int(row["updated_at"], 0)
+            if updated > to_be_latest_by_project.get(project_id, 0):
+                to_be_latest_by_project[project_id] = updated
+        else:
+            as_is_count_by_project[project_id] = as_is_count_by_project.get(project_id, 0) + 1
         try:
             interview = json.loads(str(row["interview_json"] or "{}"))
             if not isinstance(interview, dict):
@@ -507,6 +540,9 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         source_id = str((latest_session or {}).get("id") or project_id)
         source_title = str((latest_session or {}).get("title") or project_model.title or "Проект")
         dod_percent = _clamp_percent(passport.get("dod_percent", 0))
+        as_is_count = as_is_count_by_project.get(project_id, 0)
+        to_be_count = to_be_count_by_project.get(project_id, 0)
+        to_be_latest = to_be_latest_by_project.get(project_id, 0) or None
         project_payload: Dict[str, Any] = {
             "id": project_id,
             "title": str(project_model.title or ""),
@@ -533,6 +569,10 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "trackable_sessions_count": _safe_int(trackable_sessions_by_project.get(project_id), 0),
             # Project-level canonical truth remains dod_percent.
             "rollup_dod_percent": dod_percent,
+            # TO BE overview: точное число описаний по контурам проекта.
+            "counters": {"as_is": as_is_count, "to_be": to_be_count},
+            "stage_badges": _stage_badges_from_counts(as_is_count, to_be_count),
+            "tobe": {"last_updated_at": to_be_latest},
         }
         projects_by_folder.setdefault(folder_id, []).append(project_payload)
         projects_by_id[project_id] = project_payload
@@ -564,6 +604,10 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
                 "descendant_trackable_sessions_count": 0,
                 "dod_sum": 0.0,
                 "dod_count": 0,
+                "as_is_count": 0,
+                "to_be_count": 0,
+                "to_be_latest_at": 0,
+                "projects_with_tobe": 0,
             }
             folder_metrics[folder_id] = result
             return result
@@ -578,6 +622,10 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
         descendant_trackable_sessions_count = 0
         dod_sum = 0.0
         dod_count = 0
+        as_is_count = 0
+        to_be_count = 0
+        to_be_latest_at = 0
+        projects_with_tobe = 0
 
         for child_folder_id in folder_children.get(folder_id, []):
             child_metrics = _compute_folder_metrics(child_folder_id)
@@ -587,6 +635,10 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             descendant_trackable_sessions_count += _safe_int(child_metrics.get("descendant_trackable_sessions_count"), 0)
             dod_sum += float(child_metrics.get("dod_sum") or 0.0)
             dod_count += _safe_int(child_metrics.get("dod_count"), 0)
+            as_is_count += _safe_int(child_metrics.get("as_is_count"), 0)
+            to_be_count += _safe_int(child_metrics.get("to_be_count"), 0)
+            to_be_latest_at = max(to_be_latest_at, _safe_int(child_metrics.get("to_be_latest_at"), 0))
+            projects_with_tobe += _safe_int(child_metrics.get("projects_with_tobe"), 0)
             child_rollup_at = _safe_int(child_metrics.get("rollup_activity_at"), 0)
             if child_rollup_at > best_activity_at:
                 best_activity_at = child_rollup_at
@@ -601,6 +653,13 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             descendant_trackable_sessions_count += _safe_int(project.get("trackable_sessions_count"), 0)
             dod_sum += float(_safe_int(project.get("dod_percent"), 0))
             dod_count += 1
+            project_as_is = _safe_int((project.get("counters") or {}).get("as_is"), 0)
+            project_to_be = _safe_int((project.get("counters") or {}).get("to_be"), 0)
+            as_is_count += project_as_is
+            to_be_count += project_to_be
+            projects_with_tobe += 1 if project_to_be > 0 else 0
+            project_tobe_latest = (project.get("tobe") or {}).get("last_updated_at") or 0
+            to_be_latest_at = max(to_be_latest_at, _safe_int(project_tobe_latest, 0))
             project_rollup_at = _safe_int(project.get("rollup_activity_at"), 0)
             if project_rollup_at > best_activity_at:
                 best_activity_at = project_rollup_at
@@ -619,6 +678,10 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "descendant_trackable_sessions_count": descendant_trackable_sessions_count,
             "dod_sum": dod_sum,
             "dod_count": dod_count,
+            "as_is_count": as_is_count,
+            "to_be_count": to_be_count,
+            "to_be_latest_at": to_be_latest_at,
+            "projects_with_tobe": projects_with_tobe,
         }
         folder_metrics[folder_id] = result
         return result
@@ -650,10 +713,31 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "last_activity_source_id": str(metrics.get("last_activity_source_id") or folder_id),
             "last_activity_source_title": str(metrics.get("last_activity_source_title") or folder.get("name") or "Папка"),
             "rollup_dod_percent": rollup_dod_percent,
+            # TO BE overview: агрегаты по всему поддереву папки.
+            "counters": {
+                "as_is": _safe_int(metrics.get("as_is_count"), 0),
+                "to_be": _safe_int(metrics.get("to_be_count"), 0),
+            },
+            "stage_badges": _stage_badges_from_counts(
+                _safe_int(metrics.get("as_is_count"), 0),
+                _safe_int(metrics.get("to_be_count"), 0),
+            ),
+            "tobe": {"last_updated_at": _safe_int(metrics.get("to_be_latest_at"), 0) or None},
+            "tobe_coverage": {
+                "with_tobe": _safe_int(metrics.get("projects_with_tobe"), 0),
+                "total": _safe_int(metrics.get("descendant_projects_count"), 0),
+            },
         })
 
     project_items = list(projects_by_folder.get(pid, []))
-    return {"folders": folder_items, "projects": project_items}
+    # Workspace-wide rollup по живым root-сессиям (для баннера «TO BE ещё не начат»).
+    workspace_as_is = sum(_safe_int((p.get("counters") or {}).get("as_is"), 0) for p in projects_by_id.values())
+    workspace_to_be = sum(_safe_int((p.get("counters") or {}).get("to_be"), 0) for p in projects_by_id.values())
+    return {
+        "folders": folder_items,
+        "projects": project_items,
+        "workspace_counts": {"as_is": workspace_as_is, "to_be": workspace_to_be},
+    }
 
 
 def move_workspace_folder(
@@ -1096,6 +1180,7 @@ from ..compat.repository import _json_loads
 from ..compat.repository import _now_ts
 from ..compat.repository import _project_row_to_model
 from ..compat.repository import _row_value
+from ..compat.repository import _stage_badges_from_counts
 from ..compat.repository import _scope_user_id
 from ..org_auth.repository import _normalize_template_scope
 from ..org_auth.repository import _template_folder_row_to_dict

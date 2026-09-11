@@ -14,6 +14,7 @@ import { apiRequest } from "../../lib/api.js";
 export const USER_PREFERENCES_QUERY_KEY = ["user-preferences"];
 export const EXPLORER_TREE_COLLAPSED_KEY = "explorer.tree.collapsed";
 export const EXPLORER_TREE_EXPANDED_KEY = "explorer.tree.expanded";
+export const EXPLORER_TOBE_BANNER_DISMISSED_KEY = "explorer.tobe_banner.dismissed_at";
 export const TREE_SAVE_DEBOUNCE_MS = 500;
 
 export async function fetchUserPreferences() {

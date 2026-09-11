@@ -11,20 +11,23 @@ import { apiGetExplorerPage } from "./explorerApi.js";
 
 export const EXPLORER_PAGE_STALE_TIME_MS = 5 * 60 * 1000;
 
-export function explorerPageQueryKey(workspaceId, folderId = "") {
-  return ["explorer-page", String(workspaceId || ""), String(folderId || "")];
+export function explorerPageQueryKey(workspaceId, folderId = "", stageKey = "") {
+  return ["explorer-page", String(workspaceId || ""), String(folderId || ""), String(stageKey || "")];
 }
 
 export async function fetchExplorerPage({ queryKey }) {
-  const [, workspaceId, folderId] = queryKey;
-  const resp = await apiGetExplorerPage(workspaceId, folderId || "");
+  const [, workspaceId, folderId, stageKey] = queryKey;
+  const stage = String(stageKey || "")
+    .split("+")
+    .filter((value) => value === "as_is" || value === "to_be");
+  const resp = await apiGetExplorerPage(workspaceId, folderId || "", { stage });
   if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки");
   return resp?.data || resp;
 }
 
-export function explorerPageQueryOptions(workspaceId, folderId = "") {
+export function explorerPageQueryOptions(workspaceId, folderId = "", stageKey = "") {
   return {
-    queryKey: explorerPageQueryKey(workspaceId, folderId),
+    queryKey: explorerPageQueryKey(workspaceId, folderId, stageKey),
     queryFn: fetchExplorerPage,
     staleTime: EXPLORER_PAGE_STALE_TIME_MS,
   };
