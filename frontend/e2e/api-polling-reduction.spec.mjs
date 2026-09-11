@@ -359,17 +359,19 @@ test.describe("api-polling-reduction", () => {
       });
     }
     await expect(threadList).toBeVisible({ timeout: 30_000 });
-    // Карточка треда в списке → клик → детальный вид треда с комментариями.
-    // (Превью последнего комментария на карточке не всегда в DOM при
-    // открытой плавающей панели — комментарий гарантированно рендерится
-    // в детальном виде треда.)
-    const threadCard = page.getByText("E2E polling thread").first();
-    await expect(threadCard).toBeVisible({ timeout: 30_000 });
-    await threadCard.click();
-    await expect(page.getByText("E2E polling comment body").first()).toBeVisible({ timeout: 30_000 });
+    // Детальный вид треда может открыться автоматически (focus-on-element с
+    // тредом). Если комментарий ещё не виден — кликаем карточку в списке.
+    const commentText = page.getByText("E2E polling comment body").first();
+    if (!(await commentText.isVisible().catch(() => false))) {
+      const threadCard = threadList.getByText("E2E polling thread").first();
+      await expect(threadCard).toBeVisible({ timeout: 30_000 });
+      await threadCard.click();
+    }
+    await expect(commentText).toBeVisible({ timeout: 30_000 });
 
-    // Чип версии присутствует в шапке/панели версий.
-    const versionsPanel = page.getByTestId("panel-versions");
-    await expect(versionsPanel.first()).toBeVisible({ timeout: 20_000 });
+    // Чип версии присутствует в шапке канваса (panel-versions — только в
+    // technologist workspace, на канвасе сессии его нет).
+    const versionsChip = page.getByTestId("diagram-toolbar-version-chip");
+    await expect(versionsChip.first()).toBeVisible({ timeout: 20_000 });
   });
 });
