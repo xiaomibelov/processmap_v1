@@ -128,10 +128,34 @@ export function readSelectedElementId(page) {
   });
 }
 
-// Правый клик по гарантированно пустой области канваса (угол вьюпорта).
+// Правый клик по гарантированно пустой области канваса.
+// После reload/refit вьюпорта (сценарий refresh в 7b) фиксированные углы
+// вьюпорта могут попадать на элемент диаграммы (таска из другой вкладки
+// создаётся ровно в точке кандидата) — тогда открывается element-меню без
+// «Создать задачу». Поэтому перед кликами вьюпорт отдаляется (fit × 0.75),
+// и углы гарантированно попадают на пустой канвас за пределами пула.
 async function openCanvasContextMenu(page) {
   const host = page.locator(".bpmnStageHost").first();
   await expect(host).toBeVisible();
+  await page.evaluate(() => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return;
+    try {
+      const canvas = modeler.get("canvas");
+      canvas.zoom("fit-viewport");
+      const vb = canvas.viewbox();
+      const cx = vb.x + vb.width / 2;
+      const cy = vb.y + vb.height / 2;
+      canvas.viewbox({
+        x: cx - (vb.width / 2) * 1.35,
+        y: cy - (vb.height / 2) * 1.35,
+        width: vb.width * 1.35,
+        height: vb.height * 1.35,
+      });
+    } catch {
+      // zoom best-effort — кандидаты всё равно перебираются
+    }
+  });
   const box = await host.boundingBox();
   expect(box).toBeTruthy();
   const candidates = [
