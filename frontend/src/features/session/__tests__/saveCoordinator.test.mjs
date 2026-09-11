@@ -86,7 +86,7 @@ test("queues concurrent saves for the same session", async () => {
   assert.deepEqual(order, ["start", "end", "start", "end"]);
 });
 
-test("serializes different pipelines that write the same session", async () => {
+test("independent pipelines for the same session run on separate lanes", async () => {
   const c = createSaveCoordinator();
   const order = [];
   let releaseXml;
@@ -113,11 +113,13 @@ test("serializes different pipelines that write the same session", async () => {
   const first = c.execute("xml", { sessionId: "s1" });
   const second = c.execute("rawXml", { sessionId: "s1" });
   await sleep(10);
-  assert.deepEqual(order, ["xml:start"]);
+  // rawXml must not wait for the blocked xml run (per-pipeline lanes);
+  // otherwise the xml transport's nested rawXml execute deadlocks.
+  assert.deepEqual(order, ["xml:start", "rawXml:start", "rawXml:end"]);
 
   releaseXml();
   await Promise.all([first, second]);
-  assert.deepEqual(order, ["xml:start", "xml:end", "rawXml:start", "rawXml:end"]);
+  assert.deepEqual(order, ["xml:start", "rawXml:start", "rawXml:end", "xml:end"]);
 });
 
 test("allows concurrent saves for different sessions", async () => {
