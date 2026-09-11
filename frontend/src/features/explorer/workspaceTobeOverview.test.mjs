@@ -27,9 +27,12 @@ test("flag key and storage key are stable contracts", () => {
 });
 
 test("gate: requires flag on AND pilot org", () => {
-  assert.equal(TOBE_OVERVIEW_PILOT_ORG_IDS.length, 0, "пилот пуст до rollout — фича недоступна никому");
+  const pilotOrgId = "8b89c83ea810";
+  assert.equal(TOBE_OVERVIEW_PILOT_ORG_IDS.length, 1, "пилот ровно одна org");
+  assert.ok(TOBE_OVERVIEW_PILOT_ORG_IDS.includes(pilotOrgId), "пилот содержит org «Роботизация производств»");
+  assert.equal(isTobeOverviewEnabled({ flagOn: true, orgId: pilotOrgId }), true);
   assert.equal(isTobeOverviewEnabled({ flagOn: true, orgId: "org_1" }), false);
-  assert.equal(isTobeOverviewEnabled({ flagOn: false, orgId: "org_1" }), false);
+  assert.equal(isTobeOverviewEnabled({ flagOn: false, orgId: pilotOrgId }), false);
   assert.equal(isTobeOverviewPilotOrg("org_1"), false);
   assert.equal(isTobeOverviewPilotOrg(""), false);
 });
