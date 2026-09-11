@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "../../../shared/ui/Modal";
 import { apiGetDeploymentNotice } from "../../../lib/apiModules/adminApi";
+import {
+  NOTICE_POLL_INTERVAL_MS,
+  createNoticePollingSchedule,
+} from "../deploymentNoticePolling";
 
-const POLL_INTERVAL_MS = 30_000;
 const HIDDEN_KEY_PREFIX = "deployment_notice_hidden:";
 
 function formatCountdown(seconds) {
@@ -46,24 +49,79 @@ export default function DeploymentNoticeModal() {
       if (!res.ok) {
         setError(res.error || "fetch_failed");
         setNotice(null);
-        return;
+        return false;
       }
       const data = res.data && typeof res.data === "object" ? res.data : null;
       if (data?.id && isHidden(data.id)) {
         setNotice(null);
-        return;
+        return true;
       }
       setNotice(data);
+      return true;
     } catch (e) {
       setError(e?.message || "fetch_failed");
       setNotice(null);
+      return false;
     }
   };
 
   useEffect(() => {
-    fetchNotice();
-    const id = setInterval(fetchNotice, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    const schedule = createNoticePollingSchedule({ intervalMs: NOTICE_POLL_INTERVAL_MS });
+    let cancelled = false;
+    let pollTimer = null;
+    let inFlight = false;
+
+    const scheduleNextTick = () => {
+      if (cancelled) return;
+      pollTimer = setTimeout(() => {
+        pollTimer = null;
+        void runTick();
+      }, schedule.nextDelayMs());
+    };
+
+    const runTick = async () => {
+      if (cancelled) return;
+      if (schedule.shouldSkipHiddenTick(document.hidden) || inFlight) {
+        scheduleNextTick();
+        return;
+      }
+      inFlight = true;
+      let ok = false;
+      try {
+        ok = await fetchNotice();
+      } finally {
+        inFlight = false;
+      }
+      if (cancelled) return;
+      if (ok) {
+        schedule.noteSuccess();
+      } else {
+        schedule.noteFailure();
+      }
+      scheduleNextTick();
+    };
+
+    const runImmediateCheck = () => {
+      if (cancelled || document.hidden || inFlight) return;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      void runTick();
+    };
+
+    void runTick();
+    document.addEventListener("visibilitychange", runImmediateCheck);
+    window.addEventListener("focus", runImmediateCheck);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", runImmediateCheck);
+      window.removeEventListener("focus", runImmediateCheck);
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
