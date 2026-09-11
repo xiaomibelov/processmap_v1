@@ -210,6 +210,19 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       getSessionId: () => String(refs.activeSessionRef?.current || ""),
       debounceMs: AUTOSAVE_CONFIG.coordinator.debounceMs,
       getIsDragging: () => isDiagramDragging(),
+      getIsDirectEditing: () => {
+        try {
+          const inst = refs.modelerRef?.current;
+          const directEditing = inst?.get?.("directEditing");
+          return !!(
+            directEditing
+            && typeof directEditing.isActive === "function"
+            && directEditing.isActive()
+          );
+        } catch {
+          return false;
+        }
+      },
       dragThrottleMs: AUTOSAVE_CONFIG.coordinator.dragThrottleMs,
       dragFinalDebounceMs: AUTOSAVE_CONFIG.coordinator.dragFinalDebounceMs,
       persistence: {

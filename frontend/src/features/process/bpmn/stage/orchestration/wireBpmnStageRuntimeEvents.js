@@ -392,6 +392,27 @@ function bindContextMenuRuntimeEvents({
   eventBus.on("directEditing.complete", 2300, () => setFlag("directEditingActive", false));
   eventBus.on("directEditing.cancel", 2300, () => setFlag("directEditingActive", false));
 
+  // Клик ВНЕ direct-editing (включая app chrome за пределами canvas)
+  // коммитит редактирование: vanilla bpmn-js завершает editing только по
+  // canvas-событиям (element.mousedown, selection.changed и пр.), а
+  // UX-контракт приложения — по любому внешнему клику (контур
+  // fix/canvas-250-editing-performance, E2E canvas-heavy-editing).
+  if (typeof document !== "undefined") {
+    const onDocumentMouseDown = (nativeEvent) => {
+      try {
+        const directEditing = inst?.get?.("directEditing");
+        if (!directEditing || typeof directEditing.isActive !== "function" || !directEditing.isActive()) return;
+        const targetNode = nativeEvent?.target instanceof Element ? nativeEvent.target : null;
+        if (targetNode instanceof Element && targetNode.closest?.(".djs-direct-editing-overlay")) return;
+        directEditing.complete();
+      } catch {
+        // ignore DOM/service failures
+      }
+    };
+    document.addEventListener("mousedown", onDocumentMouseDown, true);
+    recorder.addNative(document, "mousedown", onDocumentMouseDown, true);
+  }
+
   eventBus.on("drag.start", 2300, () => {
     setFlag("dragInProgress", true);
     emitDismiss("drag_start");

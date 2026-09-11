@@ -35,6 +35,9 @@ export default function createBpmnCoordinator(options = {}) {
     : {};
   const debounceMs = asNumber(options?.debounceMs, 600);
   const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
+  // Контур fix/canvas-250-editing-performance: direct-editing активен — модель
+  // ещё не содержит набираемый текст, flush посреди редактирования бессмыслен.
+  const getIsDirectEditing = typeof options?.getIsDirectEditing === "function" ? options.getIsDirectEditing : () => false;
   const dragThrottleMs = Math.max(0, asNumber(options?.dragThrottleMs, 5000));
   const dragFinalDebounceMs = Math.max(0, asNumber(options?.dragFinalDebounceMs, 500));
   const onTrace = typeof options?.onTrace === "function" ? options.onTrace : null;
@@ -144,6 +147,17 @@ export default function createBpmnCoordinator(options = {}) {
       const hadPending = pendingPositionalChange;
       clearPositionalPending();
       if (hadPending) {
+        if (getIsDirectEditing()) {
+          // direct-editing активен: positional-состояние уже включено в
+          // throttled staging-снапшот (recovery cache), а backend-персист
+          // пройдёт по mutation pipeline после завершения редактирования
+          // (label commit → commandStack.changed → diagram.change → queue).
+          // Дублирующий flush с полной сериализацией O(n) пропускаем.
+          emit("SAVE_POSITIONAL_FINAL_DEFERRED_DIRECT_EDITING", {
+            sid: currentSid(),
+          });
+          return;
+        }
         void flushSave("autosave");
       }
     }, dragFinalDebounceMs);

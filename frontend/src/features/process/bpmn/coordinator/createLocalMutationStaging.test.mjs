@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import createBpmnStore from "../store/createBpmnStore.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function makeStaging(store, overrides = {}) {
   const cacheCalls = [];
   const emitted = [];
@@ -83,7 +87,7 @@ test("stageRuntimeChange requests autosave for structural commands", async () =>
   assert.deepEqual(autosaveReasons, ["autosave"]);
 });
 
-test("stageRuntimeChange preserves current staging behavior for unspecified commands", async () => {
+test("stageRuntimeChange coalesces structural command serialization into the throttled snapshot", async () => {
   const store = createBpmnStore({
     xml: "<bpmn:definitions id=\"old\"/>",
     rev: 5,
@@ -101,34 +105,47 @@ test("stageRuntimeChange preserves current staging behavior for unspecified comm
 
   const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "connection.create" });
 
+  // In-frame: синхронный dirty-mark без полной сериализации (контур
+  // fix/canvas-250-editing-performance — полный saveXML на каждую команду
+  // был O(n) на схемах 250+ элементов).
   assert.equal(result.ok, true);
   assert.equal(result.sessionId, "sid_local_mutation_staging");
   assert.equal(result.source, "runtime_change");
-  assert.equal(result.xml, "<bpmn:definitions id=\"new\"/>");
-  assert.equal(result.xmlAuthority, "staged_local_runtime_snapshot");
-  assert.equal(result.xmlExportMode, "runtime_unformatted");
+  assert.equal(result.xml, "<bpmn:definitions id=\"old\"/>");
+  assert.equal(result.xmlAuthority, "staged_local_store_fallback");
+  assert.equal(result.xmlExportMode, "store_fallback");
   assert.equal(result.rev, 6);
   assert.equal(result.dirty, true);
   assert.equal(result.autosaveRequested, true);
   assert.equal(getOnRuntimeChangeCalls(), 1);
-  assert.deepEqual(getXmlCalls, [{ format: false }]);
+  assert.deepEqual(getXmlCalls, [], "structural command must not serialize in-frame");
   assert.deepEqual(autosaveReasons, ["autosave"]);
-  assert.equal(store.getState().xml, "<bpmn:definitions id=\"new\"/>");
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"old\"/>");
   assert.equal(store.getState().rev, 6);
   assert.equal(store.getState().dirty, true);
-  assert.deepEqual(cacheCalls, [
-    {
-      sid: "sid_local_mutation_staging",
-      xml: "<bpmn:definitions id=\"new\"/>",
-      rev: 6,
-      reason: "runtime_change",
-    },
-  ]);
+  assert.deepEqual(cacheCalls, [], "recovery cache is fed by the throttled snapshot");
   assert.equal(emitted.length, 1);
   assert.equal(emitted[0].event, "REV_BUMP");
   assert.equal(emitted[0].payload.sid, "sid_local_mutation_staging");
   assert.equal(emitted[0].payload.rev, 6);
   assert.equal(emitted[0].payload.reason, "runtime_change");
+
+  // Trailing edge окна 300 мс: ровно одна сериализация + cacheRaw.
+  await sleep(360);
+  assert.deepEqual(getXmlCalls, [{ format: false }]);
+  assert.equal(store.getState().xml, "<bpmn:definitions id=\"new\"/>");
+  assert.equal(store.getState().rev, 7);
+  assert.deepEqual(cacheCalls, [
+    {
+      sid: "sid_local_mutation_staging",
+      xml: "<bpmn:definitions id=\"new\"/>",
+      rev: 7,
+      reason: "runtime_change_throttled",
+    },
+  ]);
+  assert.equal(emitted.length, 2);
+  assert.equal(emitted[1].event, "REV_BUMP");
+  assert.equal(emitted[1].payload.reason, "runtime_change_throttled");
 });
 
 test("stageRuntimeChange is a no-op without store or session", async () => {
