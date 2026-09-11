@@ -69,16 +69,17 @@ async function createFixture(request, runId, headers) {
   });
   const project = await apiJson(projectRes, "create project");
   const projectId = String(project.id || project.project_id || "").trim();
-  const sessionRes = await request.post(`${API_BASE}/api/projects/${projectId}/sessions`, {
+  const sessionRes = await request.post(`${API_BASE}/api/projects/${projectId}/sessions?mode=quick_skeleton`, {
     headers,
-    data: { title: `E2E polling session ${runId}` },
+    data: { title: `E2E polling session ${runId}`, roles: ["Оператор"], start_role: "Оператор" },
   });
   const session = await apiJson(sessionRes, "create session");
   const sessionId = String(session.id || session.session_id || "").trim();
   const xml = seedXml(140);
+  // Контракт канонического helper processFixture.mjs: поле xml + обе базовые версии.
   const putRes = await request.put(`${API_BASE}/api/sessions/${sessionId}/bpmn`, {
     headers,
-    data: { bpmn_xml: xml, base_diagram_state_version: 0 },
+    data: { xml, base_diagram_state_version: 0, base_bpmn_xml_version: 0 },
   });
   await apiJson(putRes, "seed bpmn xml");
   return { projectId, sessionId, orgId: String(project.org_id || "") };
@@ -86,6 +87,9 @@ async function createFixture(request, runId, headers) {
 
 async function installNetCounter(page) {
   await page.addInitScript(() => {
+    // E2E-инструментация приложения (хуки __FPC_E2E_DRAFT__ /
+    // __FPC_E2E_OPEN_SESSION__ ставятся только при флаге ДО загрузки App).
+    window.__FPC_E2E__ = true;
     window.__e2eNet = { log: [] };
     const push = (method, url) => {
       try {
