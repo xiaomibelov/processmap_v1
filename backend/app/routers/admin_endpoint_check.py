@@ -14,7 +14,6 @@ import hmac
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Query, Request
-from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 
 from .. import _legacy_main
@@ -25,11 +24,6 @@ from .api_docs import _api_docs_access
 router = APIRouter()
 
 DEPLOY_TOKEN_HEADER = "x-deploy-token"
-
-
-class EndpointCheckRunIn(BaseModel):
-    profile: str = "read_only"
-    save_chain: list[str] = Field(default_factory=list)
 
 
 def _unauthorized() -> JSONResponse:
@@ -84,8 +78,6 @@ def _run_brief(run: Dict[str, Any]) -> Dict[str, Any]:
             "env": run.get("version_env"),
         },
         "requested_by": run.get("requested_by"),
-        "profile": summary.get("profile") or "read_only",
-        "save_chain": summary.get("save_chain") or [],
         "counts": summary.get("counts") or {},
         "diff": summary.get("diff") or {},
         "error": run.get("error") or "",
@@ -93,7 +85,7 @@ def _run_brief(run: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.post("/api/admin/endpoint-check/run")
-def admin_endpoint_check_run(request: Request, inp: EndpointCheckRunIn = EndpointCheckRunIn()) -> Any:
+def admin_endpoint_check_run(request: Request) -> Any:
     trigger, requested_by, err = _run_auth(request)
     if err is not None:
         return err
@@ -101,21 +93,17 @@ def admin_endpoint_check_run(request: Request, inp: EndpointCheckRunIn = Endpoin
         # Не ошибка: деплой-шаг не должен падать при выключенном флаге.
         return {"ok": True, "skipped": True, "reason": "run_on_deploy disabled"}
     try:
-        profile = "read_only" if trigger == "deploy" else inp.profile
-        outcome = service.request_run(trigger=trigger, requested_by=requested_by, profile=profile, save_chain=inp.save_chain)
+        outcome = service.request_run(trigger=trigger, requested_by=requested_by)
     except service.ScanConflictError as exc:
         return JSONResponse(
             status_code=409,
             content={"detail": "scan_already_running", "run_id": exc.run_id},
         )
-    except ValueError as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
     payload = {
         "ok": True,
         "run_id": outcome["run_id"],
         "status": outcome["status"],
         "trigger": outcome["trigger"],
-        "profile": profile,
     }
     if outcome.get("debounced"):
         payload["debounced"] = True
@@ -135,8 +123,6 @@ def admin_endpoint_check_status(request: Request) -> Any:
             "run_id": active.get("id"),
             "status": active.get("status"),
             "trigger": active.get("trigger"),
-            "profile": summary.get("profile") or "read_only",
-            "save_chain": summary.get("save_chain") or [],
             "started_at": active.get("started_at"),
             "progress": summary.get("progress") or {},
         }
@@ -185,5 +171,4 @@ def admin_endpoint_check_run_detail(run_id: str, request: Request) -> Any:
         "not_scanned": summary.get("not_scanned") or {},
         "blind_zone": summary.get("blind_zone") or [],
         "resolved_ids": summary.get("resolved_ids") or {},
-        "pipeline_coverage": summary.get("pipeline_coverage") or {},
     }

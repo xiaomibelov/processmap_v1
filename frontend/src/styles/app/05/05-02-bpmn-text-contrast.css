@@ -88,11 +88,6 @@
   --bpmn-flash-notes: hsl(var(--diagram-notes));
   --bpmn-flash-sync: hsl(var(--diagram-dod));
   --bpmn-flash-flow: hsl(var(--diagram-coverage-med));
-  /* feat/canvas-edit-highlight: вспышки по типу правки агента */
-  --bpmn-flash-add: rgba(34, 197, 94, 0.95);
-  --bpmn-flash-update: rgba(250, 204, 21, 0.95);
-  --bpmn-flash-delete: rgba(248, 113, 113, 0.98);
-  --bpmn-agent-edit-active: hsl(var(--diagram-ai));
 }
 
 .light .bpmnStage {
@@ -124,11 +119,6 @@
   --bpmn-flash-notes: hsl(var(--diagram-notes));
   --bpmn-flash-sync: hsl(var(--diagram-dod));
   --bpmn-flash-flow: hsl(var(--diagram-coverage-med));
-  /* feat/canvas-edit-highlight: вспышки по типу правки агента */
-  --bpmn-flash-add: rgba(22, 163, 74, 0.95);
-  --bpmn-flash-update: rgba(217, 119, 6, 0.95);
-  --bpmn-flash-delete: rgba(220, 38, 38, 0.95);
-  --bpmn-agent-edit-active: hsl(var(--diagram-ai));
 }
 
 /* minimal light-theme visibility boost for core BPMN primitives only */
@@ -374,49 +364,6 @@
   stroke: color-mix(in srgb, var(--bpmn-flash-flow) 84%, #fde68a) !important;
   stroke-width: 3px !important;
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-flow) 56%, transparent));
-}
-
-/* feat/canvas-edit-highlight: applied-вспышки по типу операции (add/update/delete) */
-.bpmnCanvas .djs-element.fpcNodeFlashAdd:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
-.bpmnCanvas .djs-connection.fpcNodeFlashAdd .djs-visual > path[data-corner-radius] {
-  stroke: var(--bpmn-flash-add) !important;
-  stroke-width: 3px !important;
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-add) 58%, transparent));
-}
-
-.bpmnCanvas .djs-element.fpcNodeFlashUpdate:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
-.bpmnCanvas .djs-connection.fpcNodeFlashUpdate .djs-visual > path[data-corner-radius] {
-  stroke: var(--bpmn-flash-update) !important;
-  stroke-width: 3px !important;
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-update) 56%, transparent));
-}
-
-.bpmnCanvas .djs-element.fpcNodeFlashDelete:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
-.bpmnCanvas .djs-connection.fpcNodeFlashDelete .djs-visual > path[data-corner-radius] {
-  stroke: var(--bpmn-flash-delete) !important;
-  stroke-width: 3px !important;
-  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--bpmn-flash-delete) 58%, transparent));
-}
-
-/* feat/canvas-edit-highlight: «сейчас правится» — пульс до решения пользователя */
-.bpmnCanvas .djs-element.fpcAgentEditActive:not(.fpcElementSelected) .djs-visual > :is(rect, circle, ellipse, polygon, path),
-.bpmnCanvas .djs-connection.fpcAgentEditActive .djs-visual > path[data-corner-radius] {
-  stroke: var(--bpmn-agent-edit-active) !important;
-  stroke-width: 2.75px !important;
-  animation: fpcAgentEditPulse 1.6s ease-in-out infinite;
-}
-
-@keyframes fpcAgentEditPulse {
-  0%, 100% { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--bpmn-agent-edit-active) 30%, transparent)); }
-  50% { filter: drop-shadow(0 0 12px color-mix(in srgb, var(--bpmn-agent-edit-active) 65%, transparent)); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bpmnCanvas .djs-element.fpcAgentEditActive .djs-visual > :is(rect, circle, ellipse, polygon, path),
-  .bpmnCanvas .djs-connection.fpcAgentEditActive .djs-visual > path[data-corner-radius] {
-    animation: none;
-    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--bpmn-agent-edit-active) 50%, transparent));
-  }
 }
 
 .bpmnCanvas .djs-element.fpcFocusNeighbor:not(.fpcElementSelected):not(.fpcBottleneckHigh):not(.fpcBottleneckMedium):not(.fpcBottleneckLow):not(.fpcQualityIssueFocus):not(.fpcQualityProblem) .djs-visual > :is(rect, circle, ellipse, polygon, path) {

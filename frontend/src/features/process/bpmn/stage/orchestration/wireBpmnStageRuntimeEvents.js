@@ -1,7 +1,5 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
 import { resolveProcessLikeRootElement } from "../interaction/processRootSelection.js";
-import { collectOperationElementIds } from "../viewport/cullBpmnViewport.js";
-import { shouldRefreshDecorForCommand } from "../fanout/postStagingFanout.js";
 
 const CANVAS_PROCESS_HOVER_CLASS = "fpcCanvasProcessHoverHint";
 
@@ -629,17 +627,24 @@ export function bindModelerStageEvents({
     OVERLAY_PAN_DEBOUNCE_MS,
   );
 
-  // Modeling only needs the active element and its direct graph dependencies.
-  // Reattaching every culled gfx here creates a large synchronous first frame.
-  if (viewportCuller?.restoreElements) {
-    const restoreOperationElements = (event) => {
-      viewportCuller.restoreElements(collectOperationElementIds(event));
-    };
-    eventBus.on("shape.move.start", 5000, restoreOperationElements);
-    eventBus.on("create.start", 5000, restoreOperationElements);
-    eventBus.on("connect.start", 5000, restoreOperationElements);
-    eventBus.on("resize.start", 5000, restoreOperationElements);
-    eventBus.on("replace.start", 5000, restoreOperationElements);
+  // Restore culled elements before any modeling operation to avoid
+  // bpmn-js DOM errors (e.g. insertBefore on detached nodes).
+  if (viewportCuller?.restoreAll) {
+    eventBus.on("shape.move.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("create.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("connect.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("resize.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("replace.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
   }
 
   // Drag lifecycle: notify the rest of the stage so autosave/sidebar can pause.
@@ -666,10 +671,7 @@ export function bindModelerStageEvents({
     eventBus.on(event, 4900, () => setDiagramDragging(true));
   });
   dragEndEvents.forEach((event) => {
-    eventBus.on(event, 4900, () => {
-      setDiagramDragging(false);
-      viewportCuller?.scheduleCull?.();
-    });
+    eventBus.on(event, 4900, () => setDiagramDragging(false));
   });
 
   eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
@@ -678,22 +680,10 @@ export function bindModelerStageEvents({
   eventBus.on("commandStack.shape.replace.postExecute", 2200, (ev) => {
     applyShapeReplacePost(inst, ev, "commandStack.shape.replace.postExecute");
   });
-  eventBus.on("commandStack.changed", 900, (event) => {
-    let command = String(event?.command || event?.context?.command || "").trim();
-    if (!command) {
-      try {
-        const stack = inst.get("commandStack")?._stack;
-        const top = Array.isArray(stack) && stack.length ? stack[stack.length - 1] : null;
-        command = String(top?.command || top?.id || "").trim();
-      } catch {
-        command = "";
-      }
-    }
-    const refreshDecor = shouldRefreshDecorForCommand(command);
-    if (refreshDecor) invalidateShapeTitleLookup(inst.get("elementRegistry"));
+  eventBus.on("commandStack.changed", 900, () => {
+    invalidateShapeTitleLookup(inst.get("elementRegistry"));
     runImmediateEditorFanout({
       inst,
-      refreshDecor,
       applyTaskTypeDecor,
       applyLinkEventDecor,
       applyHappyFlowDecor,

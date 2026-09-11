@@ -78,26 +78,20 @@ def _legacy_load_project_scoped(
 
 
 
-def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> Optional[Dict[str, Any]]:
-    """Invalidate children rollups; returns targets (incl. workspace_id) for reuse.
-
-    perf/save-path-decoupling-v1 (P1): callers reuse targets["workspace_id"]
-    instead of a second DB read (_workspace_id_for_project).
-    """
+def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> None:
     pid = str(project_id or "").strip()
     oid = _resolved_org_for_cache(org_id)
     if not pid or not oid:
-        return None
+        return
     try:
         targets = get_project_explorer_invalidation_targets(oid, pid)
     except Exception:
         targets = None
     if not targets:
-        return None
+        return
     wid = str(targets.get("workspace_id") or "").strip()
     for folder_id in (targets.get("children_folder_ids") or []):
         explorer_invalidate_children(oid, wid, str(folder_id or ""))
-    return targets
 
 
 

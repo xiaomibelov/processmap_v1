@@ -1,5 +1,3 @@
-// DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 const { chromium } = require("playwright");
 
 const BASE = "http://clearvestnic.ru:5177";

@@ -9,13 +9,10 @@ function asDataObject(r) {
   return { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} };
 }
 
-export async function runCheck({ profile = "read_only", saveChain = [] } = {}) {
+export async function runCheck() {
   // 202 {run_id, status, trigger} | 409 {detail: "scan_already_running", run_id} —
   // не-ok ответы (409/403/сеть) возвращаются как есть, с r.status и r.data.
-  const r = okOrError(await request(apiRoutes.admin.endpointCheckRun(), {
-    method: "POST",
-    body: { profile, save_chain: Array.isArray(saveChain) ? saveChain : [] },
-  }));
+  const r = okOrError(await request(apiRoutes.admin.endpointCheckRun(), { method: "POST" }));
   return r.ok ? asDataObject(r) : r;
 }
 

@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # PR: canvas-navigation-stability
 
 - **Title:** [fix] Стабильность канваса, навигации и статуса сессии

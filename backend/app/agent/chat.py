@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Request
 
-from ..ai.error_sanitize import sanitize_llm_error
 from ..ai.gateway import complete
 from ..schemas.agent_chat import AgentChatIn, AgentChatOut
 from .action_runners import run_explain_step, run_step_qa, run_suggest_next
@@ -83,23 +82,6 @@ def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
         return json.loads(candidate)
     except Exception:
         return None
-
-
-_ACTION_FALLBACK_TEXTS = {
-    "ru": (
-        "Не смог выполнить действие на схеме: похоже, схема пустая или указанный шаг не найден. "
-        "Добавьте шаги на схему и повторите вопрос."
-    ),
-    "en": (
-        "I couldn't run that action on the diagram: it looks empty or the step wasn't found. "
-        "Add steps to the diagram and try again."
-    ),
-}
-
-
-def _action_fallback_text(user_message: str) -> str:
-    lang = "ru" if re.search(r"[А-Яа-яЁё]", str(user_message or "")) else "en"
-    return _ACTION_FALLBACK_TEXTS[lang]
 
 
 def _usage_out(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -211,8 +193,7 @@ def run_turn(
     # Handle gateway-level non-ok statuses: still persist assistant turn for retry context.
     if not result.get("ok"):
         status = str(result.get("status") or "error")
-        # S1: сырой текст ошибки провайдера (URL upstream) не прокидываем наружу.
-        error_text = sanitize_llm_error(status, str(result.get("error") or ""))
+        error_text = str(result.get("error") or "")
         assistant_text = f"[{status}] {error_text}" if error_text else status
         append_turn(
             sid,
@@ -240,7 +221,6 @@ def run_turn(
     action_name: Optional[str] = None
     action_payload: Dict[str, Any] = {}
     assistant_message = llm_text
-    has_fence = bool(re.search(r"```", llm_text))
 
     if action_obj and isinstance(action_obj, dict):
         possible_action = str(action_obj.get("action") or "").strip()
@@ -250,16 +230,6 @@ def run_turn(
                 action_name = possible_action
                 action_payload = action_result
                 assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
-            else:
-                # action валиден, но не выполнился (пустая схема/unknown step):
-                # сырой JSON не показываем (N1/M3, audit llm-agent-audit-v1).
-                assistant_message = _action_fallback_text(payload.message)
-        elif possible_action or has_fence:
-            # не-whitelist action-JSON или fenced-блок без ключа action
-            assistant_message = _action_fallback_text(payload.message)
-    elif has_fence:
-        # fenced-блок, который не распарсился как JSON
-        assistant_message = _action_fallback_text(payload.message)
 
     append_turn(
         sid,

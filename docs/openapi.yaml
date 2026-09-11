@@ -261,10 +261,6 @@ components:
           type: boolean
       title: AdminUserPermissionSet
       type: object
-    AgentAnalysisRunIn:
-      properties: {}
-      title: AgentAnalysisRunIn
-      type: object
     AgentChatIn:
       properties:
         client_turn_id:
@@ -600,23 +596,6 @@ components:
       required:
       - recipe_id
       title: BindingCreate
-      type: object
-    Body_admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post:
-      properties:
-        analysis_json:
-          description: .graphify_analysis.json produced by graphify analysis
-          format: binary
-          title: Analysis Json
-          type: string
-        graph_json:
-          description: graph.json produced by graphify analysis
-          format: binary
-          title: Graph Json
-          type: string
-      required:
-      - graph_json
-      - analysis_json
-      title: Body_admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post
       type: object
     Body_import_bpmn_api_process_templates_import_bpmn_post:
       properties:
@@ -1304,19 +1283,6 @@ components:
       - created_at
       title: DeploymentNoticeOut
       type: object
-    EndpointCheckRunIn:
-      properties:
-        profile:
-          default: read_only
-          title: Profile
-          type: string
-        save_chain:
-          items:
-            type: string
-          title: Save Chain
-          type: array
-      title: EndpointCheckRunIn
-      type: object
     ErrorEventIn:
       additionalProperties: false
       description: Input payload for ingesting an error/telemetry event.
@@ -1459,24 +1425,6 @@ components:
       - kind
       - term
       title: GlossaryAddIn
-      type: object
-    GraphRebuildCheckOut:
-      properties:
-        message:
-          title: Message
-          type: string
-        missing_files:
-          items:
-            type: string
-          title: Missing Files
-          type: array
-        ok:
-          title: Ok
-          type: boolean
-      required:
-      - ok
-      - message
-      title: GraphRebuildCheckOut
       type: object
     GroupCreateIn:
       properties:
@@ -2662,13 +2610,6 @@ components:
       type: object
     ProjectPage:
       properties:
-        breadcrumbs:
-          items:
-            $ref: '#/components/schemas/BreadcrumbItem'
-          title: Breadcrumbs
-          type: array
-        context:
-          $ref: '#/components/schemas/ContextOut'
         project:
           $ref: '#/components/schemas/ProjectItem'
         sessions:
@@ -2677,8 +2618,6 @@ components:
           title: Sessions
           type: array
       required:
-      - context
-      - breadcrumbs
       - project
       - sessions
       title: ProjectPage
@@ -2724,15 +2663,6 @@ components:
           type: string
       title: RagIndexAllIn
       type: object
-    RagIndexDictionariesIn:
-      properties:
-        force:
-          default: false
-          description: Reindex even if content hash matches
-          title: Force
-          type: boolean
-      title: RagIndexDictionariesIn
-      type: object
     RagIndexIn:
       properties:
         force:
@@ -2744,8 +2674,7 @@ components:
           title: Session Id
           type: string
         source_type:
-          description: '''bpmn_xml'', ''product_action'', ''property_dictionary'',
-            ''operation_catalog'', or ''glossary'''
+          description: '''bpmn_xml'' or ''product_action'''
           title: Source Type
           type: string
       required:
@@ -2814,30 +2743,12 @@ components:
           type: array
       title: RolloutIn
       type: object
-    SessionAssigneesReplaceIn:
-      example:
-        user_ids:
-        - user_1
-        - user_2
-      properties:
-        user_ids:
-          items:
-            type: string
-          title: User Ids
-          type: array
-      title: SessionAssigneesReplaceIn
-      type: object
     SessionItem:
       properties:
         activity_count:
           default: 0
           title: Activity Count
           type: integer
-        assignees:
-          items:
-            type: object
-          title: Assignees
-          type: array
         attention_count:
           default: 0
           title: Attention Count
@@ -4198,16 +4109,6 @@ paths:
       description: 'Создать/выполнить run. Особенности: доступ: администратор платформы/организации;
         тело валидируется схемой (422 при несоответствии).'
       operationId: admin_endpoint_check_run_api_admin_endpoint_check_run_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              allOf:
-              - $ref: '#/components/schemas/EndpointCheckRunIn'
-              default:
-                profile: read_only
-                save_chain: []
-              title: Inp
       responses:
         '200':
           content:
@@ -4222,12 +4123,6 @@ paths:
         '403':
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
       security:
       - bearerAuth: []
       summary: Создать/выполнить run
@@ -4588,253 +4483,6 @@ paths:
       summary: Сохранить (replace) feature flags
       tags:
       - feature-flags
-  /api/admin/graphs/analytics:
-    get:
-      description: 'Получить аналитику. Особенности: доступ: администратор платформы/организации.'
-      operationId: admin_graphs_analytics_api_admin_graphs_analytics_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Analytics Api Admin Graphs Analytics
-                  Get
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '404':
-          description: No current graph snapshot
-      security:
-      - bearerAuth: []
-      summary: Получить аналитику
-      tags:
-      - admin
-  /api/admin/graphs/rebuild:
-    post:
-      description: 'Создать/выполнить rebuild. Особенности: доступ: администратор
-        платформы/организации; тело валидируется схемой (422 при несоответствии).'
-      operationId: admin_graphs_rebuild_api_admin_graphs_rebuild_post
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Rebuild Api Admin Graphs Rebuild Post
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '409':
-          description: Required input files missing; upload a snapshot first
-      security:
-      - bearerAuth: []
-      summary: Создать/выполнить rebuild
-      tags:
-      - admin
-  /api/admin/graphs/rebuild/check:
-    get:
-      description: 'Получить check. Особенности: доступ: администратор платформы/организации.'
-      operationId: admin_graphs_rebuild_check_api_admin_graphs_rebuild_check_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GraphRebuildCheckOut'
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: Forbidden
-      security:
-      - bearerAuth: []
-      summary: Получить check
-      tags:
-      - admin
-  /api/admin/graphs/rebuild/{job_id}:
-    get:
-      description: 'Получить rebuild. Особенности: доступ: администратор платформы/организации;
-        404 — ресурс не найден/вне scope.'
-      operationId: admin_graphs_rebuild_status_api_admin_graphs_rebuild__job_id__get
-      parameters:
-      - in: path
-        name: job_id
-        required: true
-        schema:
-          title: Job Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Rebuild Status Api Admin Graphs Rebuild  Job
-                  Id  Get
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '404':
-          description: Rebuild job not found
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Получить rebuild
-      tags:
-      - admin
-  /api/admin/graphs/snapshot/current:
-    get:
-      description: 'Получить current. Особенности: доступ: администратор платформы/организации.'
-      operationId: admin_graphs_current_snapshot_api_admin_graphs_snapshot_current_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Current Snapshot Api Admin Graphs Snapshot
-                  Current Get
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '404':
-          description: No current graph snapshot
-      security:
-      - bearerAuth: []
-      summary: Получить current
-      tags:
-      - admin
-  /api/admin/graphs/snapshot/current/html:
-    get:
-      description: 'Получить html. Особенности: доступ: администратор платформы/организации.'
-      operationId: admin_graphs_current_html_api_admin_graphs_snapshot_current_html_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Current Html Api Admin Graphs Snapshot
-                  Current Html Get
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '404':
-          description: No current graph snapshot or graph.html missing
-      security:
-      - bearerAuth: []
-      summary: Получить html
-      tags:
-      - admin
-  /api/admin/graphs/snapshot/current/json:
-    get:
-      description: 'Получить json. Особенности: доступ: администратор платформы/организации.'
-      operationId: admin_graphs_current_json_api_admin_graphs_snapshot_current_json_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Current Json Api Admin Graphs Snapshot
-                  Current Json Get
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '404':
-          description: No current graph snapshot or graph JSON missing
-      security:
-      - bearerAuth: []
-      summary: Получить json
-      tags:
-      - admin
-  /api/admin/graphs/snapshots:
-    get:
-      description: 'Получить snapshots. Особенности: доступ: администратор платформы/организации.'
-      operationId: admin_graphs_snapshots_api_admin_graphs_snapshots_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Snapshots Api Admin Graphs Snapshots
-                  Get
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-      security:
-      - bearerAuth: []
-      summary: Получить snapshots
-      tags:
-      - admin
-    post:
-      description: 'Создать/выполнить snapshots. Особенности: доступ: администратор
-        платформы/организации; тело валидируется схемой (422 при несоответствии).'
-      operationId: admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_admin_graphs_upload_snapshot_api_admin_graphs_snapshots_post'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Admin Graphs Upload Snapshot Api Admin Graphs Snapshots
-                  Post
-          description: Successful Response
-        '400':
-          description: Invalid JSON or missing required fields
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '403':
-          description: 'Доступ запрещён: требуется роль admin или членство в организации
-            с нужными правами'
-        '413':
-          description: Uploaded files too large
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Создать/выполнить snapshots
-      tags:
-      - admin
   /api/admin/invites/{invite_id}/permissions:
     get:
       description: 'Получить permissions. Особенности: доступ: администратор платформы/организации;
@@ -14105,41 +13753,6 @@ paths:
       tags:
       - rag
       - rag
-  /api/rag/index-dictionaries:
-    post:
-      description: 'Admin/org-admin bulk index of org-level dictionaries: property_dictionary,
-        operation_catalog, glossary.'
-      operationId: rag_index_dictionaries_api_rag_index_dictionaries_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RagIndexDictionariesIn'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Rag Index Dictionaries Api Rag Index Dictionaries
-                  Post
-                type: object
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Создать/выполнить index dictionaries
-      tags:
-      - rag
-      - rag
   /api/rag/product-actions/index:
     post:
       description: 'Создать/выполнить index. Особенности: доступ: член организации
@@ -15081,96 +14694,6 @@ paths:
       summary: Сохранить сессию процесса целиком
       tags:
       - sessions
-  /api/sessions/{session_id}/agent-analysis:
-    get:
-      description: 'Получить сессию процесса. Особенности: доступ: член организации
-        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
-      operationId: agent_analysis_status_api_sessions__session_id__agent_analysis_get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      - in: query
-        name: job_id
-        required: false
-        schema:
-          default: ''
-          title: Job Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Agent Analysis Status Api Sessions  Session Id  Agent
-                  Analysis Get
-                type: object
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Получить сессию процесса
-      tags:
-      - agent-analysis
-      - agent-analysis
-    post:
-      description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
-        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);
-        404 — ресурс не найден/вне scope.'
-      operationId: run_agent_analysis_api_sessions__session_id__agent_analysis_post
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              allOf:
-              - $ref: '#/components/schemas/AgentAnalysisRunIn'
-              title: Inp
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Run Agent Analysis Api Sessions  Session Id  Agent
-                  Analysis Post
-                type: object
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Создать/выполнить сессию процесса
-      tags:
-      - agent-analysis
-      - agent-analysis
   /api/sessions/{session_id}/agent/audit:
     post:
       description: Write an audit log entry for an agent edit (best-effort, never
@@ -15873,83 +15396,6 @@ paths:
       summary: Создать/выполнить сессию процесса
       tags:
       - sessions
-  /api/sessions/{session_id}/assignees:
-    get:
-      description: 'Получить сессию процесса. Особенности: доступ: член организации
-        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
-      operationId: get_session_assignees_api_sessions__session_id__assignees_get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Получить сессию процесса
-      tags:
-      - sessions
-    put:
-      description: 'Сохранить (replace) сессию процесса. Особенности: доступ: член
-        организации с нужной ролью (org-scope); тело валидируется схемой (422 при
-        несоответствии); 404 — ресурс не найден/вне scope.'
-      operationId: put_session_assignees_api_sessions__session_id__assignees_put
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SessionAssigneesReplaceIn'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
-        '409':
-          description: 'Конфликт версий: ресурс изменился на сервере (см. base_diagram_state_version
-            / retry)'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Сохранить (replace) сессию процесса
-      tags:
-      - sessions
   /api/sessions/{session_id}/auto-pass:
     get:
       description: 'Получить сессию процесса. Особенности: доступ: член организации
@@ -16620,46 +16066,6 @@ paths:
       - explorer
       - explorer
   /api/sessions/{session_id}/create-subprocesses:
-    get:
-      description: 'Получить сессию процесса. Особенности: доступ: член организации
-        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
-      operationId: get_create_subprocess_sessions_api_sessions__session_id__create_subprocesses_get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      - in: query
-        name: load_all
-        required: false
-        schema:
-          default: false
-          title: Load All
-          type: boolean
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Получить сессию процесса
-      tags:
-      - sessions
     post:
       description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
         с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);
@@ -19218,8 +18624,6 @@ tags:
   name: admin
 - description: agent
   name: agent
-- description: agent-analysis
-  name: agent-analysis
 - description: Аналитика процессов и орг-дашборды
   name: analytics
 - description: Журнал аудита действий

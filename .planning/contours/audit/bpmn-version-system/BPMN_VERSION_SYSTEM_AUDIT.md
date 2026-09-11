@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # Исследование системы версий BPMN-сессий ProcessMap
 
 **Дата:** 2026-07-01  
