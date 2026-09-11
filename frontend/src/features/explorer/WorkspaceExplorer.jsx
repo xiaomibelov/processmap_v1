@@ -2815,8 +2815,15 @@ function ExplorerPane({
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
 
   // Смена фильтра контура обнуляет кеши вложенных папок: дети должны
-  // перезапроситься с тем же ?stage.
+  // перезапроситься с тем же ?stage. Гард по prevStageKeyRef: без него эффект
+  // срабатывал бы и при смене workspace (setTreeStateForContext меняет
+  // identity вместе с contextKey), стирая кеш детей контекста при возврате
+  // в workspace — раскрытая папка оставалась бы пустой (баг C2 char-теста
+  // «tree state isolated per workspace context»).
+  const prevStageKeyRef = useRef(stageKey);
   useEffect(() => {
+    if (prevStageKeyRef.current === stageKey) return;
+    prevStageKeyRef.current = stageKey;
     setTreeStateForContext((prev) => ({
       ...prev,
       childItemsByFolder: {},
