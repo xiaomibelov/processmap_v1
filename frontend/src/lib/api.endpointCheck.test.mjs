@@ -30,21 +30,6 @@ test("runCheck: POST /api/admin/endpoint-check/run", async () => {
     assert.equal(String(mock.calls[0].init?.method || ""), "POST");
     const url = new URL(mock.calls[0].url, "http://local");
     assert.equal(url.pathname, "/api/admin/endpoint-check/run");
-    assert.equal(mock.calls[0].init.headers.get("Content-Type"), "application/json");
-    assert.deepEqual(JSON.parse(mock.calls[0].init.body), { profile: "read_only", save_chain: [] });
-  } finally {
-    mock.restore();
-  }
-});
-
-test("runCheck: sends save pipeline profile and terminal chain", async () => {
-  const mock = mockFetch(() => new Response(JSON.stringify({ run_id: "run_2" }), { status: 202, headers: { "Content-Type": "application/json" } }));
-  try {
-    await runCheck({ profile: "save_pipeline", saveChain: ["xml", "final_save"] });
-    assert.deepEqual(JSON.parse(mock.calls[0].init.body), {
-      profile: "save_pipeline",
-      save_chain: ["xml", "final_save"],
-    });
   } finally {
     mock.restore();
   }

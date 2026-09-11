@@ -30,12 +30,10 @@ import psycopg
 # 029–031 добавлены в P0-stage-unblock: ранее миграции существовали в коде,
 # но не были включены в LINEAR/MARKERS, из-за чего ALEMBIC_HEAD оставался 028,
 # а БД на stage уже была на 031 (degraded health).
-LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023", "024", "025", "026", "027", "028", "029", "030", "031", "032", "033", "034", "035", "036"]
+LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", "011", "012", "013", "014", "015", "016", "017", "018", "019", "020", "021", "022", "023", "024", "025", "026", "027", "028", "029", "030", "031", "032", "033", "034", "035"]
 
 # маркер «объект ревизии существует» (SELECT 1 ... LIMIT 1)
 MARKERS = {
-    # fix/agent-empty-schema-raw-json-v1: маркер 036 — active prompt v3 processman_agent (пустая схема).
-    "036": "SELECT 1 FROM llm_prompts WHERE id='llmprompt_processman_agent_v3' AND status='active' LIMIT 1",
     # fix/db-fk-integrity: маркер 035 — FK-констрейнт bpmn_versions_session_id_fkey.
     "035": "SELECT 1 FROM pg_constraint WHERE conname='bpmn_versions_session_id_fkey' LIMIT 1",
     # fix/alembic-duplicate-revision-033: маркер 034 — таблица session_assignees.

@@ -56,63 +56,6 @@ test("409 does NOT adopt server version into tracked base and arms conflict gate
   assert.equal(transportCalls, 1, "transport must not be called while gate is active");
 });
 
-test("non-CAS 409 does not arm the diagram conflict gate", async () => {
-  const c = createSaveCoordinator();
-  let transportCalls = 0;
-  c.registerPipeline("xml", {
-    debounceMs: 0,
-    retryCount: 0,
-    transport: async () => {
-      transportCalls += 1;
-      return {
-        ok: false,
-        status: 409,
-        data: { detail: { code: "SESSION_WRITE_CONFLICT" } },
-      };
-    },
-  });
-
-  const first = await c.execute("xml", { sessionId: "s_non_cas" });
-  const second = await c.execute("xml", { sessionId: "s_non_cas" });
-
-  assert.equal(first.status, 409);
-  assert.equal(second.status, 409);
-  assert.equal(c.getConflict("s_non_cas"), null);
-  assert.equal(transportCalls, 2, "a non-CAS 409 must not pause later diagram saves");
-});
-
-test("matching authoritative XML reconciles an acknowledged conflict without arming gate", async () => {
-  const c = createSaveCoordinator();
-  setTrackedDiagramStateVersion("s_reconciled", 7);
-  let reconciliations = 0;
-  c.registerPipeline("rawXml", {
-    debounceMs: 0,
-    retryCount: 0,
-    transport: async () => ({
-      ok: false,
-      status: 409,
-      data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 8 } },
-    }),
-    reconcileConflict: async (_response, _sid, builtPayload) => {
-      reconciliations += 1;
-      assert.equal(builtPayload.xml, "<bpmn:same/>");
-      return { ok: true, status: 200, diagramStateVersion: 8, reconciled: true };
-    },
-    getBaseVersion: (sid) => getTrackedDiagramStateVersion(sid),
-  });
-
-  const result = await c.execute("rawXml", {
-    sessionId: "s_reconciled",
-    xml: "<bpmn:same/>",
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.reconciled, true);
-  assert.equal(reconciliations, 1);
-  assert.equal(getTrackedDiagramStateVersion("s_reconciled"), 8);
-  assert.equal(c.getConflict("s_reconciled"), null);
-});
-
 test("resolveConflict('overwrite') explicitly adopts server base and unblocks saves", async () => {
   const c = createSaveCoordinator();
   setTrackedDiagramStateVersion("s1", 7);

@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # ProcessMap — 5-PLANE анализ (microservices migration contour)
 
 **Контур:** `/opt/processmap-test` на `root@clearvestnic.ru`, ветка `main`, HEAD `41abd486`.

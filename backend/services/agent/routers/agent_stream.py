@@ -16,7 +16,6 @@ from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("agent.stream")
 
-from gateway.error_sanitize import sanitize_llm_error
 from memory.chat import run_turn_stream
 from runners.monolith_client import MonolithError
 from schemas import AgentChatIn
@@ -79,9 +78,7 @@ def _stream_response(
             yield _sse_event(event_type, event_data)
     except Exception as exc:
         logger.exception("agent_stream unhandled exception session=%s", session_id)
-        # S1: непредвиденное исключение (в т.ч. с URL upstream) — generic наружу,
-        # полный текст остаётся в logger.exception выше.
-        yield _sse_event("error", {"status": "error", "error": sanitize_llm_error("error", f"{exc.__class__.__name__}: {exc}")})
+        yield _sse_event("error", {"status": "error", "error": f"{exc.__class__.__name__}: {exc}"})
 
 
 @router.post("/sessions/{session_id}/agent/stream")

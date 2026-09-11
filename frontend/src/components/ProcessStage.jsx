@@ -55,7 +55,6 @@ import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
 import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanErrorBoundary";
 import { isLlmNotConfigured } from "../features/process/processman/processmanView";
-import { opToFlashType } from "../features/process/processman/canvas/agentEditHighlight";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import { getDict } from "../shared/i18n/index.js";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
@@ -8340,41 +8339,6 @@ function ProcessStage({
                   centerInViewport: true,
                   clearExistingSelection: true,
                   source: "processman_panel",
-                });
-              }}
-              onHighlightElements={(elements, options = {}) => {
-                // feat/canvas-edit-highlight: подсветка правок агента на канвасе.
-                // active — пульс + фокус до решения; applied — вспышка по типу
-                // операции; clear — снять. Только маркеры/overlays, BPMN XML
-                // и версионирование не затрагиваются.
-                const api = bpmnRef.current;
-                if (!api) return;
-                const mode = String(options.mode || "active");
-                const list = Array.isArray(elements) ? elements : [];
-                if (mode === "clear") {
-                  api.clearSearchHighlights?.();
-                  return;
-                }
-                const ids = list.map((e) => String(e?.element_id || "").trim()).filter(Boolean);
-                if (!ids.length) return;
-                if (mode === "applied") {
-                  api.clearSearchHighlights?.();
-                  list.forEach((e) => {
-                    const id = String(e?.element_id || "").trim();
-                    if (!id) return;
-                    api.flashNode?.(id, opToFlashType(e?.op), { durationMs: 1500, showPill: false, source: "processman_edit_applied" });
-                  });
-                  return;
-                }
-                // active
-                api.setSearchHighlights?.({ matchElementIds: ids, activeElementId: ids[0] });
-                api.focusNode?.(ids[0], {
-                  markerClass: "fpcAgentEditActive",
-                  durationMs: 2600,
-                  targetZoom: 0.92,
-                  centerInViewport: true,
-                  clearExistingSelection: true,
-                  source: "processman_edit_highlight",
                 });
               }}
               onClearSelection={() => {

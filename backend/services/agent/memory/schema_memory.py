@@ -259,13 +259,6 @@ def update_schema_memory(
     summary = str(obj.get("summary") or "").strip()
     facts = obj.get("facts") if isinstance(obj.get("facts"), list) else []
     decisions = obj.get("decisions") if isinstance(obj.get("decisions"), list) else []
-    if not summary:
-        # Не затираем существующий summary пустым результатом — hit-ветка
-        # schema_overview зависит от непустого summary (иначе повторные
-        # вопросы снова уходят в полный LLM-вызов).
-        existing = load_schema_memory(sid, oid)
-        if existing:
-            summary = str(existing.get("summary") or "").strip()
     if not summary and not facts and not decisions:
         logger.debug("update_schema_memory: empty result, skipping")
         return False

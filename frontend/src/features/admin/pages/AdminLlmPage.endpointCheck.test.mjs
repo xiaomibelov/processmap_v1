@@ -174,28 +174,7 @@ test("с правом (showEndpointCheck=true) таб есть, панель о�
   assert.ok(tab, "таб endpoint-check должен быть в DOM");
   assert.ok(container.querySelector('[data-testid="endpoint-check-panel"]'), "панель видна");
   assert.ok(container.querySelector('[data-testid="endpoint-check-run-button"]'));
-  assert.equal(container.querySelector('[data-testid="endpoint-check-profile-select"]')?.value, "read_only");
 
-  await cleanup();
-});
-
-test("save pipeline profile shows a chain with required final save", async () => {
-  const { AdminLlmPage, AuthProvider } = await loadPage();
-  const { root, container, cleanup } = setupDom();
-  installFetchMock({ ok: true, active: null, last_run: null }, DETAIL_NO_NEW, { ok: true, items: [], count: 0 });
-  await act(async () => { root.render(wrapInAuth(React.createElement(AdminLlmPage, { showEndpointCheck: true }), AuthProvider)); });
-  await flush();
-  const select = container.querySelector('[data-testid="endpoint-check-profile-select"]');
-  await act(async () => {
-    select.value = "save_pipeline";
-    select.dispatchEvent(new globalThis.Event("change", { bubbles: true }));
-  });
-  const chain = container.querySelector('[data-testid="endpoint-check-save-chain"]');
-  assert.ok(chain);
-  const checks = [...chain.querySelectorAll('input[type="checkbox"]')];
-  assert.equal(checks.length, 5);
-  assert.equal(checks.at(-1).checked, true);
-  assert.equal(checks.at(-1).disabled, true);
   await cleanup();
 });
 

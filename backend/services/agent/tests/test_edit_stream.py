@@ -209,54 +209,6 @@ def test_stream_edit_confirm_applies_plan(
     assert pending["status"] == "applied"
 
 
-def test_stream_edit_emits_focus_elements_before_confirm(
-    admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk
-):
-    """feat/canvas-edit-highlight: при валидном edit-плане стрим шлёт focus_elements
-    (mode=active, элементы из operations) ДО confirm_required."""
-    multi_plan = {
-        "operations": [
-            {"op": "update_node", "node_id": "step_1", "fields": {"title": "Приём заявки"}},
-            {"op": "add_node", "node_id": "step_new", "title": "Новый шаг"},
-            {"op": "add_edge", "from_id": "step_1", "to_id": "step_new"},
-            {"op": "delete_node", "node_id": "step_2"},
-        ],
-        "note": "Комплексная правка",
-    }
-    mock_route_intent_smalltalk.return_value = "edit_canvas"
-    with mock.patch("memory.chat.propose_edit_plan") as fake_propose, \
-         mock.patch("memory.chat.validate_edit_plan", return_value=[]):
-        fake_propose.return_value = (multi_plan, {"status": "ok", "iterations": 1, "validation_errors": []})
-        c = TestClient(app)
-        with c.stream(
-            "POST",
-            f"/sessions/{session_with_steps}/agent/stream",
-            headers={**_auth(admin_token), "Accept": "text/event-stream"},
-            json={"message": "переименуй и добавь шаг", "selected_step_id": "step_1"},
-        ) as r:
-            r.read()
-            text = r.text
-    assert r.status_code == 200, text
-    events = _parse_sse(text)
-    event_types = [e["event"] for e in events]
-    focus = _find_event(events, "focus_elements")
-    assert focus is not None, f"expected focus_elements event, got: {event_types}"
-    confirm = _find_event(events, "confirm_required")
-    assert confirm is not None
-    assert event_types.index("focus_elements") < event_types.index("confirm_required"), \
-        "focus_elements должен идти раньше confirm_required"
-    data = json.loads(focus["data"])
-    assert data["mode"] == "active"
-    elements = data["elements"]
-    assert isinstance(elements, list) and elements, "elements — непустой список"
-    pairs = {(e["op"], e["element_id"]) for e in elements}
-    assert ("update_node", "step_1") in pairs
-    assert ("add_node", "step_new") in pairs
-    assert ("add_edge", "step_1") in pairs
-    assert ("add_edge", "step_new") in pairs
-    assert ("delete_node", "step_2") in pairs
-
-
 def test_stream_edit_captures_base_diagram_state_version(
     admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk, valid_edit_plan
 ):

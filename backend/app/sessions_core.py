@@ -34,7 +34,6 @@ from .redis_cache import (
     session_open_cache_ttl_sec,
     session_open_version_token,
 )
-from .redis_lock import acquire_session_lock
 from .schemas.legacy_api import (
     CreateSessionIn,
     SessionPresenceTouchIn,
@@ -160,41 +159,15 @@ def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
     invalidate_session_open(sid)
 
 
-def _publish_session_update_audit(*, user_id: str, oid: Any, sess: Any, session_id: str, meta: Dict[str, Any]) -> None:
-    """Audit session.update через Celery-очередь (hot save-path).
-
-    perf/save-path-decoupling-v1 (P3): паритет publish_session_saved —
-    enqueue best-effort, sync INSERT не блокирует save-запрос.
-    Без actor (анонимный контекст) запись пропускается (паритет _audit_log_safe).
-    """
-    if not user_id:
-        return
-    from .save_services.audit_publisher.publisher import publish_audit_log
-
-    publish_audit_log(
-        actor_user_id=user_id,
-        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-        action="session.update",
-        entity_type="session",
-        entity_id=str(getattr(sess, "id", "") or session_id),
-        project_id=str(getattr(sess, "project_id", "") or ""),
-        session_id=str(getattr(sess, "id", "") or session_id),
-        meta=meta,
-    )
-
-
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     import app._legacy_main as _lm
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
     project_id = str(getattr(session_obj, "project_id", "") or "").strip()
     _invalidate_workspace_cache_for_org(oid)
-    # perf/save-path-decoupling-v1 (P1): targets уже содержат workspace_id —
-    # повторный DB-read через _workspace_id_for_project не нужен.
-    _explorer_targets: Optional[Dict[str, Any]] = None
     if project_id:
         explorer_invalidate_sessions(project_id)
-        _explorer_targets = _invalidate_explorer_children_for_project(project_id, oid)
+        _invalidate_explorer_children_for_project(project_id, oid)
     if sid:
         _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
@@ -208,11 +181,7 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
             invalidate_analytics_scope("session", sid, oid)
         if project_id:
             invalidate_analytics_scope("project", project_id, oid)
-            workspace_id = ""
-            if isinstance(_explorer_targets, dict):
-                workspace_id = str(_explorer_targets.get("workspace_id") or "").strip()
-            if not workspace_id:
-                workspace_id = str(_lm._workspace_id_for_project(project_id) or "").strip()
+            workspace_id = _lm._workspace_id_for_project(project_id)
             if workspace_id:
                 invalidate_analytics_scope("workspace", workspace_id, oid)
     except Exception as exc:
@@ -307,33 +276,6 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
 
 def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
     import app._legacy_main as _lm
-
-    data = inp.model_dump(exclude_unset=True)
-    diagram_write_requested = any(key in _lm._DIAGRAM_TRUTH_PATCH_KEYS for key in data)
-    if not diagram_write_requested:
-        return _patch_session_impl(session_id, inp, request)
-
-    lock = acquire_session_lock(session_id, ttl_ms=15000)
-    if not lock.acquired:
-        sess, _, _ = _legacy_load_session_scoped(session_id, request)
-        if not sess:
-            raise_session_not_found(session_id)
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "code": "SESSION_LOCK_BUSY",
-                "message": "Session is being updated, retry",
-                "server_current_version": int(getattr(sess, "diagram_state_version", 0) or 0),
-            },
-        )
-    try:
-        return _patch_session_impl(session_id, inp, request)
-    finally:
-        lock.release()
-
-
-def _patch_session_impl(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
-    import app._legacy_main as _lm
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
@@ -388,41 +330,35 @@ def _patch_session_impl(session_id: str, inp: UpdateSessionIn, request: Request 
             sess = sess2
             handled = True
 
-    # perf/save-noop-fastpath-v1: need_recompute только при реальном изменении
-    # нормализованного значения — no-op autosave (фронт шлёт полные массивы)
-    # не должен гонять _recompute_session (questions×3, mermaid×2, analytics).
-    # Нормализация остаётся обязательной — это единственный входной санитайзер.
     if "roles" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        new_roles = _norm_roles(data.get("roles"))
-        if new_roles != sess.roles:
-            sess.roles = new_roles
-            if sess.start_role and sess.roles and sess.start_role not in sess.roles:
-                sess.start_role = None
-            need_recompute = True
+        sess.roles = _norm_roles(data.get("roles"))
+        if sess.start_role and sess.roles and sess.start_role not in sess.roles:
+            sess.start_role = None
         handled = True
+        need_recompute = True
 
     if "start_role" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
         sr = data.get("start_role")
-        sr = None if sr is None or str(sr).strip() == "" else str(sr).strip()
-        if sr is not None and sess.roles and sr not in sess.roles:
-            return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
-        if sr != sess.start_role:
+        if sr is None or str(sr).strip() == "":
+            sess.start_role = None
+        else:
+            sr = str(sr).strip()
+            if sess.roles and sr not in sess.roles:
+                return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
             sess.start_role = sr
-            need_recompute = True
         handled = True
+        need_recompute = True
 
     if "notes" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        new_notes = _notes_encode(data.get("notes"))
-        if new_notes != sess.notes:
-            sess.notes = new_notes
-            need_recompute = True
+        sess.notes = _notes_encode(data.get("notes"))
         handled = True
+        need_recompute = True
 
     if "notes_by_element" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
@@ -439,41 +375,23 @@ def _patch_session_impl(session_id: str, inp: UpdateSessionIn, request: Request 
     if "nodes" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        new_nodes = _norm_nodes(data.get("nodes"))
-        nodes_changed = new_nodes != sess.nodes
-        if nodes_changed:
-            # recompute обогащает parameters (_norm/_sched) in-place и кладёт
-            # граф в sess.normalized — хранимые nodes всегда в обогащённой
-            # форме. Точный критерий «изменилось ли»: совпал бы ли граф
-            # нормализации с текущим sess.normalized.
-            from .normalizer import load_seed_glossary, normalize_nodes
-            from .startup.static_mounts import GLOSSARY_SEED
-
-            _copies = [n.model_copy(deep=True) for n in new_nodes]
-            _graph = normalize_nodes(_copies, load_seed_glossary(GLOSSARY_SEED))
-            nodes_changed = _graph != getattr(sess, "normalized", None)
-        if nodes_changed:
-            sess.nodes = new_nodes
-            need_recompute = True
+        sess.nodes = _norm_nodes(data.get("nodes"))
         handled = True
+        need_recompute = True
 
     if "edges" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        new_edges = _norm_edges(data.get("edges"))
-        if new_edges != sess.edges:
-            sess.edges = new_edges
-            need_recompute = True
+        sess.edges = _norm_edges(data.get("edges"))
         handled = True
+        need_recompute = True
 
     if "questions" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
-        new_questions = _norm_questions(data.get("questions"))
-        if new_questions != sess.questions:
-            sess.questions = new_questions
-            need_recompute = True
+        sess.questions = _norm_questions(data.get("questions"))
         handled = True
+        need_recompute = True
 
     if "bpmn_meta" in data:
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
@@ -525,11 +443,14 @@ def _patch_session_impl(session_id: str, inp: UpdateSessionIn, request: Request 
             user_id=user_id,
         )
 
-    _publish_session_update_audit(
-        user_id=user_id,
-        oid=oid,
-        sess=sess,
-        session_id=session_id,
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+        action="session.update",
+        entity_type="session",
+        entity_id=str(getattr(sess, "id", "") or session_id),
+        project_id=str(getattr(sess, "project_id", "") or ""),
+        session_id=str(getattr(sess, "id", "") or session_id),
         meta={"keys": sorted(list(data.keys()))},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
@@ -652,11 +573,14 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
             org_id=oid,
             user_id=user_id,
         )
-    _publish_session_update_audit(
-        user_id=user_id,
-        oid=oid,
-        sess=sess,
-        session_id=session_id,
+    _audit_log_safe(
+        request,
+        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+        action="session.update",
+        entity_type="session",
+        entity_id=str(getattr(sess, "id", "") or session_id),
+        project_id=str(getattr(sess, "project_id", "") or ""),
+        session_id=str(getattr(sess, "id", "") or session_id),
         meta={"put": True},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
@@ -794,4 +718,5 @@ def leave_session_presence_api(
         "session_id": sid,
         "removed": removed,
     }
+
 

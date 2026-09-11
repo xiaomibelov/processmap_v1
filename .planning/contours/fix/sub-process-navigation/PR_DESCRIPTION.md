@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # fix(subprocess-navigation): drill-down по клику на CallActivity (BUG-SUB-001)
 
 ## Что сломано

@@ -84,37 +84,6 @@ function isConnectionLike(el) {
   return Array.isArray(el.waypoints);
 }
 
-export function collectOperationElementIds(event = {}) {
-  const ids = new Set();
-  const visited = new Set();
-  const add = (element) => {
-    if (!element || typeof element !== "object" || visited.has(element)) return;
-    visited.add(element);
-    if (element.id) ids.add(String(element.id));
-    add(element.label);
-    add(element.host);
-    [element.incoming, element.outgoing, element.attachers, element.children].forEach((items) => {
-      if (Array.isArray(items)) items.forEach(add);
-    });
-  };
-  const context = event?.context && typeof event.context === "object" ? event.context : {};
-  [
-    event.shape,
-    event.element,
-    event.source,
-    event.target,
-    event.connection,
-    context.shape,
-    context.element,
-    context.source,
-    context.target,
-    context.connection,
-    context.oldShape,
-    context.newShape,
-  ].forEach(add);
-  return ids;
-}
-
 function simplifyShapeGfx(gfx, scale) {
   if (!gfx) return;
   const visual = gfx.querySelector(".djs-visual");
@@ -320,42 +289,6 @@ export function createViewportCuller(inst, options = {}) {
     visibilityMap.clear();
   }
 
-  function restoreElements(elementIds) {
-    if (disposed || !useDetach) return 0;
-    const ids = elementIds instanceof Set ? elementIds : new Set(elementIds || []);
-    const shapeLayer = getShapeLayer(canvas);
-    const connectionLayer = getConnectionLayer(canvas);
-    let restoredCount = 0;
-    ids.forEach((elementId) => {
-      const record = detachedMap.get(String(elementId));
-      if (!record) return;
-      const gfx = record?.gfx || record;
-      const el = registry.get(String(elementId));
-      if (!el || !gfx) return;
-      const parent = record?.parent || (isShapeLike(el) ? shapeLayer : (isConnectionLike(el) ? connectionLayer : null));
-      if (parent) {
-        if (record?.nextSibling && record.nextSibling.parentNode === parent) {
-          parent.insertBefore(gfx, record.nextSibling);
-        } else {
-          parent.appendChild(gfx);
-        }
-      } else {
-        const fallback = getCorrectParent(el, isShapeLike(el));
-        if (fallback) fallback.appendChild(gfx);
-      }
-      const visual = gfx.querySelector(".djs-visual");
-      if (visual) {
-        Array.from(visual.children).forEach((child) => {
-          child.style.display = "";
-        });
-      }
-      detachedMap.delete(String(elementId));
-      visibilityMap.set(String(elementId), true);
-      restoredCount += 1;
-    });
-    return restoredCount;
-  }
-
   function dispose() {
     disposed = true;
     if (rafId) cancelAnimationFrame(rafId);
@@ -413,7 +346,6 @@ export function createViewportCuller(inst, options = {}) {
     scheduleCull,
     forceCull,
     restoreAll,
-    restoreElements,
     dispose,
     isElementVisible,
     getDetachedCount,

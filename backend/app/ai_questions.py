@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Set
 
 from fastapi import Request
 
-from .ai.error_sanitize import sanitize_llm_error
 from .ai.execution_log import record_ai_execution
 from .models import Question, Session
 from .schemas.legacy_api import AiQuestionsIn
@@ -507,12 +506,8 @@ def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None) -
                     system_prompt=system_prompt,
                 )
             except Exception as e:
-                # S1: URL upstream-роутера пользователю не отдаём; сырой текст — в логи.
-                logging.getLogger(__name__).warning(
-                    "ai/questions deepseek failed (node): %s", e, exc_info=True,
-                )
                 return _finish(
-                    {"error": sanitize_llm_error("error", f"deepseek failed: {e}")},
+                    {"error": f"deepseek failed: {e}"},
                     status="error",
                     output_summary="deepseek provider failed",
                     error_code="provider_error",
@@ -598,12 +593,8 @@ def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None) -
             system_prompt=system_prompt,
         )
     except Exception as e:
-        # S1: URL upstream-роутера пользователю не отдаём; сырой текст — в логи.
-        logging.getLogger(__name__).warning(
-            "ai/questions deepseek failed: %s", e, exc_info=True,
-        )
         return _finish(
-            {"error": sanitize_llm_error("error", f"deepseek failed: {e}")},
+            {"error": f"deepseek failed: {e}"},
             status="error",
             output_summary="deepseek provider failed",
             error_code="provider_error",

@@ -21,12 +21,10 @@ from edit import (
     build_human_diff,
     create_pending_edit,
     EditApplyError,
-    extract_focus_elements,
     propose_edit_plan,
     validate_edit_plan,
 )
 from gateway import llm_store
-from gateway.error_sanitize import sanitize_llm_error
 from gateway.gateway import complete, complete_cached, complete_stream
 from runners.action_runners import run_explain_step, run_step_qa, run_suggest_next
 from runners.monolith_client import get_session as monolith_get_session, search_rag
@@ -41,22 +39,7 @@ from .memory_store import (
     get_or_create_conversation,
 )
 from .prompt_builder import PromptBuilder
-from .schema_memory import load_schema_memory, save_schema_memory, schedule_memory_update
-
-
-def _save_schema_memory_sync(session_id: str, org_id: str, summary: str, digest: str) -> None:
-    """Синхронная материализация short-circuit памяти.
-
-    Hit-ветка schema_overview обязана работать, даже когда весь асинхронный
-    путь (Redis-очередь, фоновый worker, LLM agent_memory) недоступен — иначе
-    каждый повторный вопрос идёт полным LLM-вызовом (audit llm-agent-audit-v1,
-    evidence-p4 §7.4). Фоновый worker дополняет facts/decisions, но hit-ветка
-    от него больше не зависит.
-    """
-    try:
-        save_schema_memory(session_id, org_id, summary, [], [], digest)
-    except Exception as exc:
-        logger.warning("schema memory sync save failed: %s", exc)
+from .schema_memory import load_schema_memory, schedule_memory_update
 
 
 FEATURE = "processman_agent"
@@ -231,23 +214,6 @@ def route_intent(
         return _normalize_intent(str(result.get("text") or ""))
     except Exception:
         return "smalltalk"
-
-
-_ACTION_FALLBACK_TEXTS = {
-    "ru": (
-        "Не смог выполнить действие на схеме: похоже, схема пустая или указанный шаг не найден. "
-        "Добавьте шаги на схему и повторите вопрос."
-    ),
-    "en": (
-        "I couldn't run that action on the diagram: it looks empty or the step wasn't found. "
-        "Add steps to the diagram and try again."
-    ),
-}
-
-
-def _action_fallback_text(user_message: str) -> str:
-    lang = "ru" if re.search(r"[А-Яа-яЁё]", str(user_message or "")) else "en"
-    return _ACTION_FALLBACK_TEXTS[lang]
 
 
 def _extract_json_block(text: str) -> Optional[Dict[str, Any]]:
@@ -479,8 +445,6 @@ def _run_schema_overview_branch(
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
     message = str(result.get("text") or "").strip()
-    if message:
-        _save_schema_memory_sync(session_id, org_id, message, ctx.digest)
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
     _, out = _persist_assistant_turn(
         session_id,
@@ -721,7 +685,6 @@ def _run_free_answer_branch(
     action_name: Optional[str] = None
     action_payload: Dict[str, Any] = {}
     assistant_message = llm_text
-    has_fence = bool(re.search(r"```", llm_text))
 
     if action_obj and isinstance(action_obj, dict):
         possible_action = str(action_obj.get("action") or "").strip()
@@ -731,16 +694,6 @@ def _run_free_answer_branch(
                 action_name = possible_action
                 action_payload = action_result
                 assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
-            else:
-                # action валиден, но не выполнился (пустая схема/unknown step):
-                # сырой JSON не показываем (N1/M3, audit llm-agent-audit-v1).
-                assistant_message = _action_fallback_text(payload.message)
-        elif possible_action or has_fence:
-            # не-whitelist action-JSON или fenced-блок без ключа action
-            assistant_message = _action_fallback_text(payload.message)
-    elif has_fence:
-        # fenced-блок, который не распарсился как JSON
-        assistant_message = _action_fallback_text(payload.message)
 
     _, out = _persist_assistant_turn(
         session_id,
@@ -967,12 +920,6 @@ def _run_edit_canvas_branch_stream(
     )
 
     yield ("token", {"delta": assistant_message + "\n\n"})
-    # feat/canvas-edit-highlight: фронт подсвечивает затронутые элементы
-    # на канвасе до решения пользователя (mode=active).
-    yield (
-        "focus_elements",
-        {"mode": "active", "elements": extract_focus_elements(edit_plan)},
-    )
     yield (
         "confirm_required",
         {
@@ -1046,10 +993,7 @@ def _run_structured_fact_qa_branch_stream(
             }
 
     if stream_error is not None:
-        # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
-        err_status = str(stream_error.get("status") or "error")
-        err_text = sanitize_llm_error(err_status, str(stream_error.get("error", "") or ""))
-        text = f"[{err_status}] {err_text}"
+        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
         _ = _persist_assistant_turn(
             session_id,
             user_id,
@@ -1062,7 +1006,7 @@ def _run_structured_fact_qa_branch_stream(
             action_payload={"status": "error"},
             now_ms=_now_ms(),
         )
-        yield ("error", {"status": err_status, "error": err_text})
+        yield ("error", {"status": stream_error.get("status"), "error": stream_error.get("error", "")})
         return
 
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
@@ -1091,8 +1035,7 @@ def _gateway_error_out(
     client_turn_id: Optional[str] = None,
 ) -> AgentChatOut:
     status = str(result.get("status") or "error")
-    # S1: сырой текст ошибки провайдера (URL upstream) пользователю не отдаём.
-    error_text = sanitize_llm_error(status, str(result.get("error") or ""))
+    error_text = str(result.get("error") or "")
     assistant_text = f"[{status}] {error_text}" if error_text else status
     usage = _usage_out(result)
     append_turn(
@@ -1334,10 +1277,7 @@ def run_turn_stream(
             }
 
     if stream_error is not None:
-        # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
-        err_status = str(stream_error.get("status") or "error")
-        err_text = sanitize_llm_error(err_status, str(stream_error.get("error", "") or ""))
-        text = f"[{err_status}] {err_text}"
+        text = f"[{stream_error.get('status')}] {stream_error.get('error', '')}"
         provider_id = stream_error.get("provider_id") or final_usage.get("provider_id") or ""
         model_name = stream_error.get("model") or final_usage.get("model") or ""
         logger.warning(
@@ -1363,8 +1303,8 @@ def run_turn_stream(
         yield (
             "error",
             {
-                "status": err_status,
-                "error": err_text,
+                "status": stream_error.get("status"),
+                "error": stream_error.get("error", ""),
                 "provider_id": provider_id,
                 "model": model_name,
             },
@@ -1386,9 +1326,6 @@ def run_turn_stream(
                     action_payload = action_result
                     assistant_message = str(action_result.get("message") or action_result.get("note") or collected_text)
                     yield ("action", {"action": action_name, "payload": action_payload})
-
-    if intent == "schema_overview" and assistant_message:
-        _save_schema_memory_sync(sid, oid, assistant_message, ctx.digest)
 
     _ = _persist_assistant_turn(
         sid,

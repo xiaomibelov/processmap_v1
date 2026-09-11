@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # WORKER_PROMPT — Analytics UI/UX + Additional Fields + Excel Export
 
 **For:** Agent 2 / Worker  

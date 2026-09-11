@@ -72,7 +72,6 @@ export default function ProcessmanPanel({
   diagramNodes = [],
   onFocusElement,
   onClearSelection,
-  onHighlightElements,
 }) {
   const panelRef = useRef(null);
   const [assistantStatus, setAssistantStatus] = useState("ready");
@@ -225,7 +224,6 @@ export default function ProcessmanPanel({
                     onStatusChange={handleStatusChange}
                     diagramNodes={diagramNodes}
                     onFocusElement={onFocusElement}
-                    onHighlightElements={onHighlightElements}
                   />
                 </div>
               </div>

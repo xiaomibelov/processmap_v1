@@ -86,40 +86,6 @@ test("queues concurrent saves for the same session", async () => {
   assert.deepEqual(order, ["start", "end", "start", "end"]);
 });
 
-test("serializes different pipelines that write the same session", async () => {
-  const c = createSaveCoordinator();
-  const order = [];
-  let releaseXml;
-  const xmlBlocked = new Promise((resolve) => { releaseXml = resolve; });
-
-  c.registerPipeline("xml", {
-    debounceMs: 0,
-    transport: async () => {
-      order.push("xml:start");
-      await xmlBlocked;
-      order.push("xml:end");
-      return { ok: true };
-    },
-  });
-  c.registerPipeline("rawXml", {
-    debounceMs: 0,
-    transport: async () => {
-      order.push("rawXml:start");
-      order.push("rawXml:end");
-      return { ok: true };
-    },
-  });
-
-  const first = c.execute("xml", { sessionId: "s1" });
-  const second = c.execute("rawXml", { sessionId: "s1" });
-  await sleep(10);
-  assert.deepEqual(order, ["xml:start"]);
-
-  releaseXml();
-  await Promise.all([first, second]);
-  assert.deepEqual(order, ["xml:start", "xml:end", "rawXml:start", "rawXml:end"]);
-});
-
 test("allows concurrent saves for different sessions", async () => {
   const c = createSaveCoordinator();
   const order = [];
@@ -189,32 +155,6 @@ test("retry with exponential backoff up to retryCount attempts", async () => {
   const gaps = [starts[1] - starts[0], starts[2] - starts[1]];
   assert.ok(gaps[0] >= 4 && gaps[0] <= 40, `gap0=${gaps[0]}`);
   assert.ok(gaps[1] >= 8 && gaps[1] <= 60, `gap1=${gaps[1]}`);
-});
-
-test("retry refreshes CAS base when the shared version source advanced", async () => {
-  const c = createSaveCoordinator();
-  const sentBases = [];
-  let trackedVersion = 228;
-  c.registerPipeline("rawXml", {
-    debounceMs: 0,
-    retryCount: 1,
-    retryDelayMs: 1,
-    buildPayload: () => ({}),
-    getBaseVersion: () => trackedVersion,
-    transport: async (_sessionId, payload) => {
-      sentBases.push(payload.base_diagram_state_version);
-      if (sentBases.length === 1) {
-        trackedVersion = 229;
-        return { ok: false, status: 423, error: "Session is being updated" };
-      }
-      return { ok: true, diagram_state_version: 230 };
-    },
-  });
-
-  const result = await c.execute("rawXml", { sessionId: "s1" });
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(sentBases, [228, 229]);
 });
 
 test("409 conflict stops retry and calls on409", async () => {

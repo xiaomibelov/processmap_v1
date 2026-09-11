@@ -32,7 +32,6 @@ import ProcessmanChatFeed from "./ProcessmanChatFeed";
 import ProcessmanComposer from "./ProcessmanComposer";
 import ProcessmanEmptyState from "./ProcessmanEmptyState";
 import ProcessmanQuickActions from "./ProcessmanQuickActions";
-import { extractFocusElements } from "./canvas/agentEditHighlight";
 
 // PROCESSMAN-REDESIGN (PR-1) — TO BE-контекст панели = лента диалога.
 // Экономика токенов (не меняется): LLM-вызов ТОЛЬКО по клику действия/retry/Стоп;
@@ -61,25 +60,12 @@ export default function ProcessmanTobe({
   onStatusChange,
   diagramNodes = [],
   onFocusElement,
-  onHighlightElements,
 }) {
   const [, bump] = useReducer((v) => v + 1, 0);
   const [question, setQuestion] = useState("");
   const abortRef = useRef(null);
   const resumeAbortRef = useRef(null);
   const composerRef = useRef(null);
-  // feat/canvas-edit-highlight: active-подсветка живёт до решения по правке
-  // или до нового запроса — тогда снимаем.
-  const editHighlightActiveRef = useRef(false);
-  const emitHighlight = useCallback((elements, options = {}) => {
-    if (options.mode === "clear") editHighlightActiveRef.current = false;
-    else if ((elements || []).length) editHighlightActiveRef.current = true;
-    onHighlightElements?.(elements, options);
-  }, [onHighlightElements]);
-  const clearEditHighlight = useCallback(() => {
-    if (!editHighlightActiveRef.current) return;
-    emitHighlight([], { mode: "clear" });
-  }, [emitHighlight]);
 
   const sid = String(sessionId || "");
   const elementId = readElementId(selectedElement);
@@ -140,7 +126,6 @@ export default function ProcessmanTobe({
 
     // AGENT-1 — свободный вопрос через SSE streaming (/agent/stream).
     if (action === "chat") {
-      clearEditHighlight(); // новый запрос снимает подсветку предыдущей правки
       const pendingMsg = appendAgentPending(sid, { action: "chat", stepId: elementId, question: q });
       bump();
       const controller = new AbortController();
@@ -171,9 +156,6 @@ export default function ProcessmanTobe({
               failAgentMessage(sid, pendingMsg.id, { errorText: mapped.errorText, errorStatus: mapped.errorStatus });
             }
             bump();
-          } else if (patch.type === "focus_elements") {
-            // feat/canvas-edit-highlight: подсветка «сейчас правится» на канвасе
-            if (patch.elements.length) emitHighlight(patch.elements, { mode: patch.mode || "active" });
           } else if (patch.type === "confirm_required") {
             finishAgentMessage(sid, pendingMsg.id);
             attachPendingEdit(sid, pendingMsg.id, {
@@ -257,7 +239,7 @@ export default function ProcessmanTobe({
       if (abortRef.current === controller) abortRef.current = null;
       bump();
     }
-  }, [sid, elementId, cacheRef, appendLocalNote, emitHighlight, clearEditHighlight]);
+  }, [sid, elementId, cacheRef, appendLocalNote]);
 
   const submitQuestion = useCallback(() => {
     const q = String(question || "").trim();
@@ -304,15 +286,6 @@ export default function ProcessmanTobe({
           const doneStatus = String(data?.status || "");
           const status = doneStatus === "applied" ? AGENT_STATUS.EDIT_APPLIED : AGENT_STATUS.EDIT_REJECTED;
           updatePendingEditStatus(sid, msg.id, { status, result: data });
-          // feat/canvas-edit-highlight: applied → вспышка по операциям из
-          // editPlan карточки; rejected/expired/conflict → снять подсветку.
-          if (status === AGENT_STATUS.EDIT_APPLIED) {
-            const elements = extractFocusElements(msg.pendingEdit?.editPlan);
-            if (elements.length) emitHighlight(elements, { mode: "applied" });
-            else clearEditHighlight();
-          } else {
-            clearEditHighlight();
-          }
           bump();
         } else if (patch.type === "error") {
           const errorStatus = String(patch.errorStatus || "");
@@ -324,7 +297,6 @@ export default function ProcessmanTobe({
               ? AGENT_STATUS.EDIT_EXPIRED
               : AGENT_STATUS.ERROR;
           updatePendingEditStatus(sid, msg.id, { status, errorText: patch.errorText, result: data });
-          clearEditHighlight();
           bump();
         }
       }
@@ -343,7 +315,7 @@ export default function ProcessmanTobe({
       if (resumeAbortRef.current === controller) resumeAbortRef.current = null;
       bump();
     }
-  }, [sid, emitHighlight, clearEditHighlight]);
+  }, [sid]);
 
   const handleRejectEdit = useCallback((msg) => {
     resumeAbortRef.current?.abort();

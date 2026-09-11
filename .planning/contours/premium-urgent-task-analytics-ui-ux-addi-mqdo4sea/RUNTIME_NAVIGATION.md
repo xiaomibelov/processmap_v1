@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # RUNTIME_NAVIGATION — Analytics UI/UX + Fields + Excel Export
 
 **Test environment:** `https://clearvestnic.ru:5177`  

@@ -14,7 +14,6 @@ import {
 } from "../../lib/casVersionTracker.js";
 import {
   SAVE_CONFLICT_RESOLUTION,
-  extractSaveErrorCode,
   isSaveConflictStatus,
   isSaveXmlTruthGuardResponse,
 } from "./conflictModel.js";
@@ -40,14 +39,12 @@ function debounceKey(pipelineName, sessionId) {
   return `${pipelineName}::${asText(sessionId)}`;
 }
 
-function queueKey(_pipelineName, sessionId) {
-  return asText(sessionId);
+function queueKey(pipelineName, sessionId) {
+  return `${asText(pipelineName)}::${asText(sessionId)}`;
 }
 
 function isConflictResponse(response) {
   if (!response || typeof response !== "object") return false;
-  const code = extractSaveErrorCode(response);
-  if (code) return code === "DIAGRAM_STATE_CONFLICT";
   if (isSaveConflictStatus(response.status)) return true;
   const text = `${String(response.error || "")} ${String(response.text || "")}`.toUpperCase();
   return text.includes("DIAGRAM_STATE_CONFLICT");
@@ -118,9 +115,7 @@ class SaveCoordinator {
    * @param {Function} config.transport - (sessionId, payload) => Promise<response>
    * @param {Function} [config.buildPayload] - (payload, sessionId) => request payload
    * @param {Function} [config.getBaseVersion] - (sessionId) => number | null
-   * @param {Function} [config.applyBaseVersion] - mutates the transport payload with a refreshed base
    * @param {Function} [config.onSuccess] - (response, sessionId) => void
-   * @param {Function} [config.reconcileConflict] - verifies an already committed write before the conflict gate is armed
    * @param {Function} [config.on409] - (response, sessionId) => void
    * @param {Function} [config.onError] - (errorOrResponse, sessionId) => void
    * @param {number} [config.debounceMs]
@@ -141,9 +136,7 @@ class SaveCoordinator {
       buildPayload: typeof config.buildPayload === "function" ? config.buildPayload : (payload) => payload,
       transport: config.transport,
       getBaseVersion: typeof config.getBaseVersion === "function" ? config.getBaseVersion : null,
-      applyBaseVersion: typeof config.applyBaseVersion === "function" ? config.applyBaseVersion : null,
       onSuccess: typeof config.onSuccess === "function" ? config.onSuccess : null,
-      reconcileConflict: typeof config.reconcileConflict === "function" ? config.reconcileConflict : null,
       on409: typeof config.on409 === "function" ? config.on409 : null,
       onError: typeof config.onError === "function" ? config.onError : null,
       debounceMs: Math.max(0, asNumber(config.debounceMs, 300)),
@@ -481,18 +474,12 @@ class SaveCoordinator {
       builtPayload = {};
     }
 
-    const refreshBaseVersion = () => {
-      if (!pipeline.getBaseVersion) return;
+    if (pipeline.getBaseVersion) {
       const baseVersion = pipeline.getBaseVersion(sid, payload);
       if (baseVersion !== null && baseVersion !== undefined) {
-        const normalizedBase = Math.round(asNumber(baseVersion, -1));
-        builtPayload.base_diagram_state_version = normalizedBase;
-        if (pipeline.applyBaseVersion) {
-          pipeline.applyBaseVersion(builtPayload, normalizedBase);
-        }
+        builtPayload.base_diagram_state_version = Math.round(asNumber(baseVersion, -1));
       }
-    };
-    refreshBaseVersion();
+    }
 
     recordSaveDiagnostic("pipeline_start", {
       sid,
@@ -515,29 +502,6 @@ class SaveCoordinator {
       }
 
       const result = lastError ? { ok: false, status: 0, error: String(lastError?.message || lastError) } : lastResult;
-
-      const completeSuccess = (successResult) => {
-        const newVersion = pickDiagramStateVersion(successResult);
-        if (newVersion !== null) {
-          bumpTrackedDiagramStateVersion(sid, newVersion);
-        }
-        recordSaveDiagnostic("pipeline_success", {
-          sid,
-          pipeline: pipelineName,
-          serverVersion: newVersion,
-          reconciled: successResult?.reconciled === true,
-        });
-        if (pipeline.onSuccess) {
-          try {
-            pipeline.onSuccess(successResult, sid, payload);
-          } catch {
-            // no-op
-          }
-        }
-        this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "success" });
-        this.emit("success", { pipeline: pipelineName, sessionId: sid, response: successResult });
-        return successResult;
-      };
 
       if (!result?.ok) {
         // P-1: терминальный 404 (сессия удалена) — пометить глобально, НЕ
@@ -568,17 +532,6 @@ class SaveCoordinator {
           return result;
         }
         if (isConflictResponse(result)) {
-          if (pipeline.reconcileConflict) {
-            let reconciled = null;
-            try {
-              reconciled = await pipeline.reconcileConflict(result, sid, builtPayload, payload);
-            } catch {
-              reconciled = null;
-            }
-            if (reconciled?.ok) {
-              return completeSuccess(reconciled);
-            }
-          }
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
           rollbackTrackedDiagramStateVersion(sid);
           const serverVersion = pickServerCurrentVersion(result);
@@ -630,7 +583,6 @@ class SaveCoordinator {
           const delay = Math.min(pipeline.maxRetryDelayMs, pipeline.retryDelayMs * 2 ** attempt);
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "retry", attempt, delayMs: delay });
           await sleep(delay);
-          refreshBaseVersion();
           continue;
         }
 
@@ -647,7 +599,26 @@ class SaveCoordinator {
         return result;
       }
 
-      return completeSuccess(result);
+      // Success path.
+      const newVersion = pickDiagramStateVersion(result);
+      if (newVersion !== null) {
+        bumpTrackedDiagramStateVersion(sid, newVersion);
+      }
+      recordSaveDiagnostic("pipeline_success", {
+        sid,
+        pipeline: pipelineName,
+        serverVersion: newVersion,
+      });
+      if (pipeline.onSuccess) {
+        try {
+          pipeline.onSuccess(result, sid, payload);
+        } catch {
+          // no-op
+        }
+      }
+      this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "success" });
+      this.emit("success", { pipeline: pipelineName, sessionId: sid, response: result });
+      return result;
     }
 
     // Unreachable, but keeps linters happy.
