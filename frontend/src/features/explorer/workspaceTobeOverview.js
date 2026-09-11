@@ -12,9 +12,10 @@ export const TOBE_OVERVIEW_FLAG_KEY = "workspace_tobe_overview";
 // Ключ sessionStorage: проект, в котором надо открыть модал создания TO BE
 // (меню «Создать TO BE» в workspace — навигация state-driven, URL тут не пишем).
 export const TOBE_CREATE_STORAGE_KEY = "pm_tobe_create_project";
-// TODO(pilot): подставить org_id пилотных организаций на rollout.
+// Пилот rollout (§9 плана): org «Роботизация производств», id подтверждён
+// read-only по БД stage 2026-09-11 (SELECT id, name FROM orgs).
 // Пустой список = фича недоступна никому, даже при включённом флаге.
-export const TOBE_OVERVIEW_PILOT_ORG_IDS = Object.freeze([]);
+export const TOBE_OVERVIEW_PILOT_ORG_IDS = Object.freeze(["8b89c83ea810"]);
 
 export const STAGE_AS_IS = "as_is";
 export const STAGE_TO_BE = "to_be";
