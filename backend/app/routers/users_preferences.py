@@ -14,7 +14,8 @@ PATCH /api/users/me/preferences  — {base_version, set{...}, unset[...]};
 
 Scope: per-user + per-org (org — active_org_id запроса). Whitelist ключей:
 explorer.tree.expanded, explorer.tree.collapsed, explorer.status_filters.hidden,
-explorer.columns, explorer.density, explorer.saved_views.
+explorer.columns, explorer.density, explorer.saved_views,
+explorer.tobe_banner.dismissed_at.
 
 Уточнение контракта (2026-08-16): значения хранятся как TEXT (JSON) через общий
 storage-слой, который прозрачно работает и на SQLite (dev/tests), и на
@@ -53,6 +54,7 @@ KEY_STATUS_FILTERS_HIDDEN = "explorer.status_filters.hidden"
 KEY_COLUMNS = "explorer.columns"
 KEY_DENSITY = "explorer.density"
 KEY_SAVED_VIEWS = "explorer.saved_views"
+KEY_TOBE_BANNER_DISMISSED = "explorer.tobe_banner.dismissed_at"
 
 ALLOWED_KEYS = {
     KEY_TREE_EXPANDED,
@@ -61,9 +63,11 @@ ALLOWED_KEYS = {
     KEY_COLUMNS,
     KEY_DENSITY,
     KEY_SAVED_VIEWS,
+    KEY_TOBE_BANNER_DISMISSED,
 }
 DENSITY_VALUES = {"comfortable", "compact"}
 STATUS_FILTER_VALUES = {"active", "done", "draft", "as_is"}
+MAX_TOBE_BANNER_DISMISSED_LEN = 64
 
 
 class PreferencesPatchBody(BaseModel):
@@ -123,6 +127,16 @@ def _validate_density(value: Any) -> Optional[str]:
     return None
 
 
+def _validate_tobe_banner_dismissed(value: Any) -> Optional[str]:
+    # Баннер «TO BE ещё не начат» (workspace TO BE overview): dismissed_at
+    # как ts-строка (String(Date.now())), приемлем и ISO — храним opaque-строкой.
+    if not isinstance(value, str) or not value.strip():
+        return "explorer.tobe_banner.dismissed_at must be a non-empty string"
+    if len(value) > MAX_TOBE_BANNER_DISMISSED_LEN:
+        return f"explorer.tobe_banner.dismissed_at exceeds {MAX_TOBE_BANNER_DISMISSED_LEN} chars"
+    return None
+
+
 def _validate_saved_views(value: Any) -> Optional[str]:
     if not isinstance(value, list):
         return "explorer.saved_views must be an array"
@@ -154,6 +168,7 @@ _VALIDATORS = {
     KEY_COLUMNS: _validate_columns,
     KEY_DENSITY: _validate_density,
     KEY_SAVED_VIEWS: _validate_saved_views,
+    KEY_TOBE_BANNER_DISMISSED: _validate_tobe_banner_dismissed,
 }
 
 

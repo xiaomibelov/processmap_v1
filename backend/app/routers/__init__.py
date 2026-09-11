@@ -45,7 +45,6 @@ from .sku_bindings import router as sku_bindings_router
 from .audit_log import router as audit_log_router
 from .agent_chat import router as agent_chat_router
 from .users_preferences import router as users_preferences_router
-from .me_ui_preferences import router as me_ui_preferences_router
 from .admin_endpoint_check import router as admin_endpoint_check_router
 
 # (router, openapi_tags).  Routers that already set their own tags keep them;
@@ -98,6 +97,5 @@ ROUTERS = (
     (health_router, ["health"]),
     (agent_chat_router, ["agent"]),
     (users_preferences_router, ["users"]),
-    (me_ui_preferences_router, ["me"]),
     (admin_endpoint_check_router, ["admin"]),
 )
