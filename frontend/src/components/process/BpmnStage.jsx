@@ -1713,6 +1713,14 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function updateXmlDraft(nextDraft) {
     const raw = String(nextDraft || "");
+    // Программный эхо-вызов (code editor updateListener срабатывает и на
+    // внешнюю подмену значения, см. useEffect [xmlDraft] в BpmnXmlEditor):
+    // текст не изменился относительно текущего draft — это НЕ правка юзера.
+    // Без guard'а эхо после manual save (draft уже равен сохранённому xml,
+    // а `xml` в этот момент ещё старый/нормализованный сервером) эмитило бы
+    // xml.edit → setSaveDirtyHint(true) ПОСЛЕ setSaveDirtyHint(false) в
+    // runManualSaveAction → статус «Есть изменения» навсегда (гонка).
+    if (raw === String(xmlDraft || "")) return;
     setXmlDraft(raw);
     setXmlDirty(raw !== String(xml || ""));
     if (shouldLogBpmnTrace()) {
@@ -4476,7 +4484,10 @@ const BpmnStage = forwardRef(function BpmnStage({
 
     // Use the App-level BPMN XML cache when available to avoid a backend round-trip.
     // This is the key path that makes subprocess return instantaneous.
-    const cachedXml = bpmnXmlCacheRef?.current?.get(s);
+    // forceRemote (resetBackend после overwrite/refresh/clear) ОБЯЗАН обходить
+    // кэш: иначе reload подменяет свежую серверную версию stale-cached XML и
+    // канвас откатывается к пре-правочному состоянию (правки «исчезают» с экрана).
+    const cachedXml = options?.forceRemote === true ? "" : bpmnXmlCacheRef?.current?.get(s);
     if (cachedXml?.trim()) {
       applyXmlSnapshot(cachedXml, "cache");
       setErr("");
@@ -4492,6 +4503,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const loaded = await coordinator.reload({
       reason: options?.reason || "stage_load",
       preferStore: options?.forceRemote === true ? false : options?.preferStore === true,
+      acceptRemoteXml: options?.acceptRemoteXml === true,
       rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
     });
 

@@ -77,6 +77,8 @@ import {
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
+import { enqueueSessionPatchCasWrite } from "./features/process/stage/utils/sessionPatchCasCoordinator";
+import { hasDiagramPatchKeys } from "./features/session/patchKeys.js";
 import { buildSaveAllBatchOptions } from "./features/process/save/saveAllBatch";
 import { buildPropertySaveOptions } from "./features/process/save/propertySaveBoundary";
 import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
@@ -1982,7 +1984,17 @@ export default function App() {
       return { ok: true, local: true };
     }
 
-    const r = await apiPatchSession(sid, partial);
+    // P0: partial с diagram-ключами (nodes/edges/interview/questions/bpmn_meta)
+    // — только через meta pipeline; metadata-ключи остаются прямыми.
+    const r = hasDiagramPatchKeys(partial)
+      ? await enqueueSessionPatchCasWrite({
+          sessionId: sid,
+          patch: partial,
+          apiPatchSession,
+          getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+          rememberDiagramStateVersion: (version, options) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, options),
+        })
+      : await apiPatchSession(sid, partial);
     if (!r.ok) {
       markFail(r.error);
       return { ok: false, error: String(r.error || "patch_failed") };
@@ -2649,7 +2661,20 @@ export default function App() {
       markOk("Время шага сохранено.");
       return { ok: true, local: true };
     }
-    const r = await apiPatchSession(sid, payload);
+    // P0 (fix/canvas-editing-stability): записи с diagram-ключами (nodes/interview)
+    // идут только через meta pipeline — tracker-first base в момент отправки и
+    // ack синкает casVersionTracker. Прямой PATCH здесь давал self-409: base брался
+    // из React-ref в момент вызова и устаревал к моменту отправки, трекер не синкался.
+    const r = hasDiagramPatchKeys(payload)
+      ? await enqueueSessionPatchCasWrite({
+          sessionId: sid,
+          patch: payload,
+          apiPatchSession,
+          getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+          rememberDiagramStateVersion: (version, options) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, options),
+          isXmlTruthSession,
+        })
+      : await apiPatchSession(sid, payload);
     if (!r.ok) {
       setDraftPersisted((prev) => ({
         ...prev,
@@ -3187,7 +3212,16 @@ export default function App() {
       return { ok: true };
     }
 
-    const r = await apiPatchSession(sid, { interview: nextInterview });
+    // P0: interview — diagram-truth ключ → только через meta pipeline (см. setElementStepTime).
+    const r = hasDiagramPatchKeys({ interview: nextInterview })
+      ? await enqueueSessionPatchCasWrite({
+          sessionId: sid,
+          patch: { interview: nextInterview },
+          apiPatchSession,
+          getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+          rememberDiagramStateVersion: (version, options) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, options),
+        })
+      : await apiPatchSession(sid, { interview: nextInterview });
     if (!r.ok) {
       setDraftPersisted((d) => ({
         ...d,

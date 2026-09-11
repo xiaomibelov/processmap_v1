@@ -209,6 +209,11 @@ import {
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
 import { saveCoordinator } from "../features/session/saveCoordinator";
+import { setVersion as setTrackedDiagramStateVersion } from "../lib/casVersionTracker.js";
+import {
+  createCrossTabVersionSync,
+} from "../lib/crossTabVersionSync.js";
+import { subscribeDiagramVersionChanges } from "../lib/casVersionTracker.js";
 import { reportSaveConflictEvent } from "../features/session/saveDiagnosticsTrail.js";
 import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
 import {
@@ -674,6 +679,9 @@ function ProcessStage({
     onConflictEvent: () => setSaveConflictNoticeDismissed(false),
   });
   const sameTabAutoResolveAttemptedRef = useRef(false);
+  // P1 (fix/canvas-editing-stability): кросс-таб синх CAS-версий
+  // (lib/crossTabVersionSync.js) — warning о чужом save при нашей грязной вкладке.
+  const [crossTabVersionWarning, setCrossTabVersionWarning] = useState(null);
   // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
   const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
@@ -1088,6 +1096,9 @@ function ProcessStage({
     readDiagramMode,
     readQualityProfile,
   });
+  // P1: ref-зеркало saveDirtyHint для кросс-таб sync (читается вне рендера).
+  const saveDirtyHintRef = useRef(saveDirtyHint);
+  saveDirtyHintRef.current = saveDirtyHint;
   bpmnVersionsOpenRef.current = versionsOpen;
   const {
     hybridLayerDragRef,
@@ -2409,6 +2420,22 @@ function ProcessStage({
     setSaveConflictNoticeDismissed(true);
   }, []);
 
+  // P1 (fix/canvas-editing-stability): конфликт разрешён пользователем —
+  // persistent remote-update тост («Другой пользователь обновил сессию…
+  // Посмотреть изменения») больше неактуален. Пока он не dismissed, gate в
+  // showSaveAckToast подавляет ВЕСЬ остальной toast-фидбек (в т.ч. подтверждение
+  // overwrite/refresh), поэтому снимаем его явно.
+  const dismissRemoteUpdateToastAfterConflictResolution = useCallback(() => {
+    const remoteKey = toText(remoteUpdateToastLastShownKeyRef.current);
+    if (remoteKey) {
+      remoteUpdateToastDismissedKeyRef.current = remoteKey;
+      remoteUpdateToastLastShownKeyRef.current = "";
+    }
+    setSaveAckToast((prev) => (
+      prev?.kind === "remote_update" ? { ...prev, visible: false } : prev
+    ));
+  }, [toText]);
+
   const reloadSessionAfterSaveConflict = useCallback(async ({ discardLocal = false } = {}) => {
     if (!sid || saveConflictActionBusy) return { ok: false, error: "busy_or_missing_session" };
     setSaveConflictActionBusy(true);
@@ -2420,10 +2447,25 @@ function ProcessStage({
           ...fetched.session,
           _sync_source: "save_conflict_refresh",
         });
+        // P1 (fix/canvas-editing-stability): «Загрузить версию с сервера» принимает
+        // серверное состояние целиком — tracker обязан следовать за ним, иначе
+        // pipelines (tracker-first base) дадут повторный 409 на следующем save.
+        // rememberDiagramStateVersion выше обновляет только React-ref.
+        const rawRefreshedVersion = fetched?.session?.diagram_state_version
+          ?? fetched?.session?.diagramStateVersion;
+        const refreshedVersionNum = Number(rawRefreshedVersion);
+        if (Number.isFinite(refreshedVersionNum) && refreshedVersionNum >= 0) {
+          setTrackedDiagramStateVersion(sid, Math.round(refreshedVersionNum));
+        }
       }
-      await bpmnSync.resetBackend();
+      // acceptRemoteXml: пользователь осознанно принял серверную версию —
+      // reload обязан применить свежий backend XML, не отсекаясь guard'ами
+      // older_rev/dirty_local_newer (loadedRev здесь — draft-ревизия, не версия
+      // сервера, поэтому guard'ы блокировали именно этот сценарий).
+      await bpmnSync.resetBackend({ acceptRemoteXml: true });
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
+      dismissRemoteUpdateToastAfterConflictResolution();
       setSaveConflictNoticeDismissed(true);
       setInfoMsg(
         discardLocal
@@ -2445,7 +2487,7 @@ function ProcessStage({
     } finally {
       setSaveConflictActionBusy(false);
     }
-  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid]);
+  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid, dismissRemoteUpdateToastAfterConflictResolution]);
 
   const handleSaveConflictRefresh = useCallback(() => {
     void reloadSessionAfterSaveConflict({ discardLocal: false });
@@ -2497,6 +2539,7 @@ function ProcessStage({
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
+      dismissRemoteUpdateToastAfterConflictResolution();
       setInfoMsg("Ваша версия сохранена поверх серверной. Действие зафиксировано в истории (overwrite).");
       onBpmnSaved?.(sid, activeProjectId);
     } catch (error) {
@@ -2518,6 +2561,7 @@ function ProcessStage({
     toText,
     onBpmnSaved,
     activeProjectId,
+    dismissRemoteUpdateToastAfterConflictResolution,
   ]);
 
   const closeMergePanel = useCallback(() => {
@@ -2581,6 +2625,7 @@ function ProcessStage({
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
+      dismissRemoteUpdateToastAfterConflictResolution();
       setInfoMsg("Ваша версия сохранена поверх серверной. Создана новая версия в истории.");
       closeMergePanel();
       onBpmnSaved?.(sid, activeProjectId);
@@ -2605,6 +2650,7 @@ function ProcessStage({
     setInfoMsg,
     onBpmnSaved,
     activeProjectId,
+    dismissRemoteUpdateToastAfterConflictResolution,
   ]);
 
   const handleMergeCompare = useCallback(() => {
@@ -6559,6 +6605,32 @@ function ProcessStage({
     toText,
   ]);
 
+  // P1 (fix/canvas-editing-stability): кросс-таб синхронизация CAS-версий.
+  // Чистая вкладка adopt'ит чужую версию (следующий save без честного 409);
+  // грязная — сохраняет свой CAS-base и показывает предупреждение о конфликте.
+  useEffect(() => {
+    const sidValue = String(sid || "").trim();
+    setCrossTabVersionWarning(null);
+    if (!sidValue || isLocal === true) return undefined;
+    const sync = createCrossTabVersionSync({ clientId });
+    sync.bind({
+      sid: sidValue,
+      isDirty: () => saveDirtyHintRef.current === true
+        || bpmnRef.current?.hasXmlDraftChanges?.() === true
+        || saveCoordinator.hasUnsavedChanges(),
+      onRemoteVersionWhileDirty: ({ version }) => {
+        setCrossTabVersionWarning({ version: Number(version) || 0 });
+      },
+    });
+    const unsubscribe = subscribeDiagramVersionChanges(({ sid: changedSid, version }) => {
+      sync.publishVersion(changedSid, version);
+    });
+    return () => {
+      unsubscribe();
+      sync.unbind();
+    };
+  }, [sid, isLocal, clientId]);
+
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.debug(
@@ -8026,6 +8098,26 @@ function ProcessStage({
       {/* Часть А: в explorer-режиме (без сессии) тулбар-хедер с табами сессии
           скрыт — навигационная зона живёт в общем слоте workspaceMain. */}
       {hasSession ? <ProcessStageHeader view={headerView} /> : null}
+      {/* P1 (fix/canvas-editing-stability): предупреждение о чужом save в
+          другой вкладке при нашей несохранённой правке (честный 409 возможен). */}
+      {hasSession && crossTabVersionWarning ? (
+        <div
+          data-testid="cross-tab-version-warning"
+          className="flex items-center justify-between gap-2 border-b border-border bg-amber-400/10 px-3 py-1.5 text-xs font-medium text-amber-700"
+        >
+          <span>
+            {`Схема изменена в другой вкладке (версия ${crossTabVersionWarning.version}). При сохранении возможен конфликт версий.`}
+          </span>
+          <button
+            type="button"
+            data-testid="cross-tab-version-warning-dismiss"
+            className="shrink-0 rounded px-1.5 py-0.5 text-amber-700 hover:bg-amber-400/20"
+            onClick={() => setCrossTabVersionWarning(null)}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
       {/* FIX-V (блок 2, U1/U2): единый toast-viewport — стек под тулбаром,
           не перекрывает контролы, pointer-events только у карточек. */}
       <ProcessToastViewport

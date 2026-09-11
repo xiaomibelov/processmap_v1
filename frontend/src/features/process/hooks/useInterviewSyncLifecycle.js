@@ -7,6 +7,11 @@ import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
 import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
+// P2 (fix/canvas-editing-stability): единый reader CAS-полей (canonical casResponse.js).
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+} from "../../session/casResponse.js";
 import {
   asArray,
   asObject,
@@ -91,22 +96,7 @@ function logAiPersist(tag, payload = {}) {
 }
 
 function readServerCurrentDiagramStateVersion(responseRaw = null) {
-  const response = responseRaw && typeof responseRaw === "object" ? responseRaw : {};
-  const details = asObject(response?.data || response?.errorDetails || response?.details);
-  const rawVersion = response?.server_current_version
-    ?? response?.serverCurrentVersion
-    ?? details?.server_current_version
-    ?? details?.serverCurrentVersion;
-  const version = Number(rawVersion);
-  if (!Number.isFinite(version) || version < 0) return null;
-  return Math.round(version);
-}
-
-function readAckDiagramStateVersion(sessionRaw = null) {
-  const session = asObject(sessionRaw);
-  const version = Number(session?.diagram_state_version ?? session?.diagramStateVersion);
-  if (!Number.isFinite(version) || version < 0) return null;
-  return Math.round(version);
+  return readConflictServerCurrentVersion(responseRaw);
 }
 
 function buildInterviewOptimisticSessionPatch(draftRaw = null, patchRaw = {}) {

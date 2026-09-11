@@ -24,6 +24,34 @@ const store = new Map();
 
 let diagnosticRecorder = null;
 
+const versionListeners = new Set();
+
+/**
+ * Subscribe to tracker mutations (set / bump). Used by
+ * lib/crossTabVersionSync.js to publish version changes to other tabs.
+ * @param {(event: {type: string, sid: string, version: number|null}) => void} listener
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeDiagramVersionChanges(listener) {
+  if (typeof listener !== "function") return () => {};
+  versionListeners.add(listener);
+  return () => {
+    versionListeners.delete(listener);
+  };
+}
+
+function notifyVersionListeners(type, sid, version) {
+  if (versionListeners.size === 0) return;
+  const event = { type, sid, version };
+  for (const listener of versionListeners) {
+    try {
+      listener(event);
+    } catch {
+      // Listener errors must not break the tracker.
+    }
+  }
+}
+
 /**
  * Register a diagnostics recorder `(type, details) => void` that receives
  * tracker mutations (tracker_set / tracker_bump / tracker_rollback /
@@ -62,8 +90,14 @@ export function setVersion(sessionId, version) {
   if (!sid) return;
   const normalized = normalizeVersion(version);
   const entry = ensureEntry(sid);
+  const previous = entry.history.length ? entry.history[entry.history.length - 1] : null;
   entry.history = normalized !== null ? [normalized] : [];
   recordDiagnostic("tracker_set", { sid, version: normalized });
+  // Notify только при реальном изменении — иначе adopt в одной вкладке
+  // (crossTabVersionSync) перезапускал бы публикацию по кругу.
+  if (normalized !== previous) {
+    notifyVersionListeners("set", sid, normalized);
+  }
 }
 
 /**
@@ -105,11 +139,16 @@ export function bumpVersion(sessionId, newVersion) {
   if (normalized === null) return;
 
   const entry = ensureEntry(sid);
+  const previous = entry.history.length ? entry.history[entry.history.length - 1] : null;
   entry.history.push(normalized);
   if (entry.history.length > MAX_HISTORY) {
     entry.history.shift();
   }
   recordDiagnostic("tracker_bump", { sid, version: normalized });
+  // Notify только при реальном изменении (см. setVersion).
+  if (normalized !== previous) {
+    notifyVersionListeners("bump", sid, normalized);
+  }
 }
 
 /**
