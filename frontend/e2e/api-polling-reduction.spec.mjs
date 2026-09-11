@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import { openSessionInTopbar, waitForDiagramReady } from "./helpers/diagramReady.mjs";
+import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 const ACTIVE_MINUTES = Math.max(1, Number(process.env.E2E_POLLING_MINUTES || 5));
@@ -186,6 +186,19 @@ async function ensureOrgSelected(page) {
   }
 }
 
+async function openSessionViaUrl(page, fixture) {
+  // Открытие сессии напрямую через e2e-хук приложения (__FPC_E2E_OPEN_SESSION__).
+  // Shared-helper openSessionInTopbar в этом окружении (dev-БД с сотнями org)
+  // стабильно уводит renderer в необратимый фриз при инжекте опций в селекты
+  // топбара; прямой хук + ожидание draft отработали 4/4 в диагностике.
+  await page.goto(`/app?project=${encodeURIComponent(fixture.projectId)}&session=${encodeURIComponent(fixture.sessionId)}`);
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForFunction(() => typeof window.__FPC_E2E_OPEN_SESSION__ === "function", null, { timeout: 60_000 });
+  await page.evaluate((sid) => window.__FPC_E2E_OPEN_SESSION__(sid), fixture.sessionId);
+  await page.waitForFunction((sid) => String(window.__FPC_E2E_DRAFT__?.session_id || "") === String(sid), fixture.sessionId, { timeout: 60_000 });
+  await waitForDiagramReady(page, { timeout: 120_000 });
+}
+
 async function dragFirstTask(page) {
   const target = await page.evaluate(() => {
     const shapes = document.querySelectorAll('.djs-container svg [data-element-id^="Task_poll_"]');
@@ -214,8 +227,7 @@ test.describe("api-polling-reduction", () => {
     await seedOrgChoiceDone(page, auth.userId);
     await page.goto("/app");
     await ensureOrgSelected(page);
-    await openSessionInTopbar(page, fixture);
-    await waitForDiagramReady(page);
+    await openSessionViaUrl(page, fixture);
 
     // Посадочный трафик (загрузка сессии/мета/панелей) не входит в замер.
     await page.waitForTimeout(20_000);
@@ -250,8 +262,7 @@ test.describe("api-polling-reduction", () => {
     await seedOrgChoiceDone(page, auth.userId);
     await page.goto("/app");
     await ensureOrgSelected(page);
-    await openSessionInTopbar(page, fixture);
-    await waitForDiagramReady(page);
+    await openSessionViaUrl(page, fixture);
     await page.waitForTimeout(15_000);
 
     const hiddenPage = await context.newPage();
@@ -307,8 +318,7 @@ test.describe("api-polling-reduction", () => {
     await seedOrgChoiceDone(page, auth.userId);
     await page.goto("/app");
     await ensureOrgSelected(page);
-    await openSessionInTopbar(page, fixture);
-    await waitForDiagramReady(page);
+    await openSessionViaUrl(page, fixture);
 
     // presence heartbeat уходит и отвечает 2xx (считаем через счётчик).
     await page.waitForTimeout(35_000);
