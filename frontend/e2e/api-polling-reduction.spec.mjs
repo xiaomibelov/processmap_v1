@@ -138,18 +138,35 @@ async function budgetStats(page, sinceMs) {
   return budget;
 }
 
+async function clickOrgButtonInDom(page) {
+  // Список org (сотни штук в dev-БД) рендерится без виртуализации: первая
+  // кнопка уезжает за пределы viewport (y<0) и обычный locator.click()
+  // не скроллится к ней. Клик через DOM детерминирован.
+  return page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button")).filter((b) => /Роль:/.test(b.textContent || ""));
+    if (!buttons.length) return false;
+    const preferred = buttons.find((b) => /Default/i.test(b.textContent || "")) || buttons[0];
+    preferred.click();
+    return true;
+  });
+}
+
 async function ensureOrgSelected(page) {
-  // Локальная dev-БД содержит десятки организаций: при отсутствии server-side
+  // Локальная dev-БД содержит сотни организаций: при отсутствии server-side
   // active org приложение показывает экран «Выберите организацию», который
   // shared-helper не всегда пробивает (кликает первую попавшуюся «Org»).
   // Фикстуры контура живут в org «Default» — выбираем её явно один раз.
+  // Кнопки подгружаются асинхронно после заголовка, поэтому ждём их и повторяем.
   const orgChoice = page.getByText("Выберите организацию");
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 10; i += 1) {
     if (!(await orgChoice.isVisible().catch(() => false))) return;
-    const defaultBtn = page.getByRole("button", { name: /Default/i }).first();
-    if (!(await defaultBtn.count())) return;
-    await defaultBtn.click().catch(() => {});
-    await page.waitForTimeout(1500);
+    const clicked = await clickOrgButtonInDom(page).catch(() => false);
+    if (clicked) {
+      await page.waitForTimeout(1500);
+      if (!(await orgChoice.isVisible().catch(() => false))) return;
+    } else {
+      await page.waitForTimeout(1000);
+    }
   }
 }
 
@@ -258,7 +275,8 @@ test.describe("api-polling-reduction", () => {
       data: { scope_type: "diagram_element", scope_ref: { element_id: "Task_poll_1" }, title: "E2E polling thread", body: "E2E polling thread body" },
     });
     const thread = await apiJson(threadRes, "create note thread");
-    const threadId = String(thread.id || "").trim();
+    // API отдаёт обёртку { thread: { id } }.
+    const threadId = String(thread?.thread?.id || thread?.id || "").trim();
     expect(threadId).not.toBe("");
     const commentRes = await request.post(`${API_BASE}/api/note-threads/${threadId}/comments`, {
       headers: auth.headers,
