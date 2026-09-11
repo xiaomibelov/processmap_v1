@@ -71,16 +71,25 @@ test("sorts loaded child folders independently", () => {
 });
 
 test("sorts sessions by status, stage, owner, and updated date", () => {
+  // Колонка «Стадия» рендерит контур AS IS/TO BE (stage_badges), а не
+  // session.stage — сортировка по ключу "stage" идёт по badges
+  // (fallback process_layer), пропуски — в конец.
   const sessions = [
-    { id: "s1", name: "Суп", status: "ready", stage: "B", owner: { name: "Яна" }, updated_at: 10 },
-    { id: "s2", name: "Каша", status: "draft", stage: "A", owner: { name: "Анна" }, updated_at: 20 },
-    { id: "s3", name: "Пирог", status: "", stage: "", updated_at: 0 },
+    { id: "s1", name: "Суп", status: "ready", stage_badges: ["as_is"], owner: { name: "Яна" }, updated_at: 10 },
+    { id: "s2", name: "Каша", status: "draft", stage_badges: ["to_be"], owner: { name: "Анна" }, updated_at: 20 },
+    { id: "s3", name: "Пирог", status: "", stage_badges: [], process_layer: "as_is", updated_at: 0 },
+    { id: "s4", name: "Борщ", status: "ready", stage_badges: ["as_is", "to_be"], updated_at: 30 },
   ];
 
-  assert.deepEqual(sortProjectSessions(sessions, { key: "status", direction: "asc" }).map((row) => row.id), ["s2", "s1", "s3"]);
-  assert.deepEqual(sortProjectSessions(sessions, { key: "stage", direction: "desc" }).map((row) => row.id), ["s1", "s2", "s3"]);
-  assert.deepEqual(sortProjectSessions(sessions, { key: "owner", direction: "asc" }).map((row) => row.id), ["s2", "s1", "s3"]);
-  assert.deepEqual(sortProjectSessions(sessions, { key: "updatedAt", direction: "desc" }).map((row) => row.id), ["s2", "s1", "s3"]);
+  assert.deepEqual(sortProjectSessions(sessions, { key: "status", direction: "asc" }).map((row) => row.id), ["s2", "s4", "s1", "s3"]);
+  // asc: "as_is"-группа (s3 через fallback process_layer, tie с s1 → имя asc:
+  //       Пирог раньше Супа) < "as_is to_be" (s4) < "to_be" (s2);
+  // desc: "to_be" (s2) < "as_is to_be" (s4) < "as_is"-группа; tie-break по
+  //       имени остаётся asc в обе стороны → Пирог (s3) перед Супом (s1).
+  assert.deepEqual(sortProjectSessions(sessions, { key: "stage", direction: "asc" }).map((row) => row.id), ["s3", "s1", "s4", "s2"]);
+  assert.deepEqual(sortProjectSessions(sessions, { key: "stage", direction: "desc" }).map((row) => row.id), ["s2", "s4", "s3", "s1"]);
+  assert.deepEqual(sortProjectSessions(sessions, { key: "owner", direction: "asc" }).map((row) => row.id), ["s2", "s1", "s4", "s3"]);
+  assert.deepEqual(sortProjectSessions(sessions, { key: "updatedAt", direction: "desc" }).map((row) => row.id), ["s4", "s2", "s1", "s3"]);
 });
 
 test("toggleExplorerSort uses text asc first and updated desc first", () => {

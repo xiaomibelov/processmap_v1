@@ -10,6 +10,7 @@ import {
   isTobeOverviewEnabled,
   isTobeOverviewPilotOrg,
   normalizeStageBadges,
+  shouldShowStageEmptyState,
   stageCountsText,
   stageEmptyTitle,
   stageFilterToKey,
@@ -19,6 +20,7 @@ import {
   stageSummaryText,
   tobeCoverageText,
   tobeTooltipText,
+  workspaceEmptyTitle,
 } from "./workspaceTobeOverview.js";
 
 test("flag key and storage key are stable contracts", () => {
@@ -100,6 +102,50 @@ test("stageEmptyTitle names the active stage filter", () => {
   assert.equal(stageEmptyTitle("as_is"), "Нет веток по фильтру AS IS");
   assert.equal(stageEmptyTitle("as_is+to_be"), "Нет веток по фильтру контура");
   assert.equal(stageEmptyTitle(""), "Нет веток по фильтру контура");
+});
+
+test("shouldShowStageEmptyState: пустой ВИДИМЫЙ список + активный фильтр любой группы", () => {
+  // AC9 / S3: TO BE + статус «Готово» → 0 видимых строк при непустом rootItems.
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 0, statusFilter: "done", stageKey: "to_be", loading: false, error: null }),
+    true,
+  );
+  // Пусто от сервера при активном stage-фильтре (существующий кейс).
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 0, statusFilter: "all", stageKey: "as_is", loading: false, error: null }),
+    true,
+  );
+  // Только клиентский статус-фильтр.
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 0, statusFilter: "active", stageKey: "", loading: false, error: null }),
+    true,
+  );
+  // Обычная пустота без фильтров — обычный empty state, не stage.
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 0, statusFilter: "all", stageKey: "", loading: false, error: null }),
+    false,
+  );
+  // Есть видимые строки — empty state не нужен, даже с фильтрами.
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 3, statusFilter: "done", stageKey: "to_be", loading: false, error: null }),
+    false,
+  );
+  // Загрузка и ошибка блокируют empty state.
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 0, statusFilter: "done", stageKey: "to_be", loading: true, error: null }),
+    false,
+  );
+  assert.equal(
+    shouldShowStageEmptyState({ visibleCount: 0, statusFilter: "done", stageKey: "to_be", loading: false, error: "boom" }),
+    false,
+  );
+});
+
+test("workspaceEmptyTitle учитывает группу активного фильтра", () => {
+  assert.equal(workspaceEmptyTitle({ stageKey: "to_be", statusFilter: "done" }), "Нет веток по фильтру TO BE");
+  assert.equal(workspaceEmptyTitle({ stageKey: "as_is", statusFilter: "all" }), "Нет веток по фильтру AS IS");
+  assert.equal(workspaceEmptyTitle({ stageKey: "", statusFilter: "done" }), "Нет веток по фильтру статуса");
+  assert.equal(workspaceEmptyTitle({ stageKey: "", statusFilter: "all" }), "Нет веток по фильтру контура");
 });
 
 test("stageLabel uppercases known stages", () => {
