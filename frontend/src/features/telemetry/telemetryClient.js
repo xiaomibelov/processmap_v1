@@ -133,7 +133,6 @@ function computeFingerprint(event) {
     severity: String(event?.severity || ""),
     message: String(event?.message || ""),
     route: String(event?.route || ""),
-    request_id: String(event?.request_id || ""),
     endpoint: String(event?.context_json?.endpoint || ""),
     status: Number(event?.context_json?.status || 0),
   });
