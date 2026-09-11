@@ -6,6 +6,7 @@ import {
   getRuntimeId,
   getTelemetryDebugState,
   installGlobalFrontendTelemetry,
+  reportApiFailureEvent,
   sendTelemetryEvent,
 } from "./telemetryClient.js";
 
@@ -138,6 +139,77 @@ test("sendTelemetryEvent throttles repeated same fingerprint in a short window",
   assert.equal(first.ok, true);
   assert.equal(second.skipped, "throttled");
   assert.equal(calls, 1);
+});
+
+test("reportApiFailureEvent дедуплицирует повторные api_failure одного endpoint в пределах окна троттлинга", async () => {
+  __resetTelemetryForTests();
+  global.window = {
+    location: { href: "http://local/", pathname: "/", search: "", hash: "" },
+    localStorage: createStorage(),
+    sessionStorage: createStorage(),
+  };
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const first = await reportApiFailureEvent({
+    method: "GET",
+    endpoint: "/api/projects/proj_1/sessions",
+    status: 500,
+    requestId: "req_first",
+  });
+  const second = await reportApiFailureEvent({
+    method: "GET",
+    endpoint: "/api/projects/proj_1/sessions",
+    status: 500,
+    requestId: "req_second",
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.skipped, "throttled");
+  assert.equal(calls, 1);
+  const sentPayload = getTelemetryDebugState().accepted[0]?.payload || {};
+  assert.equal(sentPayload.request_id, "req_first");
+  assert.equal(sentPayload.context_json.endpoint, "/api/projects/proj_1/sessions");
+});
+
+test("reportApiFailureEvent не дедуплицирует api_failure для разных endpoint", async () => {
+  __resetTelemetryForTests();
+  global.window = {
+    location: { href: "http://local/", pathname: "/", search: "", hash: "" },
+    localStorage: createStorage(),
+    sessionStorage: createStorage(),
+  };
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const first = await reportApiFailureEvent({
+    method: "GET",
+    endpoint: "/api/projects/proj_1/sessions",
+    status: 500,
+    requestId: "req_first",
+  });
+  const second = await reportApiFailureEvent({
+    method: "GET",
+    endpoint: "/api/projects/proj_2/sessions",
+    status: 500,
+    requestId: "req_second",
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(calls, 2);
 });
 
 test("installGlobalFrontendTelemetry emits frontend_fatal for window error events", async () => {

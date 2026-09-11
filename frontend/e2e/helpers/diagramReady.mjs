@@ -121,11 +121,14 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
   while (Date.now() - startedAt < timeout) {
     const orgChoice = page.getByText("Выберите организацию");
     if (await orgChoice.isVisible().catch(() => false)) {
-      const firstOrgButton = page.getByRole("button", { name: /Org|Default|Организац/i }).first();
-      if (await firstOrgButton.count()) {
-        await firstOrgButton.click().catch(() => {});
-        await page.waitForTimeout(250);
-      }
+      // Список org может быть сотни позиций без виртуализации: первая кнопка
+      // уезжает за пределы viewport и locator.click() к ней не скроллится.
+      // Клик через DOM по кнопке с подписью роли — детерминированный.
+      await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll("button")).filter((b) => /Роль:/.test(b.textContent || ""));
+        if (buttons.length) buttons[0].click();
+      }).catch(() => {});
+      await page.waitForTimeout(250);
     }
     await selectProject(projectId);
     if (desiredSessionId) {

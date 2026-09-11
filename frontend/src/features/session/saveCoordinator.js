@@ -46,8 +46,13 @@ function debounceKey(pipelineName, sessionId) {
   return `${pipelineName}::${asText(sessionId)}`;
 }
 
-function queueKey(_pipelineName, sessionId) {
-  return asText(sessionId);
+function queueKey(pipelineName, sessionId) {
+  // Queues are per-pipeline: the xml pipeline transport executes the rawXml
+  // pipeline from inside its own run (flushSave → saveRaw → execute), so a
+  // shared per-session queue deadlocks (xml waits transport, transport waits
+  // rawXml, rawXml waits xml). Same-pipeline runs for one session stay
+  // serialized by this lane key.
+  return `${asText(pipelineName)}::${asText(sessionId)}`;
 }
 
 function isConflictResponse(response) {
