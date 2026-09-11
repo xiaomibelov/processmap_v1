@@ -14,6 +14,7 @@ import { apiRequest } from "../../lib/api.js";
 export const USER_PREFERENCES_QUERY_KEY = ["user-preferences"];
 export const EXPLORER_TREE_COLLAPSED_KEY = "explorer.tree.collapsed";
 export const EXPLORER_TREE_EXPANDED_KEY = "explorer.tree.expanded";
+export const EXPLORER_TOBE_BANNER_DISMISSED_KEY = "explorer.tobe_banner.dismissed_at";
 export const TREE_SAVE_DEBOUNCE_MS = 500;
 
 export async function fetchUserPreferences() {
@@ -26,22 +27,6 @@ export async function patchUserPreferences({ baseVersion, set, unset }) {
   return apiRequest("/api/users/me/preferences", {
     method: "PATCH",
     body: { base_version: baseVersion, set, unset },
-  });
-}
-
-// Per-user UI-предпочтения (технический контур workspace TO BE overview,
-// feature/workspace-as-is-tobe-overview): баннер dismissed и пр. Мелкие ключи
-// без version-CAS — живут в отдельной таблице user_ui_preferences.
-export async function fetchMeUiPreferences() {
-  const resp = await apiRequest("/api/me/ui-preferences");
-  if (!resp?.ok) return null;
-  return resp?.data || null;
-}
-
-export async function patchMeUiPreferences({ set, unset }) {
-  return apiRequest("/api/me/ui-preferences", {
-    method: "PATCH",
-    body: { set, unset },
   });
 }
 

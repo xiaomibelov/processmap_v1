@@ -7,7 +7,8 @@ Unit + contract тесты агрегации AS IS/TO BE:
 - фильтр ?stage (OR; оба значения = без фильтра; path_only; пустая выборка;
   глобальные counters под фильтром; meta.matched_*);
 - deleted_at: живые-only счётчики; удалённая TO BE не даёт to_be у AS IS;
-- user_ui_preferences (GET/PATCH /api/me/ui-preferences), org-scoped;
+- dismiss баннера через единый /api/users/me/preferences
+  (whitelist-ключ explorer.tobe_banner.dismissed_at, CAS, 409 LWW).
 - feature flag workspace_tobe_overview default off.
 
 Прогон: python -m pytest tests/test_workspace_tobe_overview.py
@@ -427,63 +428,101 @@ class WorkspaceTobeOverviewTest(unittest.TestCase):
         for key in ("id", "name", "status", "has_children", "subprocesses_count"):
             self.assertTrue(hasattr(s1, key), f"missing legacy field {key}")
 
-    # ─── user_ui_preferences (AC6) ────────────────────────────────────────────
+    # ─── Per-user предпочтения баннера через users_preferences API (AC6) ───────
+    # Единый механизм /api/users/me/preferences (whitelist-ключ
+    # explorer.tobe_banner.dismissed_at) — дублирующий /api/me/ui-preferences
+    # удалён по ревью F2 (REVIEW_FAIL 2026-09-11).
 
     def _with_scope(self):
         from app.storage import push_storage_request_scope
 
         return push_storage_request_scope(self.admin_id, True, self.org_id)
 
-    def test_me_ui_preferences_roundtrip_and_org_scope(self):
-        from app.routers.me_ui_preferences import (
-            UiPreferencesPatchBody,
-            get_me_ui_preferences,
-            patch_me_ui_preferences,
+    def test_tobe_banner_dismiss_roundtrip_and_org_scope(self):
+        from app.routers.users_preferences import (
+            PreferencesPatchBody,
+            get_my_preferences,
+            patch_my_preferences,
         )
         from app.storage import pop_storage_request_scope
 
         tokens = self._with_scope()
         self.addCleanup(pop_storage_request_scope, tokens)
         req = self._req(self.admin)
-        snap = get_me_ui_preferences(req)
+        snap = get_my_preferences(req)
         self.assertEqual(snap["preferences"], {})
+        base_version = int(snap["version"])
 
-        patch = patch_me_ui_preferences(
-            UiPreferencesPatchBody(set={"workspace_tobe_banner_dismissed": "1699999999"}), req
+        patch = patch_my_preferences(
+            req,
+            PreferencesPatchBody(
+                base_version=base_version,
+                set={"explorer.tobe_banner.dismissed_at": "1699999999"},
+            ),
         )
-        self.assertTrue(patch["ok"])
-        self.assertEqual(patch["preferences"]["workspace_tobe_banner_dismissed"], "1699999999")
+        self.assertEqual(patch["preferences"]["explorer.tobe_banner.dismissed_at"], "1699999999")
 
         # Персистентно: повторный GET из «другого запроса» отдаёт значение.
-        again = get_me_ui_preferences(self._req(self.admin))
-        self.assertEqual(again["preferences"]["workspace_tobe_banner_dismissed"], "1699999999")
+        again = get_my_preferences(self._req(self.admin))
+        self.assertEqual(again["preferences"]["explorer.tobe_banner.dismissed_at"], "1699999999")
 
         # Другой org-scope — изоляция.
         req_other_org = _DummyRequest(self.admin, active_org_id="org_other")
-        other = get_me_ui_preferences(req_other_org)
+        other = get_my_preferences(req_other_org)
         self.assertEqual(other["preferences"], {})
 
         # unset удаляет.
-        patch = patch_me_ui_preferences(
-            UiPreferencesPatchBody(unset=["workspace_tobe_banner_dismissed"]), req
+        patch = patch_my_preferences(
+            req,
+            PreferencesPatchBody(
+                base_version=int(again["version"]),
+                unset=["explorer.tobe_banner.dismissed_at"],
+            ),
         )
-        self.assertNotIn("workspace_tobe_banner_dismissed", patch["preferences"])
+        self.assertNotIn("explorer.tobe_banner.dismissed_at", patch["preferences"])
 
-    def test_me_ui_preferences_validation(self):
-        from app.routers.me_ui_preferences import (
-            UiPreferencesPatchBody,
-            patch_me_ui_preferences,
+    def test_tobe_banner_dismiss_cas_and_validation(self):
+        from fastapi.responses import JSONResponse
+
+        from app.routers.users_preferences import (
+            PreferencesPatchBody,
+            get_my_preferences,
+            patch_my_preferences,
         )
         from app.storage import pop_storage_request_scope
 
         tokens = self._with_scope()
         self.addCleanup(pop_storage_request_scope, tokens)
         req = self._req(self.admin)
-        bad = patch_me_ui_preferences(UiPreferencesPatchBody(set={"BAD KEY!": "1"}), req)
-        self.assertFalse(bad["ok"])
+        snap = get_my_preferences(req)
+
+        # Stale base_version → 409 с актуальным снапшотом (клиент решает LWW).
+        conflict = patch_my_preferences(
+            req,
+            PreferencesPatchBody(base_version=int(snap["version"]) + 5, set={}),
+        )
+        self.assertIsInstance(conflict, JSONResponse)
+        self.assertEqual(conflict.status_code, 409)
+
+        # Unknown key → 422.
+        bad = patch_my_preferences(
+            req,
+            PreferencesPatchBody(base_version=int(snap["version"]), set={"nope.key": "1"}),
+        )
+        self.assertIsInstance(bad, JSONResponse)
+        self.assertEqual(bad.status_code, 422)
+
+        # Слишком длинное значение whitelisted-ключа → 422.
         long_value = "x" * 300
-        bad_value = patch_me_ui_preferences(UiPreferencesPatchBody(set={"k": long_value}), req)
-        self.assertFalse(bad_value["ok"])
+        bad_value = patch_my_preferences(
+            req,
+            PreferencesPatchBody(
+                base_version=int(snap["version"]),
+                set={"explorer.tobe_banner.dismissed_at": long_value},
+            ),
+        )
+        self.assertIsInstance(bad_value, JSONResponse)
+        self.assertEqual(bad_value.status_code, 422)
 
     # ─── Feature flag (AC7) ───────────────────────────────────────────────────
 

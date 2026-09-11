@@ -3220,22 +3220,6 @@ components:
           type: string
       title: TestgenRunBody
       type: object
-    UiPreferencesPatchBody:
-      properties:
-        set:
-          additionalProperties:
-            type: string
-          nullable: true
-          title: Set
-          type: object
-        unset:
-          items:
-            type: string
-          nullable: true
-          title: Unset
-          type: array
-      title: UiPreferencesPatchBody
-      type: object
     UpdateProjectIn:
       additionalProperties: true
       properties:
@@ -10054,61 +10038,6 @@ paths:
       summary: 'Статус LLM-гейтвея: configured + дневная квота'
       tags:
       - llm
-  /api/me/ui-preferences:
-    get:
-      description: 'Получить ui preferences. Особенности: доступ: член организации
-        с нужной ролью (org-scope).'
-      operationId: get_me_ui_preferences_api_me_ui_preferences_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Get Me Ui Preferences Api Me Ui Preferences Get
-                type: object
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-      security:
-      - bearerAuth: []
-      summary: Получить ui preferences
-      tags:
-      - me
-      - me
-    patch:
-      description: 'Обновить частично ui preferences. Особенности: доступ: член организации
-        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии).'
-      operationId: patch_me_ui_preferences_api_me_ui_preferences_patch
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UiPreferencesPatchBody'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Patch Me Ui Preferences Api Me Ui Preferences Patch
-                type: object
-          description: Successful Response
-        '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - bearerAuth: []
-      summary: Обновить частично ui preferences
-      tags:
-      - me
-      - me
   /api/meta:
     get:
       description: Runtime-метаданные для фронтенда (app_version/build_id/min_supported
@@ -19365,8 +19294,6 @@ tags:
   name: kitchens
 - description: 'LLM-гейтвей: статус, квоты, feedback (без секретов)'
   name: llm
-- description: me
-  name: me
 - description: Заметки и обсуждения по элементам диаграмм
   name: notes
 - description: Каталог операций роботизированного исполнения

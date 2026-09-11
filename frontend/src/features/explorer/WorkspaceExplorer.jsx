@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { explorerPageQueryKey, explorerPageQueryOptions } from "./explorerPageQuery.js";
 import {
+  EXPLORER_TOBE_BANNER_DISMISSED_KEY,
   EXPLORER_TREE_COLLAPSED_KEY,
   EXPLORER_TREE_EXPANDED_KEY,
   USER_PREFERENCES_QUERY_KEY,
@@ -25,9 +26,7 @@ import {
   expandedMapFromPreferences,
   expandedIdsFromMap,
   expandedIdsFromPreferences,
-  fetchMeUiPreferences,
   fetchUserPreferences,
-  patchMeUiPreferences,
   patchUserPreferences,
   treeScopeKey,
 } from "./explorerTreePersistence.js";
@@ -2774,38 +2773,43 @@ function ExplorerPane({
   }, []);
   const resetStageFilter = useCallback(() => setStageFilterSel({ as_is: false, to_be: false }), []);
 
-  // Баннер «В проектах workspace нет TO BE»: dismiss -> per-user UI-предпочтения.
-  const meUiPrefsQuery = useQuery({
-    queryKey: ["me-ui-preferences"],
-    queryFn: fetchMeUiPreferences,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-    enabled: showTobeOverview,
-  });
-  const tobeBannerDismissed = Boolean(meUiPrefsQuery.data?.preferences?.workspace_tobe_banner_dismissed);
+  // Баннер «В проектах workspace нет TO BE»: dismiss -> единый Preferences API
+  // (/api/users/me/preferences, whitelist-ключ explorer.tobe_banner.dismissed_at).
+  // prefsQuery общий с персистентностью дерева — отдельного запроса нет.
+  const tobeBannerDismissed = Boolean(prefsQuery.data?.preferences?.[EXPLORER_TOBE_BANNER_DISMISSED_KEY]);
   const workspaceTobeCount = Number(page?.meta?.workspace_counts?.to_be) || 0;
   const showTobeBanner = showTobeOverview && !tobeBannerDismissed && workspaceTobeCount === 0 && !loading && !error;
   const dismissTobeBanner = useCallback(async () => {
-    const next = { workspace_tobe_banner_dismissed: String(Date.now()) };
-    queryClient.setQueryData(["me-ui-preferences"], (old) => ({
-      ...(old || {}),
-      preferences: { ...(old?.preferences || {}), ...next },
-    }));
+    const next = { [EXPLORER_TOBE_BANNER_DISMISSED_KEY]: String(Date.now()) };
+    const currentDoc = prefsQuery.data;
+    queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, (old) => old ? ({
+      ...old,
+      preferences: { ...(old.preferences || {}), ...next },
+    }) : old);
     try {
-      const resp = await patchMeUiPreferences({ set: next });
-      if (resp?.ok) queryClient.setQueryData(["me-ui-preferences"], resp.data || null);
+      let baseVersion = Number(currentDoc?.version || 0);
+      let resp = await patchUserPreferences({ baseVersion, set: next });
+      if (Number(resp?.status) === 409 && resp?.data) {
+        // CAS-конфликт: LWW — повторяем с версией из снапшота конфликта.
+        baseVersion = Number(resp.data.version || 0);
+        resp = await patchUserPreferences({ baseVersion, set: next });
+      }
+      if (resp?.ok) queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, resp.data || null);
     } catch (e) {
       console.warn("[WorkspaceExplorer] failed to persist TO BE banner dismiss", e);
     }
-  }, [queryClient]);
+  }, [prefsQuery.data, queryClient]);
 
   // Меню «Создать TO BE»: навигация state-driven (URL не пишем), intent
   // передаём через sessionStorage; ProjectPane при маунте его потребляет
-  // (там же обрабатывается deep-link ?tobe=new).
+  // (там же обрабатывается deep-link ?tobe=new). Если ProjectPane уже
+  // смонтирован на целевом проекте (remount не случится), intent доносим
+  // событием окна — подписчик в ProjectPane откроет модал без навигации.
   const handleCreateTobe = useCallback((project) => {
     const pid = String(project?.id || "").trim();
     if (!pid) return;
     try { window.sessionStorage?.setItem(TOBE_CREATE_STORAGE_KEY, pid); } catch { /* ignore */ }
+    try { window.dispatchEvent(new CustomEvent("pm:tobe-create-intent", { detail: { projectId: pid } })); } catch { /* ignore */ }
     onNavigateToProject(pid, { breadcrumbBase: page?.breadcrumbs || [] });
   }, [onNavigateToProject, page?.breadcrumbs]);
 
@@ -4529,8 +4533,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   // Deep-link «Создать TO BE»: ?tobe=new в URL или intent из меню workspace
   // (sessionStorage, см. handleCreateTobe) — открываем модал создания с
   // пресетом TO BE и снимаем параметр из URL, чтобы не зацикливаться.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  // Потребление — и при маунте, и по событию pm:tobe-create-intent: иначе
+  // intent не сработал бы, если ProjectPane уже смонтирован на целевом
+  // проекте (review M1, REVIEW_FAIL 2026-09-11).
+  const openTobeCreateFromIntent = useCallback(() => {
+    if (typeof window === "undefined") return false;
     let viaStorage = false;
     try {
       viaStorage = window.sessionStorage?.getItem(TOBE_CREATE_STORAGE_KEY) === String(projectId || "");
@@ -4540,7 +4547,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     try {
       viaUrl = new URLSearchParams(window.location.search || "").get("tobe") === "new";
     } catch { /* ignore */ }
-    if (!viaStorage && !viaUrl) return;
+    if (!viaStorage && !viaUrl) return false;
     setInitialProcessLayer("to_be");
     setCreating(true);
     if (viaUrl) {
@@ -4554,7 +4561,21 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         });
       } catch { /* ignore */ }
     }
+    return true;
   }, [projectId]);
+  useEffect(() => {
+    openTobeCreateFromIntent();
+  }, [openTobeCreateFromIntent]);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onIntent = (event) => {
+      const targetId = String(event?.detail?.projectId || "").trim();
+      if (!targetId || targetId !== String(projectId || "").trim()) return;
+      openTobeCreateFromIntent();
+    };
+    window.addEventListener("pm:tobe-create-intent", onIntent);
+    return () => window.removeEventListener("pm:tobe-create-intent", onIntent);
+  }, [projectId, openTobeCreateFromIntent]);
   // P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта.
   // pendingUploads — транзиентные строки создания/upload (стадии + retry).
   const [pendingUploads, setPendingUploads] = useState([]);
