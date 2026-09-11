@@ -1,4 +1,5 @@
 import { getExplorerBusinessAssigneeLabel } from "./explorerAssigneeModel.js";
+import { normalizeStageBadges } from "./workspaceTobeOverview.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -60,7 +61,13 @@ function valueForExplorerItem(item, key, { isRoot = false } = {}) {
 function valueForSession(session, key) {
   if (key === "name") return normalizeText(session?.name || session?.title);
   if (key === "status") return normalizeText(session?.status);
-  if (key === "stage") return normalizeText(session?.stage);
+  // Колонка «Стадия» рендерит контур AS IS/TO BE — сортируем по тому же
+  // значению (join нормализованных stage_badges), fallback на process_layer.
+  if (key === "stage") {
+    const badges = normalizeStageBadges(session?.stage_badges);
+    if (badges.length) return badges.join(" ");
+    return normalizeText(session?.process_layer);
+  }
   if (key === "owner") return normalizeText(ownerText(session?.owner));
   if (key === "updatedAt") return timestampValue(session?.updated_at || session?.created_at);
   return "";

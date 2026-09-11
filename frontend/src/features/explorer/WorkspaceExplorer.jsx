@@ -37,14 +37,16 @@ import {
   TOBE_OVERVIEW_FLAG_KEY,
   isTobeOverviewEnabled,
   normalizeStageBadges,
+  shouldShowStageEmptyState,
   stageCountsText,
-  stageEmptyTitle,
   stageFilterToKey,
   stageLabel,
   stageSummaryText,
   tobeCoverageText,
   tobeTooltipText,
+  workspaceEmptyTitle,
 } from "./workspaceTobeOverview.js";
+import { menuItemIndexes, resolveMenuKey } from "./explorerContextMenu.js";
 import {
   EXPLORER_STATUS_FILTERS_HIDDEN_KEY,
   STATUS_FILTER_OPTIONS,
@@ -1841,8 +1843,13 @@ function WorkspaceSidebar({
 }
 
 // ─── Context Menu (dropdown actions) ──────────────────────────────────────────
+// a11y: role="menu"/"menuitem"/"separator", при открытии фокус на первый
+// пункт; ArrowUp/ArrowDown (через resolveMenuKey, separator пропускаются),
+// Home/End, Escape — закрытие с возвратом фокуса на кнопку-триггер «···»
+// (ближайшая кнопка внутри того же relative-контейнера). Поведение мыши
+// (mousedown-outside закрытие, клик по пункту) не меняется.
 
-function ContextMenu({ items, onClose }) {
+export function ContextMenu({ items, onClose }) {
   const ref = useRef(null);
   const [position, setPosition] = useState(null);
   useEffect(() => {
@@ -1870,9 +1877,43 @@ function ContextMenu({ items, onClose }) {
       width: menuWidth,
     });
   }, []);
+  // При открытии фокус переходит на первый пункт (keyboard path: Tab →
+  // Enter на триггере → стрелки в меню). Одноразово: items пересоздаётся
+  // при каждом рендере родителя, повторный фокус сбрасывал бы навигацию.
+  const didFocusRef = useRef(false);
+  useEffect(() => {
+    if (didFocusRef.current) return;
+    const first = menuItemIndexes(items)[0];
+    if (first === undefined) return;
+    didFocusRef.current = true;
+    ref.current?.querySelector(`[data-menu-index="${first}"]`)?.focus();
+  }, [items]);
+  const focusMenuIndex = (index) => {
+    ref.current?.querySelector(`[data-menu-index="${index}"]`)?.focus();
+  };
+  const focusTrigger = () => {
+    ref.current?.parentElement?.querySelector("button")?.focus();
+  };
+  const handleKeyDown = (event) => {
+    const active = document.activeElement;
+    const rawIndex = active instanceof HTMLElement ? active.dataset?.menuIndex : undefined;
+    const currentIndex = rawIndex === undefined ? -1 : Number(rawIndex);
+    const resolved = resolveMenuKey(items, Number.isInteger(currentIndex) ? currentIndex : -1, event.key);
+    if (!resolved) return;
+    event.preventDefault();
+    if (resolved.close) {
+      focusTrigger();
+      onClose();
+      return;
+    }
+    focusMenuIndex(resolved.index);
+  };
   return (
     <div
       ref={ref}
+      role="menu"
+      aria-orientation="vertical"
+      onKeyDown={handleKeyDown}
       className="z-30 overflow-y-auto rounded-lg border border-border bg-panel py-1 shadow-lg"
       style={{
         position: "fixed",
@@ -1884,11 +1925,20 @@ function ContextMenu({ items, onClose }) {
     >
       {items.map((item, i) =>
         item.separator
-          ? <div key={i} className="my-1 border-t border-border" />
+          ? <div key={i} role="separator" className="my-1 border-t border-border" />
           : (
             <button
               key={i}
-              onClick={() => { item.action(); onClose(); }}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              data-menu-index={i}
+              onClick={() => {
+                const trigger = ref.current?.parentElement?.querySelector("button");
+                item.action();
+                onClose();
+                trigger?.focus();
+              }}
               className={`w-full text-left flex items-center gap-2 px-3 py-1.5 text-sm transition-colors
                 ${item.danger ? "text-danger hover:bg-danger/10" : "text-fg hover:bg-bg"}`}
             >
@@ -2009,6 +2059,8 @@ function FolderRow({
             className="text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
             title={`Действия с ${folderLabelInstrumental}`}
             aria-label={`Действия с ${folderLabelInstrumental}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen ? "true" : "false"}
           >
             ···
           </button>
@@ -2191,6 +2243,8 @@ function ProjectRow({
               className="text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
               title="Действия с проектом"
               aria-label="Действия с проектом"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen ? "true" : "false"}
             >···</button>
             {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
           </div>
@@ -2229,7 +2283,7 @@ function ProjectRow({
 
 // ─── P2 [Б]: Session rows под раскрытым проектом (3-й уровень дерева) ────────
 
-function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, onOpen, onStatusChange, columnLayout, canAssign = false, onAssign }) {
+function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false, showStage = false, onOpen, onStatusChange, columnLayout, canAssign = false, onAssign }) {
   const layout = columnLayout || getExplorerColumnLayout(0);
   const isSubprocess = Boolean(session?.is_subprocess) || Boolean(session?.parent_session_id);
   const sessionHref = buildAppWorkspaceHref({
@@ -2275,6 +2329,7 @@ function SessionTreeRow({ session, project, depth = 0, showSignalColumns = false
               <ExplorerMarqueeText text={session.name || session.title || "Сессия"} className="font-normal hover:underline" />
             </AppRouteLink>
           )}
+          <StageBadges item={session} show={showStage} />
         </div>
       </td>
       {layout.showComposition ? <td className="px-2" /> : null}
@@ -2309,6 +2364,7 @@ function ProjectSessionsRows({
   folderId = "",
   breadcrumbBase = [],
   showSignalColumns = false,
+  showStage = false,
   colSpan = 7,
   onOpenSession,
   onSessionStatusChange,
@@ -2377,6 +2433,7 @@ function ProjectSessionsRows({
       project={project}
       depth={depth}
       showSignalColumns={showSignalColumns}
+      showStage={showStage}
       onOpen={openSession}
       onStatusChange={onSessionStatusChange}
       columnLayout={columnLayout}
@@ -2758,8 +2815,15 @@ function ExplorerPane({
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
 
   // Смена фильтра контура обнуляет кеши вложенных папок: дети должны
-  // перезапроситься с тем же ?stage.
+  // перезапроситься с тем же ?stage. Гард по prevStageKeyRef: без него эффект
+  // срабатывал бы и при смене workspace (setTreeStateForContext меняет
+  // identity вместе с contextKey), стирая кеш детей контекста при возврате
+  // в workspace — раскрытая папка оставалась бы пустой (баг C2 char-теста
+  // «tree state isolated per workspace context»).
+  const prevStageKeyRef = useRef(stageKey);
   useEffect(() => {
+    if (prevStageKeyRef.current === stageKey) return;
+    prevStageKeyRef.current = stageKey;
     setTreeStateForContext((prev) => ({
       ...prev,
       childItemsByFolder: {},
@@ -2771,7 +2835,12 @@ function ExplorerPane({
   const toggleStageFilter = useCallback((stage) => {
     setStageFilterSel((prev) => ({ ...prev, [stage]: !prev[stage] }));
   }, []);
-  const resetStageFilter = useCallback(() => setStageFilterSel({ as_is: false, to_be: false }), []);
+  // «Сбросить фильтры» в empty state (AC9) обнуляет ОБЕ группы: контур
+  // (чипы AS IS/TO BE) и клиентский статус-фильтр.
+  const resetStageFilter = useCallback(() => {
+    setStageFilterSel({ as_is: false, to_be: false });
+    setStatusFilter("all");
+  }, []);
 
   // Баннер «В проектах workspace нет TO BE»: dismiss -> единый Preferences API
   // (/api/users/me/preferences, whitelist-ключ explorer.tobe_banner.dismissed_at).
@@ -2990,6 +3059,17 @@ function ExplorerPane({
     }),
     [sortedRootItems, effectiveExpandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
+  // AC9: empty state по ИТОГОВОМУ видимому списку. Серверный stage-фильтр уже
+  // отражён в rootItems, клиентские статус-фильтры — в visibleRows; поэтому
+  // «TO BE + Готово» с нулём видимых строк сюда попадает (раньше проверяли
+  // только rootItems и empty state не показывался).
+  const showStageEmpty = showTobeOverview && shouldShowStageEmptyState({
+    visibleCount: visibleRows.length,
+    statusFilter: effectiveStatusFilter,
+    stageKey,
+    loading,
+    error,
+  });
   const treeBulkExpandableIds = useMemo(
     () => collectExpandableTreeIds({
       rootItems: sortedRootItems,
@@ -3582,11 +3662,15 @@ function ExplorerPane({
     : "Развернуть все разделы, папки и проекты";
 
   const workspaceFilterToolbar = (
+    // flex-wrap + shrink-0 у группы чипов: раньше группа сжималась (shrink) и
+    // чипы вылезали из контейнера поверх сводки, перехватывая pointer events
+    // (артефакт runtime-прогона при ~1200px). Теперь не влезающие элементы
+    // переносятся на вторую строку, перекрытия нет.
     <div
-      className="flex min-h-11 flex-nowrap items-center gap-1.5 border-b border-border bg-panel px-4 py-2"
+      className="flex min-h-11 flex-wrap items-center gap-1.5 border-b border-border bg-panel px-4 py-2"
       data-testid="workspace-filter-toolbar"
     >
-      <div className="flex min-w-0 shrink items-center gap-1.5">
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
         {statusFilterOptions.map((option) => {
           const active = effectiveStatusFilter === option.key;
           return (
@@ -3750,7 +3834,7 @@ function ExplorerPane({
           {workspaceFilterToolbar}
           <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
         </>
-      ) : !isEmpty || (showTobeOverview && Boolean(stageKey) && !loading && !error) ? (
+      ) : !isEmpty || showStageEmpty ? (
         <>
           {workspaceFilterToolbar}
           {showTobeBanner ? (
@@ -3773,13 +3857,15 @@ function ExplorerPane({
               </button>
             </div>
           ) : null}
-          {showTobeOverview && Boolean(stageKey) && rootItems.length === 0 && !loading && !error ? (
+          {showStageEmpty ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
               <span className="text-3xl" style={{ color: "var(--pm-stage-tobe)" }} aria-hidden="true">◆</span>
               <div className="text-center">
-                <p className="text-base font-medium text-fg mb-1">{stageEmptyTitle(stageKey)}</p>
+                <p className="text-base font-medium text-fg mb-1">{workspaceEmptyTitle({ stageKey, statusFilter: effectiveStatusFilter })}</p>
                 <p className="text-sm text-muted mb-3">
-                  Ни один проект или раздел не содержит схем выбранного контура.
+                  {stageKey
+                    ? "Ни один проект или раздел не содержит схем выбранного контура."
+                    : "Ни один проект или раздел не проходит по выбранному фильтру статуса."}
                 </p>
                 <button
                   type="button"
@@ -3916,6 +4002,7 @@ function ExplorerPane({
                       folderId={folderId || ""}
                       breadcrumbBase={page?.breadcrumbs || []}
                       showSignalColumns={treeColumnProfile.showSignalColumns}
+                      showStage={showTobeOverview}
                       colSpan={inlineColSpan}
                       onOpenSession={onOpenSession}
                       onSessionStatusChange={handleTreeSessionStatusChange}
@@ -4104,7 +4191,6 @@ function SessionRow({
   const [renaming, setRenaming] = useState(false);
   const [creatingSubprocesses, setCreatingSubprocesses] = useState(false);
   const [subprocessLoadError, setSubprocessLoadError] = useState("");
-  const sessionStatusMeta = getManualSessionStatusMeta(session.status || "draft");
   const hasChildren = Boolean(session?.has_children);
   const showChevron = treeMode && hasChildren;
   const titleSizeClass = treeMode ? (depth > 0 ? "text-sm" : "text-[15px]") : "text-sm";
@@ -4259,8 +4345,12 @@ function SessionRow({
             <StatusBadge status={session.status} />
           )}
         </td>
-        {/* P6 [Г]: стадия — без вечного «—»: fallback на derived-статус */}
-        <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">{session.stage || sessionStatusMeta.label || "—"}</td>
+        {/* Колонка «Стадия» — контур AS IS/TO BE (контур ≠ статус, §4.6 плана
+            feature/workspace-as-is-tobe-overview); отдельная колонка «Статус»
+            уже есть. Fallback «—», если у сессии нет stage_badges. */}
+        <td className="hidden sm:table-cell px-2 py-2 text-[11px] text-fg/65">
+          {normalizeStageBadges(session?.stage_badges).length ? <StageBadges item={session} show /> : "—"}
+        </td>
         <td className="hidden md:table-cell px-2 py-2">
           {session.owner
             ? <span className="text-[11px] text-fg/65 truncate block max-w-[88px]" title={session.owner.name || session.owner.id}>{session.owner.name || session.owner.id}</span>
@@ -4319,6 +4409,8 @@ function SessionRow({
                   onClick={() => setMenuOpen((v) => !v)}
                   title="Действия сессии"
                   aria-label="Действия сессии"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen ? "true" : "false"}
                 >
                   ···
                 </button>
