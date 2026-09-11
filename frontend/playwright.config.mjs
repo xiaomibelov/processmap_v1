@@ -27,6 +27,9 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    // В docker-прогонах e2e /dev/shm ограничен (~64 МБ): без флага renderer
+    // chromium падает на тяжёлых страницах (большие схемы, длинные списки).
+    launchOptions: { args: ["--disable-dev-shm-usage"] },
   },
   projects: e2eProfile === "enterprise"
     ? [
