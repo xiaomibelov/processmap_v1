@@ -2046,6 +2046,9 @@ function ProcessStage({
         seenBaselineVersion,
         headVersionRounded,
       );
+      // Multi-tab freshness: the poll already fetched the newer head, so use it to
+      // refresh the version chip head as well (rare — only on a genuinely newer version).
+      refreshHeadRef.current?.();
       return applyRemoteSaveHighlightFromVersionHead(latestHead, `remote_poll_${reason}`);
     } finally {
       remoteSessionPollInFlightRef.current = false;
@@ -5616,6 +5619,13 @@ function ProcessStage({
     });
   }, [refreshSnapshotVersions]);
 
+  // Keeps the poll's head-refresh pointing at the latest refreshLatestBpmnRevisionHead
+  // without adding it to pollRemoteSessionSnapshot deps (that would recreate the interval).
+  const refreshHeadRef = useRef(refreshLatestBpmnRevisionHead);
+  useEffect(() => {
+    refreshHeadRef.current = refreshLatestBpmnRevisionHead;
+  }, [refreshLatestBpmnRevisionHead]);
+
   async function openVersionsModal() {
     setVersionsOpen(true);
   }
@@ -6462,15 +6472,17 @@ function ProcessStage({
     }
     const sidChanged = versionHeadSidRef.current !== sid;
     versionHeadSidRef.current = sid;
-    // Save-ack changes draft identity and re-runs this effect. Keep the last-known
-    // head during that refetch (stale-while-revalidate) so the version chip does
-    // not flash «V. —»; only a sid switch resets the head outright.
+    // No draft-identity deps here: every save-ack re-ran this effect and fired
+    // versions?limit=1 after each autosave. The chip head is already updated by
+    // the save ack itself (manual/property save), the /meta seed and the
+    // remote-poll newer-version branch; only a sid switch resets the head
+    // outright (stale-while-revalidate for all other refreshes).
     if (sidChanged) {
       setLatestBpmnVersionHead(null);
     }
     setLatestBpmnVersionHeadStatus("loading");
     void refreshLatestBpmnRevisionHead();
-  }, [sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshLatestBpmnRevisionHead]);
+  }, [sid, refreshLatestBpmnRevisionHead]);
 
   useEffect(() => {
     if (!diffOpen) return;
