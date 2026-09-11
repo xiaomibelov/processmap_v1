@@ -5,6 +5,17 @@ import {
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 import { stripDraftGraphKeysFromSessionPatch } from "../../lib/xmlTruthSession.js";
+// Правило единой реализации: gate живёт в features/session/patchKeys.js
+// (контракт — saveVersion.test.mjs п.13), здесь — делегирующий re-export
+// для callers старта процесса (fix/canvas-editing-stability, P0).
+export {
+  DIAGRAM_PATCH_KEYS,
+  METADATA_PATCH_KEYS,
+  PRESENCE_PATCH_KEYS,
+  hasDiagramPatchKeys,
+  isPresenceHeartbeatPatch,
+  classifySessionPatch,
+} from "../../../../features/session/patchKeys.js";
 
 const PIPELINE_NAME = "meta";
 

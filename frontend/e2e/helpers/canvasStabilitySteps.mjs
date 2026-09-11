@@ -53,6 +53,11 @@ export async function loginAndCreateHeavyFixture(request, runId) {
 export async function openHeavySessionInPage(page, auth, fixture) {
   await page.addInitScript(() => {
     window.__FPC_E2E__ = true;
+    // Пауза автосохранения (E2E-инструментация useDiagramMutationLifecycle):
+    // сценарии конфликта требуют контролируемых записей — «не сохранять» в
+    // вкладке A иначе недостижимо (debounce автосохранения 350 мс). Явное
+    // «Сохранить» идёт другим путём (runManualSaveAction) и НЕ затрагивается.
+    window.__FPC_E2E_PAUSE_AUTOSAVE__ = true;
   });
   await setUiToken(page, auth.accessToken, {
     activeOrgId: fixture.orgId || auth.activeOrgId,
