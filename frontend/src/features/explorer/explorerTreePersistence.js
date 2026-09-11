@@ -29,6 +29,22 @@ export async function patchUserPreferences({ baseVersion, set, unset }) {
   });
 }
 
+// Per-user UI-предпочтения (технический контур workspace TO BE overview,
+// feature/workspace-as-is-tobe-overview): баннер dismissed и пр. Мелкие ключи
+// без version-CAS — живут в отдельной таблице user_ui_preferences.
+export async function fetchMeUiPreferences() {
+  const resp = await apiRequest("/api/me/ui-preferences");
+  if (!resp?.ok) return null;
+  return resp?.data || null;
+}
+
+export async function patchMeUiPreferences({ set, unset }) {
+  return apiRequest("/api/me/ui-preferences", {
+    method: "PATCH",
+    body: { set, unset },
+  });
+}
+
 export function treeScopeKey(orgId, workspaceId) {
   const ws = String(workspaceId || "").trim();
   if (!ws) return "";

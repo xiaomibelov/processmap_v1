@@ -25,10 +25,27 @@ import {
   expandedMapFromPreferences,
   expandedIdsFromMap,
   expandedIdsFromPreferences,
+  fetchMeUiPreferences,
   fetchUserPreferences,
+  patchMeUiPreferences,
   patchUserPreferences,
   treeScopeKey,
 } from "./explorerTreePersistence.js";
+import {
+  STAGE_AS_IS,
+  STAGE_TO_BE,
+  TOBE_CREATE_STORAGE_KEY,
+  TOBE_OVERVIEW_FLAG_KEY,
+  isTobeOverviewEnabled,
+  normalizeStageBadges,
+  stageCountsText,
+  stageEmptyTitle,
+  stageFilterToKey,
+  stageLabel,
+  stageSummaryText,
+  tobeCoverageText,
+  tobeTooltipText,
+} from "./workspaceTobeOverview.js";
 import {
   EXPLORER_STATUS_FILTERS_HIDDEN_KEY,
   STATUS_FILTER_OPTIONS,
@@ -76,6 +93,7 @@ import {
 } from "../workspace/workspacePermissions";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
+import { replaceProcessMapHistory } from "../../app/processMapRouteModel.js";
 import {
   buildTreeBulkExpandedMap,
   buildVisibleRows,
@@ -752,7 +770,7 @@ function SessionAssigneeCell({ session, onAssign, canAssign = false }) {
   );
 }
 
-function CompositionCell({ item }) {
+export function CompositionCell({ item, showStage = false }) {
   const isFolder = String(item?.type || "").trim().toLowerCase() === "folder";
   const isSession = String(item?.type || "").trim().toLowerCase() === "session";
   if (isSession) return <span className="text-[12px] text-muted/60" />;
@@ -768,6 +786,11 @@ function CompositionCell({ item }) {
     : pct <= 30
       ? "bg-warning"
       : "bg-success";
+  const tobeTotal = Number(item?.tobe_coverage?.total) > 0 ? Number(item.tobe_coverage.total) : 0;
+  const tobeWith = tobeTotal ? Math.min(Number(item?.tobe_coverage?.with_tobe) || 0, tobeTotal) : 0;
+  const tobePct = tobeTotal ? Math.round((tobeWith / tobeTotal) * 100) : 0;
+  // Покрытие показываем только когда в поддереве есть хотя бы одна TO BE.
+  const showCoverage = tobeTotal > 0 && Number(item?.counters?.to_be) > 0;
   return (
     <div className="flex min-w-0 flex-col gap-0.5 text-[11.5px] text-muted">
       {isFolder && item?.descendant_projects_count != null ? (
@@ -775,6 +798,23 @@ function CompositionCell({ item }) {
       ) : null}
       {!isFolder ? (
         <span className="whitespace-nowrap">{compositionSessionsText(item?.sessions_count)}</span>
+      ) : null}
+      {showStage && item?.counters ? (
+        <span className="whitespace-nowrap tabular-nums">{stageCountsText(item.counters)}</span>
+      ) : null}
+      {showStage && isFolder && showCoverage ? (
+        <span
+          className="inline-flex items-center gap-2 whitespace-nowrap"
+          title={tobeCoverageText(item.tobe_coverage)}
+        >
+          <span className="inline-block h-1 w-16 shrink-0 overflow-hidden rounded-full bg-border">
+            <span
+              className="block h-full rounded-full transition-[width] duration-300"
+              style={{ width: `${tobePct}%`, backgroundColor: "var(--pm-stage-tobe)" }}
+            />
+          </span>
+          <span className="tabular-nums">{tobeCoverageText(item.tobe_coverage)}</span>
+        </span>
       ) : null}
       <span className="inline-flex items-center gap-2 whitespace-nowrap" title={sessionsTooltipText(done, total)}>
         <span className="inline-block h-1 w-16 shrink-0 overflow-hidden rounded-full bg-border">
@@ -786,6 +826,35 @@ function CompositionCell({ item }) {
         <span className="tabular-nums">{sessionsCounterText(done, total)}</span>
       </span>
     </div>
+  );
+}
+
+// ─── Stage badges (workspace AS IS/TO BE overview) ────────────────────────────
+// Бейджи контура в ячейке имени: маркер + текст (не color-only), aria-label.
+
+export function StageBadges({ item, show = false }) {
+  const badges = normalizeStageBadges(item?.stage_badges);
+  const tooltip = tobeTooltipText({ counters: item?.counters, tobe: item?.tobe, formatRelative: formatRelativeTime });
+  if (!show || !badges.length) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" title={tooltip || undefined}>
+      {badges.map((stage) => {
+        const isTobe = stage === STAGE_TO_BE;
+        return (
+          <span
+            key={stage}
+            className="inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-semibold leading-4"
+            style={isTobe
+              ? { color: "var(--pm-stage-tobe)", backgroundColor: "var(--pm-stage-tobe-soft)" }
+              : { color: "var(--pm-stage-asis)", backgroundColor: "var(--pm-stage-asis-soft)" }}
+            aria-label={stageLabel(stage)}
+          >
+            <span aria-hidden="true">{isTobe ? "◆" : "●"}</span>
+            {stageLabel(stage)}
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -1851,6 +1920,7 @@ function FolderRow({
   canDelete = false,
   currentFolderId = "",
   showSignalColumns = false,
+  showStage = false,
   columnLayout,
 }) {
   const layout = columnLayout || getExplorerColumnLayout(0);
@@ -1910,13 +1980,14 @@ function FolderRow({
             >
               <ExplorerMarqueeText text={folder.name} />
             </button>
+            <StageBadges item={folder} show={showStage} />
             <TypeTag type={depth === 0 && !folder.parent_id ? "section" : "folder"} label={folderLabel} />
           </div>
           {layout.compact ? (
             <div className="explorer-row-meta" style={{ paddingLeft: `${8 + depth * 22 + 20}px` }}>{buildExplorerRowMeta(folder, "folder")}</div>
           ) : null}
         </td>
-        {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={folder} /></td> : null}
+        {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={folder} showStage={showStage} /></td> : null}
         {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={folder} onAssign={(item) => onAssign?.(item, folderLabel)} canAssign={canEdit} /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
@@ -2002,6 +2073,8 @@ function ProjectRow({
   canRename = false,
   canDelete = false,
   showSignalColumns = false,
+  showStage = false,
+  onCreateTobe = null,
   columnLayout,
   uploadState = null,
   onFileDrop,
@@ -2018,6 +2091,7 @@ function ProjectRow({
   const assigneeActionLabel = getExplorerAssigneeActionLabel(project);
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
+    ...(onCreateTobe ? [{ label: "Создать TO BE", icon: <IcoPlus className="opacity-70" />, action: () => onCreateTobe(project) }] : []),
     ...(canAssign ? [{ label: assigneeActionLabel, icon: <IcoEdit />, action: () => onAssign?.(project) }] : []),
     ...(canMove ? [{ label: "Переместить", icon: <IcoMove />, action: () => onMove?.(project) }] : []),
     ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
@@ -2079,6 +2153,7 @@ function ProjectRow({
             >
               <ExplorerMarqueeText text={project.name} className="hover:underline" />
             </AppRouteLink>
+            <StageBadges item={project} show={showStage} />
             <TypeTag type="project" />
           </div>
           {layout.compact ? (
@@ -2093,7 +2168,7 @@ function ProjectRow({
             </div>
           ) : null}
         </td>
-        {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={project} /></td> : null}
+        {layout.showComposition ? <td className="px-2 py-2.5"><CompositionCell item={project} showStage={showStage} /></td> : null}
         {layout.showAssignee ? <td className="px-2 py-2.5"><AssigneeCell item={project} onAssign={onAssign} canAssign={canAssign} /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.attention_count} warn /></td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-center"><MetricCell value={project.reports_count} /></td> : null}
@@ -2489,12 +2564,23 @@ function ExplorerPane({
   portalHeader = true,
 }) {
   const queryClient = useQueryClient();
+  // Контур AS IS/TO BE: гейт флаг+пилот, чипы «Контур:» фильтруют выборку
+  // серверно (?stage=as_is|to_be; оба значения = без фильтра). Должно быть
+  // объявлено до pageQuery — stageKey входит в queryKey.
+  const tobeFlagOn = useFeatureFlag(TOBE_OVERVIEW_FLAG_KEY);
+  const showTobeOverview = isTobeOverviewEnabled({ flagOn: tobeFlagOn, orgId: activeOrgId });
+  const [stageFilterSel, setStageFilterSel] = useState({ as_is: false, to_be: false });
+  const stageKey = showTobeOverview ? stageFilterToKey(stageFilterSel) : "";
+  const stageRequestList = useMemo(
+    () => String(stageKey || "").split("+").filter((value) => value === STAGE_AS_IS || value === STAGE_TO_BE),
+    [stageKey],
+  );
   // P5 [В]: explorer page payload lives in react-query cache. On workspace
   // switch keepPreviousData keeps the previous page rendered (no skeleton,
   // header DOM node is preserved); hover-prefetch in WorkspaceSidebar makes
   // the target workspace resolve instantly from cache.
   const pageQuery = useQuery({
-    ...explorerPageQueryOptions(workspaceId, folderId || ""),
+    ...explorerPageQueryOptions(workspaceId, folderId || "", stageKey),
     enabled: Boolean(workspaceId),
     placeholderData: keepPreviousData,
   });
@@ -2629,10 +2715,10 @@ function ExplorerPane({
       }));
     }
     await queryClient.invalidateQueries({
-      queryKey: explorerPageQueryKey(workspaceId, folderId || ""),
+      queryKey: explorerPageQueryKey(workspaceId, folderId || "", stageKey),
       refetchType: "active",
     });
-  }, [workspaceId, folderId, queryClient, setTreeStateForContext]);
+  }, [workspaceId, folderId, stageKey, queryClient, setTreeStateForContext]);
 
   const handleStatusVisibilityChange = useCallback(async (statusKey, visible) => {
     const key = String(statusKey || "").trim();
@@ -2672,6 +2758,57 @@ function ExplorerPane({
   const isEmpty = !loading && !error && rootItems.length === 0;
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
 
+  // Смена фильтра контура обнуляет кеши вложенных папок: дети должны
+  // перезапроситься с тем же ?stage.
+  useEffect(() => {
+    setTreeStateForContext((prev) => ({
+      ...prev,
+      childItemsByFolder: {},
+      loadingByFolder: {},
+      loadErrorByFolder: {},
+    }));
+  }, [stageKey, setTreeStateForContext]);
+
+  const toggleStageFilter = useCallback((stage) => {
+    setStageFilterSel((prev) => ({ ...prev, [stage]: !prev[stage] }));
+  }, []);
+  const resetStageFilter = useCallback(() => setStageFilterSel({ as_is: false, to_be: false }), []);
+
+  // Баннер «В проектах workspace нет TO BE»: dismiss -> per-user UI-предпочтения.
+  const meUiPrefsQuery = useQuery({
+    queryKey: ["me-ui-preferences"],
+    queryFn: fetchMeUiPreferences,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    enabled: showTobeOverview,
+  });
+  const tobeBannerDismissed = Boolean(meUiPrefsQuery.data?.preferences?.workspace_tobe_banner_dismissed);
+  const workspaceTobeCount = Number(page?.meta?.workspace_counts?.to_be) || 0;
+  const showTobeBanner = showTobeOverview && !tobeBannerDismissed && workspaceTobeCount === 0 && !loading && !error;
+  const dismissTobeBanner = useCallback(async () => {
+    const next = { workspace_tobe_banner_dismissed: String(Date.now()) };
+    queryClient.setQueryData(["me-ui-preferences"], (old) => ({
+      ...(old || {}),
+      preferences: { ...(old?.preferences || {}), ...next },
+    }));
+    try {
+      const resp = await patchMeUiPreferences({ set: next });
+      if (resp?.ok) queryClient.setQueryData(["me-ui-preferences"], resp.data || null);
+    } catch (e) {
+      console.warn("[WorkspaceExplorer] failed to persist TO BE banner dismiss", e);
+    }
+  }, [queryClient]);
+
+  // Меню «Создать TO BE»: навигация state-driven (URL не пишем), intent
+  // передаём через sessionStorage; ProjectPane при маунте его потребляет
+  // (там же обрабатывается deep-link ?tobe=new).
+  const handleCreateTobe = useCallback((project) => {
+    const pid = String(project?.id || "").trim();
+    if (!pid) return;
+    try { window.sessionStorage?.setItem(TOBE_CREATE_STORAGE_KEY, pid); } catch { /* ignore */ }
+    onNavigateToProject(pid, { breadcrumbBase: page?.breadcrumbs || [] });
+  }, [onNavigateToProject, page?.breadcrumbs]);
+
   const patchExplorerItemInCaches = useCallback((itemId, patch) => {
     const id = String(itemId || "").trim();
     if (!id) return;
@@ -2686,7 +2823,7 @@ function ExplorerPane({
       });
       return changed ? next : items;
     };
-    queryClient.setQueryData(explorerPageQueryKey(workspaceId, folderId || ""), (old) => {
+    queryClient.setQueryData(explorerPageQueryKey(workspaceId, folderId || "", stageKey), (old) => {
       if (!old || !Array.isArray(old.items)) return old;
       const items = patchList(old.items);
       return items === old.items ? old : { ...old, items };
@@ -3166,7 +3303,7 @@ function ExplorerPane({
       loadErrorByFolder: { ...prev.loadErrorByFolder, [fid]: "" },
     }));
     try {
-      const resp = await apiGetExplorerPage(workspaceId, fid);
+      const resp = await apiGetExplorerPage(workspaceId, fid, { stage: stageRequestList });
       if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки вложенной папки");
       const nestedPage = resp?.data || resp;
       const items = Array.isArray(nestedPage?.items) ? nestedPage.items : [];
@@ -3189,7 +3326,7 @@ function ExplorerPane({
         loadingByFolder: { ...prev.loadingByFolder, [fid]: false },
       }));
     }
-  }, [workspaceId, treeState.childItemsByFolder, treeState.loadingByFolder, setTreeStateForContext]);
+  }, [workspaceId, treeState.childItemsByFolder, treeState.loadingByFolder, setTreeStateForContext, stageRequestList]);
 
   const handleToggleExpand = useCallback((folder) => {
     const fid = String(folder?.id || "").trim();
@@ -3511,7 +3648,47 @@ function ExplorerPane({
             </div>
           ) : null}
         </div>
+        {showTobeOverview ? (
+          <>
+            <span className="mx-1 h-5 w-px shrink-0 self-center bg-border" aria-hidden="true" />
+            <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted">Контур:</span>
+            {[STAGE_AS_IS, STAGE_TO_BE].map((stage) => {
+              const active = Boolean(stageFilterSel[stage]);
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => toggleStageFilter(stage)}
+                  aria-pressed={active}
+                  className={`inline-flex h-[26px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-medium transition-colors ${
+                    active
+                      ? "text-white"
+                      : "bg-panel border-border text-fg/85 hover:border-border-strong hover:bg-bg"
+                  }`}
+                  style={active
+                    ? {
+                        backgroundColor: stage === STAGE_TO_BE ? "var(--pm-stage-tobe)" : "var(--pm-stage-asis)",
+                        borderColor: "transparent",
+                      }
+                    : undefined}
+                >
+                  <span aria-hidden="true">{stage === STAGE_TO_BE ? "◆" : "●"}</span>
+                  {stageLabel(stage)}
+                </button>
+              );
+            })}
+          </>
+        ) : null}
       </div>
+      {showTobeOverview && stageKey ? (
+        <span
+          className="ml-2 shrink-0 text-[11px] font-medium tabular-nums"
+          style={{ color: "var(--pm-stage-tobe)" }}
+          data-testid="workspace-stage-summary"
+        >
+          {stageSummaryText(page?.meta)}
+        </span>
+      ) : null}
       <span className="ml-auto shrink-0 text-[11px] text-muted">
         {visibleRows.filter((r) => r.rowType === "folder" || r.rowType === "project").length} элементов
       </span>
@@ -3569,14 +3746,53 @@ function ExplorerPane({
           {workspaceFilterToolbar}
           <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
         </>
-      ) : !isEmpty ? (
+      ) : !isEmpty || (showTobeOverview && Boolean(stageKey) && !loading && !error) ? (
         <>
           {workspaceFilterToolbar}
-          {/* projects-table-ux: сетка ширин таблицы «Проекты». Тип сущности
-              визуально находится в ячейке «Название», отдельной колонки «Тип»
-              в шапке нет. Колонки: Название (min 320, flex) + Состав 210 +
-              Ответственный 176 + Статус 88 + Обновлено 190 + Действия 88.
-              Sticky-заголовок при скролле. */}
+          {showTobeBanner ? (
+            <div
+              className="flex items-center gap-3 border-b border-border px-4 py-2"
+              style={{ backgroundColor: "var(--pm-stage-tobe-soft)" }}
+              role="status"
+              data-testid="workspace-tobe-banner"
+            >
+              <span aria-hidden="true" style={{ color: "var(--pm-stage-tobe)" }}>◆</span>
+              <span className="min-w-0 flex-1 text-[12.5px]" style={{ color: "var(--pm-stage-tobe)" }}>
+                В проектах workspace пока нет описаний TO BE. Создайте TO BE-схему из меню проекта («···» → «Создать TO BE»), чтобы сравнить целевой процесс с текущим.
+              </span>
+              <button
+                type="button"
+                onClick={() => void dismissTobeBanner()}
+                className="shrink-0 rounded-full border border-border bg-panel px-2.5 py-0.5 text-[11px] font-medium text-fg/80 transition-colors hover:border-border-strong hover:bg-bg"
+              >
+                Понятно
+              </button>
+            </div>
+          ) : null}
+          {showTobeOverview && Boolean(stageKey) && rootItems.length === 0 && !loading && !error ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+              <span className="text-3xl" style={{ color: "var(--pm-stage-tobe)" }} aria-hidden="true">◆</span>
+              <div className="text-center">
+                <p className="text-base font-medium text-fg mb-1">{stageEmptyTitle(stageKey)}</p>
+                <p className="text-sm text-muted mb-3">
+                  Ни один проект или раздел не содержит схем выбранного контура.
+                </p>
+                <button
+                  type="button"
+                  onClick={resetStageFilter}
+                  className="secondaryBtn h-8 px-3 text-sm"
+                  data-testid="workspace-stage-reset"
+                >
+                  Сбросить фильтры
+                </button>
+              </div>
+            </div>
+          ) : (
+          /* projects-table-ux: сетка ширин таблицы «Проекты». Тип сущности
+             визуально находится в ячейке «Название», отдельной колонки «Тип»
+             в шапке нет. Колонки: Название (min 320, flex) + Состав 210 +
+             Ответственный 176 + Статус 88 + Обновлено 190 + Действия 88.
+             Sticky-заголовок при скролле. */
           <div
             className="flex-1 overflow-auto"
             ref={explorerTableContainerCallbackRef}
@@ -3680,6 +3896,7 @@ function ExplorerPane({
                       canDelete={!!permissions?.canDeleteFolder}
                       currentFolderId={folderId || ""}
                       showSignalColumns={treeColumnProfile.showSignalColumns}
+                      showStage={showTobeOverview}
                       columnLayout={explorerColumnLayout}
                     />
                   );
@@ -3741,6 +3958,8 @@ function ExplorerPane({
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
                     showSignalColumns={treeColumnProfile.showSignalColumns}
+                    showStage={showTobeOverview}
+                    onCreateTobe={showTobeOverview && permissions?.canCreate ? handleCreateTobe : null}
                     columnLayout={explorerColumnLayout}
                     uploadState={projectUploads[String(project.id || "")]}
                     onFileDrop={handleProjectFileDrop}
@@ -3751,7 +3970,8 @@ function ExplorerPane({
             </tbody>
           </table>
         </div>
-      </>
+          )}
+        </>
           ) : (
             <>
               {workspaceFilterToolbar}
@@ -4305,6 +4525,36 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [error, setError] = useState("");
   const [moveNotice, setMoveNotice] = useState("");
   const [creating, setCreating] = useState(false);
+  const [initialProcessLayer, setInitialProcessLayer] = useState("");
+  // Deep-link «Создать TO BE»: ?tobe=new в URL или intent из меню workspace
+  // (sessionStorage, см. handleCreateTobe) — открываем модал создания с
+  // пресетом TO BE и снимаем параметр из URL, чтобы не зацикливаться.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let viaStorage = false;
+    try {
+      viaStorage = window.sessionStorage?.getItem(TOBE_CREATE_STORAGE_KEY) === String(projectId || "");
+      if (viaStorage) window.sessionStorage?.removeItem(TOBE_CREATE_STORAGE_KEY);
+    } catch { /* ignore */ }
+    let viaUrl = false;
+    try {
+      viaUrl = new URLSearchParams(window.location.search || "").get("tobe") === "new";
+    } catch { /* ignore */ }
+    if (!viaStorage && !viaUrl) return;
+    setInitialProcessLayer("to_be");
+    setCreating(true);
+    if (viaUrl) {
+      try {
+        const params = new URLSearchParams(window.location.search || "");
+        params.delete("tobe");
+        const baseSearch = params.toString();
+        replaceProcessMapHistory({ projectId: String(projectId || ""), source: "internal" }, {
+          baseSearch: baseSearch ? `?${baseSearch}` : "",
+          force: true,
+        });
+      } catch { /* ignore */ }
+    }
+  }, [projectId]);
   // P6 [Г]: dnd-upload .bpmn/.xml на таблице сессий проекта.
   // pendingUploads — транзиентные строки создания/upload (стадии + retry).
   const [pendingUploads, setPendingUploads] = useState([]);
@@ -5064,7 +5314,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       {creating && permissions?.canCreate ? (
         <SessionCreateModal
           sessions={sessions}
-          onClose={() => setCreating(false)}
+          initialProcessLayer={initialProcessLayer}
+          onClose={() => {
+            setCreating(false);
+            setInitialProcessLayer("");
+          }}
           onSubmit={async ({ name, processLayer, derivedFrom }) => {
             const resp = await apiCreateSession(workspaceId, projectId, {
               name,

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { readExplorerSources, from, around } from "../../test-utils/explorerSourceText.mjs";
+import { readExplorerSources, from, around, betweenStable } from "../../test-utils/explorerSourceText.mjs";
 
 // retarget(s0): WorkspaceExplorer.jsx read moved to the multifile explorer source set;
 // handler/component slices are re-anchored at stable identifiers (handler names,
@@ -19,11 +19,12 @@ test("ExplorerPane assignment saves patch only the affected row without resettin
 });
 
 test("workspace success feedback is a fixed toast overlay with auto-dismiss", () => {
-  // retarget(s0): toast pins were between("function WorkspaceExplorerToast(", "function ExplorerSearchBox(");
+  // retarget(s0): render-site negative was between("{moveNotice ? (", "{activeTab === \"analytics\"")
   // the toast markup is located by its stable role/positioning strings.
   const toastSource = around(explorerSource, 'className="pointer-events-none fixed bottom-5 right-5', 4000);
-  // retarget(s0): render-site negative was between("{moveNotice ? (", "{activeTab === \"analytics\"")
-  const renderSource = from(explorerSource, "{moveNotice ? (", 1200);
+  // retarget(s1): banner TOBE-овервью встала между moveNotice и activeTab,
+  // поэтому срез снова ограничен двумя стабильными якорями (betweenStable).
+  const renderSource = betweenStable(explorerSource, "{moveNotice ? (", '{activeTab === "analytics"');
 
   assert.match(toastSource, /fixed bottom-5 right-5/);
   assert.match(toastSource, /role="status"/);
