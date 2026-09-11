@@ -472,6 +472,24 @@ def _bpmn_local_name(tag: str) -> str:
     return tag.lower()
 
 
+def _stage_badges_from_counts(as_is_count: Any, to_be_count: Any) -> List[str]:
+    """Производное множество контуров, присутствующих в поддереве узла."""
+    badges: List[str] = []
+    try:
+        as_is_n = int(as_is_count)
+    except Exception:
+        as_is_n = 0
+    try:
+        to_be_n = int(to_be_count)
+    except Exception:
+        to_be_n = 0
+    if as_is_n > 0:
+        badges.append("as_is")
+    if to_be_n > 0:
+        badges.append("to_be")
+    return badges
+
+
 def _clamp_int64(value: Any, default: int = 0) -> int:
     try:
         n = int(value)
@@ -1249,6 +1267,22 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_user_updated ON note_thread_reads(user_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_thread ON note_thread_reads(thread_id)")
+            # Per-user UI-предпочтения (workspace TO BE overview, баннер «TO BE ещё не
+            # начат» и т.п.). Runtime-guard без alembic-миграции — тот же паттерн,
+            # что process_layer и note_thread_attention_acknowledgements.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_ui_preferences (
+                  user_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT '',
+                  key TEXT NOT NULL,
+                  value TEXT NOT NULL DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (user_id, org_id, key)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_user_ui_preferences_user ON user_ui_preferences(user_id, org_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orgs (
@@ -2033,6 +2067,22 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_user_updated ON note_thread_reads(user_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_thread ON note_thread_reads(thread_id)")
+            # Per-user UI-предпочтения (workspace TO BE overview, баннер «TO BE ещё не
+            # начат» и т.п.). Runtime-guard без alembic-миграции — тот же паттерн,
+            # что process_layer и note_thread_attention_acknowledgements.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_ui_preferences (
+                  user_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT '',
+                  key TEXT NOT NULL,
+                  value TEXT NOT NULL DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (user_id, org_id, key)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_user_ui_preferences_user ON user_ui_preferences(user_id, org_id)")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -3976,6 +4026,69 @@ def _storage_count_note_threads(
             params,
         ).fetchone()
     return int((dict(row) if row else {}).get("cnt") or 0)
+
+
+def _storage_get_user_ui_preferences(self, user_id: Optional[str] = None, org_id: str = "") -> Dict[str, str]:
+    """Per-user UI-предпочтения (user_id: request-scope или явный override)."""
+    uid = str(_scope_user_id(user_id) or "").strip()
+    if not uid:
+        return {}
+    oid = str(org_id or "").strip()
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT key, value FROM user_ui_preferences WHERE user_id = ? AND org_id = ?",
+            [uid, oid],
+        ).fetchall()
+    out: Dict[str, str] = {}
+    for row in rows:
+        key = str(_row_value(row, "key") or "").strip()
+        if key:
+            out[key] = str(_row_value(row, "value") or "")
+    return out
+
+
+def _storage_set_user_ui_preference(self, key: str, value: str, org_id: str = "", *, user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Upsert одного per-user UI-предпочтения. Возвращает актуальный снапшот."""
+    uid = str(_scope_user_id(user_id) or "").strip()
+    if not uid:
+        raise ValueError("user_id required")
+    k = str(key or "").strip()
+    if not k:
+        raise ValueError("key required")
+    oid = str(org_id or "").strip()
+    now = _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO user_ui_preferences (user_id, org_id, key, value, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, org_id, key) DO UPDATE SET
+              value = excluded.value,
+              updated_at = excluded.updated_at
+            """,
+            [uid, oid, k, str(value or ""), now],
+        )
+        con.commit()
+    return self.get_user_ui_preferences(uid, oid)
+
+
+def _storage_delete_user_ui_preference(self, key: str, org_id: str = "", *, user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Удалить per-user UI-предпочтение (например, повторный показ баннера)."""
+    uid = str(_scope_user_id(user_id) or "").strip()
+    k = str(key or "").strip()
+    if not uid or not k:
+        return {}
+    oid = str(org_id or "").strip()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            "DELETE FROM user_ui_preferences WHERE user_id = ? AND org_id = ? AND key = ?",
+            [uid, oid, k],
+        )
+        con.commit()
+    return self.get_user_ui_preferences(uid, oid)
 
 
 def _storage_create(
