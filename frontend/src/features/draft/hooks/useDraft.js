@@ -8,6 +8,8 @@ import {
   writeDraft,
 } from "../../../lib/draft";
 import { apiPatchSession, apiPostNote } from "../../../lib/api";
+import { enqueueSessionPatchCasWrite } from "../../process/stage/utils/sessionPatchCasCoordinator";
+import { hasDiagramPatchKeys } from "../../session/patchKeys.js";
 
 function isLocalSessionId(id) {
   return typeof id === "string" && (id === "local" || id.startsWith("local_"));
@@ -64,7 +66,17 @@ export default function useDraft({ onOk, onFail } = {}) {
       const sid = shaped.session_id || "";
       if (!sid || isLocalSessionId(sid)) return { ok: true, local: true };
 
-      const r = await apiPatchSession(sid, shaped);
+      // P0 (fix/canvas-editing-stability): shaped draft всегда содержит
+      // diagram-ключи (nodes/edges/questions) → запись только через meta
+      // pipeline (tracker-first base + ack синкает трекер); metadata-only
+      // PATCH'и (title/roles/...) идут напрямую.
+      const r = hasDiagramPatchKeys(shaped)
+        ? await enqueueSessionPatchCasWrite({
+            sessionId: sid,
+            patch: shaped,
+            apiPatchSession,
+          })
+        : await apiPatchSession(sid, shaped);
       if (!r.ok) {
         onFail?.(String(r.error || "Не удалось сохранить изменения в сессии."));
         return { ok: false };

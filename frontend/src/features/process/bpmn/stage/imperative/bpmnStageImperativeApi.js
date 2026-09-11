@@ -683,12 +683,16 @@ export function createBpmnStageImperativeApi(ctxBase) {
     redo: async () => {
       return await runDiagramContextActionRequest({ actionId: "redo" }, "redo_failed");
     },
-    resetBackend: () => {
+    resetBackend: (options = {}) => {
       const sid = String(values.sessionId || "");
       if (!sid) return;
       const token = refs.loadTokenRef.current + 1;
       refs.loadTokenRef.current = token;
-      callbacks.loadFromBackend?.(sid, token, { forceRemote: true, reason: "manual_reset_backend" });
+      callbacks.loadFromBackend?.(sid, token, {
+        forceRemote: true,
+        reason: "manual_reset_backend",
+        acceptRemoteXml: options?.acceptRemoteXml === true,
+      });
     },
     clearLocal: () => {
       const sid = String(values.sessionId || "");

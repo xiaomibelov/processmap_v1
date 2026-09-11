@@ -181,6 +181,14 @@ export default function useDiagramMutationLifecycle({
     (mutation) => {
       if (!sid) return;
       const mutationKind = String(mutation?.kind || mutation || "diagram.change");
+      // E2E-инструментация (стиль window.__FPC_E2E__): пауза автосохранения.
+      // Явное «Сохранить» идёт другим путём (runManualSaveAction → flushSave) и
+      // НЕ затрагивается — hook позволяет тестам держать вкладку dirty с
+      // несохранёнными правками (сценарии конфликта версий).
+      if (typeof window !== "undefined" && window.__FPC_E2E_PAUSE_AUTOSAVE__ === true) {
+        traceProcess("diagram.autosave_paused_e2e", { sid, mutation_kind: mutationKind });
+        return;
+      }
       traceProcess("diagram.queue_mutation", { sid, mutation_kind: mutationKind });
       scheduleDiagramAutosave({
         mutation: mutation && typeof mutation === "object" ? mutation : { kind: String(mutation || "diagram.change") },

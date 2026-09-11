@@ -721,3 +721,45 @@ test("stale conflict auto-retry preserves publish intent reason across attempts"
   assert.equal(saved.staleRetryApplied, true);
   assert.deepEqual(persistReasons, ["publish_manual_save", "publish_manual_save"]);
 });
+
+test("acceptRemoteXml applies backend xml even when local store rev is newer and dirty (conflict refresh)", async () => {
+  const store = createStore({ xml: "<bpmn:local_edit/>", rev: 9, dirty: true });
+  let loadCalls = 0;
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_conflict_refresh",
+    persistence: {
+      loadRaw: async () => {
+        loadCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          source: "backend",
+          sourceReason: "remote_authoritative_after_remote_read",
+          xml: "<bpmn:server_v4/>",
+          // draft revision меньше локального store rev: обычный reload раньше
+          // уходил в older_rev skip, а dirty local — в dirty_local_newer skip.
+          rev: 4,
+          hash: fnv1aHex("<bpmn:server_v4/>"),
+        };
+      },
+    },
+  });
+
+  const skipped = await coordinator.reload({ reason: "session_reload" });
+  assert.equal(skipped.ok, true);
+  assert.equal(skipped.applied, false);
+  assert.equal(skipped.reason, "older_rev");
+  assert.equal(store.getState().xml, "<bpmn:local_edit/>");
+
+  const applied = await coordinator.reload({
+    reason: "manual_reset_backend",
+    acceptRemoteXml: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.applied, true);
+  assert.equal(applied.source, "backend");
+  assert.equal(store.getState().xml, "<bpmn:server_v4/>");
+  assert.equal(store.getState().dirty, false);
+  assert.equal(loadCalls, 2);
+});

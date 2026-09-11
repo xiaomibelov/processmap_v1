@@ -7,6 +7,11 @@ import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../lib/casVersionTracker.js";
+// P2 (fix/canvas-editing-stability): единый reader CAS-полей (canonical casResponse.js).
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+} from "../../session/casResponse.js";
 
 /**
  * Coerce a value to a trimmed string.
@@ -44,10 +49,7 @@ export function asObject(value) {
  * @returns {number | null}
  */
 export function pickDiagramStateVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const raw = response.diagram_state_version ?? response.diagramStateVersion;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+  return readAckDiagramStateVersion(response);
 }
 
 /**
@@ -56,12 +58,7 @@ export function pickDiagramStateVersion(response) {
  * @returns {number | null}
  */
 export function pickServerCurrentVersionFromError(saveResult) {
-  const detail = saveResult?.data?.detail;
-  if (detail && typeof detail === "object") {
-    const v = Number(detail.server_current_version ?? detail.serverCurrentVersion ?? -1);
-    if (Number.isFinite(v) && v >= 0) return Math.round(v);
-  }
-  return null;
+  return readConflictServerCurrentVersion(saveResult);
 }
 
 /**

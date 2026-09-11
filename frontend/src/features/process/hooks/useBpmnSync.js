@@ -585,8 +585,8 @@ export default function useBpmnSync({
     [bpmnRef, sid, syncXmlToSession],
   );
 
-  const resetBackend = useCallback(async () => {
-    await Promise.resolve(bpmnRef.current?.resetBackend?.());
+  const resetBackend = useCallback(async (options = {}) => {
+    await Promise.resolve(bpmnRef.current?.resetBackend?.(options));
   }, [bpmnRef]);
 
   const resolveXmlForExport = useCallback(async (activeTab) => {

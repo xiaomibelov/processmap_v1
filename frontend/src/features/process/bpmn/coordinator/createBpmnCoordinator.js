@@ -1126,8 +1126,14 @@ export default function createBpmnCoordinator(options = {}) {
     const loadedHash = asText(loaded?.hash || fnv1aHex(loadedXml));
     const source = asText(loaded?.source || "persistence");
     const sourceReason = asText(loaded?.sourceReason || "");
+    // acceptRemoteXml: осознанный пользователем приём серверной версии
+    // («Загрузить версию с сервера» после конфликта). loadedRev при remote-чтении
+    // — это draft-ревизия (bpmn_xml_version/version), а НЕ версия сервера, поэтому
+    // guard'ы older_rev/dirty_local_newer всегда отсекают именно тот случай, ради
+    // которого reload и вызван (локальные правки есть, store rev > draft rev).
+    const acceptRemote = optionsForReload?.acceptRemoteXml === true;
 
-    if (loadedRev > 0 && loadedRev < localRev) {
+    if (!acceptRemote && loadedRev > 0 && loadedRev < localRev) {
       emit("LOAD_SKIPPED_OLDER_REV", {
         sid,
         loaded_rev: loadedRev,
@@ -1145,7 +1151,7 @@ export default function createBpmnCoordinator(options = {}) {
       };
     }
 
-    if (state?.dirty && localXml.trim() && loadedHash && localHash && loadedHash !== localHash) {
+    if (!acceptRemote && state?.dirty && localXml.trim() && loadedHash && localHash && loadedHash !== localHash) {
       emit("LOAD_SKIPPED_DIRTY_LOCAL", {
         sid,
         loaded_rev: loadedRev,
