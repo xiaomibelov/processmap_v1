@@ -2458,7 +2458,11 @@ function ProcessStage({
           setTrackedDiagramStateVersion(sid, Math.round(refreshedVersionNum));
         }
       }
-      await bpmnSync.resetBackend();
+      // acceptRemoteXml: пользователь осознанно принял серверную версию —
+      // reload обязан применить свежий backend XML, не отсекаясь guard'ами
+      // older_rev/dirty_local_newer (loadedRev здесь — draft-ревизия, не версия
+      // сервера, поэтому guard'ы блокировали именно этот сценарий).
+      await bpmnSync.resetBackend({ acceptRemoteXml: true });
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
       dismissRemoteUpdateToastAfterConflictResolution();
