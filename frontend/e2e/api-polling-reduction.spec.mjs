@@ -138,6 +138,18 @@ async function budgetStats(page, sinceMs) {
   return budget;
 }
 
+async function seedOrgChoiceDone(page, userId) {
+  // Экран выбора org (в dev-БД сотни организаций) — вне скоупа polling-замеров.
+  // Помечаем выбор выполненным до загрузки страницы: замер не должен зависеть
+  // от UI выбора org. Fallback-клик (ensureOrgSelected) остаётся на случай
+  // смены ключа в RootApp.
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+  await page.addInitScript((id) => {
+    window.sessionStorage.setItem(`fpc_org_choice_done:${id}`, "1");
+  }, uid);
+}
+
 async function clickOrgButtonInDom(page) {
   // Список org (сотни штук в dev-БД) рендерится без виртуализации: первая
   // кнопка уезжает за пределы viewport (y<0) и обычный locator.click()
@@ -195,6 +207,7 @@ test.describe("api-polling-reduction", () => {
 
     await installNetCounter(page);
     await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId });
+    await seedOrgChoiceDone(page, auth.userId);
     await page.goto("/app");
     await ensureOrgSelected(page);
     await openSessionInTopbar(page, fixture);
@@ -230,6 +243,7 @@ test.describe("api-polling-reduction", () => {
 
     await installNetCounter(page);
     await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId });
+    await seedOrgChoiceDone(page, auth.userId);
     await page.goto("/app");
     await ensureOrgSelected(page);
     await openSessionInTopbar(page, fixture);
@@ -286,6 +300,7 @@ test.describe("api-polling-reduction", () => {
 
     await installNetCounter(page);
     await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId });
+    await seedOrgChoiceDone(page, auth.userId);
     await page.goto("/app");
     await ensureOrgSelected(page);
     await openSessionInTopbar(page, fixture);
