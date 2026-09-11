@@ -76,7 +76,7 @@ const { default: useDiagramMutationLifecycle } = await import("../../hooks/useDi
 //   2) mutation-queue debounce 350 (через полный React-харнесс
 //      useDiagramMutationLifecycle — образец харнесса useAutosaveQueue.test.mjs);
 //   3) xml-pipeline конфиг saveCoordinator (debounce 0 / retry 3 /
-//      backoff 1s / timeout 10s) — конфиг, реально зарегистрированный
+//      backoff 1s / timeout 60s) — конфиг, реально зарегистрированный
 //      saveBpmnState.js на синглтоне saveCoordinator, плюс поведенческая
 //      проверка debounce 0 (два быстрых save → два transport-вызова).
 // ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ test("autosaveConfig module exports frozen registry with reference values", asyn
       debounceMs: 0,
       retryCount: 3,
       retryDelayMs: 1000,
-      transportTimeoutMs: 10_000,
+      transportTimeoutMs: 60_000,
       maxRetryDelayMs: 4000,
     },
     "xml-pipeline constants (saveBpmnState.js:113-117)",
@@ -418,21 +418,21 @@ test("consumers read autosave constants from the registry instead of inline lite
   assert.doesNotMatch(mutationSrc, /debounceMs:\s*350/, "mutation-queue debounce must come from the registry");
   assert.doesNotMatch(
     saveStateSrc,
-    /debounceMs:\s*0,[\s\S]*?retryCount:\s*3,[\s\S]*?transportTimeoutMs:\s*10000/,
+    /debounceMs:\s*0,[\s\S]*?retryCount:\s*3,[\s\S]*?transportTimeoutMs:\s*60000/,
     "xml-pipeline config must come from the registry",
   );
 });
 
 // --- xml-pipeline конфиг saveCoordinator (saveBpmnState.js:113-117) ---------
 
-test("xml pipeline registered by saveBpmnState has debounce 0/retry 3/backoff 1s/timeout 10s", () => {
+test("xml pipeline registered by saveBpmnState has debounce 0/retry 3/backoff 1s/timeout 60s", () => {
   resetCasVersionTracker();
   const pipeline = saveCoordinator.pipelines.get("xml");
   assert.ok(pipeline, 'saveBpmnState must register the "xml" pipeline on the saveCoordinator singleton');
   assert.equal(pipeline.debounceMs, 0, "xml pipeline debounce (saveBpmnState.js:113)");
   assert.equal(pipeline.retryCount, 3, "xml pipeline retryCount (saveBpmnState.js:114)");
   assert.equal(pipeline.retryDelayMs, 1000, "xml pipeline backoff (saveBpmnState.js:115)");
-  assert.equal(pipeline.transportTimeoutMs, 10000, "xml pipeline timeout (saveBpmnState.js:116)");
+  assert.equal(pipeline.transportTimeoutMs, 60000, "xml pipeline timeout (saveBpmnState.js:116)");
   assert.equal(pipeline.maxRetryDelayMs, 4000, "xml pipeline backoff cap (saveBpmnState.js:117)");
 });
 
