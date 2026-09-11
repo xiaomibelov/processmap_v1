@@ -1433,6 +1433,10 @@ components:
             type: object
           title: Items
           type: array
+        meta:
+          nullable: true
+          title: Meta
+          type: object
       required:
       - context
       - breadcrumbs
@@ -2669,6 +2673,10 @@ components:
           type: array
         context:
           $ref: '#/components/schemas/ContextOut'
+        meta:
+          nullable: true
+          title: Meta
+          type: object
         project:
           $ref: '#/components/schemas/ProjectItem'
         sessions:
@@ -2851,6 +2859,12 @@ components:
           default: 0
           title: Children Count
           type: integer
+        counters:
+          additionalProperties:
+            type: integer
+          nullable: true
+          title: Counters
+          type: object
         created_at:
           default: 0
           title: Created At
@@ -2879,6 +2893,14 @@ components:
           default: ''
           title: Parent Session Id
           type: string
+        path_only:
+          default: false
+          title: Path Only
+          type: boolean
+        process_layer:
+          default: as_is
+          title: Process Layer
+          type: string
         project_id:
           default: ''
           title: Project Id
@@ -2891,6 +2913,12 @@ components:
           default: ''
           title: Stage
           type: string
+        stage_badges:
+          items:
+            type: string
+          nullable: true
+          title: Stage Badges
+          type: array
         status:
           default: draft
           title: Status
@@ -2899,6 +2927,10 @@ components:
           default: 0
           title: Subprocesses Count
           type: integer
+        tobe:
+          nullable: true
+          title: Tobe
+          type: object
         updated_at:
           default: 0
           title: Updated At
@@ -9255,6 +9287,15 @@ paths:
           default: ''
           title: Folder Id
           type: string
+      - in: query
+        name: stage
+        required: false
+        schema:
+          items:
+            type: string
+          nullable: true
+          title: Stage
+          type: array
       responses:
         '200':
           content:
@@ -13778,6 +13819,15 @@ paths:
           default: false
           title: Tree
           type: boolean
+      - in: query
+        name: stage
+        required: false
+        schema:
+          items:
+            type: string
+          nullable: true
+          title: Stage
+          type: array
       responses:
         '200':
           content:

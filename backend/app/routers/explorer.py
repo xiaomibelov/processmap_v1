@@ -174,6 +174,8 @@ class ExplorerPage(BaseModel):
     context: ContextOut
     breadcrumbs: List[BreadcrumbItem]
     items: List[Dict[str, Any]]
+    # TO BE overview: сводка выборки + workspace-wide счётчики (для баннера).
+    meta: Optional[Dict[str, Any]] = None
 
 
 class SessionItem(BaseModel):
@@ -189,6 +191,12 @@ class SessionItem(BaseModel):
     owner: Optional[OwnerOut] = None
     status: str = "draft"
     stage: str = ""
+    # TO BE overview: контур сессии + производные агрегаты (см. storage).
+    process_layer: str = "as_is"
+    counters: Optional[Dict[str, int]] = None
+    stage_badges: Optional[List[str]] = None
+    tobe: Optional[Dict[str, Any]] = None
+    path_only: bool = False
     dod_percent: int = 0
     attention_count: int = 0
     reports_count: int = 0
@@ -203,6 +211,8 @@ class ProjectPage(BaseModel):
     breadcrumbs: List[BreadcrumbItem]
     project: ProjectItem
     sessions: List[SessionItem]
+    # TO BE overview: сводка выборки ({matched_branches, matched_counts}).
+    meta: Optional[Dict[str, Any]] = None
 
 
 # ─── Request bodies ───────────────────────────────────────────────────────────
@@ -285,6 +295,11 @@ def _session_item_from_row(row: Dict[str, Any]) -> SessionItem:
         owner=_owner_out(row.get("owner_user_id", "")),
         status=row.get("status", "draft"),
         stage=row.get("stage", ""),
+        process_layer=str(row.get("process_layer") or "as_is") or "as_is",
+        counters=row.get("counters"),
+        stage_badges=row.get("stage_badges"),
+        tobe=row.get("tobe"),
+        path_only=bool(row.get("path_only")),
         dod_percent=row.get("dod_percent", 0),
         attention_count=row.get("attention_count", 0),
         reports_count=row.get("reports_count", 0),
@@ -377,22 +392,50 @@ def _cached_memberships(user_id: str, is_admin: bool) -> List[Dict[str, Any]]:
     return result
 
 
-def _cached_children(org_id: str, workspace_id: str, folder_id: str) -> Dict[str, Any]:
+def _cached_children(org_id: str, workspace_id: str, folder_id: str, *, skip_cache: bool = False) -> Dict[str, Any]:
     """Return folder children (folders + projects) with cache-aside."""
     t0 = time.perf_counter()
     fid = str(folder_id or "").strip()
 
-    cached = explorer_get_children(org_id, workspace_id, fid)
-    if cached is not None:
-        logger.debug("explorer cache HIT children org=%s workspace=%s folder=%s %dms",
-                     org_id, workspace_id, fid or "root", _ms(t0))
-        return cached  # type: ignore[return-value]
+    if not skip_cache:
+        cached = explorer_get_children(org_id, workspace_id, fid)
+        if cached is not None:
+            logger.debug("explorer cache HIT children org=%s workspace=%s folder=%s %dms",
+                         org_id, workspace_id, fid or "root", _ms(t0))
+            return cached  # type: ignore[return-value]
 
     data = storage.list_workspace_folder_children(org_id, workspace_id, fid)
     explorer_set_children(org_id, workspace_id, fid, data)
     logger.debug("explorer cache MISS children org=%s workspace=%s folder=%s db=%dms",
                  org_id, workspace_id, fid or "root", _ms(t0))
     return data
+
+
+# ─── TO BE overview helpers ───────────────────────────────────────────────────
+
+def _normalize_stage_query(stage: Optional[List[str]]) -> set:
+    """Повторяемый ?stage=as_is|to_be: OR внутри измерения; оба значения = без фильтра."""
+    out = set()
+    for raw in stage or []:
+        value = str(raw or "").strip().lower()
+        if value in {"as_is", "to_be"}:
+            out.add(value)
+    if out == {"as_is", "to_be"}:
+        return set()
+    return out
+
+
+def _item_tobe_badges(item: Dict[str, Any]) -> set:
+    badges = item.get("stage_badges")
+    if isinstance(badges, list):
+        return {str(b) for b in badges}
+    counters = item.get("counters") or {}
+    out = set()
+    if int(counters.get("as_is") or 0) > 0:
+        out.add("as_is")
+    if int(counters.get("to_be") or 0) > 0:
+        out.add("to_be")
+    return out
 
 
 def _cached_breadcrumb(org_id: str, workspace_id: str, folder_id: str) -> List[Dict[str, Any]]:
@@ -568,6 +611,7 @@ def get_explorer_page(
     request: Request,
     workspace_id: str = Query(...),
     folder_id: str = Query(default=""),
+    stage: Annotated[Optional[List[str]], Query()] = None,
 ) -> ExplorerPage:
     t0 = time.perf_counter()
     workspace = _resolve_workspace(request, workspace_id)
@@ -606,8 +650,12 @@ def get_explorer_page(
         folder=context_folder,
     )
 
-    # Children (cached per folder/root)
-    children = _cached_children(oid, ws_id, fid)
+    # Children (cached per folder/root; при активном фильтре контура — bypass:
+    # в кеше могут лежать payload'ы без stage_badges от старой версии кода).
+    requested_stages = _normalize_stage_query(stage)
+    children = _cached_children(oid, ws_id, fid, skip_cache=bool(requested_stages))
+
+    workspace_counts = children.get("workspace_counts") or {}
 
     items: List[Dict[str, Any]] = []
     for f in children.get("folders", []):
@@ -632,6 +680,10 @@ def get_explorer_page(
             "last_activity_source_id": folder_out.get("last_activity_source_id", folder_out.get("id", "")),
             "last_activity_source_title": folder_out.get("last_activity_source_title", folder_out.get("name", "")),
             "rollup_dod_percent": folder_out.get("rollup_dod_percent"),
+            "counters": folder_out.get("counters"),
+            "stage_badges": folder_out.get("stage_badges"),
+            "tobe": folder_out.get("tobe"),
+            "tobe_coverage": folder_out.get("tobe_coverage"),
             "created_at": folder_out.get("created_at", 0),
             "updated_at": folder_out.get("updated_at", 0),
         })
@@ -660,13 +712,34 @@ def get_explorer_page(
             "done_sessions_count": p.get("done_sessions_count", 0),
             "trackable_sessions_count": p.get("trackable_sessions_count", p.get("sessions_count", 0)),
             "rollup_dod_percent": p.get("rollup_dod_percent", p.get("dod_percent", 0)),
+            "counters": p.get("counters"),
+            "stage_badges": p.get("stage_badges"),
+            "tobe": p.get("tobe"),
             "created_at": p.get("created_at", 0),
             "updated_at": p.get("updated_at", 0),
         })
 
+    # Фильтр контура: узлы без схем выбранного контура скрываются.
+    # Счётчики узлов остаются глобальными (см. storage-агрегаты).
+    if requested_stages:
+        items = [item for item in items if (_item_tobe_badges(item) & requested_stages)]
+
+    counters = workspace_counts if isinstance(workspace_counts, dict) else {}
+    meta = {
+        "matched_branches": len(items),
+        "matched_counts": {
+            "as_is": sum(int((it.get("counters") or {}).get("as_is") or 0) for it in items),
+            "to_be": sum(int((it.get("counters") or {}).get("to_be") or 0) for it in items),
+        },
+        "workspace_counts": {
+            "as_is": int(counters.get("as_is") or 0),
+            "to_be": int(counters.get("to_be") or 0),
+        },
+    }
+
     logger.info("explorer /explorer org=%s workspace=%s folder=%s items=%d total=%dms",
                 oid, ws_id, fid or "root", len(items), _ms(t0))
-    return ExplorerPage(context=context, breadcrumbs=breadcrumbs, items=items)
+    return ExplorerPage(context=context, breadcrumbs=breadcrumbs, items=items, meta=meta)
 
 
 @router.get("/api/explorer/search")
@@ -1040,6 +1113,7 @@ def get_project_explorer(
     root_only: Annotated[bool, Query()] = False,
     include_children_meta: Annotated[bool, Query()] = False,
     tree: Annotated[bool, Query()] = False,
+    stage: Annotated[Optional[List[str]], Query()] = None,
 ) -> ProjectPage:
     t0 = time.perf_counter()
     workspace = _resolve_workspace(request, workspace_id)
@@ -1103,21 +1177,56 @@ def get_project_explorer(
     )
 
     # Sessions: cache-aside only for the default flat list.
+    requested_stages = _normalize_stage_query(stage)
+    meta: Optional[Dict[str, Any]] = None
     if tree:
-        tree_rows = storage.get_project_session_tree(oid, pid, user_id=user_id, is_admin=is_admin)
+        tree_rows = storage.get_project_session_tree(
+            oid, pid, user_id=user_id, is_admin=is_admin,
+            stage=list(requested_stages) if requested_stages else None,
+        )
         sessions = [_session_item_from_tree_node(n) for n in tree_rows]
+        if requested_stages:
+            matches = storage.get_project_session_tree_matches(tree_rows)
+            meta = {
+                "matched_branches": matches["matched_branches"],
+                "matched_counts": matches["matched_counts"],
+            }
     elif root_only or include_children_meta:
         session_rows = storage.list_project_sessions_for_explorer(
             oid, pid, root_only=root_only, include_children_meta=include_children_meta
         )
+        if requested_stages:
+            session_rows = [
+                row for row in session_rows
+                if str(row.get("process_layer") or "as_is") in requested_stages
+            ]
+            meta = {
+                "matched_branches": len(session_rows),
+                "matched_counts": {
+                    "as_is": sum(1 for row in session_rows if str(row.get("process_layer") or "as_is") == "as_is"),
+                    "to_be": sum(1 for row in session_rows if str(row.get("process_layer") or "as_is") == "to_be"),
+                },
+            }
         sessions = [_session_item_from_row(s) for s in session_rows]
     else:
         session_rows = _cached_project_sessions(oid, pid)
+        if requested_stages:
+            session_rows = [
+                row for row in session_rows
+                if str(row.get("process_layer") or "as_is") in requested_stages
+            ]
+            meta = {
+                "matched_branches": len(session_rows),
+                "matched_counts": {
+                    "as_is": sum(1 for row in session_rows if str(row.get("process_layer") or "as_is") == "as_is"),
+                    "to_be": sum(1 for row in session_rows if str(row.get("process_layer") or "as_is") == "to_be"),
+                },
+            }
         sessions = [_session_item_from_row(s) for s in session_rows]
 
     logger.info("explorer /projects/%s org=%s workspace=%s root_only=%s meta=%s tree=%s sessions=%d total=%dms",
                 pid, oid, wid, root_only, include_children_meta, tree, len(sessions), _ms(t0))
-    return ProjectPage(context=context, breadcrumbs=breadcrumbs, project=proj_item, sessions=sessions)
+    return ProjectPage(context=context, breadcrumbs=breadcrumbs, project=proj_item, sessions=sessions, meta=meta)
 
 
 @router.get("/api/sessions/{session_id}/children", response_model=List[SessionItem])

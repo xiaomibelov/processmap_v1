@@ -109,6 +109,12 @@
   --pm-tobe-shadow-lift: 0 4px 14px rgba(15, 23, 42, 0.10);
   --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
+
+  /* Stage badges — workspace AS IS/TO BE overview (чипы/бейджи контура) */
+  --pm-stage-asis: #2563eb;
+  --pm-stage-asis-soft: #dbeafe;
+  --pm-stage-tobe: #059669;
+  --pm-stage-tobe-soft: #d1fae5;
 }
 
 .dark {
@@ -230,4 +236,10 @@
   --pm-tobe-shadow-lift: 0 4px 14px rgba(15, 23, 42, 0.10);  /* hover-подъём карточек */
   --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
+
+  /* Stage badges — workspace AS IS/TO BE overview (чипы/бейджи контура) */
+  --pm-stage-asis: #60a5fa;
+  --pm-stage-asis-soft: #1e3a5f;
+  --pm-stage-tobe: #34d399;
+  --pm-stage-tobe-soft: #064e3b;
 }

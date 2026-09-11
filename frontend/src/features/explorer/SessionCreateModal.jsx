@@ -14,9 +14,10 @@ import {
   validateBpmnUploadFile,
 } from "./bpmnUploadFlow.js";
 
-export default function SessionCreateModal({ sessions = [], onClose, onSubmit, onUploadFile }) {
+export default function SessionCreateModal({ sessions = [], initialProcessLayer = "", onClose, onSubmit, onUploadFile }) {
+  const initialLayer = String(initialProcessLayer || "").trim() === "to_be" ? "to_be" : "as_is";
   const [name, setName] = React.useState("");
-  const [processLayer, setProcessLayer] = React.useState("as_is");
+  const [processLayer, setProcessLayer] = React.useState(initialLayer);
   const [derivedFrom, setDerivedFrom] = React.useState("");
   const [file, setFile] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(false);

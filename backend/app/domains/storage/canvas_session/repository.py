@@ -263,6 +263,7 @@ def _session_to_explorer_dict(s: "Session", has_children: bool = False, children
         "org_id": s.org_id,
         "status": str((s.interview or {}).get("status", "draft") or "draft"),
         "stage": str((s.interview or {}).get("stage", "") or ""),
+        "process_layer": str(getattr(s, "process_layer", "") or "as_is") or "as_is",
         "dod_percent": int((s.analytics or {}).get("dod_percent", 0) or 0),
         "attention_count": int((s.analytics or {}).get("attention_count", 0) or 0),
         "reports_count": int((s.analytics or {}).get("reports_count", 0) or 0),
@@ -274,6 +275,57 @@ def _session_to_explorer_dict(s: "Session", has_children: bool = False, children
         "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
         "assignees": [],
     }
+
+
+def _tobe_leaf_overview(item: Dict[str, Any], link_updated_at: Optional[int]) -> None:
+    """TO BE overview для листа-сессии: counters/stage_badges/tobe.last_updated_at.
+
+    AS IS-лист с живой связанной TO BE-сессией получает двойной бейдж
+    (counters.to_be = 1, tobe.last_updated_at = updated_at связи).
+    """
+    layer = str(item.get("process_layer") or "as_is") or "as_is"
+    if layer == "to_be":
+        item["counters"] = {"as_is": 0, "to_be": 1}
+        item["stage_badges"] = ["to_be"]
+        item["tobe"] = {"last_updated_at": int(item.get("updated_at") or 0) or None}
+        return
+    has_link = link_updated_at is not None
+    item["counters"] = {"as_is": 1, "to_be": 1 if has_link else 0}
+    item["stage_badges"] = ["as_is"] + (["to_be"] if has_link else [])
+    item["tobe"] = {"last_updated_at": int(link_updated_at) if link_updated_at else None}
+
+
+def _load_tobe_links(con: Any, org_id: str, project_id: str) -> Dict[str, int]:
+    """Живые TO BE root-сессии проекта: derived_from_session_id -> updated_at.
+
+    Один агрегирующий проход (прецедент _load_session_assignees) — без N+1.
+    """
+    filters = ["project_id = ?", "process_layer = 'to_be'", "(deleted_at = 0 OR deleted_at IS NULL)", "COALESCE(parent_session_id, '') = ''"]
+    params: List[Any] = [project_id]
+    if org_id:
+        filters.append("org_id = ?")
+        params.append(org_id)
+    rows = con.execute(
+        f"""
+        SELECT derived_from_session_id AS src, updated_at
+          FROM sessions
+         WHERE {' AND '.join(filters)} AND derived_from_session_id IS NOT NULL AND derived_from_session_id != ''
+        """,
+        params,
+    ).fetchall()
+    links: Dict[str, int] = {}
+    for row in rows:
+        src = str(_row_value(row, "src") or "").strip()
+        if not src:
+            continue
+        updated = 0
+        try:
+            updated = int(_row_value(row, "updated_at") or 0)
+        except Exception:
+            updated = 0
+        if src not in links or updated > links[src]:
+            links[src] = updated
+    return links
 
 
 def _without_session_companion_meta(value: Any) -> Any:
@@ -539,17 +591,28 @@ def get_project_session_tree(
     user_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
     max_depth: int = 3,
+    stage: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Return the full session tree for a project (roots + nested children).
 
     Loads all accessible sessions in one query, then builds the tree in memory.
     Depth is capped to avoid accidental deep recursion.
+
+    TO BE overview: каждому узлу добавляются process_layer, counters
+    ({as_is, to_be}), stage_badges и tobe.last_updated_at (агрегат вверх по
+    поддереву, MAX по TO BE-сессиям; null при отсутствии TO BE). Связь
+    «AS IS → живая TO BE» учитывается только внутри области видимости
+    (ACL-scope) — см. _tobe_leaf_overview.
+    Фильтр stage: узлы без схем выбранного контура скрываются, родительская
+    цепочка сохраняется (path_only=true), счётчики остаются глобальными.
     """
     _ensure_schema()
     oid = str(org_id or "").strip()
     pid = str(project_id or "").strip()
     if not pid:
         return []
+
+    requested_stages = _normalize_stage_filter(stage)
 
     filters = ["s.project_id = ?", "(s.deleted_at = 0 OR s.deleted_at IS NULL)"]
     params: List[Any] = [pid]
@@ -589,10 +652,30 @@ def get_project_session_tree(
 
     by_id: Dict[str, Dict[str, Any]] = {}
     roots: List[Dict[str, Any]] = []
+    # Живые TO BE root-сессии: ключ карты — derived_from_session_id (источник AS IS),
+    # значение — MAX(updated_at) связанных TO BE.
+    live_tobe_updated: Dict[str, int] = {}
+    for row in rows:
+        s = _session_row_to_model(row)
+        if str(getattr(s, "process_layer", "") or "as_is") == "to_be":
+            src = str(getattr(s, "derived_from_session_id", "") or "").strip()
+            if src:
+                ts = int(getattr(s, "updated_at", 0) or 0)
+                if src not in live_tobe_updated or ts > live_tobe_updated[src]:
+                    live_tobe_updated[src] = ts
     for row in rows:
         s = _session_row_to_model(row)
         item = _session_to_explorer_dict(s, bool(row["has_children"]), int(row["children_count"] or 0))
         item["children"] = []
+        # Связь AS IS → живая TO BE резолвится только внутри ACL-scope выборки:
+        # ключ карты — id самого AS IS-узла.
+        link_ts = None
+        if str(item.get("process_layer") or "as_is") != "to_be":
+            link_ts = live_tobe_updated.get(str(item["id"]))
+        _tobe_leaf_overview(item, link_ts)
+        # Собственный вклад узла (без роллапа) — для серверного фильтра stage
+        # и meta.matched_* отфильтрованной выборки.
+        item["_own_stage_badges"] = list(item.get("stage_badges") or [])
         by_id[item["id"]] = item
         if not item.get("parent_session_id"):
             roots.append(item)
@@ -616,7 +699,104 @@ def get_project_session_tree(
     for root in roots:
         attach(root, 1)
 
+    # Роллап TO BE overview вверх по дереву: counters-суммы, stage_badges-union,
+    # tobe.last_updated_at = MAX по поддереву (null при отсутствии TO BE).
+    def rollup(node: Dict[str, Any]) -> Dict[str, Any]:
+        as_is = int((node.get("counters") or {}).get("as_is") or 0)
+        to_be = int((node.get("counters") or {}).get("to_be") or 0)
+        tobe_ts = (node.get("tobe") or {}).get("last_updated_at") or 0
+        for child in node.get("children") or []:
+            child_metrics = rollup(child)
+            as_is += child_metrics["as_is"]
+            to_be += child_metrics["to_be"]
+            tobe_ts = max(tobe_ts, child_metrics["to_be_latest_at"])
+        node["counters"] = {"as_is": as_is, "to_be": to_be}
+        node["stage_badges"] = _stage_badges_from_counts(as_is, to_be)
+        node["tobe"] = {"last_updated_at": int(tobe_ts) if tobe_ts else None}
+        return {"as_is": as_is, "to_be": to_be, "to_be_latest_at": tobe_ts}
+
+    for root in roots:
+        rollup(root)
+
+    if requested_stages:
+        roots = _filter_tree_by_stage(roots, requested_stages)
+
+    # Примечание: служебный ключ _own_stage_badges остаётся на узлах —
+    # response-модель SessionItem его отсекает, а get_project_session_tree_matches
+    # использует его для meta.matched_*.
     return roots
+
+
+def _normalize_stage_filter(stage: Optional[List[str]]) -> Set[str]:
+    """Повторяемый stage=as_is|to_be: OR внутри измерения; оба значения = без фильтра."""
+    out: Set[str] = set()
+    for raw in stage or []:
+        value = str(raw or "").strip().lower()
+        if value in {"as_is", "to_be"}:
+            out.add(value)
+    if out == {"as_is", "to_be"}:
+        return set()
+    return out
+
+
+def _filter_tree_by_stage(roots: List[Dict[str, Any]], stages: Set[str]) -> List[Dict[str, Any]]:
+    """Отфильтровать дерево по контуру, сохраняя родительскую цепочку.
+
+    Узел «своего» контура: stage ∈ его собственных бейджей (собственный слой
+    + собственная связь AS IS→TO BE, без роллапа потомков). Узел без своих
+    схем контура сохраняется, только если у него есть показанные потомки
+    (path_only=true). Счётчики узлов остаются глобальными (не пересчитываются).
+    """
+    def visit(node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        kept_children = []
+        for child in node.get("children") or []:
+            kept = visit(child)
+            if kept is not None:
+                kept_children.append(kept)
+        node["children"] = kept_children
+        own = set(node.get("_own_stage_badges") or [])
+        if own & stages:
+            node["path_only"] = False
+            return node
+        if kept_children:
+            node["path_only"] = True
+            return node
+        return None
+
+    kept_roots = []
+    for root in roots:
+        kept = visit(root)
+        if kept is not None:
+            kept_roots.append(kept)
+    return kept_roots
+
+
+def get_project_session_tree_matches(roots: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Сводка отфильтрованной выборки: число веток + счётчики по контурам.
+
+    matched_counts считается по узлам «своего» контура (не path_only), чтобы
+    не дублировать агрегаты родителей.
+    """
+    branches = 0
+    matched_as_is = 0
+    matched_to_be = 0
+
+    def walk(node: Dict[str, Any], is_root: bool) -> None:
+        nonlocal branches, matched_as_is, matched_to_be
+        if is_root:
+            branches += 1
+        if not node.get("path_only"):
+            own = node.get("_own_stage_badges") or []
+            if "as_is" in own:
+                matched_as_is += 1
+            if "to_be" in own:
+                matched_to_be += 1
+        for child in node.get("children") or []:
+            walk(child, False)
+
+    for root in roots:
+        walk(root, True)
+    return {"matched_branches": branches, "matched_counts": {"as_is": matched_as_is, "to_be": matched_to_be}}
 
 
 def get_session_open_notes_aggregate(
@@ -819,8 +999,10 @@ def list_project_sessions_for_explorer(
             return con.execute(query, query_params).fetchall()
 
     rows = _run_query(sql, params)
+    used_fallback = False
     if oid and not rows:
         # Fallback: legacy sessions may have wrong org_id
+        used_fallback = True
         fallback_params = [pid]
         fallback_sql = f"""
             SELECT s.*{children_meta_sql}
@@ -830,12 +1012,19 @@ def list_project_sessions_for_explorer(
         """
         rows = _run_query(fallback_sql, fallback_params)
 
+    tobe_links: Dict[str, int] = {}
+    with _connect() as con:
+        tobe_links = _load_tobe_links(con, "" if used_fallback else oid, pid)
+
     result = []
     for row in rows:
         s = _session_row_to_model(row)
         has_children = bool(row["has_children"]) if include_children_meta else False
         children_count = int(row["children_count"] or 0) if include_children_meta else 0
-        result.append(_session_to_explorer_dict(s, has_children, children_count))
+        item = _session_to_explorer_dict(s, has_children, children_count)
+        # TO BE overview: связь «AS IS → живая TO BE» даёт двойной бейдж листу.
+        _tobe_leaf_overview(item, tobe_links.get(item["id"]))
+        result.append(item)
 
     if result:
         assignees_by_session = _load_session_assignees(item["id"] for item in result)
@@ -1085,6 +1274,7 @@ from ..compat.repository import _now_ts
 from ..compat.repository import _row_value
 from ..compat.repository import _session_read_scope_filters
 from ..compat.repository import _session_row_to_model
+from ..compat.repository import _stage_badges_from_counts
 from ..notes.repository import _attention_count_case
 from ..notes.repository import _notes_aggregate_payload
 from ..notes.repository import _personal_discussion_count_case
