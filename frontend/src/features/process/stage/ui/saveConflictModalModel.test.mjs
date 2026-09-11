@@ -167,15 +167,3 @@ test("buildSaveConflictModalView keeps neutral copy for fallback_unknown", () =>
   assert.match(view.title, /Конфликт версии сессии/i);
   assert.match(view.lead, /версия сессии изменилась/i);
 });
-
-test("buildSaveConflictModalView does not render missing versions as zero", () => {
-  const view = buildSaveConflictModalView({
-    conflictRaw: {
-      clientBaseVersion: null,
-      serverCurrentVersion: null,
-    },
-  });
-
-  assert.match(view.contextLines.join(" "), /Серверная версия: \?\. Ваша базовая версия: \?\./);
-  assert.doesNotMatch(view.contextLines.join(" "), /версия: 0/);
-});

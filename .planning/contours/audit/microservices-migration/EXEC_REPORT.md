@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # ProcessMap Notifications Microservice — Execution Report
 
 **Контур:** `/opt/processmap-test` на `root@clearvestnic.ru` (тестовое окружение `clearvestnic.ru:5177`, проект `processmap_v1`)  

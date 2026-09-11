@@ -29,7 +29,6 @@ from fastapi.responses import FileResponse
 
 from .exporters.mermaid import render_mermaid
 from .migration_state import get_migration_state
-from .ai.error_sanitize import sanitize_llm_error
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
@@ -2656,14 +2655,11 @@ def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
     }
     if (
         not graph_hash
-        and not run_id
         and not generated_at
         and not complete_variants
         and not debug_failed_variants
         and not warnings
-        and not failed_reasons
-        and total_variants <= 0
-        and total_failed <= 0
+        and not status
     ):
         return {}
     return out
@@ -3756,9 +3752,7 @@ def llm_session_title_questions(inp: SessionTitleQuestionsIn) -> Dict[str, Any]:
                 result.setdefault("prompt_version", str(prompt_item.get("version") or ""))
         return result
     except Exception as e:
-        # S1: URL upstream-роутера пользователю не отдаём; сырой текст — в логи.
-        logger.warning("session-title questions deepseek failed: %s", e, exc_info=True)
-        return {"error": sanitize_llm_error("error", f"deepseek failed: {e}")}
+        return {"error": f"deepseek failed: {e}"}
 
 
 @app.post("/api/glossary/add")
@@ -4643,14 +4637,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
 
     lock = acquire_session_lock(session_id, ttl_ms=15000)
     if not lock.acquired:
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "code": "SESSION_LOCK_BUSY",
-                "message": "Session is being updated, retry",
-                "server_current_version": int(getattr(sess_pre, "diagram_state_version", 0) or 0),
-            },
-        )
+        raise HTTPException(status_code=423, detail="Session is being updated, retry")
 
     try:
         st = get_storage()

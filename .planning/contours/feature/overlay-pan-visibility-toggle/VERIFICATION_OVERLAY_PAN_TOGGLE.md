@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # VERIFICATION: Overlay Pan Visibility Toggle
 
 **Branch:** `feature/overlay-pan-visibility-toggle`  

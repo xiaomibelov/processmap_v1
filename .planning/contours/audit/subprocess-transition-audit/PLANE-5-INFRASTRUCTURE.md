@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # Subprocess Transition Architecture — PLANE 5: INFRASTRUCTURE
 
 ## Runtime topology

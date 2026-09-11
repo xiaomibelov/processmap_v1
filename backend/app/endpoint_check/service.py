@@ -28,7 +28,6 @@ from ..auth import _bool_env, create_access_token
 from ..storage import _connect, _ensure_schema, _now_ts, list_auth_users
 from . import store
 from .diff import FLAP_THRESHOLD, FLAP_WINDOW_RUNS, OK, _group, compute_diff, diff_counters, is_flaky
-from .pipeline import PROFILE_FULL, PROFILE_READ_ONLY, estimate_result_count, execute_save_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -593,8 +592,6 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
         # M1: TTL self-scan токена = бюджет прогона + 15 мин, иначе хвост
         # длинного прогона ловил бы 401 (дефолтный TTL 15 мин ≈ бюджету 900с).
         token = create_access_token(_scan_token_uid(run), ttl_seconds=int(budget) + 900)
-        profile = str(summary.get("profile") or PROFILE_READ_ONLY)
-        save_chain = summary.get("save_chain") if isinstance(summary.get("save_chain"), list) else []
 
         # --- живая спека ---
         spec_status, _, spec_body, spec_err = exec_fn("/api/openapi.json", {}, token, timeout_s)
@@ -623,7 +620,7 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
                 context[alias] = context[target]
 
         # --- план прогона ---
-        get_ops = iter_get_operations(spec) if profile in {PROFILE_READ_ONLY, PROFILE_FULL} else []
+        get_ops = iter_get_operations(spec)
         plan: List[Dict[str, Any]] = []
         blind_zone: List[Dict[str, str]] = []
         not_scanned_mutations: List[str] = []
@@ -678,22 +675,15 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
                 continue
             plan.append(op)
 
-        save_total = estimate_result_count(save_chain) if profile != PROFILE_READ_ONLY else 0
         summary.update(
             {
-                "progress": {"scanned": 0, "total": len(plan) + save_total},
+                "progress": {"scanned": 0, "total": len(plan)},
                 "heartbeat_at": _now_ts(),
                 "resolved_ids": {k: v for k, v in sorted(context.items())},
                 "blind_zone": blind_zone,
                 "not_scanned": {"count": len(not_scanned_mutations), "operation_ids": sorted(not_scanned_mutations)},
                 "probe_duration_ms": round(probe_duration_ms, 1),
                 "missing_ids": missing_ids,
-                "pipeline_coverage": {
-                    "enabled": profile != PROFILE_READ_ONLY,
-                    "steps": save_chain,
-                    "temporary_session": profile != PROFILE_READ_ONLY,
-                    "terminal_save_required": profile != PROFILE_READ_ONLY,
-                },
             }
         )
         store.update_run(run_id, summary_json=summary)
@@ -744,12 +734,9 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
             for fut in concurrent.futures.as_completed(futures):
                 results.append(fut.result())
                 if len(results) % PROGRESS_FLUSH_EVERY == 0:
-                    summary["progress"] = {"scanned": len(results), "total": len(plan) + save_total}
+                    summary["progress"] = {"scanned": len(results), "total": len(plan)}
                     summary["heartbeat_at"] = _now_ts()
                     store.update_run(run_id, summary_json=summary)
-
-        if profile != PROFILE_READ_ONLY:
-            results.extend(execute_save_pipeline(run_id=run_id, token=token, chain=save_chain))
 
         results.sort(key=lambda r: (r["path"], r["operation_id"]))
 
@@ -765,7 +752,7 @@ def execute_run(run_id: str, executor: Optional[Executor] = None) -> None:
         diff_counts = diff_counters([r["diff_status"] for r in results])
         summary.update(
             {
-                "progress": {"scanned": len(results), "total": len(plan) + save_total},
+                "progress": {"scanned": len(results), "total": len(plan)},
                 "duration_s": round(time.monotonic() - t0, 1),
                 "counts": {
                     "ok": counts.get("ok", 0),
@@ -813,7 +800,7 @@ def _run_worker(run_id: str, executor: Optional[Executor], delay_s: float) -> No
             pass
 
 
-def request_run(*, trigger: str, requested_by: str, executor: Optional[Executor] = None, profile: str = PROFILE_READ_ONLY, save_chain: Optional[List[str]] = None) -> Dict[str, Any]:
+def request_run(*, trigger: str, requested_by: str, executor: Optional[Executor] = None) -> Dict[str, Any]:
     """Создаёт прогон и запускает daemon-thread. Один активный прогон → ScanConflictError.
 
     Deploy-trigger: дебаунс — если есть pending/running deploy-прогон в окне
@@ -831,9 +818,7 @@ def request_run(*, trigger: str, requested_by: str, executor: Optional[Executor]
         active = get_active_run()
         if active is not None:
             raise ScanConflictError(str(active.get("id") or ""))
-        from .pipeline import build_run_config
-        config = build_run_config(profile, save_chain)
-        run = store.create_run(trigger=trig, requested_by=str(requested_by or ""), summary=config, **_version())
+        run = store.create_run(trigger=trig, requested_by=str(requested_by or ""), **_version())
     thread = threading.Thread(
         target=_run_worker,
         args=(str(run["id"]), executor, delay_s),

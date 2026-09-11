@@ -70,10 +70,6 @@ function resolveFlashNodeClass(typeRaw) {
   if (type === "notes") return "fpcNodeFlashNotes";
   if (type === "sync" || type === "xml") return "fpcNodeFlashSync";
   if (type === "flow" || type === "transition") return "fpcNodeFlashFlow";
-  // feat/canvas-edit-highlight: applied-вспышки по типу правки агента
-  if (type === "add") return "fpcNodeFlashAdd";
-  if (type === "update") return "fpcNodeFlashUpdate";
-  if (type === "delete") return "fpcNodeFlashDelete";
   return "fpcNodeFlashAccent";
 }
 

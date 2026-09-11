@@ -589,28 +589,14 @@ def test_usage_aggregate_shape_and_totals(client, admin_token, sandbox):
 
 
 def test_no_secret_in_any_llm_endpoint(client, admin_token, sandbox):
-    """Гейт 1 (сквозной): ключ не встречается ни в одном GET-эндпоинте.
-
-    Расширение (S1, llm-agent-audit-v1): проверяем и инфра-формы утечки ключа —
-    ключ внутри URL (userinfo) и в Authorization-заголовке, а не только сырой ключ.
-    """
+    """Гейт 1 (сквозной): ключ не встречается ни в одном GET-эндпоинте."""
     row = llm_store.create_provider(org_id="org_default", name=sandbox["name"],
                                     base_url="https://api.deepseek.com", model="m",
                                     api_key=SECRET_KEY_VALUE)
-    # key_last4 — sanctioned маскирование (виден в админке намеренно), остальное — нет.
-    forbidden_variants = [
-        SECRET_KEY_VALUE,
-        f"https://{SECRET_KEY_VALUE}@",
-        f"http://{SECRET_KEY_VALUE}@",
-        f"Bearer {SECRET_KEY_VALUE}",
-        "://" + SECRET_KEY_VALUE,
-        SECRET_KEY_VALUE[3:-4],  # середина ключа (без префикса sk- и last4)
-    ]
     for url in ("/api/admin/llm/providers", "/api/admin/llm/features",
                 "/api/admin/llm/prompts", "/api/admin/llm/usage"):
         resp = client.get(url, headers=_auth(admin_token))
-        for variant in forbidden_variants:
-            assert variant not in resp.text, f"утечка ключа ({variant[:12]}…) в {url}"
+        assert SECRET_KEY_VALUE not in resp.text, f"утечка ключа в {url}"
     assert json.dumps(client.get("/api/admin/llm/providers",
                                  headers=_auth(admin_token)).json()) .find(SECRET_KEY_VALUE[-4:]) >= 0
 

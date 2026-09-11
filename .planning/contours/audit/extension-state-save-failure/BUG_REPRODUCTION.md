@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # BUG_REPRODUCTION.md — BPMN extension-state / properties save failure
 
 ## Описание бага

@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 from app.auth import create_access_token, create_user
 from app.endpoint_check import diff as diff_mod
 from app.endpoint_check import service, store
-from app.endpoint_check.pipeline import build_run_config, execute_save_pipeline
 from app.main import app
 from app.storage import _now_ts
 
@@ -85,61 +84,6 @@ class _BlockingExecutor:
 @pytest.fixture
 def client():
     return TestClient(app)
-
-
-def test_save_pipeline_config_defaults_to_complete_terminal_chain():
-    config = build_run_config("save_pipeline")
-    assert config["profile"] == "save_pipeline"
-    assert config["save_chain"][-1] == "final_save"
-    assert "parallel_xml_raw_xml" in config["save_chain"]
-    assert "timeout_lock_conflict" in config["save_chain"]
-
-
-def test_custom_save_pipeline_rejects_non_terminal_chain():
-    with pytest.raises(ValueError, match="must end with final_save"):
-        build_run_config("save_pipeline", ["xml", "xml_meta"])
-
-
-def test_custom_save_pipeline_rejects_unknown_step():
-    with pytest.raises(ValueError, match="unsupported save pipeline step"):
-        build_run_config("save_pipeline", ["delete_everything", "final_save"])
-
-
-def test_run_api_rejects_save_chain_without_terminal_save(client):
-    response = client.post(
-        RUN_PATH,
-        headers=_auth(_admin_token()),
-        json={"profile": "save_pipeline", "save_chain": ["xml"]},
-    )
-    assert response.status_code == 422
-    assert "must end with final_save" in response.json()["detail"]
-
-
-def test_save_pipeline_uses_fixture_terminal_save_and_cleanup():
-    calls = []
-    version = 0
-
-    def executor(method, path, body, token, timeout_s):
-        nonlocal version
-        calls.append((method, path, body, timeout_s))
-        if method == "POST" and path == "/api/sessions":
-            return 201, 1.0, b'{"id":"fixture","diagram_state_version":0}', ""
-        if method == "GET":
-            return 200, 1.0, json.dumps({"id": "fixture", "diagram_state_version": version}).encode(), ""
-        if method == "PUT":
-            version += 1
-            return 200, 1.0, json.dumps({"ok": True, "diagram_state_version": version}).encode(), ""
-        if method == "DELETE":
-            return 204, 1.0, b"", ""
-        return 500, 1.0, b"", ""
-
-    rows = execute_save_pipeline(
-        run_id="run", token="token", chain=["xml", "xml_meta", "final_save"], executor=executor
-    )
-
-    assert any(row[0] == "DELETE" and row[1] == "/api/sessions/fixture" for row in calls)
-    assert [row["operation_id"] for row in rows].count("save_pipeline_final_save") == 1
-    assert rows[-1]["operation_id"] == "save_pipeline_cleanup"
 
 
 def _admin_token() -> str:

@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # RAG Preflight — Planner Context
 
 ## Project: ProcessMap BPMN Canvas Performance Audit

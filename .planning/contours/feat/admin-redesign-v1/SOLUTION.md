@@ -1,5 +1,3 @@
-> DEPRECATED: упоминания clearvestnic.ru в этом документе — исторические. Домен выведен из проекта. Prod = processmap.ru, stage = stage.processmap.ru.
-
 # Solution Plan — комплексная доработка админки ProcessMap
 
 **Contour:** `feat/admin-redesign-v1`  

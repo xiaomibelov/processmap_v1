@@ -22,7 +22,6 @@ import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchest
 import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
 import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/stateMachine/useDiagramLoadStateMachine";
 import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
-import LowFpsCanvasGuard from "../../features/process/bpmn/stage/load/LowFpsCanvasGuard";
 import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
@@ -6113,7 +6112,6 @@ const BpmnStage = forwardRef(function BpmnStage({
           >
             <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
           </div>
-          <LowFpsCanvasGuard enabled={diagramReady && view !== "xml"} />
         </div>
       </DiagramLoadBoundary>
     </div>
