@@ -1,10 +1,16 @@
 import { normalizeDiagramSessionId, normalizeDiagramStateVersion } from "./diagramVersionContext.js";
 import {
-  getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 import { stripDraftGraphKeysFromSessionPatch } from "../../lib/xmlTruthSession.js";
+// Правило единой реализации (P2, fix/canvas-editing-stability): readers CAS-полей
+// и резолвер base — canonical features/session/casResponse.js.
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+  resolveBaseVersionAtSendTime,
+} from "../../../../features/session/casResponse.js";
 // Правило единой реализации: gate живёт в features/session/patchKeys.js
 // (контракт — saveVersion.test.mjs п.13), здесь — делегирующий re-export
 // для callers старта процесса (fix/canvas-editing-stability, P0).
@@ -72,27 +78,14 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
   retryDelayMs: 1000,
 });
 
+// Канонические реализации — features/session/casResponse.js (правило единой
+// реализации). Экспорты сохранены как делегаты для существующих callers.
 export function readSessionPatchAckDiagramStateVersion(responseRaw = null) {
-  const response = responseRaw && typeof responseRaw === "object" ? responseRaw : {};
-  const session = response.session && typeof response.session === "object" ? response.session : {};
-  return normalizeDiagramStateVersion(session.diagram_state_version ?? session.diagramStateVersion);
+  return readAckDiagramStateVersion(responseRaw);
 }
 
 export function readSessionPatchConflictServerCurrentVersion(responseRaw = null) {
-  const response = responseRaw && typeof responseRaw === "object" ? responseRaw : {};
-  const details = response.data && typeof response.data === "object"
-    ? response.data
-    : response.errorDetails && typeof response.errorDetails === "object"
-      ? response.errorDetails
-      : response.details && typeof response.details === "object"
-        ? response.details
-        : {};
-  return normalizeDiagramStateVersion(
-    response.server_current_version
-    ?? response.serverCurrentVersion
-    ?? details.server_current_version
-    ?? details.serverCurrentVersion,
-  );
+  return readConflictServerCurrentVersion(responseRaw);
 }
 
 export function resolveSessionPatchBaseAtSendTime({
@@ -100,15 +93,11 @@ export function resolveSessionPatchBaseAtSendTime({
   getBaseDiagramStateVersion,
   fallbackBaseDiagramStateVersion,
 } = {}) {
-  const trackedBase = normalizeDiagramStateVersion(getTrackedDiagramStateVersion(sessionId));
-  if (trackedBase !== null) return trackedBase;
-  const currentBase = normalizeDiagramStateVersion(
-    typeof getBaseDiagramStateVersion === "function"
-      ? getBaseDiagramStateVersion()
-      : null,
-  );
-  if (currentBase !== null) return currentBase;
-  return normalizeDiagramStateVersion(fallbackBaseDiagramStateVersion);
+  return resolveBaseVersionAtSendTime({
+    sessionId,
+    getBaseDiagramStateVersion,
+    payload: { base_diagram_state_version: fallbackBaseDiagramStateVersion },
+  });
 }
 
 function syncVersionToExternalState(rememberDiagramStateVersion, version, sessionId, options = {}) {

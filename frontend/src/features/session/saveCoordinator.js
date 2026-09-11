@@ -26,6 +26,12 @@ import {
   isSessionNotFound,
   noteSessionApiResult,
 } from "./sessionLiveness.js";
+// P2 (fix/canvas-editing-stability): единый reader CAS-полей (правило одной
+// реализации) — canonical casResponse.js.
+import {
+  readAckDiagramStateVersion,
+  readConflictServerCurrentVersion,
+} from "./casResponse.js";
 
 function asText(value) {
   return String(value || "").trim();
@@ -54,41 +60,11 @@ function isConflictResponse(response) {
 }
 
 function pickServerCurrentVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const candidates = [
-    response.server_current_version,
-    response.serverCurrentVersion,
-    response.data?.server_current_version,
-    response.data?.serverCurrentVersion,
-    response.data?.detail?.server_current_version,
-    response.data?.detail?.serverCurrentVersion,
-    response.errorDetails?.server_current_version,
-    response.errorDetails?.serverCurrentVersion,
-    response.details?.server_current_version,
-    response.details?.serverCurrentVersion,
-  ];
-  for (const raw of candidates) {
-    const n = asNumber(raw, -1);
-    if (n >= 0) return Math.round(n);
-  }
-  return null;
+  return readConflictServerCurrentVersion(response);
 }
 
 function pickDiagramStateVersion(response) {
-  if (!response || typeof response !== "object") return null;
-  const candidates = [
-    response.diagram_state_version,
-    response.diagramStateVersion,
-    response.session?.diagram_state_version,
-    response.session?.diagramStateVersion,
-    response.data?.diagram_state_version,
-    response.data?.diagramStateVersion,
-  ];
-  for (const raw of candidates) {
-    const n = asNumber(raw, -1);
-    if (n >= 0) return Math.round(n);
-  }
-  return null;
+  return readAckDiagramStateVersion(response);
 }
 
 function sleep(ms) {
