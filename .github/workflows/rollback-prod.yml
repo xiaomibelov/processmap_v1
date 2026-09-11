@@ -1,3 +1,19 @@
+# =============================================================================
+# DEPRECATED — НЕ ИСПОЛЬЗОВАТЬ (аудит PROD 2026-09-10, PLAN-4 §1.5)
+#
+# Этот workflow фактически непригоден для отката prod:
+#   1. Он читает PREVIOUS_BUILD_ID из /opt/processmap/env/prod.env, а там
+#      записан 2ffc5cbe — коммит, который НИКОГДА не был задеплоен на prod
+#      (ручные запуски deploy 2026-09-08 были прерваны до build).
+#   2. Он retag'ает образы :rollback, а они протухшие (Sep 4, эпоха aed51653,
+#      pre-30a716ca) — откатил бы к несуществовавшему состоянию.
+#   3. Он не знает про standalone-gateway (pinned nginx:1.27-alpine) и поднял бы
+#      старый custom gateway-стек (ssl.yml + prod.gateway.yml).
+#
+# Заменён на: /opt/processmap/bin/processmap-rollback-manual.sh (на сервере)
+# + runbook deploy/prod-rollback-manual.md + сценарий окна деплоя в контуре
+# release/prod-deploy-2c74c204-prep (.planning/contours/release/prod-deploy-2c74c204-prep/PLAN-WINDOW.md).
+# ============================================================================
 name: Rollback Prod
 
 on:
