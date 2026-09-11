@@ -79,8 +79,8 @@ test("session presence client id is stable in per-tab sessionStorage", () => {
   assert.equal(second, first);
 });
 
-test("session presence ttl constant is one minute", () => {
-  assert.equal(SESSION_PRESENCE_TTL_MS, 60000);
+test("session presence ttl constant is 90 seconds", () => {
+  assert.equal(SESSION_PRESENCE_TTL_MS, 90000);
 });
 
 test("normalizeSessionPresenceUsers maps backend shape to header model shape", () => {
