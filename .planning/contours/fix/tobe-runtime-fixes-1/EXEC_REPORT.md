@@ -585,3 +585,25 @@ explorerContextMenu.js                | новый (чистая keyboard-мод
   перекрытия) — осознанный UX-трейдофф минимального фикса.
 - Runtime-перепроверка на stage (Playwright S3/S5/S6) — задача
   verification-агента после merge/deploy.
+
+## Итерация 2.1 — CI hotfix char-теста C2 (2026-09-11)
+
+- CI PR #961, job «Frontend Quality / frontend», шаг «Characterization tests
+  (workspace explorer, Ш0)»: падал ровно один тест
+  `c2TreeExpansion > tree state isolated per workspace context` (16/17).
+- **Доказательство pre-existing**: тот же тест падает на pristine
+  `origin/main` @ 5ce918fb; бисект по истории — зелёный на aed51653 (#909),
+  красный начиная с 3d33937f (#959, фича-итерация 1). К итерации-2 диффу
+  отношения не имеет.
+- **Root cause (реальный продуктовый баг)**: эффект очистки кешей детей
+  `[stageKey, setTreeStateForContext]` (#959) пересрабатывал при смене
+  workspace: `setTreeStateForContext` меняет identity вместе с contextKey →
+  при возврате в workspace кеш `childItemsByFolder` контекста стирался,
+  а эффект догрузки детей не перезапускался (guard по неизменному
+  mergedExpandedByFolder) → раскрытая папка оставалась пустой.
+- **Fix** (WorkspaceExplorer.jsx): гард `prevStageKeyRef` — очистка только
+  при реальной смене stageKey. Минимально, поведение смены контура
+  (перезапрос детей с ?stage) сохранено.
+- Прогоны (docker node:20-alpine): test:char 17/17, test:smoke 56/56,
+  lint 0; node --test — fail-список идентичен baseline main (± флаки
+  useSessionPresence, на одном коде воспроизводятся).
