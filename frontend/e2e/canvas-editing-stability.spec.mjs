@@ -194,11 +194,11 @@ test("external change: exactly one 409, conflict modal, «Оставить мо�
     // d) «Оставить мою версию» → сохранение успешно, правки A не потеряны.
     await pageA.getByTestId("diagram-save-conflict-modal-overwrite").click();
     await expect(
-      pageA.getByText(/Ваша версия сохранена поверх серверной/),
+      pageA.getByText(/версия сохранена поверх серверной/i),
     ).toBeVisible({ timeout: 30_000 });
 
     await expect(
-      pageA.locator(".bpmnStageHost").getByText(TASK_A_NAME).first(),
+      pageA.locator(".bpmnStageHost .djs-container").getByText(TASK_A_NAME).first(),
       "my task must survive the overwrite resolution",
     ).toBeVisible();
 
@@ -242,13 +242,13 @@ test("external change: «Загрузить версию с сервера» syn
     // e-variant: «Загрузить версию с сервера».
     await pageA.getByTestId("diagram-save-conflict-modal-refresh").click();
     await expect(
-      pageA.getByText(/Сессия обновлена с сервера/),
+      pageA.getByText(/сессия обновлена с сервера/i),
     ).toBeVisible({ timeout: 30_000 });
 
     // Схема обновлена с сервера: таска из вкладки B видна на канвасе A.
     await expectHeavyDiagramLoaded(pageA);
     await expect(
-      pageA.locator(".bpmnStageHost").getByText(TASK_B_NAME).first(),
+      pageA.locator(".bpmnStageHost .djs-container").getByText(TASK_B_NAME).first(),
       "server-side task from tab B must be visible after refresh",
     ).toBeVisible();
 

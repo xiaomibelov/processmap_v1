@@ -2420,6 +2420,22 @@ function ProcessStage({
     setSaveConflictNoticeDismissed(true);
   }, []);
 
+  // P1 (fix/canvas-editing-stability): конфликт разрешён пользователем —
+  // persistent remote-update тост («Другой пользователь обновил сессию…
+  // Посмотреть изменения») больше неактуален. Пока он не dismissed, gate в
+  // showSaveAckToast подавляет ВЕСЬ остальной toast-фидбек (в т.ч. подтверждение
+  // overwrite/refresh), поэтому снимаем его явно.
+  const dismissRemoteUpdateToastAfterConflictResolution = useCallback(() => {
+    const remoteKey = toText(remoteUpdateToastLastShownKeyRef.current);
+    if (remoteKey) {
+      remoteUpdateToastDismissedKeyRef.current = remoteKey;
+      remoteUpdateToastLastShownKeyRef.current = "";
+    }
+    setSaveAckToast((prev) => (
+      prev?.kind === "remote_update" ? { ...prev, visible: false } : prev
+    ));
+  }, [toText]);
+
   const reloadSessionAfterSaveConflict = useCallback(async ({ discardLocal = false } = {}) => {
     if (!sid || saveConflictActionBusy) return { ok: false, error: "busy_or_missing_session" };
     setSaveConflictActionBusy(true);
@@ -2445,6 +2461,7 @@ function ProcessStage({
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
+      dismissRemoteUpdateToastAfterConflictResolution();
       setSaveConflictNoticeDismissed(true);
       setInfoMsg(
         discardLocal
@@ -2466,7 +2483,7 @@ function ProcessStage({
     } finally {
       setSaveConflictActionBusy(false);
     }
-  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid]);
+  }, [bpmnSync, onSessionSyncWithVersion, saveConflictActionBusy, setGenErr, sid, dismissRemoteUpdateToastAfterConflictResolution]);
 
   const handleSaveConflictRefresh = useCallback(() => {
     void reloadSessionAfterSaveConflict({ discardLocal: false });
@@ -2518,6 +2535,7 @@ function ProcessStage({
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
+      dismissRemoteUpdateToastAfterConflictResolution();
       setInfoMsg("Ваша версия сохранена поверх серверной. Действие зафиксировано в истории (overwrite).");
       onBpmnSaved?.(sid, activeProjectId);
     } catch (error) {
@@ -2539,6 +2557,7 @@ function ProcessStage({
     toText,
     onBpmnSaved,
     activeProjectId,
+    dismissRemoteUpdateToastAfterConflictResolution,
   ]);
 
   const closeMergePanel = useCallback(() => {
@@ -2602,6 +2621,7 @@ function ProcessStage({
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
       resetSaveUploadLifecycleForRevisionPublish();
+      dismissRemoteUpdateToastAfterConflictResolution();
       setInfoMsg("Ваша версия сохранена поверх серверной. Создана новая версия в истории.");
       closeMergePanel();
       onBpmnSaved?.(sid, activeProjectId);
@@ -2626,6 +2646,7 @@ function ProcessStage({
     setInfoMsg,
     onBpmnSaved,
     activeProjectId,
+    dismissRemoteUpdateToastAfterConflictResolution,
   ]);
 
   const handleMergeCompare = useCallback(() => {
