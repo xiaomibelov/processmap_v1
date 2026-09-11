@@ -252,7 +252,7 @@ test.describe("api-polling-reduction", () => {
     expect(stats.deployment_notice / minutes).toBeLessThanOrEqual(0.5);
   });
 
-  test(`скрытая вкладка: 0 фоновых запросов, при возврате — один цикл рефетча (${HIDDEN_SECONDS} с)`, async ({ page, context, request }) => {
+  test(`скрытая вкладка: 0 фоновых запросов, при возврате — один цикл рефетча (${HIDDEN_SECONDS} с)`, async ({ page, request }) => {
     test.setTimeout((HIDDEN_SECONDS + 120) * 1000);
     const auth = await apiLogin(request);
     const fixture = await createFixture(request, Date.now(), auth.headers);
@@ -265,15 +265,26 @@ test.describe("api-polling-reduction", () => {
     await openSessionViaUrl(page, fixture);
     await page.waitForTimeout(15_000);
 
-    const hiddenPage = await context.newPage();
-    await hiddenPage.goto("about:blank");
-    await hiddenPage.bringToFront();
+    // Headless Chromium НЕ переводит страницу в document.hidden при
+    // bringToFront другой вкладки (visibilityState остаётся "visible",
+    // visibilitychange не fire'ится) — bringToFront-вариант проверено:
+    // поллеры продолжали тикать, ассерт hidden был недостижим. Эмулируем
+    // контракт браузера явно: те же геттеры + то же событие, на которые
+    // подписаны поллеры приложения (presence, versions, notice, autosave).
+    await page.evaluate(() => {
+      window.__e2eSetVis = (v) => {
+        Object.defineProperty(document, "visibilityState", { get: () => v, configurable: true });
+        Object.defineProperty(document, "hidden", { get: () => v === "hidden", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      };
+    });
 
     const tHidden = Date.now();
+    await page.evaluate(() => window.__e2eSetVis("hidden"));
     await page.waitForTimeout(HIDDEN_SECONDS * 1000);
     const hiddenStats = await budgetStats(page, tHidden);
 
-    await page.bringToFront();
+    await page.evaluate(() => window.__e2eSetVis("visible"));
     await page.waitForTimeout(5000);
     const backStats = await budgetStats(page, tHidden);
 
@@ -336,7 +347,19 @@ test.describe("api-polling-reduction", () => {
       return true;
     });
     expect(clicked).toBeTruthy();
-    await expect(page.getByText("E2E polling comment body").first()).toBeVisible({ timeout: 20_000 });
+
+    // Панель обсуждений не открывается автоматически по выбору элемента:
+    // открываем явно тулбарной кнопкой (если панель ещё закрыта) и ждём
+    // контент тредов (список подгружается после открытия панели).
+    const threadList = page.getByTestId("notes-thread-list");
+    if (!(await threadList.isVisible().catch(() => false))) {
+      await page.evaluate(() => {
+        const btn = document.querySelector('[data-testid="diagram-action-notes"]');
+        if (btn) btn.click();
+      });
+    }
+    await expect(threadList).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("E2E polling comment body").first()).toBeVisible({ timeout: 30_000 });
 
     // Чип версии присутствует в шапке/панели версий.
     const versionsPanel = page.getByTestId("panel-versions");
