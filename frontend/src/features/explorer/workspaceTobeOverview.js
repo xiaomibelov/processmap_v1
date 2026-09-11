@@ -117,3 +117,23 @@ export function stageEmptyTitle(key) {
   if (filter.as_is && !filter.to_be) return "Нет веток по фильтру AS IS";
   return "Нет веток по фильтру контура";
 }
+
+/**
+ * Предикат empty state дерева workspace (AC9): показываем, когда итоговый
+ * ВИДИМЫЙ список пуст (visibleCount === 0 после серверного stage-фильтра И
+ * клиентских статус-фильтров), нет загрузки/ошибки и активен хотя бы один
+ * фильтр любой группы (статус или контур). Без фильтров пустота от сервера
+ * идёт в обычный empty state папки/workspace — здесь false.
+ */
+export function shouldShowStageEmptyState({ visibleCount = 0, statusFilter = "all", stageKey = "", loading = false, error = null } = {}) {
+  if (loading || Boolean(error)) return false;
+  if (Number(visibleCount) > 0) return false;
+  return Boolean(stageKey) || String(statusFilter || "all").trim() !== "all";
+}
+
+/** Заголовок empty state с учётом активной группы фильтров. */
+export function workspaceEmptyTitle({ stageKey = "", statusFilter = "all" } = {}) {
+  if (stageKey) return stageEmptyTitle(stageKey);
+  if (String(statusFilter || "all").trim() !== "all") return "Нет веток по фильтру статуса";
+  return stageEmptyTitle(stageKey);
+}

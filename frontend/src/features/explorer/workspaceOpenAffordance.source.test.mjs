@@ -18,7 +18,9 @@ test("project rows have explicit project-open affordances in action column", () 
 
 test("session row open CTA lives in dedicated action column", () => {
   // retarget(s0): was between("function SessionRow(", "// ─── Project Pane")
-  const sessionRow = around(source, 'title="Действия сессии"', 9500);
+  // radius 9500 → 12000: окно перестало захватывать openSession/openTab
+  // (между ними и kebab добавлены бейджи контура и a11y-атрибуты меню).
+  const sessionRow = around(source, 'title="Действия сессии"', 12000);
   // Hint больше не внутри title-ссылки — он в колонке действий w-[88px].
   assert.match(sessionRow, /w-\[88px\][\s\S]*<AppRouteLink[\s\S]*Открыть сессию[\s\S]*<\/AppRouteLink>/);
   assert.match(sessionRow, /Открыть сессию/);
