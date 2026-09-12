@@ -66,13 +66,19 @@ class _FakeLockHandle:
 
 @contextmanager
 def _delay_inline():
-    """Мок celery: `.delay(...)` выполняет тело задачи синхронно (.run)."""
+    """Мок celery: `.delay(...)` выполняет тело задачи синхронно (.run).
+
+    Патчим АТРИБУТ МОДУЛЯ (а не объект задачи): bpmn_save импортирует
+    `from app.tasks import sync_subprocesses_task` в момент вызова, и с
+    celery.local.PromiseProxy двойное разрешение (patch → один инстанс,
+    вызов → другой, если реестр пересобрал чужой тест) даёт протечку мока.
+    """
     from app.tasks import sync_subprocesses_task
 
-    def _inline(*args, **kwargs):
-        return sync_subprocesses_task.run(*args, **kwargs)
+    task = sync_subprocesses_task._get_current_object()
 
-    with patch.object(sync_subprocesses_task, "delay", side_effect=_inline):
+    with patch("app.tasks.sync_subprocesses_task") as mock_task:
+        mock_task.delay.side_effect = lambda *a, **k: task.run(*a, **k)
         yield
 
 
@@ -261,13 +267,39 @@ class SubprocessSyncTaskTests(unittest.TestCase):
         import app.redis_lock as redis_lock_module
         from app.tasks import sync_subprocesses_task
 
+        # Dual-package (app.* vs backend.app.* — оба рута в sys.path): чужие
+        # тесты импортируют backend.app.tasks раньше, и в полном сьюте
+        # разрешение задачи/лока может уйти в параллельный инстанс модулей.
+        # Патчим acquire_session_lock в ОБОИХ алиасах (которые импортируются).
+        lock_modules = [redis_lock_module]
+        try:
+            import backend.app.redis_lock as backend_redis_lock_module
+
+            if backend_redis_lock_module is not redis_lock_module:
+                lock_modules.append(backend_redis_lock_module)
+        except ImportError:
+            pass
+
         self.get_storage()  # schema ensured
         busy = _FakeLockHandle(acquired=False)
 
-        with patch.object(redis_lock_module, "acquire_session_lock", return_value=busy):
+        # Атрибут модуля — celery.local.PromiseProxy (ленивое разрешение через
+        # реестр текущего app). Двойное разрешение (patch → один объект,
+        # run → другой, если реестр пересобрал чужой тест) в полном сьюте
+        # давало «retry called 0 times». Разрешаем ОДИН раз и работаем с
+        # реальным объектом задачи напрямую.
+        task = sync_subprocesses_task._get_current_object()
+
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            for mod in lock_modules:
+                stack.enter_context(
+                    patch.object(mod, "acquire_session_lock", return_value=busy)
+                )
             # retry ещё доступен → планируется retry с countdown
-            with patch.object(sync_subprocesses_task, "retry") as mock_retry:
-                sync_subprocesses_task.run(self.sid, self.default_org_id)
+            with patch.object(task, "retry") as mock_retry:
+                task.run(self.sid, self.default_org_id)
             mock_retry.assert_called_once()
             self.assertFalse(busy.released)
 
@@ -278,8 +310,8 @@ class SubprocessSyncTaskTests(unittest.TestCase):
             def _raise_max(**_kw):
                 raise MaxRetriesExceededError("attempts exhausted")
 
-            with patch.object(sync_subprocesses_task, "retry", side_effect=_raise_max):
-                sync_subprocesses_task.run(self.sid, self.default_org_id)
+            with patch.object(task, "retry", side_effect=_raise_max):
+                task.run(self.sid, self.default_org_id)
 
     def test_task_soft_deletes_removed_children(self):
         """Задача под флагом — та же семантика sync: исчезнувшие дети soft-delete."""
