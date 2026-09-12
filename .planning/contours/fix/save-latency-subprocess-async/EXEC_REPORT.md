@@ -79,4 +79,57 @@ _(заполняется по мере прохождения этапов)_
 (`schema: {}`), новые ключи ответа спеку не меняют; эндпоинты не добавлялись →
 `docs/openapi.yaml` регенерировать не нужно.
 
-### Этапы 1–4 (frontend Ф1–Ф4) — в работе (другой агент)
+### Финальная валидация backend (2026-09-12/13, Agent 2)
+
+- **Targeted subset** (13 файлов: subprocess×4, save_revision_hygiene,
+  save_data_guard, save_path_decoupling, bpmn_save_rbac_scope,
+  auto_create_subprocess_sessions, diagram_cas_guard + 3 новых файла):
+  **81 passed, 42 skipped** (skip_if_hanging — норма), **2 failed** —
+  `test_bpmn_save_rbac_scope` (оба **pre-existing**: падают на baseline 654a33b4
+  тем же `TypeError` в overlay_cache, проверено отдельным прогоном).
+- **Полный прогон** (1650 тестов, 198 файлов, чанки по 16 файлов, xdist -n3/4,
+  `-p no:schemathesis` — плагин крашит sessionfinish под xdist):
+  ветка **46 failed**, baseline 654a33b4 (worktree `agent2-baseline-main`) **46 failed**.
+  Дельта: 1 тест (`TestSaveHook::test_patch_session_schedules_analysis`) упал на
+  ветке и не на baseline, и наоборот 1 (`test_publish_failure_does_not_break_save`)
+  на baseline и не на ветке — оба в `test_agent_analysis_pipeline.py`, оба **зелёные
+  последовательно на обоих деревьях** (19/19) → xdist-флаки, **реальная дельта = 0**.
+  Остальные 45 падений каждой стороны — общие env-падения (LLM/deepseek без
+  сети и ключей, redis/overlay/rag без брокера, migration-035 PG-специфика и т.п.),
+  множества совпадают.
+- Отдельный sequential-прогон save-смежных файлов (`test_dead_session`,
+  `test_diagram_revision_parity` — входят в общие 46): падения воспроизводятся
+  на обоих деревьях → pre-existing.
+
+### Этапы 1–4 (frontend Ф1–Ф4) — готово
+
+Коммиты `d08e30c1` (Ф1), `3202cd4f` (Ф2), `14b42816` (Ф3), `ceb8338c` (Ф4). Детали — в разделе ниже «Фронтенд (Ф1–Ф5) — финальный отчёт».
+
+---
+
+## Фронтенд (Ф1–Ф5) — финальный отчёт
+
+Прогоны `node --test` (npm test): baseline 3533 теста (3450 pass / 79 fail / 4 skip) → финал 3577 (3494 / 79 / 4). Дельта падений = 0 (набор падений свержен построчно с baseline). 79 pre-existing fails включают `saveBpmnState.property-pipeline … transport hangs` — тест написан под старый timeout 10 s, конфликтует с #963 (60 s); вне скоупа контура.
+
+- **Ф1 (L1)** `d08e30c1`: `bumpedInRun` в `_runPipeline`; rollback только при bump в прогоне (404/timeout/error); на 409 rollback убран полностью. Тесты `__tests__/saveCoordinator.rollback-discipline.test.mjs` (5).
+- **Ф2 (L2)** `3202cd4f`: хук `reconcileTimeout` в registerPipeline; вызов ровно 1 раз на throw из транспорта (timeout / network-error status-0) до failure-path; `{ok:true}` → `completeSuccess({...reconciled, reconciled:true})`. Реализация в xml-pipeline: `GET /meta`, успех ⇔ dsv > sentBase И XML с сервера == отправленному (export-dialect). **Отклонение от плана (зафиксировано)**: `current_session_payload_hash` из /meta — sha256 канонического JSON всей строки, из одного XML на клиенте не воспроизводится → эквивалентное доказательство «dsv↑ + XML-совпадение» (hash unchanged-check fnv1a). Хук только в rawXml/xml пайплайнах; ложный комментарий про abort заменён фактическим. Eligibility: только throw из транспорта. Тесты: `saveCoordinator.reconcile-timeout.test.mjs` (6) + `createBpmnPersistence.reconcileTimeout.test.mjs` (15).
+- **Ф3 (L3)** `14b42816`: `refresh` → `setTrackedDiagramStateVersion(serverVersion)` + удаление конфликта; `cancel` → конфликт НЕ удаляется, `{ok:true, action:"cancel"}`, gate блокирует следующий save без транспорта; `overwrite` без изменений. Тесты `saveCoordinator.resolve-conflict.test.mjs` (5).
+- **Ф4 (L10)** `ceb8338c`: `rollbackVersion` → `notifyVersionListeners("rollback", …)` при реальном pop; `crossTabVersionSync` adopt'ит `rollback` (guard от stale-отката); автоподписка в `bind()`. ProcessStage.jsx не тронут.
+- **Ф5** `1c51c22e`: проброс `subprocesses_sync`/`subprocesses_sync_failed` из ack PUT /bpmn (api.js → createBpmnPersistence.saveRaw → createBpmnCoordinator SAVE_PERSIST_DONE → saveUploadStatus → saveStatusSlotModel → DiagramToolbarSaveStatusSlot): при `state==="saved"` + pending — лейбл «Подпроцессы синхронизируются…» (`data-testid="diagram-toolbar-save-status-subprocesses"`). Без модалок/alert, i18n-словарей нет — в стиле соседнего кода. ProcessStage.jsx не тронут (слот хедера питается от badge). +11 тестов, дельта падений 0.
+
+Инфраструктурно: на хосте нет Node — использован portable Node v24.15.0 в `/tmp/fpc-node/` (scratch; `npm ci` выполнен в `frontend/node_modules`).
+
+## Backend — верификация прогонов (в работе)
+
+- Раннер: `.venv311-test` (python3.11) — venv на Python 3.13 не собирается (pydantic-core 2.16 без cp313 wheel → source build fails); `.venv311-test` в .gitignore.
+- Целевые прогоны новых тестов (`test_recompute_derived_fields_write`, `test_answer_cas_commit`, `test_subprocess_sync_task`): **17 passed**. Независимая верификация поверх прогонов backend-агента.
+- Регрессионная save/subprocess-группа (9 файлов): 55 passed / 2 failed — оба (`test_bpmn_save_rbac_scope`) воспроизводятся на baseline `origin/main` один в один (pre-existing).
+- Полный сьют ветки vs полный сьют baseline (`origin/main`, отдельный worktree):
+  - baseline: 58 failed / 1472 passed / 103 skipped.
+  - Первая пара прогонов (конкурентно): ветка 61 failed — из них 2 (`test_agent_analysis_pipeline::TestManualEndpoints`) флаky из-за общего default-storage при конкурентных прогонах (на baseline standalone падают те же 2; на ветке standalone 19/19 green), 1 (`test_subprocess_sync_task::...broker_down`) — поллюция `task_always_eager=True` из `test_overlay_cache.py` → исправлено гвардом в setUp (`7e46c2cd`), парный прогон pollutant+файл: 8/8 green.
+  - Финальный последовательный прогон ветки: результат ниже.
+
+## Этап 8 (E2E + замеры) — статус
+
+- E2E-спека `canvas-editing-stability.spec.mjs`: **написана** (коммит `b4bd25a3`, +375 строк: сценарий 8.1 «slow PUT 12 s + печать в интервью» и 8.2 «большая схема 377 элементов/34 подпроцесса, серия правок, замеры gaps/p95»; существующие 4 теста файла не тронуты; синтаксис и `playwright --list` проверены, генератор XML валидирован через bpmn-moddle). **Запуск — на stage после deploy-approve** (PLAN §7); локально против worktree невозможен без мутации общего docker-стека.
+- Локальный запуск E2E против worktree невозможен без мутации общего docker-стека (сервисы `processmap_v1` монтируют canonical checkout `p0-work`, а не worktree; поднятие параллельного стека запрещено AGENTS.md §9.4). Замер p95 на stage — только после approve на deploy (PLAN §7). Это сознательное ограничение, зафиксировано для review.
