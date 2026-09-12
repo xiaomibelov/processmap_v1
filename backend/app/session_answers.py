@@ -15,6 +15,7 @@ from .utils.session_helpers import (
     _require_diagram_cas_or_409,
     _resolve_actor_context,
     _resolve_base_diagram_state_version,
+    _save_session_with_cas,
     raise_session_not_found,
 )
 
@@ -191,14 +192,15 @@ def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str,
         _apply_answer(s, inp)
     except KeyError:
         return {"error": "question not found"}
+    client_base_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
+        client_base_version=client_base_version,
     )
     _, actor_user_id, actor_label = _resolve_actor_context(request)
 
@@ -209,7 +211,18 @@ def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str,
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    # Б6 (fix/save-latency-subprocess-async): тот же base, что прошёл
+    # in-memory guard, доезжает до SQL-CAS. Гонка с параллельным PUT /bpmn
+    # между guard и write → DiagramStateConflictError → 409 вместо
+    # молчаливого last-writer-wins (L5). base=None (вызов без request.scope)
+    # — прежний legacy full-row upsert, паритет с main. Scope-кwargs НЕ
+    # передаём: у прежнего st.save(s) guard'ов не было (answer historically
+    # открыт коллабораторам организации).
+    _save_session_with_cas(
+        st,
+        s,
+        client_base_version=client_base_version,
+    )
     return s.model_dump()
 
 
