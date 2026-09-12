@@ -263,10 +263,15 @@ class SaveCoordinator {
   }
 
   /**
-   * Resolve an unresolved save conflict for a session. Lifts the conflict
-   * gate. With action "overwrite" the tracked CAS base is explicitly adopted
-   * to the conflict's server version — the ONLY place where the tracked base
-   * is replaced with the server version (conscious force, user action only).
+   * Resolve an unresolved save conflict for a session. Semantics (Ф3, L3):
+   * - "refresh" — tracked CAS base adopts the conflict's server version
+   *   (caller re-reads session data) and the gate is lifted;
+   * - "overwrite" — same base adoption + gate lift (conscious force, user
+   *   action only);
+   * - "cancel" — the conflict is NOT deleted: the gate keeps blocking saves
+   *   without touching the transport, so the UI shows the modal again on the
+   *   next save attempt. No 409 loop in the network because the tracked base
+   *   is not corrupted (Ф1).
    *
    * @param {string} sessionId
    * @param {"refresh"|"overwrite"|"cancel"} [action]
@@ -279,7 +284,20 @@ class SaveCoordinator {
     if (!conflict) return { ok: false, error: "no_conflict" };
     const resolvedAction = asText(action) || SAVE_CONFLICT_RESOLUTION.REFRESH;
     const serverVersion = conflict.serverVersion ?? null;
-    if (resolvedAction === SAVE_CONFLICT_RESOLUTION.OVERWRITE && serverVersion !== null) {
+    if (resolvedAction === SAVE_CONFLICT_RESOLUTION.CANCEL) {
+      recordSaveDiagnostic("conflict_resolved", {
+        sid,
+        action: resolvedAction,
+        serverVersion,
+      });
+      this.emit("conflict_resolved", {
+        sessionId: sid,
+        action: resolvedAction,
+        serverVersion,
+      });
+      return { ok: true, action: resolvedAction, serverVersion };
+    }
+    if (serverVersion !== null) {
       setTrackedDiagramStateVersion(sid, serverVersion);
     }
     this.conflicts.delete(sid);
