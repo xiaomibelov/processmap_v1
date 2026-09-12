@@ -1178,11 +1178,34 @@ def recompute_session(session_id: str, request: Optional[Request] = None):
     if not sess:
         return {"error": "not found"}
     sess = _recompute_session(sess)
-    # L4 (fix/save-latency-subprocess-async): field-scoped write только
+    # L4/Б5 (fix/save-latency-subprocess-async): field-scoped write только
     # derived-полей. Full-row save здесь работал со stale in-memory копией
     # и молчаливо откатывал bpmn_xml / diagram_state_version чужого
     # CAS-коммита, если PUT /bpmn прошёл во время рекомпьюта.
-    get_storage().update_derived_fields(sess)
+    ctx = _request_context(request)
+    get_storage().update_derived_fields(
+        str(getattr(sess, "id", "") or session_id),
+        {
+            "normalized": getattr(sess, "normalized", {}) or {},
+            "resources": getattr(sess, "resources", {}) or {},
+            "questions": getattr(sess, "questions", []) or [],
+            "mermaid_simple": str(getattr(sess, "mermaid_simple", "") or ""),
+            "mermaid_lanes": str(getattr(sess, "mermaid_lanes", "") or ""),
+            "mermaid": str(getattr(sess, "mermaid", "") or ""),
+            "analytics": getattr(sess, "analytics", {}) or {},
+            "version": int(getattr(sess, "version", 0) or 0),
+        },
+        user_id=ctx.get("user_id"),
+        org_id=ctx.get("org_id"),
+        is_admin=ctx.get("is_admin"),
+    )
+    # Derived-поля попадают в open-session/tldr/meta кэши — инвалидируем,
+    # как соседние write-пути после записи сессии (bpmn_save и др.).
+    _lm._invalidate_session_caches(
+        sess,
+        session_id=str(getattr(sess, "id", "") or session_id),
+        org_id=str(getattr(sess, "org_id", "") or oid or ""),
+    )
     try:
         refresh_analytics_for_session(
             str(getattr(sess, "id", "") or session_id),
