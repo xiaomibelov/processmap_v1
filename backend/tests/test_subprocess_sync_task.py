@@ -84,6 +84,15 @@ class SubprocessSyncTaskTests(unittest.TestCase):
         self.old_projects_dir = os.environ.get("PROJECT_STORAGE_DIR")
         self.old_db_path = os.environ.get("PROCESS_DB_PATH")
         self.old_flag = os.environ.get("FPC_ASYNC_SUBPROCESS_SYNC")
+        # Герметичность сьюта: test_overlay_cache выставляет
+        # celery_app.conf.task_always_eager = True без восстановления —
+        # без гварда broker-down тест в полном прогоне получает inline-выполнение
+        # вместо реального падения publish в брокер.
+        from app.celery_app import app as celery_app
+
+        self._old_always_eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = False
+        self._celery_app = celery_app
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp_sessions.name
         os.environ["PROJECT_STORAGE_DIR"] = self.tmp_projects.name
         os.environ.pop("PROCESS_DB_PATH", None)
@@ -134,6 +143,7 @@ class SubprocessSyncTaskTests(unittest.TestCase):
             os.environ.pop("FPC_ASYNC_SUBPROCESS_SYNC", None)
         else:
             os.environ["FPC_ASYNC_SUBPROCESS_SYNC"] = self.old_flag
+        self._celery_app.conf.task_always_eager = self._old_always_eager
         self.tmp_sessions.cleanup()
         self.tmp_projects.cleanup()
 
