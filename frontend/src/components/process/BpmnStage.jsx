@@ -5066,6 +5066,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       rev: Number(r.storedRev || rev),
       status: Number(r.status || 200),
       diagram_state_version: Number(r.diagramStateVersion || 0),
+      subprocesses_sync: String(r?.subprocessesSync || ""),
       xml_len: out.length,
     });
     // Prime the modeler xml hash with the exact payload we just persisted so

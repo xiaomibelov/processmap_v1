@@ -75,3 +75,38 @@ test("stripSaveStatusSlotPrefix removes known source prefixes and sentence end",
   assert.equal(stripSaveStatusSlotPrefix("Сохранено локально"), "Сохранено локально");
   assert.equal(stripSaveStatusSlotPrefix(""), "");
 });
+
+// Ф5 (fix/save-latency-subprocess-async, этап 7): ненавязчивый индикатор
+// «Подпроцессы синхронизируются…» рядом со статусом сохранения, когда backend
+// отдал subprocesses_sync: "pending" (async subprocess-sync).
+test("pending subprocesses sync adds unobtrusive label next to saved state", () => {
+  const view = buildSaveStatusSlotView({
+    saveUploadStatusRaw: { state: "saved", subprocessesSync: "pending" },
+  });
+
+  assert.equal(view.state, "saved");
+  assert.equal(view.label, "Сохранено");
+  assert.equal(view.subprocessesSyncLabel, "Подпроцессы синхронизируются…");
+});
+
+test("pending label parity: no flag or failed flag → no label", () => {
+  assert.equal(
+    buildSaveStatusSlotView({ saveUploadStatusRaw: { state: "saved" } }).subprocessesSyncLabel,
+    "",
+  );
+  assert.equal(
+    buildSaveStatusSlotView({
+      saveUploadStatusRaw: { state: "saved", subprocessesSync: "", subprocessesSyncFailed: true },
+    }).subprocessesSyncLabel,
+    "",
+  );
+});
+
+test("pending label never overrides non-saved states", () => {
+  const view = buildSaveStatusSlotView({
+    saveUploadStatusRaw: { state: "save_failed", subprocessesSync: "pending" },
+  });
+
+  assert.equal(view.state, "failed");
+  assert.equal(view.subprocessesSyncLabel, "");
+});
