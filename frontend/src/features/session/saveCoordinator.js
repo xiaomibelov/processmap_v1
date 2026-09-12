@@ -102,6 +102,7 @@ class SaveCoordinator {
    * @param {Function} [config.applyBaseVersion] - mutates the transport payload with a refreshed base
    * @param {Function} [config.onSuccess] - (response, sessionId) => void
    * @param {Function} [config.reconcileConflict] - verifies an already committed write before the conflict gate is armed
+   * @param {Function} [config.reconcileTimeout] - (errorOrResult, sessionId, builtPayload, payload) => reconciled result | null; verifies a possibly committed write after transport timeout / network error (status 0), before the failure path
    * @param {Function} [config.on409] - (response, sessionId) => void
    * @param {Function} [config.onError] - (errorOrResponse, sessionId) => void
    * @param {number} [config.debounceMs]
@@ -125,6 +126,7 @@ class SaveCoordinator {
       applyBaseVersion: typeof config.applyBaseVersion === "function" ? config.applyBaseVersion : null,
       onSuccess: typeof config.onSuccess === "function" ? config.onSuccess : null,
       reconcileConflict: typeof config.reconcileConflict === "function" ? config.reconcileConflict : null,
+      reconcileTimeout: typeof config.reconcileTimeout === "function" ? config.reconcileTimeout : null,
       on409: typeof config.on409 === "function" ? config.on409 : null,
       onError: typeof config.onError === "function" ? config.onError : null,
       debounceMs: Math.max(0, asNumber(config.debounceMs, 300)),
@@ -219,7 +221,8 @@ class SaveCoordinator {
     let timer = null;
     const timeoutPromise = new Promise((resolve) => {
       timer = setTimeout(() => {
-        // Abort the real fetch so the server never receives the request.
+        // Abort прекращает ожидание ответа; запрос мог уже уйти на сервер и
+        // тот мог закоммитить запись — см. reconcileTimeout (L2).
         controller.abort();
         resolve({
           ok: false,
@@ -486,6 +489,8 @@ class SaveCoordinator {
     // commit). Иначе откат съедал последнюю физически успешную версию
     // ([7,8] → [7]) → следующий save = гарантированный self-409.
     let bumpedInRun = false;
+    // Ф2 (L2): reconcileTimeout вызывается максимум один раз на прогон.
+    let reconcileTimeoutAttempted = false;
     let lastResult = null;
     let lastError = null;
 
@@ -613,6 +618,25 @@ class SaveCoordinator {
           this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "conflict" });
           this.emit("conflict", { pipeline: pipelineName, sessionId: sid, response: result, serverVersion });
           return result;
+        }
+
+        // Ф2 (L2): throw из транспорта (transport-timeout / network error,
+        // status 0) — abort лишь прекращает ожидание ответа; сервер мог уже
+        // закоммитить запись. Один reconcile-вызов на прогон, до failure-path;
+        // hook вернул {ok:true} → success через completeSuccess (adopt dsv).
+        // Вернувшийся результат {ok:false, status:0} без throw — локальная
+        // ошибка (например, «api unavailable»), reconcile не применяется.
+        if (!reconcileTimeoutAttempted && pipeline.reconcileTimeout && lastError) {
+          reconcileTimeoutAttempted = true;
+          let reconciledTimeout = null;
+          try {
+            reconciledTimeout = await pipeline.reconcileTimeout(lastError, sid, builtPayload, payload);
+          } catch {
+            reconciledTimeout = null;
+          }
+          if (reconciledTimeout?.ok) {
+            return completeSuccess({ ...reconciledTimeout, reconciled: true });
+          }
         }
 
         const isTimeoutError = lastError && /timeout/i.test(String(lastError?.message || lastError));
