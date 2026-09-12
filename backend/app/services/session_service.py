@@ -1516,7 +1516,7 @@ def auto_create_subprocess_sessions(
             )
             if _refresh_child_session_bpmn_from_xml(child, child_xml, created_by=uid, org_id=oid):
                 child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-                s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, is_admin=s_admin)
+                s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, admin)
                 session_repo.save(child, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
             created.append(str(child.id))
             child_session = child
@@ -1726,7 +1726,7 @@ def navigate_to_subprocess(
                 child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
         if _refresh_child_session_bpmn_from_xml(child, child_xml, created_by=uid, org_id=oid):
             child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-            s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, is_admin=s_admin)
+            s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, admin)
             session_repo.save(child, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
     else:
         child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
@@ -1755,7 +1755,7 @@ def navigate_to_subprocess(
     if child_needs_save:
         child.navigation_stack = stack
         child.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-        s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, is_admin=s_admin)
+        s_uid, s_oid, s_admin = _child_sync_scope(child, uid, oid, admin)
         session_repo.save(child, user_id=s_uid, org_id=s_oid, is_admin=s_admin)
 
     child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
