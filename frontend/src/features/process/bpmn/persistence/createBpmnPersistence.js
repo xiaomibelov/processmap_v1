@@ -941,6 +941,9 @@ export default function createBpmnPersistence(options = {}) {
       bpmnVersionSnapshot: saved?.bpmnVersionSnapshot && typeof saved.bpmnVersionSnapshot === "object"
         ? saved.bpmnVersionSnapshot
         : null,
+      // Ф5: async subprocess-sync — проброс флага до lifecycle-события.
+      subprocessesSync: asText(saved?.subprocessesSync),
+      subprocessesSyncFailed: saved?.subprocessesSyncFailed === true,
     };
   }
 

@@ -69,11 +69,19 @@ export function buildSaveStatusSlotView({
   const flashMessage = toText(flash.message);
   const flashVisible = flash.visible === true && flashMessage.length > 0;
 
+  // Ф5: async subprocess-sync — ненавязчивый индикатор рядом со статусом
+  // «Сохранено». Только для saved-состояния: conflict/failed/stale важнее.
+  const subprocessesSyncPending = (
+    state === "saved"
+    && toText(status.subprocessesSync).toLowerCase() === "pending"
+  );
+
   return {
     state,
     label: labels[state],
     title: titles[state],
     flashVisible,
     flashLabel: flashVisible ? stripSaveStatusSlotPrefix(flashMessage) : "",
+    subprocessesSyncLabel: subprocessesSyncPending ? "Подпроцессы синхронизируются…" : "",
   };
 }

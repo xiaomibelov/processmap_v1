@@ -1940,6 +1940,12 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   const bpmnVersionSnapshot = r?.data?.bpmn_version_snapshot && typeof r.data.bpmn_version_snapshot === "object"
     ? r.data.bpmn_version_snapshot
     : null;
+  // Ф5 (fix/save-latency-subprocess-async, этап 7): async subprocess-sync под
+  // флагом FPC_ASYNC_SUBPROCESS_SYNC — canvas-сохранение отвечает до конца
+  // материализации подпроцессов; "pending" → ненавязчивый индикатор в
+  // save-статусе. При синхронном импорте ключей нет (паритет: "").
+  const subprocessesSync = String(r?.data?.subprocesses_sync || "").trim();
+  const subprocessesSyncFailed = r?.data?.subprocesses_sync_failed === true;
   return {
     ok: true,
     status: r.status,
@@ -1947,6 +1953,8 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
     storedRev: Number.isFinite(storedRev) ? storedRev : (Number.isFinite(rev) ? rev : 0),
     diagramStateVersion: Number.isFinite(diagramStateVersion) ? Math.round(diagramStateVersion) : 0,
     bpmnVersionSnapshot,
+    subprocessesSync,
+    subprocessesSyncFailed,
   };
 }
 

@@ -444,6 +444,7 @@ export default function createBpmnCoordinator(options = {}) {
             rev,
             status: asNumber(persisted?.status, 200),
             ms: Date.now() - startedAt,
+            subprocesses_sync: asText(persisted?.subprocessesSync),
           });
           // Keep dirty=true to force true runtime save when ready.
         } else {
@@ -666,6 +667,7 @@ export default function createBpmnCoordinator(options = {}) {
       stale_retry_applied: staleRetryAttempts > 0 ? 1 : 0,
       stale_retry_attempts: staleRetryAttempts,
       stale_retry_changed_keys: staleRetryChangedKeys,
+      subprocesses_sync: asText(persisted?.subprocessesSync),
     });
     return {
       ok: true,
@@ -677,6 +679,8 @@ export default function createBpmnCoordinator(options = {}) {
       staleRetryApplied: staleRetryAttempts > 0,
       staleRetryAttempts,
       staleRetryChangedKeys,
+      subprocessesSync: asText(persisted?.subprocessesSync),
+      subprocessesSyncFailed: persisted?.subprocessesSyncFailed === true,
       bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
         ? persisted.bpmnVersionSnapshot
         : null,
@@ -988,12 +992,15 @@ export default function createBpmnCoordinator(options = {}) {
           status: asNumber(persisted?.status, 200),
           diagram_state_version: asNumber(persisted?.diagramStateVersion, 0),
           ms: Date.now() - startedAt,
+          subprocesses_sync: asText(persisted?.subprocessesSync),
         });
         return {
           ok: true,
           rev: storedRev,
           storedRev,
           diagramStateVersion: asNumber(persisted?.diagramStateVersion, 0),
+          subprocessesSync: asText(persisted?.subprocessesSync),
+          subprocessesSyncFailed: persisted?.subprocessesSyncFailed === true,
           bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
             ? persisted.bpmnVersionSnapshot
             : null,
