@@ -9,6 +9,8 @@ import {
   __resetForTests as resetCasVersionTracker,
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
+  bumpVersion,
+  rollbackVersion,
   subscribeDiagramVersionChanges,
 } from "./casVersionTracker.js";
 
@@ -190,6 +192,61 @@ test("tracker subscription publishes set/bump to the channel", async () => {
   assert.equal(getTrackedDiagramStateVersion("sid_x"), 3);
   assert.deepEqual(tabB.warnings, []);
   unsubscribe();
+  tabA.close();
+  tabB.close();
+});
+
+// Ф4 (fix/save-latency-subprocess-async, L10): rollback трекера
+// автопубликуется в канал сообщением type="rollback"; чистая вкладка
+// adopt'ит откат, грязная — получает предупреждение. До фикса rollback во
+// второй вкладке оставался незамеченным (рассинхрон base).
+test("remote rollback is published to the channel and routed (dirty tab warns)", async () => {
+  const bus = makeBus();
+  const posted = [];
+  const busWithSpy = {
+    createChannel() {
+      const channel = bus.createChannel();
+      const original = channel.postMessage.bind(channel);
+      channel.postMessage = (msg) => {
+        posted.push(msg);
+        original(msg);
+      };
+      return channel;
+    },
+    size: bus.size,
+  };
+  const tabA = makeTab(busWithSpy, "ctx-a");
+  const tabB = makeTab(busWithSpy, "ctx-b");
+  setTrackedDiagramStateVersion("sid_x", 6);
+  posted.length = 0;
+
+  // A: успешный save (bump 6→7), затем ошибка с rollback (7→6) — Ф1-разрешённый путь.
+  bumpVersion("sid_x", 7);
+  rollbackVersion("sid_x");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.ok(
+    posted.some((msg) => msg.type === "rollback" && msg.version === 6),
+    "rollback-мутация трекера публикуется в канал с type=rollback",
+  );
+  // Трекер общий в тесте, adopt чистой вкладки проверяем через механизм
+  // (сообщение дошло без предупреждения).
+  assert.deepEqual(tabB.warnings, []);
+
+  // stale rollback (версия не ниже текущей) игнорируется принимающей
+  // стороной — грязная вкладка-получатель даже не предупреждается.
+  // (Отправитель своё сообщение не получает — семантика BroadcastChannel.)
+  tabB.setDirty(true);
+  tabA.sync.publishVersion("sid_x", 8, "rollback");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(tabB.warnings, [], "rollback с версией ВЫШЕ текущей — stale, игнорируется");
+
+  // честный downgrade по rollback: грязная вкладка-получатель предупреждается
+  // (маршрут handleVersionMessage с allowDowngrade прошёл).
+  tabA.sync.publishVersion("sid_x", 5, "rollback");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(tabB.warnings, [{ sid: "sid_x", version: 5 }]);
+
   tabA.close();
   tabB.close();
 });
