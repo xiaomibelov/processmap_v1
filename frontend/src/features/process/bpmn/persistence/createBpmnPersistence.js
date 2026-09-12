@@ -3,6 +3,7 @@ import {
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
+import { apiGetSessionMeta as apiGetSessionMetaDefault } from "../../../../lib/api.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
 import { fnv1aHex } from "../lib/bpmnXmlHash.js";
 
@@ -15,112 +16,193 @@ function pickDiagramStateVersion(response) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
 }
 
-saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
-  transport: async (sessionId, payload, signal) => {
-    const apiPutBpmnXml = payload?.apiPutBpmnXml;
-    if (typeof apiPutBpmnXml !== "function") {
-      return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
-    }
-    return apiPutBpmnXml(sessionId, applyMessageFlowExportDialect(asText(payload.xml)), { ...payload.options, signal });
-  },
-  buildPayload: (payload) => {
-    const options = {
-      rev: payload.rev,
-      reason: payload.reason,
-      baseDiagramStateVersion: payload.baseDiagramStateVersion,
-    };
-    if (payload.sourceAction) {
-      options.sourceAction = payload.sourceAction;
-    }
-    if (payload.bpmnMeta) {
-      options.bpmnMeta = payload.bpmnMeta;
-    }
-    return {
-      apiGetBpmnXml: payload.apiGetBpmnXml,
-      apiPutBpmnXml: payload.apiPutBpmnXml,
-      xml: payload.xml,
-      options,
-    };
-  },
-  reconcileConflict: async (response, sessionId, payload) => {
-    const apiGetBpmnXml = payload?.apiGetBpmnXml;
-    if (typeof apiGetBpmnXml !== "function") return null;
-    const detail = response?.data?.detail || response?.data || {};
-    const serverVersion = Number(
-      detail?.server_current_version
-      ?? detail?.serverCurrentVersion
-      ?? response?.server_current_version
-      ?? response?.serverCurrentVersion,
+/**
+ * Ф2 (fix/save-latency-subprocess-async, L2): reconcile после transport
+ * timeout / network error. Сервер мог уже закоммитить запись, хотя клиент
+ * получил abort/сбой. Доказательство успеха:
+ *   1. GET /api/sessions/{id}/meta → diagram_state_version строго больше
+ *      base, с которым ушёл этот payload (значит, ПОСЛЕ нашей отправки
+ *      кто-то закоммитил);
+ *   2. авторитетный XML с сервера (raw) побайтово равен отправленному
+ *      (в каноническом export-dialect виде) — значит, текущее состояние
+ *      сервера это ровно то, что мы пытались записать.
+ * Только тогда adopt серверной версии через обычный completeSuccess bump.
+ *
+ * Примечание: current_session_payload_hash из /meta НЕ используем — на
+ * бэкенде это sha256 канонического JSON ВСЕЙ сессионной строки
+ * (build_session_version_payload), из одного XML на клиенте не
+ * воспроизводится. Пара «dsv вырос + XML совпал» — эквивалентное
+ * доказательство для xml truth и переиспользует hash unchanged-check
+ * (fnv1aHex поверх канонического XML с обеих сторон).
+ *
+ * Регистрируется ТОЛЬКО в xml-пайплайнах (rawXml/xml): у meta/analysis
+ * нет payload для побайтовой сверки, для них прежний failure-path
+ * (base не портится — Ф1).
+ */
+export function createXmlSaveReconcileTimeout() {
+  return async function reconcileTimeout(_errorOrResult, sessionId, builtPayload) {
+    const sid = asText(sessionId).trim();
+    if (!sid) return null;
+    const getMeta = typeof builtPayload?.apiGetSessionMeta === "function"
+      ? builtPayload.apiGetSessionMeta
+      : apiGetSessionMetaDefault;
+    const getXml = builtPayload?.apiGetBpmnXml;
+    if (typeof getMeta !== "function" || typeof getXml !== "function") return null;
+
+    // Base, с которым ушёл payload: coordinator дублирует в
+    // base_diagram_state_version top-level; applyBaseVersion мутирует
+    // options.baseDiagramStateVersion для rawXml.
+    const sentBaseRaw = Number(
+      builtPayload?.base_diagram_state_version
+      ?? builtPayload?.options?.baseDiagramStateVersion
+      ?? builtPayload?.baseDiagramStateVersion,
     );
-    if (!Number.isFinite(serverVersion) || serverVersion < 0) return null;
-    const loaded = await apiGetBpmnXml(sessionId, {
-      raw: true,
-      includeOverlay: false,
-      cacheBust: true,
-    });
-    if (!loaded?.ok) return null;
+    if (!Number.isFinite(sentBaseRaw) || sentBaseRaw < 0) return null;
+    const sentBase = Math.round(sentBaseRaw);
+
+    const sentXml = applyMessageFlowExportDialect(asText(builtPayload?.xml));
+    if (!sentXml.trim()) return null;
+
+    const meta = await getMeta(sid);
+    if (!meta || meta.ok !== true) return null;
+    const serverVersionRaw = Number(meta.diagram_state_version ?? meta.diagramStateVersion);
+    if (!Number.isFinite(serverVersionRaw) || serverVersionRaw < 0) return null;
+    const serverVersion = Math.round(serverVersionRaw);
+    if (serverVersion <= sentBase) return null;
+
+    const loaded = await getXml(sid, { raw: true, includeOverlay: false, cacheBust: true });
+    if (!loaded || loaded.ok !== true) return null;
     const authoritativeXml = applyMessageFlowExportDialect(asText(loaded?.xml));
-    const submittedXml = applyMessageFlowExportDialect(asText(payload?.xml));
-    if (authoritativeXml !== submittedXml) return null;
+    if (authoritativeXml !== sentXml) return null;
+
     return {
       ok: true,
       status: 200,
       reconciled: true,
-      storedRev: Number(payload?.options?.rev || 0),
-      diagramStateVersion: Math.round(serverVersion),
+      storedRev: Number(builtPayload?.options?.rev ?? builtPayload?.rev ?? 0) || 0,
+      diagramStateVersion: serverVersion,
     };
-  },
-  getBaseVersion: (sessionId, payload) => {
-    const tracked = getTrackedDiagramStateVersion(sessionId);
-    const base = Number(payload?.baseDiagramStateVersion);
-    const candidates = [tracked, base]
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value) && value >= 0);
-    return candidates.length ? Math.round(Math.max(...candidates)) : null;
-  },
-  applyBaseVersion: (payload, baseVersion) => {
-    if (payload?.options) payload.options.baseDiagramStateVersion = baseVersion;
-  },
-  onSuccess: (response, sessionId, payload) => {
-    // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
-    // Only sync the version to external React state here.
-    const version = pickDiagramStateVersion(response);
-    if (version !== null) {
-      if (typeof payload?.rememberDiagramStateVersion === "function") {
-        try {
-          payload.rememberDiagramStateVersion(version, { sessionId });
-        } catch {
-          // no-op
+  };
+}
+
+/**
+ * Конфиг rawXml-пайплайна. Фабрика (единый источник конфигурации): прод
+ * регистрирует дефолт, тесты могут переопределить тайминги/retry без
+ * копирования конфига.
+ */
+export function createRawXmlPipelineConfig(overrides = {}) {
+  return {
+    transport: async (sessionId, payload, signal) => {
+      const apiPutBpmnXml = payload?.apiPutBpmnXml;
+      if (typeof apiPutBpmnXml !== "function") {
+        return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
+      }
+      return apiPutBpmnXml(sessionId, applyMessageFlowExportDialect(asText(payload.xml)), { ...payload.options, signal });
+    },
+    buildPayload: (payload) => {
+      const options = {
+        rev: payload.rev,
+        reason: payload.reason,
+        baseDiagramStateVersion: payload.baseDiagramStateVersion,
+      };
+      if (payload.sourceAction) {
+        options.sourceAction = payload.sourceAction;
+      }
+      if (payload.bpmnMeta) {
+        options.bpmnMeta = payload.bpmnMeta;
+      }
+      return {
+        apiGetBpmnXml: payload.apiGetBpmnXml,
+        apiPutBpmnXml: payload.apiPutBpmnXml,
+        apiGetSessionMeta: payload.apiGetSessionMeta,
+        xml: payload.xml,
+        options,
+      };
+    },
+    reconcileConflict: async (response, sessionId, payload) => {
+      const apiGetBpmnXml = payload?.apiGetBpmnXml;
+      if (typeof apiGetBpmnXml !== "function") return null;
+      const detail = response?.data?.detail || response?.data || {};
+      const serverVersion = Number(
+        detail?.server_current_version
+        ?? detail?.serverCurrentVersion
+        ?? response?.server_current_version
+        ?? response?.serverCurrentVersion,
+      );
+      if (!Number.isFinite(serverVersion) || serverVersion < 0) return null;
+      const loaded = await apiGetBpmnXml(sessionId, {
+        raw: true,
+        includeOverlay: false,
+        cacheBust: true,
+      });
+      if (!loaded?.ok) return null;
+      const authoritativeXml = applyMessageFlowExportDialect(asText(loaded?.xml));
+      const submittedXml = applyMessageFlowExportDialect(asText(payload?.xml));
+      if (authoritativeXml !== submittedXml) return null;
+      return {
+        ok: true,
+        status: 200,
+        reconciled: true,
+        storedRev: Number(payload?.options?.rev || 0),
+        diagramStateVersion: Math.round(serverVersion),
+      };
+    },
+    reconcileTimeout: createXmlSaveReconcileTimeout(),
+    getBaseVersion: (sessionId, payload) => {
+      const tracked = getTrackedDiagramStateVersion(sessionId);
+      const base = Number(payload?.baseDiagramStateVersion);
+      const candidates = [tracked, base]
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value >= 0);
+      return candidates.length ? Math.round(Math.max(...candidates)) : null;
+    },
+    applyBaseVersion: (payload, baseVersion) => {
+      if (payload?.options) payload.options.baseDiagramStateVersion = baseVersion;
+    },
+    onSuccess: (response, sessionId, payload) => {
+      // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
+      // Only sync the version to external React state here.
+      const version = pickDiagramStateVersion(response);
+      if (version !== null) {
+        if (typeof payload?.rememberDiagramStateVersion === "function") {
+          try {
+            payload.rememberDiagramStateVersion(version, { sessionId });
+          } catch {
+            // no-op
+          }
         }
       }
-    }
-  },
-  on409: (response, sessionId, payload) => {
-    // P1: tracked-base НЕ подменяется (conflict gate в saveCoordinator).
-    // Only sync the server version to external React state here.
-    const data = response?.data ?? {};
-    const detail = data?.detail ?? data ?? {};
-    const serverVersion = Number(
-      detail.server_current_version ?? detail.serverCurrentVersion ?? response?.server_current_version ?? response?.serverCurrentVersion ?? -1,
-    );
-    if (Number.isFinite(serverVersion) && serverVersion >= 0) {
-      const normalized = Math.round(serverVersion);
-      if (typeof payload?.rememberDiagramStateVersion === "function") {
-        try {
-          payload.rememberDiagramStateVersion(normalized, { sessionId });
-        } catch {
-          // no-op
+    },
+    on409: (response, sessionId, payload) => {
+      // P1: tracked-base НЕ подменяется (conflict gate в saveCoordinator).
+      // Only sync the server version to external React state here.
+      const data = response?.data ?? {};
+      const detail = data?.detail ?? data ?? {};
+      const serverVersion = Number(
+        detail.server_current_version ?? detail.serverCurrentVersion ?? response?.server_current_version ?? response?.serverCurrentVersion ?? -1,
+      );
+      if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+        const normalized = Math.round(serverVersion);
+        if (typeof payload?.rememberDiagramStateVersion === "function") {
+          try {
+            payload.rememberDiagramStateVersion(normalized, { sessionId });
+          } catch {
+            // no-op
+          }
         }
       }
-    }
-  },
-  onError: () => {
-    // CAS rollback is handled by saveCoordinator._runPipeline.
-  },
-  debounceMs: 0,
-  retryCount: 3,
-  retryDelayMs: 1000,
-});
+    },
+    onError: () => {
+      // CAS rollback is handled by saveCoordinator._runPipeline.
+    },
+    debounceMs: 0,
+    retryCount: 3,
+    retryDelayMs: 1000,
+    ...overrides,
+  };
+}
+
+saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, createRawXmlPipelineConfig());
 
 function asText(value) {
   return String(value || "");
@@ -335,6 +417,9 @@ export default function createBpmnPersistence(options = {}) {
     : null;
   const apiPutBpmnXml = typeof options?.apiPutBpmnXml === "function"
     ? options.apiPutBpmnXml
+    : null;
+  const apiGetSessionMeta = typeof options?.apiGetSessionMeta === "function"
+    ? options.apiGetSessionMeta
     : null;
   const getExternalBaseDiagramStateVersion = typeof options?.getBaseDiagramStateVersion === "function"
     ? options.getBaseDiagramStateVersion
@@ -790,6 +875,7 @@ export default function createBpmnPersistence(options = {}) {
       bpmnMeta,
       apiGetBpmnXml,
       apiPutBpmnXml,
+      apiGetSessionMeta,
       rememberDiagramStateVersion: rememberExternalDiagramStateVersion,
     });
     emit("API_PUT_BPMN_XML_RESULT", {
