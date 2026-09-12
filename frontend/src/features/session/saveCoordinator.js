@@ -481,6 +481,11 @@ class SaveCoordinator {
       base: builtPayload.base_diagram_state_version ?? null,
     });
 
+    // Ф1 (fix/save-latency-subprocess-async, L1): rollback history трекера
+    // разрешён только если в ЭТОМ прогоне был собственный bump (успешный
+    // commit). Иначе откат съедал последнюю физически успешную версию
+    // ([7,8] → [7]) → следующий save = гарантированный self-409.
+    let bumpedInRun = false;
     let lastResult = null;
     let lastError = null;
 
@@ -501,6 +506,7 @@ class SaveCoordinator {
         const newVersion = pickDiagramStateVersion(successResult);
         if (newVersion !== null) {
           bumpTrackedDiagramStateVersion(sid, newVersion);
+          bumpedInRun = true;
         }
         recordSaveDiagnostic("pipeline_success", {
           sid,
@@ -525,7 +531,9 @@ class SaveCoordinator {
         // ретраить и НЕ путать с конфликтом 409 (конфликт-модал — только 409).
         const deadInfo = noteSessionApiResult(sid, result, `save:${pipelineName}`);
         if (deadInfo) {
-          rollbackTrackedDiagramStateVersion(sid);
+          if (bumpedInRun) {
+            rollbackTrackedDiagramStateVersion(sid);
+          }
           this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "session_not_found" });
           this.emit("session_not_found", { pipeline: pipelineName, sessionId: sid, response: result });
           return result;
@@ -561,11 +569,12 @@ class SaveCoordinator {
             }
           }
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
-          rollbackTrackedDiagramStateVersion(sid);
           const serverVersion = pickServerCurrentVersion(result);
           // P1 fix: tracked-base is NOT silently adopted to the server version.
           // Arm the conflict gate so queued saves/autosave pause until the user
           // resolves the conflict (refresh/overwrite/cancel).
+          // Ф1 (L1): на 409 rollback НЕ выполняется — tracked-base меняется
+          // только через resolveConflict / reconcile (иначе цикл self-409).
           this.conflicts.set(sid, {
             pipeline: pipelineName,
             sessionId: sid,
@@ -615,7 +624,9 @@ class SaveCoordinator {
           continue;
         }
 
-        rollbackTrackedDiagramStateVersion(sid);
+        if (bumpedInRun) {
+          rollbackTrackedDiagramStateVersion(sid);
+        }
         if (pipeline.onError) {
           try {
             pipeline.onError(result, sid, payload);
