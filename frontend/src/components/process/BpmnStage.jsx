@@ -26,6 +26,7 @@ import LowFpsCanvasGuard from "../../features/process/bpmn/stage/load/LowFpsCanv
 import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
+import { combineV2PropertyPreviewMap } from "../../features/process/bpmn/stage/overlay/v2PropertyPreviewMap.js";
 import { setV2OverlayClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
@@ -1039,6 +1040,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  propertiesOverlayDraftElementId = "",
   overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
@@ -1349,16 +1351,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {
-    const combined = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
-    const selected = asObject(selectedPropertiesOverlayPreview);
-    const selectedElementId = toText(selected?.elementId);
-    // Include the selected preview even when it is empty/disabled so the V2
-    // overlay resolver knows the element is intentionally property-less and
-    // does not fall back to stale modeler/XML overlays.
-    if (selectedElementId && selected) {
-      combined[selectedElementId] = selected;
-    }
-    v2PropertyPreviewMapRef.current = combined;
+    v2PropertyPreviewMapRef.current = combineV2PropertyPreviewMap(
+      propertiesOverlayAlwaysPreviewByElementId,
+      selectedPropertiesOverlayPreview,
+    );
   }, [propertiesOverlayAlwaysPreviewByElementId, selectedPropertiesOverlayPreview]);
 
   // Per-field chip filter (property-panel-redesign): null = no filter
@@ -1366,12 +1362,17 @@ const BpmnStage = forwardRef(function BpmnStage({
   const v2HiddenFieldsRef = useRef(null);
   v2HiddenFieldsRef.current = Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null;
 
+  // F2 unsaved-draft marker: element whose V2 card shows unsaved draft values.
+  const v2DraftIndicatorRef = useRef("");
+  v2DraftIndicatorRef.current = typeof propertiesOverlayDraftElementId === "string" ? propertiesOverlayDraftElementId : "";
+
   const overlayLifecycle = useOverlayLifecycle({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
     propertyPreviewMapRef: v2PropertyPreviewMapRef,
     hiddenFieldsRef: v2HiddenFieldsRef,
+    draftIndicatorRef: v2DraftIndicatorRef,
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
@@ -4842,12 +4843,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     if (!useExtensionOverlays) return;
     try {
-      const previewMap = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
-      const selected = asObject(selectedPropertiesOverlayPreview);
-      const selectedElementId = toText(selected?.elementId);
-      if (selectedElementId && selected?.enabled === true && asArray(selected?.items).length) {
-        previewMap[selectedElementId] = selected;
-      }
+      const previewMap = combineV2PropertyPreviewMap(
+        propertiesOverlayAlwaysPreviewByElementId,
+        selectedPropertiesOverlayPreview,
+      );
       const previewMapSig = JSON.stringify(previewMap);
       const maybeRemount = (inst, kind) => {
         if (!inst || !hasDefinitionsLoaded(inst)) return;
@@ -4892,6 +4891,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     propertiesOverlayAlwaysEnabled,
     selectedPropertiesOverlayPreview,
     propertiesOverlayAlwaysPreviewByElementId,
+    propertiesOverlayDraftElementId,
     overlayHiddenFields,
     overlayLifecycle,
   ]);

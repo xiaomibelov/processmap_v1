@@ -130,6 +130,7 @@ export function createV2OverlayCoordinator({
   previewMapRef,
   selectedElementRef,
   hiddenFieldsRef,
+  draftIndicatorRef,
 }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
   // Supersede token for chunked mounts: a newer mount() invalidates the
@@ -267,9 +268,9 @@ export function createV2OverlayCoordinator({
     } catch {}
   }
 
-  function renderForElement(inst, el, ovl, expanded, placement = null) {
+  function renderForElement(inst, el, ovl, expanded, placement = null, draft = false) {
     removeExistingV2OverlaysForElement(inst, el.id);
-    const created = createV2OverlayHost(el, ovl, expanded, placement);
+    const created = createV2OverlayHost(el, ovl, expanded, placement, draft);
     if (!created) return null;
     const overlays = inst.get("overlays");
     const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
@@ -281,7 +282,10 @@ export function createV2OverlayCoordinator({
     const map = elementOverlayMapRef.current[kind];
     const v2Expanded = expandedRef?.current ?? false;
     const globalEnabled = enabledRef?.current ?? false;
-    const contentSig = computeContentSig(ovl, el, placement);
+    // The draft marker participates in the content signature: after a save
+    // the card values are identical but the marker must still re-render away.
+    const draft = asText(draftIndicatorRef?.current) === elementId;
+    const contentSig = computeContentSig({ ...ovl, draftIndicator: draft }, el, placement);
     const existing = map.get(elementId);
 
     const elementState = {
@@ -303,7 +307,7 @@ export function createV2OverlayCoordinator({
 
     if (existing) {
       if (existing.contentSig !== contentSig) {
-        const result = renderForElement(inst, el, ovl, v2Expanded, placement);
+        const result = renderForElement(inst, el, ovl, v2Expanded, placement, draft);
         if (result) {
           map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
         }
@@ -314,7 +318,7 @@ export function createV2OverlayCoordinator({
       return;
     }
 
-    const result = renderForElement(inst, el, ovl, v2Expanded, placement);
+    const result = renderForElement(inst, el, ovl, v2Expanded, placement, draft);
     if (result) {
       map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
     }

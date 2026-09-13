@@ -94,6 +94,7 @@ import {
   upsertCamundaPresentationByElementId,
 } from "./features/process/camunda/camundaPresentation";
 import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
+import { resolvePropertiesOverlayDraftIndicator } from "./features/process/camunda/propertiesOverlayDraftIndicator";
 import { useHiddenFields } from "./components/sidebar/displaySettings/useHiddenFields";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
@@ -1678,6 +1679,17 @@ export default function App() {
     }
     return out;
   }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
+
+  // F2 unsaved-draft marker for the V2 overlay card of the selected element:
+  // set while the live draft differs from the saved extension state, cleared
+  // after a successful save (bpmn_meta converges) or cancel.
+  const propertiesOverlayDraftElementId = useMemo(() => resolvePropertiesOverlayDraftIndicator({
+    draftPreview: selectedPropertiesOverlayAlwaysPreview,
+    metaExtensionsByElementId: normalizeCamundaExtensionsMap(
+      normalizeBpmnMeta(draft?.bpmn_meta).camunda_extensions_by_element_id,
+    ),
+    hiddenFields: overlayHiddenFields,
+  }), [draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
 
   // A9: иконки свёрнутого сайдбара отражают реальный состав секций сайдбара
   // (ид = ключ аккордеона — клик открывает панель сразу к нужной секции).
@@ -4446,6 +4458,7 @@ export default function App() {
         selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        propertiesOverlayDraftElementId={propertiesOverlayDraftElementId}
         overlayHiddenFields={overlayHiddenFields}
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
