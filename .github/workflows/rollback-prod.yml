@@ -1,93 +1,59 @@
-# =============================================================================
-# DEPRECATED — НЕ ИСПОЛЬЗОВАТЬ (аудит PROD 2026-09-10, PLAN-4 §1.5)
-#
-# Этот workflow фактически непригоден для отката prod:
-#   1. Он читает PREVIOUS_BUILD_ID из /opt/processmap/env/prod.env, а там
-#      записан 2ffc5cbe — коммит, который НИКОГДА не был задеплоен на prod
-#      (ручные запуски deploy 2026-09-08 были прерваны до build).
-#   2. Он retag'ает образы :rollback, а они протухшие (Sep 4, эпоха aed51653,
-#      pre-30a716ca) — откатил бы к несуществовавшему состоянию.
-#   3. Он не знает про standalone-gateway (pinned nginx:1.27-alpine) и поднял бы
-#      старый custom gateway-стек (ssl.yml + prod.gateway.yml).
-#
-# Заменён на: /opt/processmap/bin/processmap-rollback-manual.sh (на сервере)
-# + runbook deploy/prod-rollback-manual.md + сценарий окна деплоя в контуре
-# release/prod-deploy-2c74c204-prep (.planning/contours/release/prod-deploy-2c74c204-prep/PLAN-WINDOW.md).
-# ============================================================================
 name: Rollback Prod
 
+# Штатный откат prod (PLAN §2.7): обёртка над
+# /opt/processmap/bin/processmap-rollback-manual.sh (--check/--apply) с тем же
+# approve-гейтом environment: prod. Метка predeploy-<TS> берётся из summary
+# деплоя (файл last-deploy-summary-<TS>.md на хосте) или лога deploy-шага.
+# Откат ДАННЫХ этим workflow не выполняется — только restore из дампа окна
+# деплоя (путь в summary), под отдельный approve владельца.
 on:
   workflow_dispatch:
-  workflow_call:
+    inputs:
+      predeploy_ts:
+        description: "Метка окна деплоя (например 20260913120000) — из summary деплоя / лога deploy-шага."
+        required: true
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   rollback:
+    name: Rollback prod to predeploy images
     runs-on: ubuntu-latest
+    environment: prod
     steps:
-      - name: Rollback prod to previous images
+      - name: Rollback check + apply on prod host
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.STAGE_HOST }}
-          username: ${{ secrets.STAGE_USER }}
-          key: ${{ secrets.STAGE_SSH_KEY }}
-          command_timeout: 10m
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          command_timeout: 15m
           script: |
             set -euo pipefail
-            cd /opt/processmap/app
 
-            COMPOSE_PROJECT_NAME=app
-            export COMPOSE_PROJECT_NAME
-            if [ "${COMPOSE_PROJECT_NAME}" != "app" ]; then
-              echo "[rollback-prod] ERROR: COMPOSE_PROJECT_NAME must be 'app', got '${COMPOSE_PROJECT_NAME}'"
-              exit 1
-            fi
+            TS="${{ github.event.inputs.predeploy_ts }}"
+            echo "[rollback-prod] predeploy_ts=${TS}"
 
-            ENV_FILE="/opt/processmap/env/prod.env"
-            ROLLBACK_SHA=$(grep -E '^PREVIOUS_BUILD_ID=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2- || echo "unknown")
-            if [ "${ROLLBACK_SHA}" = "unknown" ] || [ -z "${ROLLBACK_SHA}" ]; then
-              echo "[rollback-prod] ERROR: PREVIOUS_BUILD_ID not found in ${ENV_FILE}. Cannot determine rollback SHA."
-              exit 1
-            fi
-            echo "[rollback-prod] target rollback SHA: ${ROLLBACK_SHA}"
+            /opt/processmap/bin/processmap-rollback-manual.sh --check --ts "${TS}"
+            /opt/processmap/bin/processmap-rollback-manual.sh --apply --ts "${TS}"
 
-            # Verify rollback images exist
-            MISSING=0
-            for img in processmap-gateway:rollback app-api:rollback app-celery-worker:rollback app-agent:rollback app-notifications:rollback app-frontend:rollback; do
-              if ! docker image inspect "${img}" > /dev/null 2>&1; then
-                echo "[rollback-prod] ERROR: ${img} not found"
-                MISSING=1
-              fi
-            done
-            [ "${MISSING}" -eq 0 ] || exit 1
+            echo "[rollback-prod] post-verify:"
+            curl -fsS https://processmap.ru/version
+            echo
+            curl -fsS https://processmap.ru/api/health
+            echo
 
-            # Restore BUILD_ID in prod.env so /version reports the rollback SHA after recreate.
-            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${ENV_FILE}" 2>/dev/null || true
-            {
-              echo ""
-              echo "# Restored by rollback-prod.yml"
-              echo "BUILD_ID=${ROLLBACK_SHA}"
-              echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              echo "BUILD_BRANCH=rollback"
-              echo "BUILD_ENV=prod"
-            } >> "${ENV_FILE}"
-
-            # Re-tag rollback images as current
-            docker tag processmap-gateway:rollback processmap-gateway:dev
-            docker tag app-api:rollback app-api:latest
-            docker tag app-celery-worker:rollback app-celery-worker:latest
-            docker tag app-agent:rollback app-agent:latest
-            docker tag app-notifications:rollback app-notifications:latest
-            docker tag app-frontend:rollback app-frontend:latest
-
-            # Restart all prod containers with rolled-back images (no rebuild)
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.ssl.yml \
-              -f docker-compose.prod.gateway.yml \
-              -p app \
-              up -d --no-deps --force-recreate -V \
-                api gateway celery-worker agent notifications frontend
-
-            echo "[rollback-prod] done (rolled back to ${ROLLBACK_SHA})"
+      - name: Write rollback summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Откат prod выполнен (predeploy_ts=${{ github.event.inputs.predeploy_ts }})"
+            echo ""
+            echo "- Образы api/celery-worker/agent/notifications/frontend возвращены к метке predeploy-${{ github.event.inputs.predeploy_ts }}."
+            echo "- Post-verify: /version и /api/health проверены на хосте."
+            echo "- **Откат данных — только restore из дампа** окна деплоя (путь в summary деплоя: /opt/processmap/data/prod/backups/pre-pipeline-<TS>.dump) — отдельный approve владельца."
+            echo "- Ручной fallback: deploy/prod-rollback-manual.md."
+          } >> "${GITHUB_STEP_SUMMARY}"

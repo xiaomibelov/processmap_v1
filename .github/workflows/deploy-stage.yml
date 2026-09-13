@@ -269,10 +269,11 @@ jobs:
             # rag-embedder (RAG hybrid sidecar, PR #912) — свой образ (./rag-embedder),
             # собирается всегда: на хосте stage его не было (deploy-drift
             # fix/stage-deploy-rag-embedder-v1), а api/celery-worker уже зависят от него.
-            BUILD_SERVICES="api frontend notifications celery-worker rag-embedder"
-            if [ "${AGENT_CHANGED}" = "true" ]; then
-              BUILD_SERVICES="${BUILD_SERVICES} agent"
-            fi
+            # agent собирается всегда: условный детект по backend/services/agent|
+            # backend/app/ai пропускал релизы, где agent-зависимости менялись
+            # косвенно (смешанные стеки 2026-09-13: api d9bedacf+agent a06b9978,
+            # api 26bbab34+agent d9bedacf — PR #962/#964 не трогали эти пути).
+            BUILD_SERVICES="api frontend notifications celery-worker rag-embedder agent"
             STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
@@ -293,10 +294,7 @@ jobs:
               rm -fsv frontend 2>/dev/null || true
             docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
-            UP_SERVICES="api frontend notifications celery-worker rag-embedder"
-            if [ "${AGENT_CHANGED}" = "true" ]; then
-              UP_SERVICES="${UP_SERVICES} agent"
-            fi
+            UP_SERVICES="api frontend notifications celery-worker rag-embedder agent"
             STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \

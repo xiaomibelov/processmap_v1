@@ -63,7 +63,8 @@
 - Review обязателен для каждого bounded контура.
 - Merge в `main` только после явного подтверждения пользователя.
 - Release flow:
-  - `branch -> push -> PR -> user approval -> merge -> auto deploy to stage -> verify -> manual prod deploy (from main only)`.
+  - `branch -> push -> PR -> user approval -> merge -> auto deploy to stage -> verify -> prod deploy via workflow_dispatch 'Deploy to Prod' + approve в GitHub Environment prod (from main only)`.
+  - Прод-деплой = workflow_dispatch 'Deploy to Prod' + approve в GitHub Environment `prod`; ручной runbook (`deploy/prod-rollback-manual.md`, `deploy/deploy.sh`) = fallback при недоступности Actions.
 
 ## 8. Обязательный финальный proof в каждом серьезном контуре
 - Короткий git-proof (`branch`, `HEAD`, `status`, `diffstat`).
