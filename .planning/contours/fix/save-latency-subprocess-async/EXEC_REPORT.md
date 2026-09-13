@@ -127,7 +127,13 @@ _(заполняется по мере прохождения этапов)_
 - Полный сьют ветки vs полный сьют baseline (`origin/main`, отдельный worktree):
   - baseline: 58 failed / 1472 passed / 103 skipped.
   - Первая пара прогонов (конкурентно): ветка 61 failed — из них 2 (`test_agent_analysis_pipeline::TestManualEndpoints`) флаky из-за общего default-storage при конкурентных прогонах (на baseline standalone падают те же 2; на ветке standalone 19/19 green), 1 (`test_subprocess_sync_task::...broker_down`) — поллюция `task_always_eager=True` из `test_overlay_cache.py` → исправлено гвардом в setUp (`7e46c2cd`), парный прогон pollutant+файл: 8/8 green.
-  - Финальный последовательный прогон ветки: результат ниже.
+  - **Финальный последовательный прогон ветки (после фикса герметичности 03aa2365): 58 failed / 1489 passed / 103 skipped — дельта против baseline ровно 0, множества падений идентичны (comm пуст в обе стороны).** Все 17 новых тестов зелёные в полном сьюте.
+- Дополнительно (параллельная валидация, коммит d8ea3003): прогоны чанками под xdist на ветке и baseline — 46 failed на обоих, дельта 0 (xdist-флаки TestSaveHook зелёные последовательно на обоих деревьях).
+
+### Дефекты герметичности новых тестов (найдены полным сьютом, исправлены)
+
+1. `7e46c2cd`: `test_overlay_cache.py` утекал `celery_app.conf.task_always_eager = True` → broker-down тест получал inline-выполнение. Гвард setUp/tearDown.
+2. `03aa2365`: dual-package (оба рута `app.*`/`backend.app.*` в sys.path; чужие тесты импортируют `backend.app.*`) — в полном сьюте lock_busy тест давал «retry called 0 times» (лок разрешался в параллельный инстанс модулей). Исправление: патч `acquire_session_lock` в ОБОИХ алиасах, разрешение PromiseProxy однократно (`_get_current_object`), `_delay_inline` патчит атрибут модуля `app.tasks` (точку импорта bpmn_save). Проверка: repro-комбо 3/3 красное → 3/3 зелёное; solo 8/8.
 
 ## Этап 8 (E2E + замеры) — статус
 

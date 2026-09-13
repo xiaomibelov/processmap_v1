@@ -1,0 +1,48 @@
+{
+  "contour": "fix/save-latency-subprocess-async",
+  "type": "fix",
+  "branch": "fix/save-latency-subprocess-async",
+  "pr": 962,
+  "phase": "READY_FOR_REVIEW",
+  "base": "origin/main @ 654a33b4 (включает PR #963)",
+  "updated_at": "2026-09-13",
+  "artifacts": {
+    "plan": ".planning/contours/fix/save-latency-subprocess-async/PLAN.md",
+    "implementation": ".planning/contours/fix/save-latency-subprocess-async/IMPLEMENTATION.md",
+    "exec_report": ".planning/contours/fix/save-latency-subprocess-async/EXEC_REPORT.md",
+    "pr_body": ".planning/contours/fix/save-latency-subprocess-async/PR_BODY.md"
+  },
+  "done": [
+    "Этап 0: pre-flight grep-обход (EXEC_REPORT)",
+    "Дефект 2: позиционный admin в _child_sync_scope (8b8a1179)",
+    "Дефект 1 = Б5: update_derived_fields field-scoped write (e9e0066b)",
+    "Дефект 3 = Б1–Б4: celery sync_subprocesses_task под флагом (e2561f12)",
+    "Ф1 rollback-дисциплина L1 (d08e30c1)",
+    "Ф2 reconcileTimeout L2 (3202cd4f)",
+    "Ф3 семантика resolveConflict L3 (14b42816)",
+    "Ф4 cross-tab rollback notify L10 (ceb8338c)",
+    "Б6 answer CAS-commit L5 (ea7e8aa5)",
+    "Ф5 индикатор subprocesses_sync=pending (1c51c22e)",
+    "Этап 8 часть 1: E2E-спека canvas-editing-stability (b4bd25a3)",
+    "Герметичность тестов: eager-гвард + dual-package патч (7e46c2cd, 03aa2365)"
+  ],
+  "verification": {
+    "frontend_node_test": "3577 tests, дельта падений против baseline = 0 (79 pre-existing идентичны)",
+    "backend_pytest_new": "17/17 новых тестов GREEN (RED зафиксирован)",
+    "backend_pytest_full_delta": "ФИНАЛ: ветка 58 failed/1489 passed vs baseline 58 failed/1472 passed — дельта ровно 0, множества падений идентичны (полный сьют, последовательно)"
+  },
+  "pending_approval": [
+    "force-push ветки (rebase) и обновление PR #962",
+    "merge PR #962",
+    "deploy на stage (PLAN §7: этапы 1–4 → 24 ч наблюдения → Б5/Б6 → флаг FPC_ASYNC_SUBPROCESS_SYNC=1 → замер p95)",
+    "прогон E2E canvas-editing-stability на stage",
+    "default FPC_ASYNC_SUBPROCESS_SYNC=1 отдельным release-шагом"
+  ],
+  "known_limitations": [
+    "E2E не запускался локально (нет выделенного окружения; общий стек монтирует canonical checkout) — первый прогон на stage",
+    "79 pre-existing frontend fails характеризационного сьюта (включая конфликт property-pipeline теста с timeout 60s из #963) — вне скоупа",
+    "CELERY_TASK_ALWAYS_EAGER в conftest не действует (celery_app не читает env) — pre-existing инфра-долг, тесты мокают celery точечно",
+    "list_session_children сломан ещё на main (тихий пропуск в try/except) — вне скоупа контура"
+  ],
+  "head": "0c43a299"
+}
