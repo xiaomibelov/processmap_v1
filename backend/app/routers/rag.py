@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -138,7 +138,9 @@ def rag_search(
     top_k: Optional[int] = Query(default=None, ge=1, le=_MAX_TOP_K),
     source_type: Optional[str] = Query(default=None),
     session_id: Optional[str] = Query(default=None),
-    process_layer: Optional[str] = Query(default=None, description="Filter by process layer: as_is|to_be"),
+    # Literal → FastAPI сам отдаёт schema-совместимый 422 (HTTPValidationError)
+    # на невалидные значения по HTTP; ручная проверка ниже — для прямых вызовов.
+    process_layer: Optional[Literal["as_is", "to_be"]] = Query(default=None, description="Filter by process layer: as_is|to_be"),
     min_score: Optional[float] = Query(default=None, ge=0.0),
 ) -> Dict[str, Any]:
     require_authenticated_user(request)
