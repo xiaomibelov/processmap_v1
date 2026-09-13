@@ -5854,6 +5854,22 @@ def _storage__enqueue_rag_index_after_version(
         from ....rag_tasks import index_session_bpmn_xml
 
         oid = _scope_org_id(org_id) or _default_org_id()
+        # Enforcement (PLAN §4): при выключенном RAG/indexing не плодим
+        # мусорные celery-задачи — ранний выход с warn-логом. Канонический гейт
+        # остаётся в index_document; это оптимизация очереди.
+        try:
+            from ..platform.repository import get_rag_settings
+
+            settings = get_rag_settings(oid)
+            if not settings.get("enabled") or not settings.get("indexing_enabled"):
+                logger.warning(
+                    "rag: skip enqueue reindex for %s (org=%s): rag disabled or indexing_enabled=0",
+                    sid,
+                    oid,
+                )
+                return
+        except Exception as exc:
+            logger.warning("rag: rag_settings check failed for %s (%s), enqueue proceeds: %s", sid, oid, exc)
         self.set_rag_readiness(sid, "queued", org_id=oid)
         index_session_bpmn_xml.delay(sid, oid)
         logger.info(
