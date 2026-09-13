@@ -194,6 +194,29 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     steps:
+      # Скрипты пайплайна поставляются из checkout CI (реф workflow = main),
+      # а не из checkout целевого SHA на хосте: репетиция на SHA, предшествующем
+      # #966, иначе не находит deploy/scripts/prod_migrate.sh на хосте
+      # (факт T1 2026-09-13: ref=d9bedacf, «No such file or directory»).
+      - name: Upload pipeline scripts to prod host
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          KEY_FILE="$(mktemp)"
+          printf '%s\n' "${PROD_SSH_KEY}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+          ssh -o StrictHostKeyChecking=accept-new -i "${KEY_FILE}" \
+            "${PROD_USER}@${PROD_HOST}" "mkdir -p /opt/processmap/bin"
+          scp -o StrictHostKeyChecking=accept-new -i "${KEY_FILE}" \
+            deploy/scripts/prod_preflight_gates.sh \
+            deploy/scripts/prod_migrate.sh \
+            deploy/scripts/prod_post_gates.sh \
+            "${PROD_USER}@${PROD_HOST}:/opt/processmap/bin/"
+          rm -f "${KEY_FILE}"
+
       - name: Deploy to prod server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -304,7 +327,7 @@ jobs:
             echo "OK: images pulled and tagged app-<svc>:latest"
 
             # --- миграции ДО up, новым образом (PLAN §2.5.3) ---
-            ENV_FILE="${ENV_FILE}" "${PWD}/deploy/scripts/prod_migrate.sh" "${REGISTRY}/${NAMESPACE}/api:${DEPLOY_SHA}"
+            ENV_FILE="${ENV_FILE}" /opt/processmap/bin/prod_migrate.sh "${REGISTRY}/${NAMESPACE}/api:${DEPLOY_SHA}"
 
             # --- rag-embedder собирается на хосте (ONNX-экспорт, хост-специфично) ---
             APP_ENV_FILE="${ENV_FILE}" docker compose \
@@ -358,7 +381,7 @@ jobs:
 
             # --- post-gates + markdown-summary для $GITHUB_STEP_SUMMARY ---
             SUMMARY_FILE="${BACKUP_DIR}/last-deploy-summary-${TS}.md" \
-              "${PWD}/deploy/scripts/prod_post_gates.sh" "${DEPLOY_SHA}"
+              /opt/processmap/bin/prod_post_gates.sh "${DEPLOY_SHA}"
 
             echo "[deploy-prod] done sha=${DEPLOY_SHA} ts=${TS}"
 
