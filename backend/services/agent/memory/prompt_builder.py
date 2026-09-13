@@ -520,7 +520,7 @@ class PromptBuilder:
                 "layer_tokens": assembly.layer_tokens,
             }
         chunks_text = "\n---\n".join(
-            str(r.get("chunk") or r.get("text") or "").strip() for r in rag_results[:5]
+            str(r.get("chunk_text") or r.get("chunk") or r.get("text") or "").strip() for r in rag_results[:5]
         )
         prompt_text = (
             "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "

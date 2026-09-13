@@ -257,10 +257,16 @@ def test_schema_overview_is_cheap():
 
 
 def test_doc_qa_with_rag_is_cheap():
-    rag = [{"chunk": "Отрывок 1"}, {"chunk": "Отрывок 2"}]
+    # Контракт GET /api/rag/search: чанки отдаются с ключом chunk_text
+    # (backend/app/routers/rag.py), а не chunk/text.
+    rag = [
+        {"chunk_id": "c1", "score": 0.9, "chunk_text": "Отрывок 1"},
+        {"chunk_id": "c2", "score": 0.8, "chunk_text": "Отрывок 2"},
+    ]
     result = PromptBuilder.build("doc_qa", _ctx(), _payload(message="вопрос"), rag_results=rag)
     assert result["model_class"] == "cheap"
     assert "Отрывок 1" in result["payload"]["input"]
+    assert "Отрывок 2" in result["payload"]["input"]
     assert "вопрос" in result["payload"]["input"]
 
 
