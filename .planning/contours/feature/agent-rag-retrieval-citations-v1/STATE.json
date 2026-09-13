@@ -1,0 +1,19 @@
+{
+  "contour": "feature/agent-rag-retrieval-citations-v1",
+  "type": "feature",
+  "branch": "feature/agent-rag-retrieval-citations-v1",
+  "base": "origin/main@df7feabc661add72ffac97c00ea2dda66008bdac",
+  "workspace": "p0-work-worktrees/feature-agent-rag-retrieval-citations-v1",
+  "phase": "PLANNING_AWAITING_OWNER_APPROVE",
+  "head": "df7feabc",
+  "epic": "E2 (agent-architecture-rag-audit-v1; P0 #965 смержен, E1 #972 OPEN — см. PLAN.md §8.1)",
+  "gates": {
+    "G1": "planned: e2e тест (другая сессия org -> >=1 цитата, source_id=chunk_id) + stage live после деплоя",
+    "G2": "planned: пороги p50 <= +150ms, tokens <= +10% (согласовать, PLAN.md §4.3/§8.2)",
+    "G3": "planned: hit-путь не трогается; тест 0 LLM + 0 search_rag на warm-hit",
+    "G4": "planned: degrade-тесты (пустой RAG, маркеры вне диапазона)"
+  },
+  "notes": "E1 #972 содержит реверты P0 (list_turns, chunk_text в _doc_qa, удалённые тесты) — рекомендован вариант A: E2 без жёсткой зависимости от E1 + отдельный fix-контур после мержа #972. Найден предбаг main: _run_free_answer_branch_stream dangling (chat.py:1009).",
+  "created": "2026-09-14",
+  "updated": "2026-09-14"
+}
