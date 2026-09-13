@@ -14319,6 +14319,9 @@ paths:
         required: false
         schema:
           description: 'Filter by process layer: as_is|to_be'
+          enum:
+          - as_is
+          - to_be
           nullable: true
           title: Process Layer
           type: string
