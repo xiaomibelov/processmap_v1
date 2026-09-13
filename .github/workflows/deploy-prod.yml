@@ -1,19 +1,206 @@
 name: Deploy to Prod
 
+# Прод-деплой ТОЛЬКО вручную через workflow_dispatch с approve-гейтом
+# GitHub Environment `prod` (required reviewer = владелец). Auto-deploy по
+# push в main не проектируется (PLAN §1). Страховка (бэкап БД + predeploy-теги)
+# неотключаема — никаких skip_backup-флагов.
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (branch, tag, or commit SHA). Empty = deploy latest origin/main."
+        required: false
+        default: ""
+
+# Прод-деплои не должны пересекаться: очередь per environment.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: xiaomibelov/processmap_v1
 
 jobs:
-  deploy:
+  # Fail-fast гейты (PLAN §2.2) ДО любых изменений на хосте. Approve-гейт
+  # environment: prod — регламентный approve владельца: job не стартует без него.
+  gates:
+    name: Preflight gates on prod host
     runs-on: ubuntu-latest
+    environment: prod
+    outputs:
+      requested_ref: ${{ steps.resolve.outputs.requested_ref }}
+      deploy_sha: ${{ steps.resolve.outputs.deploy_sha }}
+      build_time: ${{ steps.meta.outputs.build_time }}
+      ts: ${{ steps.meta.outputs.ts }}
+    steps:
+      - name: Deploy target disclaimer
+        shell: bash
+        run: |
+          echo "::warning::This workflow deploys PROD at /opt/processmap/app on PROD_HOST."
+          echo "::warning::Prod URL: https://processmap.ru; stage URL: https://stage.processmap.ru."
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Guard against SHA race: main may advance between trigger and deploy.
+      # Resolve the ref we actually want to deploy *after* checkout/fetch and
+      # pass that resolved SHA to the server (паттерн deploy-stage.yml).
+      - name: Resolve deploy ref and SHA
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUESTED_REF="${{ github.event.inputs.ref || 'main' }}"
+          echo "requested_ref=${REQUESTED_REF}" >> "${GITHUB_OUTPUT}"
+
+          if git show-ref --verify --quiet "refs/remotes/origin/${REQUESTED_REF}" 2>/dev/null; then
+            git fetch origin "${REQUESTED_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify "origin/${REQUESTED_REF}")"
+          else
+            git fetch origin || true
+            DEPLOY_SHA="$(git rev-parse --verify "${REQUESTED_REF}^{commit}" 2>/dev/null || git rev-parse --verify "${REQUESTED_REF}")"
+          fi
+
+          echo "deploy_sha=${DEPLOY_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "[resolve] requested_ref=${REQUESTED_REF} deploy_sha=${DEPLOY_SHA}"
+
+      # TS генерируется в CI и передаётся на хост: summary и команда отката
+      # обязаны ссылаться на ту же метку окна, что и predeploy-теги/дамп.
+      - name: Compute build metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "ts=$(date -u +%Y%m%d%H%M%S)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Sync preflight gates script to prod host
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          KEY_FILE="$(mktemp)"
+          printf '%s\n' "${PROD_SSH_KEY}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+          ssh -o StrictHostKeyChecking=accept-new -i "${KEY_FILE}" \
+            "${PROD_USER}@${PROD_HOST}" "mkdir -p /opt/processmap/bin"
+          scp -o StrictHostKeyChecking=accept-new -i "${KEY_FILE}" \
+            deploy/scripts/prod_preflight_gates.sh \
+            "${PROD_USER}@${PROD_HOST}:/opt/processmap/bin/prod_preflight_gates.sh"
+          rm -f "${KEY_FILE}"
+
+      - name: Run preflight gates
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            bash /opt/processmap/bin/prod_preflight_gates.sh
+
+  # Сборка образов в CI (PLAN §2.3). rag-embedder НЕ собирается здесь:
+  # ONNX-экспорт на этапе сборки хост-специфичен, собирается на хосте в deploy.
+  build:
+    name: Build & push images
+    needs: gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gates.outputs.deploy_sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Корневой Dockerfile: один образ на api и celery-worker (две метки).
+      - name: Build & push backend image (api + celery-worker)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/api:${{ needs.gates.outputs.deploy_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/celery-worker:${{ needs.gates.outputs.deploy_sha }}
+          build-args: |
+            BUILD_ID=${{ needs.gates.outputs.deploy_sha }}
+            BUILD_TIME=${{ needs.gates.outputs.build_time }}
+            BUILD_BRANCH=${{ needs.gates.outputs.requested_ref }}
+            BUILD_ENV=prod
+          cache-from: type=gha,scope=prod-backend
+          cache-to: type=gha,mode=max,scope=prod-backend
+
+      - name: Build & push agent
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/services/agent
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/agent:${{ needs.gates.outputs.deploy_sha }}
+          cache-from: type=gha,scope=prod-agent
+          cache-to: type=gha,mode=max,scope=prod-agent
+
+      - name: Build & push notifications
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/services/notifications
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/notifications:${{ needs.gates.outputs.deploy_sha }}
+          cache-from: type=gha,scope=prod-notifications
+          cache-to: type=gha,mode=max,scope=prod-notifications
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/frontend:${{ needs.gates.outputs.deploy_sha }}
+          build-args: |
+            VITE_BUILD_ID=${{ needs.gates.outputs.deploy_sha }}
+            VITE_BUILD_TIME=${{ needs.gates.outputs.build_time }}
+            VITE_BUILD_BRANCH=${{ needs.gates.outputs.requested_ref }}
+            VITE_BUILD_ENV=prod
+            VITE_DEPLOY_FINGERPRINT=processmap-prod-deploy-sha:${{ needs.gates.outputs.deploy_sha }}
+            VITE_DEPLOY_REQUESTED_REF=${{ needs.gates.outputs.requested_ref }}
+            VITE_DEPLOY_RESOLVED_SHA=${{ needs.gates.outputs.deploy_sha }}
+          cache-from: type=gha,scope=prod-frontend
+          cache-to: type=gha,mode=max,scope=prod-frontend
+
+  # Деплой на хост (PLAN §2.4–2.6): checkout, env-инжект, бэкап (неотключаем),
+  # predeploy-теги, pull ghcr-образов, миграции до up, rag-embedder на хосте,
+  # up полного набора, freshness, gateway-проверки, post-gates.
+  deploy:
+    name: Deploy on prod host
+    needs: [gates, build]
+    runs-on: ubuntu-latest
+    environment: prod
     steps:
       - name: Deploy to prod server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.STAGE_HOST }}
-          username: ${{ secrets.STAGE_USER }}
-          key: ${{ secrets.STAGE_SSH_KEY }}
-          command_timeout: 20m
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          command_timeout: 30m
           script: |
             set -euo pipefail
             cd /opt/processmap/app
@@ -25,195 +212,159 @@ jobs:
               exit 1
             fi
 
-            # Pull latest source code only, preserve server configs.
-            # tools/ обязателен: Dockerfile (COPY tools/graphify-*) запекает его в образ;
-            # без checkout этого пути на проде остаются протухшие файлы
-            # (audit/prod-stage-divergence-409, 2026-08-30).
-            # Гейт = standalone (architecture/prod-standalone-gateway): официальный nginx,
-            # кастомная сборка gateway (ssl.yml / prod.gateway.yml / Dockerfile.gateway.prod)
-            # в прод-стеке больше не используется (файлы сохранены в репо для rollback-периода).
-            git checkout origin/main -- backend frontend Dockerfile deploy tools \
-              docker-compose.yml docker-compose.prod.yml docker-compose.prod.standalone-gateway.yml
-
-            # Resolve git metadata from origin/main (HEAD may be on a different branch)
-            GIT_SHA=$(git rev-parse origin/main)
-            GIT_REF="main"
-            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-            DEPLOY_FINGERPRINT="processmap-prod-deploy-sha:${GIT_SHA}"
-
-            CURRENT_SHA=$(git rev-parse HEAD)
-            echo "[deploy-prod] current checkout SHA: ${CURRENT_SHA}"
-            echo "[deploy-prod] target SHA: ${GIT_SHA}"
-
-            # Persist build metadata in the prod env file so the API /version endpoint
-            # reports the deployed SHA instead of whatever the local repo HEAD was.
+            DEPLOY_SHA="${{ needs.gates.outputs.deploy_sha }}"
+            REQUESTED_REF="${{ needs.gates.outputs.requested_ref }}"
+            BUILD_TIME="${{ needs.gates.outputs.build_time }}"
+            TS="${{ needs.gates.outputs.ts }}"
+            DEPLOY_FINGERPRINT="processmap-prod-deploy-sha:${DEPLOY_SHA}"
             ENV_FILE="/opt/processmap/env/prod.env"
+            BACKUP_DIR="/opt/processmap/data/prod/backups"
+            REGISTRY="ghcr.io"
+            NAMESPACE="xiaomibelov/processmap_v1"
+
+            echo "[deploy-prod] deploy_sha=${DEPLOY_SHA} ref=${REQUESTED_REF} ts=${TS}"
+
+            # --- checkout на задеплоенный SHA (pristine-gate уже прошёл) ---
+            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            git fetch origin
+            git checkout -f "${DEPLOY_SHA}"
+
+            # --- BUILD-метаданные в prod.env (логика прежнего ручного деплоя) ---
             PREVIOUS_BUILD_ID=$(grep -E '^BUILD_ID=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2- || echo "unknown")
             sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^PREVIOUS_BUILD_ID=/d' "${ENV_FILE}" 2>/dev/null || true
             {
               echo ""
               echo "# Auto-injected by deploy-prod.yml at ${BUILD_TIME}"
-              echo "BUILD_ID=${GIT_SHA}"
+              echo "BUILD_ID=${DEPLOY_SHA}"
               echo "BUILD_TIME=${BUILD_TIME}"
-              echo "BUILD_BRANCH=${GIT_REF}"
+              echo "BUILD_BRANCH=${REQUESTED_REF}"
               echo "BUILD_ENV=prod"
               echo "PREVIOUS_BUILD_ID=${PREVIOUS_BUILD_ID}"
             } >> "${ENV_FILE}"
+            echo "[deploy-prod] env: PREVIOUS_BUILD_ID=${PREVIOUS_BUILD_ID} -> BUILD_ID=${DEPLOY_SHA}"
 
-            # Save current images as rollback point before rebuilding.
-            # Gateway — пиновый официальный образ (nginx:1.27-alpine), rollback-тег не нужен.
-            for img in app-api:latest app-celery-worker:latest app-agent:latest app-notifications:latest app-frontend:latest; do
-              tag="${img##*:}"
-              name="${img%:*}"
-              docker tag "${img}" "${name}:rollback" 2>/dev/null || echo "[deploy-prod] WARN: could not tag ${img} as rollback"
+            # --- Страховка 1/2: бэкап БД (неотключаемый; отдельный approve на restore) ---
+            mkdir -p "${BACKUP_DIR}"
+            DUMP_NAME="pre-pipeline-${TS}.dump"
+            echo "[deploy-prod] pg_dump -Fc -> ${BACKUP_DIR}/${DUMP_NAME}"
+            # Detached-паттерн релиз-контура: pg_dump в фоне внутри контейнера,
+            # poll по маркеру, забор через docker cp.
+            docker exec -d app-postgres-1 sh -c \
+              "pg_dump -U fpc -d processmap -Fc -f /tmp/${DUMP_NAME} && touch /tmp/${DUMP_NAME}.done || touch /tmp/${DUMP_NAME}.fail"
+            DUMP_STATE="running"
+            for attempt in $(seq 1 60); do
+              if docker exec app-postgres-1 sh -c "test -f /tmp/${DUMP_NAME}.done" 2>/dev/null; then
+                DUMP_STATE="done"; break
+              fi
+              if docker exec app-postgres-1 sh -c "test -f /tmp/${DUMP_NAME}.fail" 2>/dev/null; then
+                DUMP_STATE="fail"; break
+              fi
+              sleep 5
             done
+            [ "${DUMP_STATE}" = "done" ] || { echo "ERROR: pg_dump не завершился (state=${DUMP_STATE})" >&2; exit 1; }
+            docker cp "app-postgres-1:/tmp/${DUMP_NAME}" "${BACKUP_DIR}/${DUMP_NAME}"
+            docker exec app-postgres-1 rm -f "/tmp/${DUMP_NAME}" "/tmp/${DUMP_NAME}.done" "/tmp/${DUMP_NAME}.fail"
+            # Верификация дампа: pg_restore --list обязан распарсить оглавление.
+            docker exec -i app-postgres-1 pg_restore --list < "${BACKUP_DIR}/${DUMP_NAME}" > /dev/null \
+              || { echo "ERROR: pg_restore --list не смог прочитать дамп ${BACKUP_DIR}/${DUMP_NAME}" >&2; exit 1; }
+            echo "OK: backup verified (${BACKUP_DIR}/${DUMP_NAME})"
 
-            # Full prod service set. Partial deploy is forbidden: every service must be rebuilt
-            # from the same SHA to avoid split-brain (see audit/prod-deploy-incident-audit).
-            PROD_SERVICES="api gateway celery-worker agent notifications frontend"
+            # --- Страховка 2/2: predeploy-теги образов (единственная достоверная точка «как было») ---
+            for svc in api celery-worker agent notifications frontend; do
+              docker image inspect "app-${svc}:latest" >/dev/null 2>&1 \
+                || { echo "ERROR: app-${svc}:latest не найден — нечего тегировать predeploy" >&2; exit 1; }
+              docker tag "app-${svc}:latest" "app-${svc}:predeploy-${TS}"
+            done
+            # gateway: standalone-стек на pinned nginx:1.27-alpine — тегируем
+            # legacy-имя, только если оно ещё существует на хосте.
+            if docker image inspect processmap-gateway:dev >/dev/null 2>&1; then
+              docker tag processmap-gateway:dev "processmap-gateway:predeploy-${TS}"
+            else
+              echo "[deploy-prod] NOTE: processmap-gateway:dev отсутствует (standalone-gateway pinned nginx — тег не нужен)"
+            fi
+            echo "OK: predeploy tags created (ts=${TS})"
 
-            # Rebuild api, celery-worker, agent, notifications (cached) with backend metadata.
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
+            # --- pull ghcr-образов + retag в app-<svc>:latest ---
+            echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+            for svc in api celery-worker agent notifications frontend; do
+              docker pull "${REGISTRY}/${NAMESPACE}/${svc}:${DEPLOY_SHA}"
+              docker tag "${REGISTRY}/${NAMESPACE}/${svc}:${DEPLOY_SHA}" "app-${svc}:latest"
+            done
+            echo "OK: images pulled and tagged app-<svc>:latest"
+
+            # --- миграции ДО up, новым образом (PLAN §2.5.3) ---
+            ENV_FILE="${ENV_FILE}" "${PWD}/deploy/scripts/prod_migrate.sh" "${REGISTRY}/${NAMESPACE}/api:${DEPLOY_SHA}"
+
+            # --- rag-embedder собирается на хосте (ONNX-экспорт, хост-специфично) ---
+            APP_ENV_FILE="${ENV_FILE}" docker compose \
+              --env-file "${ENV_FILE}" \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
               -f docker-compose.prod.standalone-gateway.yml \
               -p app \
-              build \
-                --build-arg BUILD_ID="${GIT_SHA}" \
-                --build-arg BUILD_TIME="${BUILD_TIME}" \
-                --build-arg BUILD_BRANCH="${GIT_REF}" \
-                --build-arg BUILD_ENV=prod \
-                api celery-worker agent notifications
+              build rag-embedder
 
-            # Rebuild frontend — теперь ОН подаёт трафик прода (standalone gateway
-            # проксирует во frontend:80), свежие статики + fingerprint обязательны.
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
-              -f docker-compose.yml \
-              -f docker-compose.prod.yml \
-              -f docker-compose.prod.standalone-gateway.yml \
-              -p app \
-              build --no-cache \
-                --build-arg VITE_BUILD_ID="${GIT_SHA}" \
-                --build-arg VITE_BUILD_BRANCH="${GIT_REF}" \
-                --build-arg VITE_BUILD_TIME="${BUILD_TIME}" \
-                --build-arg VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}" \
-                --build-arg VITE_DEPLOY_REQUESTED_REF="${GIT_REF}" \
-                --build-arg VITE_DEPLOY_RESOLVED_SHA="${GIT_SHA}" \
-                frontend
-
-            # Remove the old gateway/frontend containers and any attached volumes so stale statics cannot survive.
-            docker compose \
-              --env-file /opt/processmap/env/prod.env \
+            # --- пересоздание контейнеров (полный набор; #2.5.4: rag-embedder
+            # перечислен явно, т.к. --no-deps не стартует depends_on) ---
+            APP_ENV_FILE="${ENV_FILE}" docker compose \
+              --env-file "${ENV_FILE}" \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
               -f docker-compose.prod.standalone-gateway.yml \
               -p app \
               rm -fsv gateway frontend 2>/dev/null || true
-            # Drop any project named volume that could mask /usr/share/nginx/html
             docker volume ls -q | grep '^app_' | xargs -r docker volume rm 2>/dev/null || true
-
-            # Start fresh containers (renew anonymous volumes to pull files from the new image)
-            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
-              --env-file /opt/processmap/env/prod.env \
+            APP_ENV_FILE="${ENV_FILE}" docker compose \
+              --env-file "${ENV_FILE}" \
               -f docker-compose.yml \
               -f docker-compose.prod.yml \
               -f docker-compose.prod.standalone-gateway.yml \
               -p app \
-              up -d --no-deps --force-recreate -V ${PROD_SERVICES}
+              up -d --no-deps --force-recreate -V \
+                api gateway celery-worker agent notifications frontend rag-embedder
 
-            # Freshness proof для не-api сервисов: каждый пересобранный контейнер обязан
-            # бежать на только что собранном образе. Проверка /version ниже покрывает
-            # только api и не заметит stale celery-worker/agent/notifications.
-            echo "[deploy-prod] non-api freshness proof (container image == freshly built)"
+            # --- freshness proof: 5/5 сервисов на свежих образах ---
+            echo "[deploy-prod] freshness proof (container image == fresh app-<svc>:latest)"
             for svc in api celery-worker agent notifications frontend; do
               expected_img="$(docker image inspect "app-${svc}:latest" --format '{{.Id}}' 2>/dev/null || echo missing)"
               actual_img="$(docker inspect "app-${svc}-1" --format '{{.Image}}' 2>/dev/null || echo missing)"
-              echo "[deploy-prod] ${svc}: running=${actual_img} built=${expected_img}"
+              echo "[deploy-prod] ${svc}: running=${actual_img} expected=${expected_img}"
               if [ "${expected_img}" = "missing" ] || [ "${actual_img}" != "${expected_img}" ]; then
-                echo "ERROR: ${svc} container is not running the freshly built image" >&2
+                echo "ERROR: ${svc} runs stale image" >&2
                 exit 1
               fi
             done
-            echo "OK: all prod services run the freshly built images"
+            echo "OK: all prod services run freshly pulled images"
 
-            # Gateway — пиновый официальный образ (без свежей сборки): проверяем
-            # image + валидность конфига вместо сравнения свежесобранного образа.
+            # --- gateway-проверки (standalone pinned nginx) ---
             GATEWAY_IMAGE="$(docker inspect app-gateway-1 --format '{{.Config.Image}}' 2>/dev/null || echo missing)"
             echo "[deploy-prod] gateway: image=${GATEWAY_IMAGE}"
-            if [ "${GATEWAY_IMAGE}" != "nginx:1.27-alpine" ]; then
-              echo "ERROR: gateway runs '${GATEWAY_IMAGE}', expected nginx:1.27-alpine" >&2
-              exit 1
-            fi
+            [ "${GATEWAY_IMAGE}" = "nginx:1.27-alpine" ] || { echo "ERROR: gateway runs '${GATEWAY_IMAGE}', expected nginx:1.27-alpine" >&2; exit 1; }
             docker exec app-gateway-1 nginx -t || { echo "ERROR: gateway nginx -t failed" >&2; exit 1; }
-
-            # Renew-цепочка standalone-gateway обязана стоять на хосте (cron deploy-пользователя).
             crontab -l 2>/dev/null | grep -q 'prod-gateway/certbot-renew.sh' \
               || { echo "ERROR: prod-gateway certbot-renew cron missing (см. deploy/prod-gateway/README.md)" >&2; exit 1; }
             echo "OK: gateway image/config + renew cron verified"
 
-            # Post-deploy freshness proof: poll /version (api стартует не мгновенно —
-            # entrypoint гонит миграции/сиды; 502 первые N секунд — норма, не fail).
-            echo "[deploy-prod] waiting for prod gateway/api to come up (poll up to 180s)..."
-            VERSION_RESPONSE=""
-            LAST_HTTP="000"
-            for attempt in $(seq 1 18); do
-              VERSION_RESPONSE=$(curl -sS -m 10 -w '\n__HTTP__%{http_code}' https://processmap.ru/version 2>&1 || true)
-              LAST_HTTP=$(echo "${VERSION_RESPONSE}" | grep -o '__HTTP__[0-9]*' | tail -1 | sed 's/__HTTP__//')
-              if [ "${LAST_HTTP}" = "200" ]; then break; fi
-              echo "[deploy-prod] /version not ready (http=${LAST_HTTP:-000}, attempt ${attempt}/18) — retry in 10s"
-              sleep 10
-            done
-            echo "=== Prod /version ==="
-            echo "${VERSION_RESPONSE}" | sed 's/__HTTP__[0-9]*//' | head -c 500
-            echo
-            if [ "${LAST_HTTP}" != "200" ]; then
-              echo "ERROR: api unhealthy — /version http=${LAST_HTTP:-000} после 180s ожидания."
-              echo "Проверьте: docker ps -a --filter name=app-api-1 ; docker logs app-api-1 --tail 100"
-              exit 1
-            fi
-            if echo "${VERSION_RESPONSE}" | grep -q "\"commit\":\"${GIT_SHA}\""; then
-              echo "OK: /version commit matches ${GIT_SHA}"
-            else
-              echo "ERROR: /version отвечает 200, но commit != ${GIT_SHA} (запущен старый api-образ?)"
-              exit 1
-            fi
+            # --- post-gates + markdown-summary для $GITHUB_STEP_SUMMARY ---
+            SUMMARY_FILE="${BACKUP_DIR}/last-deploy-summary-${TS}.md" \
+              "${PWD}/deploy/scripts/prod_post_gates.sh" "${DEPLOY_SHA}"
 
-            echo "=== Prod /api/health ==="
-            curl -fsS https://processmap.ru/api/health || echo "ERROR: /api/health unreachable"
-            echo
+            echo "[deploy-prod] done sha=${DEPLOY_SHA} ts=${TS}"
 
-            echo "=== Prod frontend fingerprint ==="
-            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
-            if [ -n "${MAIN_JS}" ]; then
-              FINGERPRINT=$(curl -fsS "https://processmap.ru/${MAIN_JS}" \
-                | grep -oE "processmap-prod-deploy-sha:[a-f0-9]+" \
-                | head -1)
-              echo "${FINGERPRINT}"
-              if echo "${FINGERPRINT}" | grep -q "${GIT_SHA}"; then
-                echo "OK: frontend fingerprint matches ${GIT_SHA}"
-              else
-                echo "ERROR: frontend fingerprint does not match ${GIT_SHA}"
-                exit 1
-              fi
-            else
-              echo "ERROR: could not locate main JS asset"
-              exit 1
-            fi
-
-            echo "[deploy-prod] done"
-
-  verify:
-    name: Post-deploy verify
-    needs: deploy
-    if: always() && needs.deploy.result == 'success'
-    uses: ./.github/workflows/prod-deploy-verify.yml
-    secrets: inherit
-
-  rollback-on-failure:
-    name: Auto-rollback on verify failure
-    needs: verify
-    if: always() && needs.verify.result == 'failure'
-    uses: ./.github/workflows/rollback-prod.yml
-    secrets: inherit
+      - name: Publish deploy summary
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          TS: ${{ needs.gates.outputs.ts }}
+        run: |
+          set -euo pipefail
+          KEY_FILE="$(mktemp)"
+          printf '%s\n' "${PROD_SSH_KEY}" > "${KEY_FILE}"
+          chmod 600 "${KEY_FILE}"
+          ssh -o StrictHostKeyChecking=accept-new -i "${KEY_FILE}" \
+            "${PROD_USER}@${PROD_HOST}" \
+            "cat /opt/processmap/data/prod/backups/last-deploy-summary-${TS}.md" \
+            >> "${GITHUB_STEP_SUMMARY}"
+          rm -f "${KEY_FILE}"
