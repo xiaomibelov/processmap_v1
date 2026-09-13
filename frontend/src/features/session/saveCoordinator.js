@@ -102,6 +102,7 @@ class SaveCoordinator {
    * @param {Function} [config.applyBaseVersion] - mutates the transport payload with a refreshed base
    * @param {Function} [config.onSuccess] - (response, sessionId) => void
    * @param {Function} [config.reconcileConflict] - verifies an already committed write before the conflict gate is armed
+   * @param {Function} [config.reconcileTimeout] - (errorOrResult, sessionId, builtPayload, payload) => reconciled result | null; verifies a possibly committed write after transport timeout / network error (status 0), before the failure path
    * @param {Function} [config.on409] - (response, sessionId) => void
    * @param {Function} [config.onError] - (errorOrResponse, sessionId) => void
    * @param {number} [config.debounceMs]
@@ -125,6 +126,7 @@ class SaveCoordinator {
       applyBaseVersion: typeof config.applyBaseVersion === "function" ? config.applyBaseVersion : null,
       onSuccess: typeof config.onSuccess === "function" ? config.onSuccess : null,
       reconcileConflict: typeof config.reconcileConflict === "function" ? config.reconcileConflict : null,
+      reconcileTimeout: typeof config.reconcileTimeout === "function" ? config.reconcileTimeout : null,
       on409: typeof config.on409 === "function" ? config.on409 : null,
       onError: typeof config.onError === "function" ? config.onError : null,
       debounceMs: Math.max(0, asNumber(config.debounceMs, 300)),
@@ -219,7 +221,8 @@ class SaveCoordinator {
     let timer = null;
     const timeoutPromise = new Promise((resolve) => {
       timer = setTimeout(() => {
-        // Abort the real fetch so the server never receives the request.
+        // Abort прекращает ожидание ответа; запрос мог уже уйти на сервер и
+        // тот мог закоммитить запись — см. reconcileTimeout (L2).
         controller.abort();
         resolve({
           ok: false,
@@ -260,10 +263,15 @@ class SaveCoordinator {
   }
 
   /**
-   * Resolve an unresolved save conflict for a session. Lifts the conflict
-   * gate. With action "overwrite" the tracked CAS base is explicitly adopted
-   * to the conflict's server version — the ONLY place where the tracked base
-   * is replaced with the server version (conscious force, user action only).
+   * Resolve an unresolved save conflict for a session. Semantics (Ф3, L3):
+   * - "refresh" — tracked CAS base adopts the conflict's server version
+   *   (caller re-reads session data) and the gate is lifted;
+   * - "overwrite" — same base adoption + gate lift (conscious force, user
+   *   action only);
+   * - "cancel" — the conflict is NOT deleted: the gate keeps blocking saves
+   *   without touching the transport, so the UI shows the modal again on the
+   *   next save attempt. No 409 loop in the network because the tracked base
+   *   is not corrupted (Ф1).
    *
    * @param {string} sessionId
    * @param {"refresh"|"overwrite"|"cancel"} [action]
@@ -276,7 +284,20 @@ class SaveCoordinator {
     if (!conflict) return { ok: false, error: "no_conflict" };
     const resolvedAction = asText(action) || SAVE_CONFLICT_RESOLUTION.REFRESH;
     const serverVersion = conflict.serverVersion ?? null;
-    if (resolvedAction === SAVE_CONFLICT_RESOLUTION.OVERWRITE && serverVersion !== null) {
+    if (resolvedAction === SAVE_CONFLICT_RESOLUTION.CANCEL) {
+      recordSaveDiagnostic("conflict_resolved", {
+        sid,
+        action: resolvedAction,
+        serverVersion,
+      });
+      this.emit("conflict_resolved", {
+        sessionId: sid,
+        action: resolvedAction,
+        serverVersion,
+      });
+      return { ok: true, action: resolvedAction, serverVersion };
+    }
+    if (serverVersion !== null) {
       setTrackedDiagramStateVersion(sid, serverVersion);
     }
     this.conflicts.delete(sid);
@@ -481,6 +502,13 @@ class SaveCoordinator {
       base: builtPayload.base_diagram_state_version ?? null,
     });
 
+    // Ф1 (fix/save-latency-subprocess-async, L1): rollback history трекера
+    // разрешён только если в ЭТОМ прогоне был собственный bump (успешный
+    // commit). Иначе откат съедал последнюю физически успешную версию
+    // ([7,8] → [7]) → следующий save = гарантированный self-409.
+    let bumpedInRun = false;
+    // Ф2 (L2): reconcileTimeout вызывается максимум один раз на прогон.
+    let reconcileTimeoutAttempted = false;
     let lastResult = null;
     let lastError = null;
 
@@ -501,6 +529,7 @@ class SaveCoordinator {
         const newVersion = pickDiagramStateVersion(successResult);
         if (newVersion !== null) {
           bumpTrackedDiagramStateVersion(sid, newVersion);
+          bumpedInRun = true;
         }
         recordSaveDiagnostic("pipeline_success", {
           sid,
@@ -525,7 +554,9 @@ class SaveCoordinator {
         // ретраить и НЕ путать с конфликтом 409 (конфликт-модал — только 409).
         const deadInfo = noteSessionApiResult(sid, result, `save:${pipelineName}`);
         if (deadInfo) {
-          rollbackTrackedDiagramStateVersion(sid);
+          if (bumpedInRun) {
+            rollbackTrackedDiagramStateVersion(sid);
+          }
           this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "session_not_found" });
           this.emit("session_not_found", { pipeline: pipelineName, sessionId: sid, response: result });
           return result;
@@ -561,11 +592,12 @@ class SaveCoordinator {
             }
           }
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
-          rollbackTrackedDiagramStateVersion(sid);
           const serverVersion = pickServerCurrentVersion(result);
           // P1 fix: tracked-base is NOT silently adopted to the server version.
           // Arm the conflict gate so queued saves/autosave pause until the user
           // resolves the conflict (refresh/overwrite/cancel).
+          // Ф1 (L1): на 409 rollback НЕ выполняется — tracked-base меняется
+          // только через resolveConflict / reconcile (иначе цикл self-409).
           this.conflicts.set(sid, {
             pipeline: pipelineName,
             sessionId: sid,
@@ -606,6 +638,25 @@ class SaveCoordinator {
           return result;
         }
 
+        // Ф2 (L2): throw из транспорта (transport-timeout / network error,
+        // status 0) — abort лишь прекращает ожидание ответа; сервер мог уже
+        // закоммитить запись. Один reconcile-вызов на прогон, до failure-path;
+        // hook вернул {ok:true} → success через completeSuccess (adopt dsv).
+        // Вернувшийся результат {ok:false, status:0} без throw — локальная
+        // ошибка (например, «api unavailable»), reconcile не применяется.
+        if (!reconcileTimeoutAttempted && pipeline.reconcileTimeout && lastError) {
+          reconcileTimeoutAttempted = true;
+          let reconciledTimeout = null;
+          try {
+            reconciledTimeout = await pipeline.reconcileTimeout(lastError, sid, builtPayload, payload);
+          } catch {
+            reconciledTimeout = null;
+          }
+          if (reconciledTimeout?.ok) {
+            return completeSuccess({ ...reconciledTimeout, reconciled: true });
+          }
+        }
+
         const isTimeoutError = lastError && /timeout/i.test(String(lastError?.message || lastError));
         if (attempt < pipeline.retryCount && !isTimeoutError) {
           const delay = Math.min(pipeline.maxRetryDelayMs, pipeline.retryDelayMs * 2 ** attempt);
@@ -615,7 +666,9 @@ class SaveCoordinator {
           continue;
         }
 
-        rollbackTrackedDiagramStateVersion(sid);
+        if (bumpedInRun) {
+          rollbackTrackedDiagramStateVersion(sid);
+        }
         if (pipeline.onError) {
           try {
             pipeline.onError(result, sid, payload);

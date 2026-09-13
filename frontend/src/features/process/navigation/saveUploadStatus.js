@@ -267,6 +267,13 @@ export function normalizeBpmnSaveLifecycleEvent(raw = null) {
         .map((item) => toText(item))
         .filter(Boolean),
     ),
+    // Ф5: async subprocess-sync (FPC_ASYNC_SUBPROCESS_SYNC) — "pending" в ack
+    // canvas-сохранения; failed — прежнее поведение (без pending-индикации).
+    subprocessesSync: toText(payload.subprocesses_sync ?? value.subprocessesSync),
+    subprocessesSyncFailed: (
+      payload.subprocesses_sync_failed === true
+      || value.subprocessesSyncFailed === true
+    ),
   };
 }
 
@@ -323,6 +330,9 @@ export function buildSaveUploadStatusBadge(raw = null) {
     const staleSuffix = staleRetryApplied
       ? (staleRetryAttempts > 0 ? ` (retry ${staleRetryAttempts})` : "")
       : "";
+    // Ф5: проброс флага async subprocess-sync до save-статуса (слот хедера).
+    const subprocessesSync = toText(event.subprocessesSync);
+    const subprocessesSyncFailed = event.subprocessesSyncFailed === true;
     if (staleRetryApplied && staleRetryMetaOnly) {
       return {
         visible: false,
@@ -331,6 +341,8 @@ export function buildSaveUploadStatusBadge(raw = null) {
         title: "",
         state,
         conflict: null,
+        subprocessesSync,
+        subprocessesSyncFailed,
       };
     }
     return {
@@ -344,6 +356,8 @@ export function buildSaveUploadStatusBadge(raw = null) {
         : "Черновик сессии сохранён.",
       state,
       conflict: null,
+      subprocessesSync,
+      subprocessesSyncFailed,
     };
   }
   if (stage === "skipped_unchanged") {

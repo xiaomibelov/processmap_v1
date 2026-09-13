@@ -163,11 +163,18 @@ export function rollbackVersion(sessionId) {
   const entry = store.get(sid);
   if (!entry) return null;
 
-  if (entry.history.length > 1) {
+  const changed = entry.history.length > 1;
+  if (changed) {
     entry.history.pop();
   }
   const current = entry.history.length ? entry.history[entry.history.length - 1] : null;
   recordDiagnostic("tracker_rollback", { sid, version: current });
+  // Ф4 (fix/save-latency-subprocess-async, L10): уведомляем при реальном
+  // изменении (как set/bump) — иначе вторая вкладка живёт с более новой
+  // версией после отката, а adopt-эхо перезапускало бы публикацию по кругу.
+  if (changed) {
+    notifyVersionListeners("rollback", sid, current);
+  }
   return current;
 }
 

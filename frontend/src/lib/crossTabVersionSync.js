@@ -3,7 +3,8 @@
  *
  * Каждая вкладка при set/bump casVersionTracker публикует {sid, version} в
  * BroadcastChannel `pm-cas-versions` (fallback — window "storage" events,
- * если BroadcastChannel недоступен). Принимающая вкладка:
+ * если BroadcastChannel недоступен); rollback публикуется с type="rollback"
+ * — принимающая вкладка adopt'ит downgrade (Ф4/L10). Принимающая вкладка:
  *  - clean (нет несохранённых изменений) → adopt версии в трекер — следующее
  *    сохранение пройдёт без честного 409;
  *  - dirty (есть несохранённые правки) → НЕ трогает CAS-base (сохраняет
@@ -21,12 +22,13 @@
 import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
+  subscribeDiagramVersionChanges,
 } from "./casVersionTracker.js";
 
 export const CHANNEL_NAME = "pm-cas-versions";
 export const PROTOCOL_VERSION = 1;
 
-const MESSAGE_TYPES = new Set(["join", "leave", "here", "version"]);
+const MESSAGE_TYPES = new Set(["join", "leave", "here", "version", "rollback"]);
 
 function normalizeSid(value) {
   return String(value || "").trim();
@@ -55,6 +57,7 @@ export function createCrossTabVersionSync({
   /** @type {Map<string, number>} clientId → количество join (защита от дублей) */
   const peerCounts = new Map();
   let applyingRemote = false;
+  let unsubscribeTrackerChanges = null;
 
   function post(message) {
     if (!channel) return;
@@ -86,16 +89,20 @@ export function createCrossTabVersionSync({
     }
   }
 
-  function handleVersionMessage(message) {
+  function handleVersionMessage(message, { allowDowngrade = false } = {}) {
     if (!bound) return;
     const sid = normalizeSid(message?.sid);
     if (!sid || sid !== bound.sid) return;
     const version = normalizeVersion(message?.version);
     if (version === null) return;
     // CAS-версии монотонны: stale-сообщение (here, отправленное до чужого
-    // save) не должно откатывать локальный трекер назад.
+    // save) не должно откатывать локальный трекер назад. Для type=rollback
+    // downgrade — это и есть смысл сообщения (чужая вкладка откатила base),
+    // поэтому guard инвертируется: откат со stale-версией (>= текущей)
+    // игнорируется.
     const current = getTrackedDiagramStateVersion(sid);
-    if (current !== null && version <= current) return;
+    if (!allowDowngrade && current !== null && version <= current) return;
+    if (allowDowngrade && current !== null && version >= current) return;
     const isDirtyFn = bound.isDirty;
     const dirty = typeof isDirtyFn === "function" ? isDirtyFn() === true : false;
     if (dirty) {
@@ -156,6 +163,11 @@ export function createCrossTabVersionSync({
       handleVersionMessage(message);
       return;
     }
+    // rollback (adopt отката: чужая вкладка откатила tracked base)
+    if (message.type === "rollback") {
+      handleVersionMessage(message, { allowDowngrade: true });
+      return;
+    }
     // version
     handleVersionMessage(message);
   }
@@ -174,6 +186,14 @@ export function createCrossTabVersionSync({
     if (channel && typeof channel === "object") {
       channel.onmessage = (raw) => handleMessage(raw);
     }
+    // Ф4 (fix/save-latency-subprocess-async, L10): автопубликация мутаций
+    // трекера (set/bump/rollback) — единый провод в канал. Ручная подписка
+    // в ProcessStage (publishVersion без типа) остаётся для совместимости:
+    // set/bump дублируются типом "version" (монотонный guard гасит повтор),
+    // rollback идёт только отсюда — с типом "rollback" (adopt downgrade).
+    unsubscribeTrackerChanges = subscribeDiagramVersionChanges((event) => {
+      publishVersion(event.sid, event.version, event.type);
+    });
     post({ type: "join", sid: normalizedSid });
 
     const handlePageHide = () => {
@@ -202,6 +222,14 @@ export function createCrossTabVersionSync({
         // no-op
       }
     }
+    if (typeof unsubscribeTrackerChanges === "function") {
+      try {
+        unsubscribeTrackerChanges();
+      } catch {
+        // no-op
+      }
+      unsubscribeTrackerChanges = null;
+    }
     post({ type: "leave", sid });
     peerCounts.clear();
     if (channel && typeof channel.close === "function") {
@@ -215,13 +243,16 @@ export function createCrossTabVersionSync({
     bound = null;
   }
 
-  function publishVersion(sid, version) {
+  function publishVersion(sid, version, type = "version") {
     if (applyingRemote) return;
     const normalizedSid = normalizeSid(sid);
     const normalizedVersion = normalizeVersion(version);
     if (!normalizedSid || normalizedVersion === null) return;
     if (bound && normalizedSid !== bound.sid) return;
-    post({ type: "version", sid: normalizedSid, version: normalizedVersion });
+    // set/bump/here публикуются как "version"; "rollback" сохраняет тип —
+    // принимающая сторона adopt'ит downgrade только по этому типу.
+    const messageType = type === "rollback" ? "rollback" : "version";
+    post({ type: messageType, sid: normalizedSid, version: normalizedVersion });
   }
 
   return {

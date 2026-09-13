@@ -5734,6 +5734,104 @@ def _storage_save(
             )
 
 
+# Б5 (fix/save-latency-subprocess-async, IMPLEMENTATION Этап 5): white-list
+# колонок field-scoped UPDATE для recompute. Любые другие ключи в ``fields``
+# (включая bpmn_xml / diagram_state_version / bpmn_meta) конструктивно
+# игнорируются — recompute со stale in-memory копией не может откатить чужой
+# CAS-коммит PUT /bpmn (L4).
+_DERIVED_FIELDS_WRITE_COLUMNS: Tuple[str, ...] = (
+    "normalized",
+    "resources",
+    "questions",
+    "mermaid_simple",
+    "mermaid_lanes",
+    "mermaid",
+    "analytics",
+    "version",
+    "updated_at",
+)
+
+
+def _storage_update_derived_fields(
+    self,
+    session_id: str,
+    fields: Dict[str, Any],
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    """Persist ONLY derived (recomputed) session fields — field-scoped UPDATE.
+
+    Owner/org guards и поведение при отсутствии строки — как у
+    :func:`_storage_save` (PermissionError / SessionNotFoundError). Никаких
+    записей в diagram-truth колонки: bpmn_xml, diagram_state_version,
+    bpmn_meta, bpmn_versions, last_write — конструктивно исключены.
+    """
+    _ensure_schema()
+    owner_scope = _scope_user_id(user_id)
+    admin = _scope_is_admin(is_admin)
+    org_scope = _scope_org_id(org_id)
+    sid = str(session_id or "").strip()
+    if not sid:
+        raise ValueError("session id is required")
+    data = fields if isinstance(fields, dict) else {}
+    now = _now_ts()
+    with _connect() as con:
+        existing = con.execute(
+            """
+            SELECT owner_user_id, org_id
+              FROM sessions
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [sid],
+        ).fetchone()
+        if not existing:
+            raise SessionNotFoundError(sid)
+        existing_owner = str(existing["owner_user_id"] or "")
+        existing_org = str(existing["org_id"] or "")
+        if not admin and owner_scope and existing_owner and existing_owner != owner_scope:
+            raise PermissionError("session belongs to another user")
+        if existing_org and org_scope and existing_org != org_scope:
+            raise PermissionError("session belongs to another org")
+        set_clause: List[str] = ["updated_at = :updated_at"]
+        params: Dict[str, Any] = {"id": sid}
+        if "updated_at" in data:
+            params["updated_at"] = int(data.get("updated_at") or 0) or now
+        else:
+            params["updated_at"] = now
+        if "normalized" in data:
+            set_clause.append("normalized_json = :normalized_json")
+            params["normalized_json"] = _json_dumps(data.get("normalized"), {})
+        if "resources" in data:
+            set_clause.append("resources_json = :resources_json")
+            params["resources_json"] = _json_dumps(data.get("resources"), {})
+        if "questions" in data:
+            set_clause.append("questions_json = :questions_json")
+            params["questions_json"] = _json_dumps(data.get("questions"), [])
+        if "mermaid_simple" in data:
+            set_clause.append("mermaid_simple = :mermaid_simple")
+            params["mermaid_simple"] = str(data.get("mermaid_simple") or "")
+        if "mermaid_lanes" in data:
+            set_clause.append("mermaid_lanes = :mermaid_lanes")
+            params["mermaid_lanes"] = str(data.get("mermaid_lanes") or "")
+        if "mermaid" in data:
+            set_clause.append("mermaid = :mermaid")
+            params["mermaid"] = str(data.get("mermaid") or "")
+        if "analytics" in data:
+            set_clause.append("analytics_json = :analytics_json")
+            params["analytics_json"] = _json_dumps(data.get("analytics"), {})
+        if "version" in data:
+            set_clause.append("version = :version")
+            params["version"] = int(data.get("version") or 0)
+        con.execute(
+            "UPDATE sessions SET " + ", ".join(set_clause) + " WHERE id = :id",
+            params,
+        )
+        con.commit()
+
+
 def _storage__enqueue_rag_index_after_version(
     self,
     session_id: str,

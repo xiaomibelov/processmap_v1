@@ -458,3 +458,38 @@ test("saveRaw does NOT adopt tracked base on 409; conflict gate blocks next save
   assert.equal(resolved.ok, true);
   assert.equal(getTrackedVersion("sid_track_rollback"), 9);
 });
+
+test("Ф5: saveRaw passes through subprocesses_sync=pending from PUT /bpmn ack", async () => {
+  window.localStorage.clear();
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "", diagram_state_version: 8 }),
+    apiPutBpmnXml: async () => ({
+      ok: true,
+      status: 200,
+      storedRev: 6,
+      diagramStateVersion: 9,
+      subprocessesSync: "pending",
+    }),
+    apiGetBpmnXml: async () => ({ ok: true, xml: "<bpmn:x/>" }),
+  });
+
+  const saved = await persistence.saveRaw("sid_sync_pending", "<bpmn:x/>", 6, "manual_save");
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.diagramStateVersion, 9);
+  assert.equal(saved.subprocessesSync, "pending");
+});
+
+test("Ф5: saveRaw parity — ack without subprocesses_sync keeps flag empty", async () => {
+  window.localStorage.clear();
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({ bpmn_xml: "", diagram_state_version: 8 }),
+    apiPutBpmnXml: async () => ({ ok: true, status: 200, storedRev: 6, diagramStateVersion: 9 }),
+    apiGetBpmnXml: async () => ({ ok: true, xml: "<bpmn:x/>" }),
+  });
+
+  const saved = await persistence.saveRaw("sid_sync_none", "<bpmn:x/>", 6, "manual_save");
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.subprocessesSync, "");
+});

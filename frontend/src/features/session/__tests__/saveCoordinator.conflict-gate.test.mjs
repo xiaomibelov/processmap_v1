@@ -151,7 +151,7 @@ test("resolveConflict('overwrite') explicitly adopts server base and unblocks sa
   assert.deepEqual(sentBases, [7, 9], "overwrite save must use the explicitly adopted server base");
 });
 
-test("resolveConflict('refresh') lifts gate without adopting tracked base", async () => {
+test("resolveConflict('refresh') adopts server base and lifts gate (Ф3)", async () => {
   const c = createSaveCoordinator();
   setTrackedDiagramStateVersion("s1", 7);
   c.registerPipeline("xml", {
@@ -169,7 +169,11 @@ test("resolveConflict('refresh') lifts gate without adopting tracked base", asyn
   await c.execute("xml", { sessionId: "s1" });
   const resolved = c.resolveConflict("s1", "refresh");
   assert.equal(resolved.ok, true);
-  assert.equal(getTrackedDiagramStateVersion("s1"), 7, "refresh must not adopt server version");
+  assert.equal(
+    getTrackedDiagramStateVersion("s1"),
+    9,
+    "refresh must adopt server version into tracked base (Ф3/L3)",
+  );
   assert.equal(c.getConflict("s1"), null);
 });
 
