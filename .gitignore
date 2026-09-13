@@ -56,6 +56,9 @@ deploy/logs/
 .playwright-mcp/
 
 # Agent artifacts — prevent large auto-generated files from entering git history
+# Audit-контуры: артефакты живут в .planning и зеркалируются в Obsidian
+# (pm-agent-mirror-report.sh) — в git не коммитятся.
+.planning/contours/audit/
 .planning/contours/**/evidence/
 .planning/contours/**/*.png
 .planning/contours/**/RAG_SEARCH_INDEX_*.json
