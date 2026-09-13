@@ -252,10 +252,12 @@ def list_turns(
         rows = con.execute(
             adapt_sql(
                 """
-                SELECT * FROM agent_turns
-                WHERE conversation_id = ? AND org_id = ? AND session_id = ? AND user_id = ?
-                ORDER BY created_at ASC, id ASC
-                LIMIT ?
+                SELECT * FROM (
+                    SELECT * FROM agent_turns
+                    WHERE conversation_id = ? AND org_id = ? AND session_id = ? AND user_id = ?
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
+                ) ORDER BY created_at ASC, id ASC
                 """
             ),
             [conv_id, oid, sid, uid, lim],
