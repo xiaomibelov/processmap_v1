@@ -77,6 +77,15 @@ export default function DiagramToolbarSaveStatusSlot({
       >
         {label}
       </span>
+      {view.subprocessesSyncLabel ? (
+        <span
+          className="min-w-0 max-w-[160px] truncate opacity-80"
+          data-testid="diagram-toolbar-save-status-subprocesses"
+          title="Подпроцессы синхронизируются в фоне."
+        >
+          {view.subprocessesSyncLabel}
+        </span>
+      ) : null}
     </span>
   );
 }

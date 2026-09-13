@@ -8,6 +8,7 @@ import {
   rollbackVersion,
   isValidForSession,
   clearSession,
+  subscribeDiagramVersionChanges,
   __resetForTests,
 } from "./casVersionTracker.js";
 
@@ -116,4 +117,33 @@ test("history ring drops oldest entries after many bumps", () => {
 
   rollbackVersion("sid-1");
   assert.equal(getVersion("sid-1"), 5);
+});
+
+// Ф4 (fix/save-latency-subprocess-async, L10): rollback уведомляет
+// подписчиков cross-tab sync — иначе вторая вкладка живёт с более новой
+// версией после отката. Уведомление ТОЛЬКО при реальном изменении
+// (как set/bump) — иначе adopt во второй вкладке перезапускал бы
+// публикацию по кругу.
+test("rollbackVersion notifies subscribers with rollback event on real change only", () => {
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => events.push(event));
+  try {
+    setVersion("sid-1", 5);
+    bumpVersion("sid-1", 6);
+    events.length = 0;
+
+    rollbackVersion("sid-1");
+    assert.deepEqual(
+      events,
+      [{ type: "rollback", sid: "sid-1", version: 5 }],
+      "listener получает rollback с откаченной версией",
+    );
+
+    // history из одного элемента: изменения нет — события нет
+    events.length = 0;
+    rollbackVersion("sid-1");
+    assert.deepEqual(events, [], "rollback без реального изменения не уведомляет");
+  } finally {
+    unsubscribe();
+  }
 });

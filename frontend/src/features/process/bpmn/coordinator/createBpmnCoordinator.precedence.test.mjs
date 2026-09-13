@@ -763,3 +763,33 @@ test("acceptRemoteXml applies backend xml even when local store rev is newer and
   assert.equal(store.getState().dirty, false);
   assert.equal(loadCalls, 2);
 });
+
+test("Ф5: flushSave propagates subprocesses_sync=pending into SAVE_PERSIST_DONE payload and result", async () => {
+  const store = createStore({ xml: "<bpmn:a/>", rev: 4, dirty: true });
+  const traces = [];
+  const coordinator = createBpmnCoordinator({
+    store,
+    getSessionId: () => "sid_sync_pending",
+    getRuntime: () => ({
+      getStatus: () => ({ ready: true, defs: true, token: 4 }),
+      getXml: async () => ({ ok: true, xml: "<bpmn:b/>", token: 4 }),
+    }),
+    onTrace: (event, payload) => traces.push({ event, payload }),
+    persistence: {
+      saveRaw: async () => ({
+        ok: true,
+        status: 200,
+        storedRev: 5,
+        diagramStateVersion: 9,
+        subprocessesSync: "pending",
+      }),
+    },
+  });
+
+  const saved = await coordinator.flushSave("manual_save");
+
+  assert.equal(saved.ok, true);
+  assert.equal(saved.subprocessesSync, "pending");
+  const doneEvent = traces.find((entry) => entry.event === "SAVE_PERSIST_DONE");
+  assert.equal(doneEvent?.payload?.subprocesses_sync, "pending");
+});

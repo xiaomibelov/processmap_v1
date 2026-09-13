@@ -217,3 +217,54 @@ test("applied badge is a hidden ok badge like persisted", () => {
   assert.equal(badge.state, "saved");
   assert.match(badge.label, /Сессия сохранена/);
 });
+
+// Ф5 (fix/save-latency-subprocess-async, этап 7): async subprocess-sync под
+// флагом FPC_ASYNC_SUBPROCESS_SYNC — backend отдаёт subprocesses_sync:
+// "pending" в ack canvas-сохранения. Индикатор «Подпроцессы
+// синхронизируются…» в save-статусе; импорт-путь (синхронный, ключей нет) не
+// трогаем; subprocesses_sync_failed — прежнее поведение (без pending-индикации).
+test("normalize surfaces subprocesses_sync=pending from PUT /bpmn ack", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_DONE",
+    payload: { sid: "sid_1", status: 200, subprocesses_sync: "pending" },
+  });
+
+  assert.equal(event.stage, "persisted");
+  assert.equal(event.subprocessesSync, "pending");
+  assert.equal(event.subprocessesSyncFailed, false);
+
+  const badge = buildSaveUploadStatusBadge(event);
+  assert.equal(badge.state, "saved");
+  assert.equal(badge.subprocessesSync, "pending");
+  assert.equal(badge.subprocessesSyncFailed, false);
+});
+
+test("badge keeps parity when ack has no subprocesses_sync (sync import path)", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_DONE",
+    payload: { sid: "sid_1", status: 200 },
+  });
+
+  assert.equal(event.subprocessesSync, "");
+  const badge = buildSaveUploadStatusBadge(event);
+  assert.equal(badge.state, "saved");
+  assert.equal(badge.subprocessesSync, "");
+  assert.equal(badge.subprocessesSyncFailed, false);
+});
+
+test("subprocesses_sync_failed=true keeps previous behavior (no pending indicator)", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_DONE",
+    payload: { sid: "sid_1", status: 200, subprocesses_sync_failed: true },
+  });
+
+  assert.equal(event.subprocessesSync, "");
+  assert.equal(event.subprocessesSyncFailed, true);
+
+  const badge = buildSaveUploadStatusBadge(event);
+  // Прежнее поведение: обычный скрытый saved-бейдж, pending-индикатора нет.
+  assert.equal(badge.state, "saved");
+  assert.equal(badge.visible, false);
+  assert.equal(badge.subprocessesSync, "");
+  assert.equal(badge.subprocessesSyncFailed, true);
+});

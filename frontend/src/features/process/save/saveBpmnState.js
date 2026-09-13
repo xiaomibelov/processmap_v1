@@ -2,6 +2,7 @@ import { isLocalSessionId } from "../../../components/process/interview/utils.js
 import { normalizeCamundaExtensionsMap } from "../camunda/camundaExtensions.js";
 import { getVersion as getTrackedDiagramStateVersion } from "../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../session/saveCoordinator.js";
+import { createXmlSaveReconcileTimeout } from "../bpmn/persistence/createBpmnPersistence.js";
 import {
   asObject,
   buildFallbackSessionPatch,
@@ -50,76 +51,87 @@ function withTimeout(promiseFactory, ms, context) {
   });
 }
 
-saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
-  transport: async (sessionId, payload, signal) => {
-    const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
-    if (useFlushSave) {
-      return payload.flushSave(payload.sourceAction, {
-        xmlOverride: payload.xml,
-        baseDiagramStateVersion: payload.baseDiagramStateVersion,
-        sourceAction: payload.sourceAction,
-        bpmnMeta: payload.bpmnMeta,
-        signal,
-      });
-    }
-    if (typeof payload.apiPutBpmnXml === "function") {
-      return payload.apiPutBpmnXml(sessionId, payload.xml, {
-        sourceAction: payload.sourceAction,
-        baseDiagramStateVersion: payload.baseDiagramStateVersion,
-        bpmnMeta: payload.bpmnMeta,
-        signal,
-      });
-    }
-    return { ok: false, status: 0, error: "xml transport unavailable" };
-  },
-  buildPayload: (payload) => payload,
-  getBaseVersion: (sessionId, payload) => {
-    const tracked = getTrackedDiagramStateVersion(sessionId);
-    if (tracked !== null) return tracked;
-    const fromGetter = typeof payload?.getBaseDiagramStateVersion === "function"
-      ? Number(payload.getBaseDiagramStateVersion())
-      : NaN;
-    if (Number.isFinite(fromGetter) && fromGetter >= 0) return Math.round(fromGetter);
-    const fromOption = Number(payload?.baseDiagramStateVersion);
-    if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
-    return null;
-  },
-  applyBaseVersion: (payload, baseVersion) => {
-    payload.baseDiagramStateVersion = baseVersion;
-  },
-  onSuccess: (response, sessionId, payload) => {
-    // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
-    // Only sync the version to external React state here.
-    const version = pickDiagramStateVersion(response);
-    if (version !== null) {
-      try {
-        payload?.rememberDiagramStateVersion?.(version, { sessionId });
-      } catch {
-        // no-op
+/**
+ * Конфиг xml-пайплайна. Фабрика (единый источник конфигурации): прод
+ * регистрирует дефолт из AUTOSAVE_CONFIG, тесты могут переопределить
+ * тайминги/retry без копирования конфига.
+ */
+export function createXmlPipelineConfig(overrides = {}) {
+  return {
+    transport: async (sessionId, payload, signal) => {
+      const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
+      if (useFlushSave) {
+        return payload.flushSave(payload.sourceAction, {
+          xmlOverride: payload.xml,
+          baseDiagramStateVersion: payload.baseDiagramStateVersion,
+          sourceAction: payload.sourceAction,
+          bpmnMeta: payload.bpmnMeta,
+          signal,
+        });
       }
-    }
-  },
-  on409: (response, sessionId, payload) => {
-    // P1: tracked-base НЕ подменяется (conflict gate в saveCoordinator).
-    // Only sync the server version to external React state here.
-    const serverVersion = pickServerCurrentVersionFromError(response);
-    if (serverVersion !== null) {
-      try {
-        payload?.rememberDiagramStateVersion?.(serverVersion, { sessionId });
-      } catch {
-        // no-op
+      if (typeof payload.apiPutBpmnXml === "function") {
+        return payload.apiPutBpmnXml(sessionId, payload.xml, {
+          sourceAction: payload.sourceAction,
+          baseDiagramStateVersion: payload.baseDiagramStateVersion,
+          bpmnMeta: payload.bpmnMeta,
+          signal,
+        });
       }
-    }
-  },
-  onError: () => {
-    // CAS rollback is handled by saveCoordinator._runPipeline.
-  },
-  debounceMs: AUTOSAVE_CONFIG.xmlPipeline.debounceMs,
-  retryCount: AUTOSAVE_CONFIG.xmlPipeline.retryCount,
-  retryDelayMs: AUTOSAVE_CONFIG.xmlPipeline.retryDelayMs,
-  transportTimeoutMs: AUTOSAVE_CONFIG.xmlPipeline.transportTimeoutMs,
-  maxRetryDelayMs: AUTOSAVE_CONFIG.xmlPipeline.maxRetryDelayMs,
-});
+      return { ok: false, status: 0, error: "xml transport unavailable" };
+    },
+    buildPayload: (payload) => payload,
+    reconcileTimeout: createXmlSaveReconcileTimeout(),
+    getBaseVersion: (sessionId, payload) => {
+      const tracked = getTrackedDiagramStateVersion(sessionId);
+      if (tracked !== null) return tracked;
+      const fromGetter = typeof payload?.getBaseDiagramStateVersion === "function"
+        ? Number(payload.getBaseDiagramStateVersion())
+        : NaN;
+      if (Number.isFinite(fromGetter) && fromGetter >= 0) return Math.round(fromGetter);
+      const fromOption = Number(payload?.baseDiagramStateVersion);
+      if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
+      return null;
+    },
+    applyBaseVersion: (payload, baseVersion) => {
+      payload.baseDiagramStateVersion = baseVersion;
+    },
+    onSuccess: (response, sessionId, payload) => {
+      // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
+      // Only sync the version to external React state here.
+      const version = pickDiagramStateVersion(response);
+      if (version !== null) {
+        try {
+          payload?.rememberDiagramStateVersion?.(version, { sessionId });
+        } catch {
+          // no-op
+        }
+      }
+    },
+    on409: (response, sessionId, payload) => {
+      // P1: tracked-base НЕ подменяется (conflict gate в saveCoordinator).
+      // Only sync the server version to external React state here.
+      const serverVersion = pickServerCurrentVersionFromError(response);
+      if (serverVersion !== null) {
+        try {
+          payload?.rememberDiagramStateVersion?.(serverVersion, { sessionId });
+        } catch {
+          // no-op
+        }
+      }
+    },
+    onError: () => {
+      // CAS rollback is handled by saveCoordinator._runPipeline.
+    },
+    debounceMs: AUTOSAVE_CONFIG.xmlPipeline.debounceMs,
+    retryCount: AUTOSAVE_CONFIG.xmlPipeline.retryCount,
+    retryDelayMs: AUTOSAVE_CONFIG.xmlPipeline.retryDelayMs,
+    transportTimeoutMs: AUTOSAVE_CONFIG.xmlPipeline.transportTimeoutMs,
+    maxRetryDelayMs: AUTOSAVE_CONFIG.xmlPipeline.maxRetryDelayMs,
+    ...overrides,
+  };
+}
+
+saveCoordinator.registerPipeline(XML_PIPELINE_NAME, createXmlPipelineConfig());
 
 function sleep(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
@@ -150,6 +162,7 @@ function sleep(ms) {
  * @param {(reason, opts) => Promise<Object>} [options.flushSave] - coordinator flushSave for property operations
  * @param {(sessionId) => Promise<Object>} [options.apiGetSession]
  * @param {(sessionId) => Promise<{ok:boolean, xml?:string}>} [options.apiGetBpmnXml]
+ * @param {(sessionId) => Promise<Object>} [options.apiGetSessionMeta] - Ф2 reconcileTimeout (fallback — lib/api.js)
  * @param {(patch) => void} [options.onSessionSync]
  * @param {(ack) => void} [options.onDurableSaveAck]
  * @param {(ctx) => void} [options.onConflict]
@@ -272,6 +285,8 @@ export async function saveBpmnState(options = {}) {
     useFlushSave: useCoordinatorFlush,
     flushSave: options.flushSave,
     apiPutBpmnXml: options.apiPutBpmnXml,
+    apiGetBpmnXml: options.apiGetBpmnXml,
+    apiGetSessionMeta: options.apiGetSessionMeta,
     getBaseDiagramStateVersion: options.getBaseDiagramStateVersion,
     rememberDiagramStateVersion: options.rememberDiagramStateVersion,
     baseDiagramStateVersion,

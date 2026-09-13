@@ -42,6 +42,29 @@ from .session_recompute import _recompute_session
 
 logger = logging.getLogger(__name__)
 
+# F1 (fix/save-latency-subprocess-async), PLAN v2 §4.1: классы PUT /bpmn.
+# Явный импорт файла — subprocess-sync СИНХРОННО (пользователь ждёт результат
+# импорта, счётчики в ответе сохраняются). Canvas-сохранения (autosave,
+# manual_save, property_* и прочие) — асинхронно, под флагом.
+_SUBPROCESS_SYNC_SOURCE_ACTIONS = frozenset({
+    "bpmn_upload",
+    "import",
+    "import_bpmn",
+    "bpmn_restore",
+    "restore_bpmn_version",
+})
+
+
+def _async_subprocess_sync_enabled() -> bool:
+    """Feature-flag FPC_ASYNC_SUBPROCESS_SYNC (Б4): default 0.
+
+    Включение на stage → замер p95 → default 1 отдельным release-шагом.
+    Откат = выключить флаг.
+    """
+    import os
+
+    return str(os.environ.get("FPC_ASYNC_SUBPROCESS_SYNC", "0") or "").strip() == "1"
+
 
 def _bpmn_meta_with_fresh_camunda_extensions(current_meta: Any, xml_text: str) -> Dict[str, Any]:
     """Replace the BPMN-derived Camunda/Zeebe extension map from XML.
@@ -584,8 +607,59 @@ def get_session_meta(
         "has_session_changes_since_latest_bpmn_version": versions_payload.get("has_session_changes_since_latest_bpmn_version") or False,
         "latest_version": latest_version,
     }
+    # Б3 (F1): счётчики subprocess-sync для async-пути — read-model при чтении,
+    # а НЕ запись в сессионную строку (post-CAS LWW не усугубляем, F2).
+    # Только под флагом: при выключенном async-пути счётчики пишутся
+    # синхронным блоком bpmn_save в bpmn_meta, как раньше.
+    if _async_subprocess_sync_enabled():
+        try:
+            meta.update(_subprocess_counters_read_model(sid))
+        except Exception as exc:
+            logger.warning("get_session_meta: subprocess read-model failed for %s: %s", sid, exc)
     session_cache.set_meta(sid, meta)
     return meta
+
+
+def _subprocess_counters_read_model(session_id: str) -> Dict[str, Any]:
+    """Б3: вычисляемые счётчики subprocess-sync без записи в строку сессии.
+
+    total — число subprocess-элементов в текущем bpmn_xml; created — число
+    живых дочерних сессий, привязанных к этим элементам; has_more — покрытие
+    неполное (sync ещё не догнал). Пустой dict, если subprocess'ов нет
+    (паритет с синхронным путём: «нет ключей — нет подпроцессов»).
+    """
+    from app.services.bpmn_xml_derivatives import get_bpmn_xml_derivatives
+
+    st = get_storage()
+    sess = st.load(session_id, is_admin=True)
+    if sess is None:
+        return {}
+    deriv = get_bpmn_xml_derivatives(str(getattr(sess, "bpmn_xml", "") or ""))
+    if not getattr(deriv, "parseable", False):
+        return {}
+    element_ids = {
+        str(getattr(el, "id", "") or (el.get("id") if isinstance(el, dict) else "") or "").strip()
+        for el in (getattr(deriv, "subprocess_elements", None) or [])
+    }
+    element_ids.discard("")
+    total = len(element_ids)
+    if not total:
+        return {}
+    children = session_repo.list_session_children(session_id, is_admin=True) or []
+    covered = 0
+    for child in children:
+        element_id = str(
+            getattr(child, "element_id_in_parent", None)
+            or (child.get("element_id_in_parent") if isinstance(child, dict) else "")
+            or ""
+        ).strip()
+        if element_id and element_id in element_ids:
+            covered += 1
+    return {
+        "subprocesses_total": total,
+        "subprocesses_created": covered,
+        "subprocesses_has_more": covered < total,
+    }
 
 
 def get_session_graph(
@@ -645,6 +719,49 @@ def bpmn_save(
 
         _deriv = get_bpmn_xml_derivatives(xml)
         parse_ok = _deriv.parseable
+        source_action = str(getattr(inp, "source_action", "") or "").strip().lower()
+        # F1 (PLAN v2 §4.1): canvas-сохранения под флагом уходят в async —
+        # ответ сразу после CAS-commit, sync выполнит celery-задача.
+        # Явный импорт (bpmn_upload/import_bpmn/...) остаётся синхронным.
+        if (
+            parse_ok
+            and _async_subprocess_sync_enabled()
+            and source_action not in _SUBPROCESS_SYNC_SOURCE_ACTIONS
+        ):
+            s_async, oid_async, _scope_async = _lm._legacy_load_session_scoped(session_id, request)
+            has_subprocesses = bool(getattr(_deriv, "subprocess_elements", None) or [])
+            has_children = False
+            if not has_subprocesses:
+                # Синхронный путь в этом случае мог только soft-delete'ить
+                # протухших детей — проверяем, есть ли что удалять.
+                try:
+                    has_children = bool(session_repo.list_session_children(
+                        str(getattr(s_async, "id", "") or session_id),
+                        is_admin=True,
+                    ))
+                except Exception:
+                    has_children = True
+            if has_subprocesses or has_children:
+                out["subprocesses_sync"] = "pending"
+                try:
+                    from app.tasks import sync_subprocesses_task
+
+                    sync_subprocesses_task.delay(
+                        session_id,
+                        org_id=str(getattr(s_async, "org_id", "") or oid_async or ""),
+                    )
+                except Exception as exc:
+                    # Celery/Redis недоступны — НЕ валим сохранение (оно уже
+                    # закоммичено): помечаем отказ async-пути явно.
+                    logger.error(
+                        "bpmn_save_async_subprocess_enqueue_failed: session_id=%s error=%s",
+                        session_id,
+                        exc,
+                        exc_info=True,
+                    )
+                    out["subprocesses_sync_failed"] = True
+                    out["subprocesses_sync_errors"] = 1
+            return out
         if parse_ok:
             s, oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
             if s:
@@ -1061,7 +1178,34 @@ def recompute_session(session_id: str, request: Optional[Request] = None):
     if not sess:
         return {"error": "not found"}
     sess = _recompute_session(sess)
-    get_storage().save(sess)
+    # L4/Б5 (fix/save-latency-subprocess-async): field-scoped write только
+    # derived-полей. Full-row save здесь работал со stale in-memory копией
+    # и молчаливо откатывал bpmn_xml / diagram_state_version чужого
+    # CAS-коммита, если PUT /bpmn прошёл во время рекомпьюта.
+    ctx = _request_context(request)
+    get_storage().update_derived_fields(
+        str(getattr(sess, "id", "") or session_id),
+        {
+            "normalized": getattr(sess, "normalized", {}) or {},
+            "resources": getattr(sess, "resources", {}) or {},
+            "questions": getattr(sess, "questions", []) or [],
+            "mermaid_simple": str(getattr(sess, "mermaid_simple", "") or ""),
+            "mermaid_lanes": str(getattr(sess, "mermaid_lanes", "") or ""),
+            "mermaid": str(getattr(sess, "mermaid", "") or ""),
+            "analytics": getattr(sess, "analytics", {}) or {},
+            "version": int(getattr(sess, "version", 0) or 0),
+        },
+        user_id=ctx.get("user_id"),
+        org_id=ctx.get("org_id"),
+        is_admin=ctx.get("is_admin"),
+    )
+    # Derived-поля попадают в open-session/tldr/meta кэши — инвалидируем,
+    # как соседние write-пути после записи сессии (bpmn_save и др.).
+    _lm._invalidate_session_caches(
+        sess,
+        session_id=str(getattr(sess, "id", "") or session_id),
+        org_id=str(getattr(sess, "org_id", "") or oid or ""),
+    )
     try:
         refresh_analytics_for_session(
             str(getattr(sess, "id", "") or session_id),

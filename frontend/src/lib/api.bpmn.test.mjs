@@ -120,6 +120,58 @@ test("apiPutBpmnXml sends base_diagram_state_version and returns diagramStateVer
   }
 });
 
+test("apiPutBpmnXml exposes subprocesses_sync=pending from backend ack (Ф5)", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      version: 6,
+      diagram_state_version: 9,
+      subprocesses_sync: "pending",
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 6,
+      reason: "manual_save",
+    });
+
+    assert.equal(out.ok, true);
+    assert.equal(out.subprocessesSync, "pending");
+    assert.equal(out.subprocessesSyncFailed, false);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiPutBpmnXml exposes subprocesses_sync_failed from backend ack (Ф5)", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      version: 6,
+      diagram_state_version: 9,
+      subprocesses_sync_failed: true,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const out = await apiPutBpmnXml("sess_1", "<bpmn:definitions/>", {
+      rev: 6,
+      reason: "manual_save",
+    });
+
+    assert.equal(out.ok, true);
+    assert.equal(out.subprocessesSync, "");
+    assert.equal(out.subprocessesSyncFailed, true);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test("apiPutBpmnXml forwards optional bpmn_meta payload through canonical XML boundary", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
