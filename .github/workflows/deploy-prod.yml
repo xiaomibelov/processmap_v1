@@ -201,6 +201,10 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           command_timeout: 30m
+          # GHCR_PULL_TOKEN передаётся на хост только если задан; публичный
+          # репозиторий тянет образы анонимно (см. шаг pull ниже).
+          envs: GHCR_PULL_TOKEN
+          envs_format: export
           script: |
             set -euo pipefail
             cd /opt/processmap/app
@@ -285,7 +289,14 @@ jobs:
             echo "OK: predeploy tags created (ts=${TS})"
 
             # --- pull ghcr-образов + retag в app-<svc>:latest ---
-            echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+            # Репозиторий публичный → пакеты ghcr публичные, anonymous pull штатен.
+            # docker login выполняем только если задан GHCR_PULL_TOKEN (например, при
+            # переводе репозитория в private — тогда секрет обязателен).
+            if [ -n "${GHCR_PULL_TOKEN:-}" ]; then
+              echo "${GHCR_PULL_TOKEN}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+            else
+              echo "[deploy-prod] GHCR_PULL_TOKEN не задан — anonymous pull (публичный репозиторий)"
+            fi
             for svc in api celery-worker agent notifications frontend; do
               docker pull "${REGISTRY}/${NAMESPACE}/${svc}:${DEPLOY_SHA}"
               docker tag "${REGISTRY}/${NAMESPACE}/${svc}:${DEPLOY_SHA}" "app-${svc}:latest"
