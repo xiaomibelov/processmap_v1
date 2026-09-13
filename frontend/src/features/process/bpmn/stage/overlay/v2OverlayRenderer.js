@@ -163,7 +163,7 @@ export function computeSequenceFlowOverlayPlacement(element, blockers = [], view
   return { top, left, width, height };
 }
 
-export function createV2OverlayHost(element, content, expanded = false, placement = null) {
+export function createV2OverlayHost(element, content, expanded = false, placement = null, draft = false) {
   if (typeof document === "undefined") return null;
 
   const isSequenceFlow = Array.isArray(element?.waypoints) && String(element?.type).toLowerCase() === "bpmn:sequenceflow";
@@ -179,6 +179,11 @@ export function createV2OverlayHost(element, content, expanded = false, placemen
   }
   if (expanded) {
     host.classList.add("fpc-overlay-v2-host--expanded");
+  }
+  if (draft) {
+    // F2 unsaved-draft marker (audit overlay-props-ee-time-desync): the card
+    // shows unsaved draft values — distinguish it from the saved state.
+    host.classList.add("fpc-overlay-v2-host--draft");
   }
   host.dataset.fpcElementId = element.id;
   if (displayName) {

@@ -267,6 +267,26 @@
   pointer-events: none;
 }
 
+/* F2 unsaved-draft marker (audit overlay-props-ee-time-desync): the card
+   shows unsaved draft values — dashed accent outline plus a corner dot —
+   until the edit is saved or cancelled. */
+.fpc-overlay-v2-host--draft .fpc-overlay-v2-badge {
+  outline: 1.5px dashed var(--fpc-warning-accent, #d97706);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+.fpc-overlay-v2-host--draft .fpc-overlay-v2-badge::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fpc-warning-accent, #d97706);
+}
+
 .fpc-overlay-v2-badge {
   position: absolute;
   left: 50%;

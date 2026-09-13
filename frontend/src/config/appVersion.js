@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.143",
+  currentVersion: "v1.0.144",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.144",
+      changes: [
+        "V2-оверлей выбранного элемента показывает несохранённый черновик свойств (синхронно с панелью «Свойства»).",
+        "На карточке V2-оверлея с несохранёнными правками появляется индикатор «не сохранено».",
+      ],
+    },
     {
       version: "v1.0.143",
       changes: [
