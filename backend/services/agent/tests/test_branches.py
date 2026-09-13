@@ -173,8 +173,8 @@ def test_doc_qa_branch_with_results(admin_token, session_with_steps, mock_projec
         fake_rag.return_value = {
             "ok": True,
             "results": [
-                {"chunk": "Отрывок 1", "score": 0.9},
-                {"chunk": "Отрывок 2", "score": 0.8},
+                {"chunk_id": "c1", "score": 0.9, "chunk_text": "Отрывок 1"},
+                {"chunk_id": "c2", "score": 0.8, "chunk_text": "Отрывок 2"},
             ],
         }
         fake_complete.return_value = {
@@ -200,6 +200,9 @@ def test_doc_qa_branch_with_results(admin_token, session_with_steps, mock_projec
     assert body["action"] == "doc_qa"
     assert "Ответ из документации" in body["message"]
     fake_complete.assert_called_once()
+    sent_prompt = fake_complete.call_args.kwargs["payload"]["input"]
+    assert "Отрывок 1" in sent_prompt
+    assert "Отрывок 2" in sent_prompt
 
 
 def test_doc_qa_branch_empty_rag_degrades_to_free_answer(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
@@ -234,7 +237,7 @@ def test_doc_qa_branch_searches_current_session_first(admin_token, session_with_
 
         def _side_effect(q, session_id, token, **kwargs):
             if kwargs.get("source_type") == "bpmn_xml":
-                return {"ok": True, "results": [{"chunk": "Шаг из текущей сессии", "score": 0.9}]}
+                return {"ok": True, "results": [{"chunk_id": "c1", "score": 0.9, "chunk_text": "Шаг из текущей сессии"}]}
             return {"ok": True, "results": []}
 
         fake_rag.side_effect = _side_effect
@@ -263,6 +266,8 @@ def test_doc_qa_branch_searches_current_session_first(admin_token, session_with_
     calls = fake_rag.call_args_list
     assert calls[0].kwargs.get("source_type") == "bpmn_xml"
     assert calls[0].args[1] == session_with_steps
+    sent_prompt = fake_complete.call_args.kwargs["payload"]["input"]
+    assert "Шаг из текущей сессии" in sent_prompt
 
 
 def test_structured_fact_qa_branch_uses_cheap_model_class(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
