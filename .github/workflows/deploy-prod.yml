@@ -22,12 +22,13 @@ env:
   IMAGE_NAMESPACE: xiaomibelov/processmap_v1
 
 jobs:
-  # Fail-fast гейты (PLAN §2.2) ДО любых изменений на хосте. Approve-гейт
-  # environment: prod — регламентный approve владельца: job не стартует без него.
+  # Fail-fast гейты (PLAN §2.2) ДО любых изменений на хосте. Job строго
+  # read-only (git status, alembic heads, curl, df, crontab -l) — environment-гейт
+  # не требуется (раньше был: двойной approve на run, факт T1 2026-09-13).
+  # Регламентный approve владельца = гейт job'а deploy (environment: prod).
   gates:
     name: Preflight gates on prod host
     runs-on: ubuntu-latest
-    environment: prod
     outputs:
       requested_ref: ${{ steps.resolve.outputs.requested_ref }}
       deploy_sha: ${{ steps.resolve.outputs.deploy_sha }}
@@ -194,6 +195,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     steps:
+      # Без checkout в этом job workspace пуст — шаг «Upload pipeline scripts»
+      # не найдёт локальные deploy/scripts/*.sh для scp (факт T1 2026-09-13,
+      # run 34782475340: «scp: stat local … No such file or directory»).
+      - name: Checkout source
+        uses: actions/checkout@v4
+
       # Скрипты пайплайна поставляются из checkout CI (реф workflow = main),
       # а не из checkout целевого SHA на хосте: репетиция на SHA, предшествующем
       # #966, иначе не находит deploy/scripts/prod_migrate.sh на хосте
