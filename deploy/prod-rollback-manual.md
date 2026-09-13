@@ -1,6 +1,7 @@
 # Ручной откат prod ProcessMap (runbook)
 
-> Статус: заменяет workflow `.github/workflows/rollback-prod.yml` (deprecated, см. шапку workflow).
+> **Штатный путь отката — workflow `.github/workflows/rollback-prod.yml`** (workflow_dispatch, input `predeploy_ts` из summary деплоя, тот же approve-гейт environment `prod`). Этот runbook — fallback при недоступности GitHub Actions.
+> Статус: заменяет deprecated-реализацию workflow (см. git-историю rollback-prod.yml).
 > Основание: аудит PROD 2026-09-10, PLAN-4 §1.5 и «План отката» §2.
 > Инструмент отката кода: `/opt/processmap/bin/processmap-rollback-manual.sh` на сервере `deploy@45.87.104.69`.
 > **Каждый шаг — только после отдельного approve владельца. Само окно отката не открывается этим документом.**
