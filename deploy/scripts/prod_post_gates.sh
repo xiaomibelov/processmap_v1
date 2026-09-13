@@ -27,6 +27,21 @@ sha_eq() {
 
 PREVIOUS_BUILD_ID="$(grep -E '^PREVIOUS_BUILD_ID=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2- || echo unknown)"
 
+echo "=== [warmup] ожидание /api/health 200 (до 300s) ==="
+# Факт T1 (run 34783078653, 2026-09-13): gate 1 получил 502 через 1с после up —
+# api entrypoint гонит миграции+сиды ДО uvicorn, 502 первые секунды штатны
+# (ручной эталон 13.09 ждал /version до 240s перед гейтами).
+WARM=0
+HW=000
+until [ "${WARM}" -ge 300 ]; do
+  HW="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "${BASE}/api/health" 2>/dev/null || echo 000)"
+  [ "${HW}" = "200" ] && break
+  sleep 10
+  WARM=$((WARM+10))
+done
+[ "${HW}" = "200" ] || fail "/api/health не поднялся за 300s (последний http=${HW})"
+echo "OK: /api/health 200 (warmup ${WARM}s)"
+
 echo "=== [post-gate 1/6] ${BASE}/api/health: 200 и не degraded ==="
 HEALTH_HTTP="$(curl -sS -m 20 -o /tmp/prod_post_health.json -w '%{http_code}' "${BASE}/api/health" 2>/dev/null || echo 000)"
 [ "${HEALTH_HTTP}" = "200" ] || fail "/api/health http=${HEALTH_HTTP}"
@@ -44,7 +59,13 @@ sha_eq "${SERVED_COMMIT}" "${SHA}" || fail "/version commit=${SERVED_COMMIT} != 
 echo "OK: /version совпадает"
 
 echo "=== [post-gate 3/6] ${BASE}/agent/version commit == ${SHA} ==="
-AGENT_JSON="$(curl -fsS -m 20 "${BASE}/agent/version" || fail "/agent/version недоступен")"
+AGENT_JSON=""
+for attempt in $(seq 1 12); do
+  AGENT_JSON="$(curl -fsS -m 20 "${BASE}/agent/version" 2>/dev/null || true)"
+  [ -n "${AGENT_JSON}" ] && break
+  sleep 5
+done
+[ -n "${AGENT_JSON}" ] || fail "/agent/version недоступен после 60s ожидания"
 AGENT_COMMIT="$(printf '%s' "${AGENT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("commit",""))' || true)"
 echo "served=${AGENT_COMMIT}"
 sha_eq "${AGENT_COMMIT}" "${SHA}" || fail "/agent/version commit=${AGENT_COMMIT} != ${SHA}"
