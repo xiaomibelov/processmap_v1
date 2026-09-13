@@ -11,6 +11,18 @@ import { asArray, asObject, asText } from "../../process/bpmn/stage/overlay/over
 // the draft holds unsaved edits; the marker clears itself after a successful
 // save (bpmn_meta converges to the draft) or after cancel (the draft dispatch
 // reverts to the saved values).
+//
+// displayName is stripped from both sides before the comparison: it is a
+// DERIVED, never-persisted field, and the two previews are built with
+// different operationKey availability (the sidebar hook knows the element's
+// operation key, the App-side rebuild does not), so including it caused
+// false-positive markers on operation elements (review
+// overlay-props-ee-time-desync, blocker). User edits to a manual
+// `display_name` PROPERTY still surface through the row items.
+function withoutDisplayName(preview) {
+  return preview && typeof preview === "object" ? { ...preview, displayName: "" } : preview;
+}
+
 export function resolvePropertiesOverlayDraftIndicator({ draftPreview, metaExtensionsByElementId, hiddenFields = null } = {}) {
   const draft = asObject(draftPreview);
   const elementId = asText(draft?.elementId);
@@ -24,7 +36,7 @@ export function resolvePropertiesOverlayDraftIndicator({ draftPreview, metaExten
     showPropertiesOverlay: true,
     hiddenFields,
   });
-  const draftSig = buildPropertiesOverlayPreviewSignature(draft);
-  const savedSig = buildPropertiesOverlayPreviewSignature(savedPreview);
+  const draftSig = buildPropertiesOverlayPreviewSignature(withoutDisplayName(draft));
+  const savedSig = buildPropertiesOverlayPreviewSignature(withoutDisplayName(savedPreview));
   return draftSig !== savedSig ? elementId : "";
 }

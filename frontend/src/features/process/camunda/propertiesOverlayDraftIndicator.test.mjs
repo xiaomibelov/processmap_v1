@@ -68,3 +68,47 @@ test("indicator: disabled/empty draft preview -> empty", () => {
   });
   assert.equal(idNull, "");
 });
+
+// Review blocker (review/overlay-props-ee-time-desync): the hook builds the
+// draft preview WITH operationKey (template displayName like «Открыть …»),
+// while the App-side rebuild runs WITHOUT it (generic fallback). displayName
+// is a derived, never-persisted field — it must not affect the comparison.
+function operationState(containerRef) {
+  return {
+    properties: {
+      extensionProperties: [
+        { id: "p1", name: "container_ref", value: containerRef },
+      ],
+      extensionListeners: [],
+    },
+    preservedExtensionElements: [],
+  };
+}
+
+function operationDraftPreview(containerRef) {
+  return buildPropertiesOverlayPreview({
+    elementId: "T1",
+    extensionStateRaw: operationState(containerRef),
+    operationKey: "open_container",
+    operationLabel: "Открыть",
+    showPropertiesOverlay: true,
+  });
+}
+
+test("indicator: operationKey-derived displayName does NOT false-positive (no edits)", () => {
+  const id = resolvePropertiesOverlayDraftIndicator({
+    draftPreview: operationDraftPreview("Котёл"),
+    metaExtensionsByElementId: { T1: operationState("Котёл") },
+    hiddenFields: null,
+  });
+  assert.equal(id, "");
+});
+
+test("indicator: real field edit with operation key still detected", () => {
+  const id = resolvePropertiesOverlayDraftIndicator({
+    draftPreview: operationDraftPreview("Цех"),
+    metaExtensionsByElementId: { T1: operationState("Котёл") },
+    hiddenFields: null,
+  });
+  assert.equal(id, "T1");
+});
