@@ -1,0 +1,38 @@
+{
+  "contour": "fix/rag-retrieval-p0-pack-v1",
+  "type": "fix",
+  "created_at": "2026-09-13",
+  "baseline": "origin/main = 26bbab34",
+  "worktree": "p0-work-worktrees/fix-rag-retrieval-p0-pack-v1",
+  "role": "executor",
+  "phase": "EXECUTION_DONE",
+  "bugs": [
+    {
+      "id": "doc-qa-empty-excerpts",
+      "commit": "3f067675",
+      "status": "GREEN",
+      "files": [
+        "backend/services/agent/memory/prompt_builder.py",
+        "backend/services/agent/tests/test_prompt_builder.py",
+        "backend/services/agent/tests/test_branches.py"
+      ]
+    },
+    {
+      "id": "agent-history-last-n",
+      "commit": "c93b9714",
+      "status": "GREEN",
+      "files": [
+        "backend/services/agent/memory/memory_store.py",
+        "backend/app/agent/memory_store.py",
+        "backend/services/agent/tests/test_memory_store_turns.py"
+      ]
+    }
+  ],
+  "regression": {
+    "agent_svc_tests": "151 passed, 1 skipped, 1 pre-existing failure (test_measurement_baseline TypeError conversation_summary)",
+    "monolith_agent_llm3": "20 passed (test_agent_chat_contract, test_agent_memory, test_llm_schema_assistant, test_processman_agent_prompt_v3_seed)"
+  },
+  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/965",
+  "merge": "awaiting owner approve",
+  "obsidian_mirror": "project-atlas/ProcessMap/AgentReports/fix/rag-retrieval-p0-pack-v1/EXEC_REPORT.md (manual, pm-agent-mirror-report.sh requires /opt/processmap-test)"
+}
