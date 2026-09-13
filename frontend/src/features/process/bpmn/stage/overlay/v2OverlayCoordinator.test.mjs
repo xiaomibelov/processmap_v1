@@ -239,3 +239,39 @@ test("coordinator mountFromBpmn drops auto card when every field is hidden, keep
   const elementIds = inst._overlays.store.map((entry) => entry.elementId).sort();
   assert.deepEqual(elementIds, ["T2"], "fully-hidden auto card dropped; name-only card kept");
 });
+
+test("coordinator renders draft indicator class while draftIndicatorRef matches element", () => {
+  setupMockDom();
+  const inst = fakeInst({ elements: [fakeElement("T1", "Task")] });
+  const previewMapRef = {
+    current: {
+      T1: { enabled: true, elementId: "T1", items: [{ key: "ee_time", label: "ee_time", value: "7" }] },
+    },
+  };
+  const draftIndicatorRef = { current: "T1" };
+  const coordinator = createV2OverlayCoordinator({
+    enabledRef: { current: true },
+    expandedRef: { current: false },
+    useExtensionOverlaysRef: { current: true },
+    previewMapRef,
+    draftIndicatorRef,
+  });
+  coordinator.mount(inst, "editor");
+  assert.equal(inst._overlays.store.length, 1);
+  assert.ok(
+    inst._overlays.store[0].html.classList.contains("fpc-overlay-v2-host--draft"),
+    "host must carry the draft indicator class while the draft is unsaved",
+  );
+
+  // Indicator clears (save/cancel): flipping the ref plus a content change re-renders the host.
+  draftIndicatorRef.current = "";
+  previewMapRef.current = {
+    T1: { enabled: true, elementId: "T1", items: [{ key: "ee_time", label: "ee_time", value: "5" }] },
+  };
+  coordinator.mount(inst, "editor");
+  assert.equal(inst._overlays.store.length, 1);
+  assert.ok(
+    !inst._overlays.store[0].html.classList.contains("fpc-overlay-v2-host--draft"),
+    "draft indicator class must be removed after save/cancel",
+  );
+});

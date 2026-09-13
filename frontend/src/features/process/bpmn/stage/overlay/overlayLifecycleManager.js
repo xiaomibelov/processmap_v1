@@ -123,7 +123,7 @@ function uninstallOverlayBadgeTooltipListener() {
   overlayBadgeTooltipHandler = null;
 }
 
-export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlaysRef, propertyPreviewMapRef, hiddenFieldsRef }) {
+export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlaysRef, propertyPreviewMapRef, hiddenFieldsRef, draftIndicatorRef }) {
   // Backward-compatible facade over the decomposed coordinator.
   return createV2OverlayCoordinator({
     enabledRef,
@@ -131,6 +131,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
     useExtensionOverlaysRef,
     previewMapRef: propertyPreviewMapRef,
     hiddenFieldsRef,
+    draftIndicatorRef,
   });
 }
 

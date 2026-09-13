@@ -144,6 +144,7 @@ export default function AppShell({
   selectedPropertiesOverlayPreview,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  propertiesOverlayDraftElementId = "",
   overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
@@ -426,6 +427,7 @@ export default function AppShell({
               selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
               propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
               propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+              propertiesOverlayDraftElementId={propertiesOverlayDraftElementId}
               overlayHiddenFields={overlayHiddenFields}
               v2OverlaysEnabled={v2OverlaysEnabled}
               v2OverlaysExpanded={v2OverlaysExpanded}

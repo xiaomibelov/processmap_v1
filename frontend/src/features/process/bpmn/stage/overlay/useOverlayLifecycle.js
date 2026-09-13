@@ -16,6 +16,7 @@ export function useOverlayLifecycle({
   useExtensionOverlays,
   propertyPreviewMapRef,
   hiddenFieldsRef,
+  draftIndicatorRef,
 }) {
   const useExtensionOverlaysRef = useRef(useExtensionOverlays);
   useExtensionOverlaysRef.current = useExtensionOverlays;
@@ -29,6 +30,7 @@ export function useOverlayLifecycle({
       useExtensionOverlaysRef,
       propertyPreviewMapRef,
       hiddenFieldsRef,
+      draftIndicatorRef,
     });
   }
 
