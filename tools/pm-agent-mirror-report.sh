@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/opt/processmap-test"
-VAULT="/srv/obsidian/project-atlas"
+# Пути по умолчанию — серверные. На локальной машине переопределяются env:
+#   ROOT=/path/to/repo VAULT=/path/to/obsidian-vault ./tools/pm-agent-mirror-report.sh <contour> [stage]
+ROOT="${PM_MIRROR_ROOT:-/opt/processmap-test}"
+VAULT="${PM_MIRROR_VAULT:-/srv/obsidian/project-atlas}"
 CID="${1:?Usage: pm-agent-mirror-report.sh <contour-id> [stage]}"
 STAGE="${2:-manual}"
 SRC="$ROOT/.planning/contours/$CID"
@@ -95,7 +97,7 @@ done
   echo
   echo "## Files"
   echo
-  find "$DEST" -maxdepth 1 -type f -printf "- %f\n" | sort
+  for f in "$DEST"/*; do [ -f "$f" ] && echo "- $(basename "$f")"; done | sort
 } > "$DEST/INDEX.md"
 
 # Stable marker for sync/debug.
