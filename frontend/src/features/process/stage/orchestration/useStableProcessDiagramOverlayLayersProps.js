@@ -92,6 +92,7 @@ const BPMN_INPUT_KEYS = [
   "rememberDiagramStateVersion",
   "propertiesOverlayAlwaysEnabled",
   "propertiesOverlayAlwaysPreviewByElementId",
+  "propertiesOverlayDraftElementId",
   "overlayHiddenFields",
   "queueDiagramMutation",
   "v2OverlaysEnabled",
