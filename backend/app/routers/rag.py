@@ -12,6 +12,7 @@ from ..ai.process_projection import build_process_projection, projection_digest
 from ..legacy.request_context import request_active_org_id, require_authenticated_user
 from ..glossary import load_glossary
 from ..rag.indexer import delete_document, index_document
+from ..rag.metadata import PROCESS_LAYER_VALUES, build_chunk_metadata
 from ..rag.search import BM25Index, fuse_rrf, rank_by_vector
 from ..rag.storage_rag import get_rag_embeddings, list_rag_chunks, upsert_rag_source_status
 from ..services.org_workspace import require_org_member_for_enterprise
@@ -137,11 +138,29 @@ def rag_search(
     top_k: Optional[int] = Query(default=None, ge=1, le=_MAX_TOP_K),
     source_type: Optional[str] = Query(default=None),
     session_id: Optional[str] = Query(default=None),
+    process_layer: Optional[str] = Query(default=None, description="Filter by process layer: as_is|to_be"),
     min_score: Optional[float] = Query(default=None, ge=0.0),
 ) -> Dict[str, Any]:
     require_authenticated_user(request)
     org_id = request_active_org_id(request)
     require_org_member_for_enterprise(request, org_id)
+
+    # При прямом вызове функции (тесты) непереданный Query-параметр приходит
+    # как объект Query(default) — трактуем как «не задан».
+    if process_layer is not None and not isinstance(process_layer, str):
+        process_layer = None
+    process_layer = _text(process_layer)
+    if process_layer and process_layer not in PROCESS_LAYER_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_process_layer",
+                "allowed": list(PROCESS_LAYER_VALUES),
+                "received": process_layer,
+            },
+        )
+    if not process_layer:
+        process_layer = None
 
     settings = get_rag_settings(org_id)
 
@@ -194,6 +213,8 @@ def rag_search(
         if source_type and _text(meta.get("source_type")) != _text(source_type):
             continue
         if session_id and _text(meta.get("source_id")) != _text(session_id):
+            continue
+        if process_layer and _text(meta.get("process_layer")) != process_layer:
             continue
         results.append({
             "chunk_id": r["chunk_id"],
@@ -267,18 +288,18 @@ def rag_index(inp: RagIndexIn, request: Request) -> Dict[str, Any]:
     if session is None:
         raise HTTPException(status_code=404, detail="not_found")
 
-    metadata = {
-        "source_type": source_type,
-        "source_id": session_id,
-        "session_id": session_id,
-        "session_title": _text(getattr(session, "title", "")),
-    }
+    metadata = build_chunk_metadata(
+        source_type=source_type,
+        source_id=session_id,
+        session=session if source_type == "bpmn_xml" else None,
+    )
     source_version = None
 
     if source_type == "bpmn_xml":
         content = _text(getattr(session, "bpmn_xml", ""))
         source_version = int(getattr(session, "bpmn_xml_version", 0) or 0) or None
         metadata["projection_digest"] = projection_digest(build_process_projection(session))
+        metadata["diagram_state_version"] = int(getattr(session, "diagram_state_version", 0) or 0)
     elif source_type == "product_action":
         interview = _as_dict(getattr(session, "interview", {}))
         analysis = _as_dict(interview.get("analysis"))
@@ -359,14 +380,11 @@ def rag_index_product_actions(inp: ProductActionsRagIndexIn, request: Request) -
 
         action_hash = _stable_json_hash(action)
         rag_source_id = f"{session_id}:{action_id}"
-        metadata = {
-            "source_type": "product_action",
-            "source_id": session_id,
-            "session_id": session_id,
-            "session_title": _text(getattr(session, "title", "")),
-            "action_id": action_id,
-            "action_content_hash": action_hash,
-        }
+        metadata = build_chunk_metadata(
+            source_type="product_action",
+            source_id=session_id,
+            extra={"action_id": action_id, "action_content_hash": action_hash},
+        )
 
         if inp.force:
             from ..rag.storage_rag import get_rag_document_by_source
@@ -454,7 +472,7 @@ def rag_index_all(inp: RagIndexAllIn, request: Request) -> Dict[str, Any]:
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT id, title, bpmn_xml, bpmn_xml_version
+            SELECT id, title, bpmn_xml, bpmn_xml_version, process_layer
               FROM sessions
              WHERE org_id = ?
                AND bpmn_xml IS NOT NULL
@@ -483,13 +501,17 @@ def rag_index_all(inp: RagIndexAllIn, request: Request) -> Dict[str, Any]:
             type("Session", (), {"nodes": [], "edges": [], "bpmn_xml": xml, "id": sid, "version": 0})()
         )
         digest = projection_digest(projection)
-        metadata = {
-            "source_type": "bpmn_xml",
-            "source_id": sid,
-            "session_id": sid,
-            "session_title": title,
-            "projection_digest": digest,
-        }
+        metadata = build_chunk_metadata(
+            source_type="bpmn_xml",
+            source_id=sid,
+            session={
+                "id": sid,
+                "title": title,
+                "process_layer": row["process_layer"] if "process_layer" in row.keys() else "as_is",
+            },
+            projection_digest=digest,
+            diagram_state_version=int(row["bpmn_xml_version"] or 0) or None,
+        )
 
         if inp.force:
             from ..rag.storage_rag import get_rag_document_by_source
@@ -644,7 +666,7 @@ def rag_index_dictionaries(inp: RagIndexDictionariesIn, request: Request) -> Dic
         source_type="property_dictionary",
         source_id="system",
         content=system_rows,
-        metadata={"source_type": "property_dictionary", "source_id": "system"},
+        metadata=build_chunk_metadata(source_type="property_dictionary", source_id="system"),
         source_version=None,
     )
     org_result = index_document(
@@ -652,7 +674,7 @@ def rag_index_dictionaries(inp: RagIndexDictionariesIn, request: Request) -> Dic
         source_type="property_dictionary",
         source_id="org",
         content=org_rows,
-        metadata={"source_type": "property_dictionary", "source_id": "org"},
+        metadata=build_chunk_metadata(source_type="property_dictionary", source_id="org"),
         source_version=None,
     )
     results["property_dictionary"] = {
@@ -672,7 +694,7 @@ def rag_index_dictionaries(inp: RagIndexDictionariesIn, request: Request) -> Dic
         source_type="operation_catalog",
         source_id="operation_catalog",
         content=operations,
-        metadata={"source_type": "operation_catalog", "source_id": "operation_catalog"},
+        metadata=build_chunk_metadata(source_type="operation_catalog", source_id="operation_catalog"),
         source_version=None,
     )
     results["operation_catalog"] = {
@@ -693,7 +715,7 @@ def rag_index_dictionaries(inp: RagIndexDictionariesIn, request: Request) -> Dic
         source_type="glossary",
         source_id="glossary",
         content=glossary,
-        metadata={"source_type": "glossary", "source_id": "glossary"},
+        metadata=build_chunk_metadata(source_type="glossary", source_id="glossary"),
         source_version=glossary.get("version"),
     )
     results["glossary"] = {
@@ -707,3 +729,28 @@ def rag_index_dictionaries(inp: RagIndexDictionariesIn, request: Request) -> Dic
         "org_id": org_id,
         "results": results,
     }
+
+
+class RagBackfillMetadataIn(BaseModel):
+    org_id: Optional[str] = Field(default=None, description="Target org (defaults to admin context org)")
+
+
+@router.post("/api/rag/admin/backfill-metadata")
+def rag_admin_backfill_metadata(inp: RagBackfillMetadataIn, request: Request) -> Dict[str, Any]:
+    """Admin-only: поставить Celery-таску backfill_rag_metadata(org_id).
+
+    Идемпотентное additive-дополнение metadata_json bpmn_xml-чанков полями
+    process_layer/session_title (источник истины — sessions.process_layer).
+    Один активный прогон на org (Redis-lock внутри таски).
+    """
+    _uid, _is_admin, default_org_id, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+
+    org_id = _text(inp.org_id) or _text(default_org_id) or "org_default"
+
+    from ..rag_tasks import backfill_rag_metadata
+
+    async_result = backfill_rag_metadata.delay(org_id)
+    logger.info("rag: backfill_rag_metadata enqueued for org=%s task=%s", org_id, async_result.id)
+    return {"ok": True, "org_id": org_id, "task_id": async_result.id}

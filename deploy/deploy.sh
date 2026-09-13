@@ -60,7 +60,7 @@ fi
 # падении (set -e): нельзя деплоить виду успешного обновления со
 # старым агентом. Health-ожидание agent остаётся не фатальным — даём
 # шанс стартовать с WARNING, но собрать обязаны.
-docker compose build --no-cache agent notifications celery-worker
+docker compose build --no-cache agent notifications celery-worker celery-beat
 
 # 5. Deprecate old running containers (rename so compose can create new ones)
 deprecate_old() {
@@ -79,6 +79,7 @@ deprecate_old() {
 deprecate_old api
 deprecate_old frontend
 deprecate_old celery-worker
+deprecate_old celery-beat
 
 # 6. Start new containers
 # NB: миграции БД + сиды — в entrypoint api-контейнера (backend/docker-entrypoint.sh),
@@ -86,7 +87,7 @@ deprecate_old celery-worker
 # `alembic -c backend/alembic.ini` не работает (в ini placeholder fpc:***@postgres).
 # agent/notifications/celery-worker включены в up: иначе они теряются при редеплое
 # (раньше поднимались ручным `docker compose up -d`).
-docker compose up -d --build api frontend agent notifications celery-worker
+docker compose up -d --build api frontend agent notifications celery-worker celery-beat
 
 # 7. Healthcheck: wait for /version 200
 HEALTH_URL="http://localhost:${HOST_PORT:-8011}/version"
@@ -97,15 +98,15 @@ until curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; do
   HEALTH_RETRIES=$((HEALTH_RETRIES + 1))
   if [ "$HEALTH_RETRIES" -gt "$MAX_RETRIES" ]; then
     echo "[DEPLOY] ERROR: Healthcheck failed after ${MAX_RETRIES} attempts. Rolling back..."
-    docker compose stop api frontend celery-worker || true
-    for svc in api frontend celery-worker; do
+    docker compose stop api frontend celery-worker celery-beat || true
+    for svc in api frontend celery-worker celery-beat; do
       latest_deprecated=$(docker ps -a --filter "name=${COMPOSE_PROJECT}-${svc}-1-deprecated-" --format '{{.Names}}' | sort | tail -1)
       if [ -n "${latest_deprecated}" ]; then
         docker rename "${latest_deprecated}" "${COMPOSE_PROJECT}-${svc}-1" || true
         docker start "${COMPOSE_PROJECT}-${svc}-1" || true
       fi
     done
-    docker compose up -d --build api frontend agent notifications celery-worker || true
+    docker compose up -d --build api frontend agent notifications celery-worker celery-beat || true
     exit 1
   fi
   sleep 2
@@ -186,7 +187,7 @@ docker ps --filter "label=status=active" --format "table {{.Names}}\t{{.Status}}
 
 # 11. Явный итог по здоровью всех сервисов контура деплоя
 echo "[DEPLOY] Health summary:"
-for svc in api frontend agent notifications celery-worker; do
+for svc in api frontend agent notifications celery-worker celery-beat; do
   svc_health=$(docker inspect -f '{{.State.Health.Status}}' "${COMPOSE_PROJECT}-${svc}-1" 2>/dev/null || echo "not-running")
   echo "[DEPLOY]   ${svc}: ${svc_health}"
 done

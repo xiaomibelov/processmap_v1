@@ -2718,6 +2718,15 @@ components:
           type: array
       title: PublishRequest
       type: object
+    RagBackfillMetadataIn:
+      properties:
+        org_id:
+          description: Target org (defaults to admin context org)
+          nullable: true
+          title: Org Id
+          type: string
+      title: RagBackfillMetadataIn
+      type: object
     RagIndexAllIn:
       properties:
         force:
@@ -14087,6 +14096,47 @@ paths:
       summary: Создать/выполнить сессии процессов
       tags:
       - sessions
+  /api/rag/admin/backfill-metadata:
+    post:
+      description: 'Admin-only: поставить Celery-таску backfill_rag_metadata(org_id).
+
+
+        Идемпотентное additive-дополнение metadata_json bpmn_xml-чанков полями
+
+        process_layer/session_title (источник истины — sessions.process_layer).
+
+        Один активный прогон на org (Redis-lock внутри таски).'
+      operationId: rag_admin_backfill_metadata_api_rag_admin_backfill_metadata_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagBackfillMetadataIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Rag Admin Backfill Metadata Api Rag Admin Backfill
+                  Metadata Post
+                type: object
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить метаданные
+      tags:
+      - rag
+      - rag
   /api/rag/index:
     post:
       description: 'Создать/выполнить index. Особенности: доступ: член организации
@@ -14262,6 +14312,15 @@ paths:
         schema:
           nullable: true
           title: Session Id
+          type: string
+      - description: 'Filter by process layer: as_is|to_be'
+        in: query
+        name: process_layer
+        required: false
+        schema:
+          description: 'Filter by process layer: as_is|to_be'
+          nullable: true
+          title: Process Layer
           type: string
       - in: query
         name: min_score
