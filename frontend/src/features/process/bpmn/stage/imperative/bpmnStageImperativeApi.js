@@ -664,6 +664,10 @@ export function createBpmnStageImperativeApi(ctxBase) {
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
     getXmlDraft: () => String(values.xmlDraft || ""),
+    // SaveOutbox инстанс сессии (null до монтирования outbox-effect'а) —
+    // dedup-контракт mutation-lifecycle scheduling читает его через
+    // bpmnRef.current.getOpsOutbox() (UI.md §2).
+    getOpsOutbox: () => refs.opsOutboxRef?.current || null,
     runDiagramContextAction: async (payload = {}) => await runDiagramContextActionRequest(
       payload,
       "context_action_unavailable",

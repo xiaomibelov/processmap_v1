@@ -675,3 +675,77 @@ test("source field: default user; ops sent with source preserved in body", async
     t.mock.timers.reset();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Dedup-контракт mutation-lifecycle scheduling (UI.md §2): scheduling path
+// (useDiagramMutationLifecycle.queueDiagramMutation) спрашивает
+// outbox.shouldSkipFullSave(command) — полностью ли команда захвачена ops.
+// True → полное автосохранение для этой мутации НЕ планируется; ops pipeline
+// владеет persistence. False → full-save путь работает как раньше.
+// ---------------------------------------------------------------------------
+
+test("dedup: whitelisted command captured as op → shouldSkipFullSave(command) === true", (t) => {
+  const ctx = makeOutbox(t);
+  try {
+    const mapped = pushRename(ctx.outbox, "Task_1", "A");
+    assert.equal(mapped.needsFullSave, false);
+    assert.equal(typeof ctx.outbox.shouldSkipFullSave, "function");
+    assert.equal(ctx.outbox.shouldSkipFullSave("element.updateProperties"), true);
+  } finally {
+    ctx.destroy();
+  }
+});
+
+test("dedup: unknown/missing command is never skippable (xml.edit, fallback emits)", (t) => {
+  const ctx = makeOutbox(t);
+  try {
+    pushRename(ctx.outbox, "Task_1", "A");
+    assert.equal(ctx.outbox.shouldSkipFullSave("xml.edit"), false, "command mismatch → not skippable");
+    assert.equal(ctx.outbox.shouldSkipFullSave(""), false, "empty command → not skippable");
+    assert.equal(ctx.outbox.shouldSkipFullSave(), false, "missing command → not skippable");
+    assert.equal(ctx.outbox.shouldSkipFullSave("shape.move"), false, "stale other-command capture → not skippable");
+  } finally {
+    ctx.destroy();
+  }
+});
+
+test("dedup: non-whitelisted command sets needsFullSave → nothing is skippable until full-save ack", (t) => {
+  const ctx = makeOutbox(t);
+  try {
+    pushRename(ctx.outbox, "Task_1", "A");
+    assert.equal(ctx.outbox.shouldSkipFullSave("element.updateProperties"), true);
+    ctx.outbox.pushCommand({ command: "spaceTool", action: "execute", context: {} });
+    assert.equal(ctx.outbox.getState().needsFullSave, true);
+    assert.equal(ctx.outbox.shouldSkipFullSave("element.updateProperties"), false, "needsFullSave gates even captured commands");
+    assert.equal(ctx.outbox.shouldSkipFullSave("spaceTool"), false);
+    // Full-save ack (coordinator "success" xml) снимает флаг — буфер тоже
+    // очищен, поэтому ранее захваченная команда больше не skippable.
+    ctx.coordinator.emit?.("success", { sessionId: "s1", pipeline: "xml" });
+    assert.equal(ctx.outbox.getState().needsFullSave, false);
+    assert.equal(ctx.outbox.shouldSkipFullSave("element.updateProperties"), false, "acked state — no pending captured edits");
+    // Свежая whitelisted-команда после ack снова skippable.
+    pushRename(ctx.outbox, "Task_2", "B");
+    assert.equal(ctx.outbox.shouldSkipFullSave("element.updateProperties"), true);
+  } finally {
+    ctx.destroy();
+  }
+});
+
+test("dedup: replay command is skippable only while pending ops cover the state", (t) => {
+  const ctx = makeOutbox(t);
+  try {
+    assert.equal(
+      ctx.outbox.pushCommand({ command: "shape.move", action: "execute", context: { __pmOpSource: "replay" } }).replay,
+      true,
+    );
+    assert.equal(ctx.outbox.shouldSkipFullSave("shape.move"), false, "replay with empty buffer — nothing captured");
+    pushMove(ctx.outbox, "Task_1", 3, 3);
+    assert.equal(
+      ctx.outbox.pushCommand({ command: "shape.move", action: "execute", context: { __pmOpSource: "replay" } }).replay,
+      true,
+    );
+    assert.equal(ctx.outbox.shouldSkipFullSave("shape.move"), true, "replay with pending op — state covered by buffer");
+  } finally {
+    ctx.destroy();
+  }
+});

@@ -2240,6 +2240,22 @@ function ProcessStage({
     [],
   );
 
+  // Dedup full-save scheduling (contour feature/async-save-pipeline-step1,
+  // UI.md §2): если SaveOutbox полностью захватил правку как ops, полное
+  // автосохранение для этой мутации не планируем. Контракт честности —
+  // outbox.shouldSkipFullSave(command): true только для команды, которую он
+  // только что захватил, при отсутствии pending needsFullSave; любые чужие
+  // мутации (xml.edit, ops_outbox_fallback, template emits) → false.
+  const shouldSkipAutosaveSchedule = useCallback((mutation) => {
+    const outbox = bpmnRef?.current?.getOpsOutbox?.();
+    if (!outbox || typeof outbox.shouldSkipFullSave !== "function") return false;
+    try {
+      return outbox.shouldSkipFullSave(mutation?.command) === true;
+    } catch {
+      return false;
+    }
+  }, [bpmnRef]);
+
   const {
     tab,
     setTab,
@@ -2268,6 +2284,7 @@ function ProcessStage({
     rememberDiagramStateVersion,
     onSessionSync: onSessionSyncWithVersion,
     onError: setGenErr,
+    shouldSkipAutosaveSchedule,
   });
 
   const {

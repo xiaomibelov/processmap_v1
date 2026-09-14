@@ -29,6 +29,7 @@ export default function useDiagramMutationLifecycle({
   rememberDiagramStateVersion,
   onSessionSync,
   onError,
+  shouldSkipAutosaveSchedule,
 }) {
   const draftRef = useRef(draft);
 
@@ -190,12 +191,31 @@ export default function useDiagramMutationLifecycle({
         return;
       }
       traceProcess("diagram.queue_mutation", { sid, mutation_kind: mutationKind });
+      // Dedup full-save scheduling (contour feature/async-save-pipeline-step1,
+      // UI.md §2): если SaveOutbox полностью захватил правку как ops, полное
+      // автосохранение для этой мутации не планируем — persistence владеет
+      // pipeline "ops". Предикат инжектируется владельцем (ProcessStage →
+      // outbox.shouldSkipFullSave); его сбой = консервативный fallback на
+      // обычный full-save путь. Ручное сохранение сюда не ходит — отдельный
+      // путь (flushFromActiveTab), этот контракт его не ограничивает.
+      if (typeof shouldSkipAutosaveSchedule === "function") {
+        let skipFullSaveSchedule = false;
+        try {
+          skipFullSaveSchedule = shouldSkipAutosaveSchedule(mutation) === true;
+        } catch {
+          skipFullSaveSchedule = false;
+        }
+        if (skipFullSaveSchedule) {
+          traceProcess("diagram.autosave_skipped_ops", { sid, mutation_kind: mutationKind });
+          return;
+        }
+      }
       scheduleDiagramAutosave({
         mutation: mutation && typeof mutation === "object" ? mutation : { kind: String(mutation || "diagram.change") },
         at: Date.now(),
       });
     },
-    [sid, scheduleDiagramAutosave],
+    [sid, scheduleDiagramAutosave, shouldSkipAutosaveSchedule],
   );
 
   const flushDiagramBeforeTabSwitch = useCallback(
