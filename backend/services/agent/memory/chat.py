@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import uuid
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -32,6 +33,7 @@ from runners.action_runners import run_explain_step, run_step_qa, run_suggest_ne
 from runners.monolith_client import get_session as monolith_get_session, search_rag
 from schemas import AgentChatIn, AgentChatOut
 
+from .citations import build_source_refs, parse_citations
 from .context import AgentContext, load_context
 from .memory_store import (
     AgentTurn,
@@ -69,6 +71,57 @@ SMALLTALK_MAX_TOKENS = 400
 SCHEMA_OVERVIEW_MAX_TOKENS = 400
 VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smalltalk", "edit_canvas", "structured_fact_qa"}
 # NOTE: new intent structured_fact_qa maps to model_class='cheap' in agent-model-routing-optimization-v1.
+
+# E2 (agent-rag-retrieval-citations-v1): top-k RAG-подмешивания по веткам.
+# free-answer — org-wide bpmn_xml (вопросы о других сессиях org, гейт G1);
+# schema_overview — только miss-путь, текущая сессия (hit-путь 0-LLM не трогаем, гейт G3).
+FREE_ANSWER_RAG_TOP_K = int(os.environ.get("PROCESSMAN_RAG_FREE_ANSWER_TOP_K", "4"))
+OVERVIEW_RAG_TOP_K = int(os.environ.get("PROCESSMAN_RAG_OVERVIEW_TOP_K", "3"))
+
+
+def _search_rag_org_wide(
+    q: str,
+    token: str,
+    org_id: str,
+    top_k: int = FREE_ANSWER_RAG_TOP_K,
+) -> List[Dict[str, Any]]:
+    """Org-wide поиск по bpmn_xml для free-answer. Любая ошибка → [] (degrade, G4)."""
+    try:
+        resp = search_rag(
+            q,
+            "",
+            token,
+            org_id=org_id,
+            source_type="bpmn_xml",
+            top_k=top_k,
+            min_score=0.0,
+        )
+        return list(resp.get("results") or [])
+    except Exception:
+        return []
+
+
+def _search_rag_session(
+    q: str,
+    session_id: str,
+    token: str,
+    org_id: str,
+    top_k: int = OVERVIEW_RAG_TOP_K,
+) -> List[Dict[str, Any]]:
+    """Поиск по чанкам текущей сессии (schema_overview miss-путь). Ошибка → []."""
+    try:
+        resp = search_rag(
+            q,
+            session_id,
+            token,
+            org_id=org_id,
+            source_type="bpmn_xml",
+            top_k=top_k,
+            min_score=0.0,
+        )
+        return list(resp.get("results") or [])
+    except Exception:
+        return []
 
 
 def _now_ms() -> int:
@@ -327,6 +380,7 @@ def _persisted_answer_from_turn(turn: AgentTurn) -> AgentChatOut:
         action_payload=turn.action_payload or {},
         usage=turn.usage or {},
         projection_digest=turn.projection_digest or "",
+        sources=(turn.content or {}).get("sources") or None,
     )
 
 
@@ -341,14 +395,18 @@ def _persist_assistant_turn(
     client_turn_id: Optional[str] = None,
     action: Optional[str] = None,
     action_payload: Dict[str, Any] = None,
+    sources: Optional[List[Dict[str, Any]]] = None,
     now_ms: Optional[int] = None,
 ) -> Tuple[str, AgentChatOut]:
+    content_json: Dict[str, Any] = {"text": message}
+    if sources is not None:
+        content_json["sources"] = sources
     turn_id = append_turn(
         session_id,
         user_id,
         org_id,
         role="assistant",
-        content_json={"text": message},
+        content_json=content_json,
         client_turn_id=client_turn_id,
         action=action,
         action_payload_json=(action_payload or {}),
@@ -365,6 +423,7 @@ def _persist_assistant_turn(
         action_payload=(action_payload or {}),
         usage=usage,
         projection_digest=ctx.digest,
+        sources=sources,
     )
 
 
@@ -463,7 +522,11 @@ def _run_schema_overview_branch(
         )
         return out
 
-    call_kwargs = PromptBuilder.build("schema_overview", ctx, payload)
+    # Miss-путь: RAG по чанкам текущей сессии (E2). Hit-путь выше не трогаем —
+    # там 0 LLM и 0 RAG-вызовов (гейт G3, урок #948).
+    rag_results = _search_rag_session(payload.message, session_id, token, org_id)
+    call_kwargs = PromptBuilder.build("schema_overview", ctx, payload, rag_results=rag_results)
+    refs = call_kwargs.get("rag_refs") or []
     result = complete(
         FEATURE,
         payload=call_kwargs["payload"],
@@ -479,6 +542,7 @@ def _run_schema_overview_branch(
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
     message = str(result.get("text") or "").strip()
+    message, used_sources = parse_citations(message, refs)
     if message:
         _save_schema_memory_sync(session_id, org_id, message, ctx.digest)
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
@@ -492,6 +556,7 @@ def _run_schema_overview_branch(
         client_turn_id=client_turn_id,
         action="schema_overview",
         action_payload={},
+        sources=used_sources,
         now_ms=_now_ms(),
     )
     return out
@@ -539,17 +604,19 @@ def _run_doc_qa_branch(
     if not result.get("ok"):
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
+    message, used_sources = parse_citations(str(result.get("text") or ""), build_source_refs(results))
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
     _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
-        message=str(result.get("text") or ""),
+        message=message,
         usage=usage,
         ctx=ctx,
         client_turn_id=client_turn_id,
         action="doc_qa",
         action_payload={"results_count": len(results)},
+        sources=used_sources,
         now_ms=_now_ms(),
     )
     return out
@@ -619,11 +686,13 @@ def _search_rag_for_structured_fact(
 
 
 def _build_structured_fact_prompt(question: str, chunks: List[Dict[str, Any]]) -> str:
-    chunks_text = "\n---\n".join(
-        str(r.get("chunk_text") or r.get("chunk") or "").strip() for r in chunks[:5]
+    refs = build_source_refs(chunks)
+    chunks_text = "\n\n".join(
+        f"[S{i}] {ref['snippet']}" for i, ref in enumerate(refs, start=1)
     )
     return (
         "Ответь на вопрос пользователя на основе предоставленных фактов из справочников. "
+        "Каждое утверждение, основанное на фактах, помечай маркером [S1], [S2] и т.д. "
         "Отвечай на русском языке. Если ответа нет в фактах, скажи об этом.\n\n"
         f"Факты:\n{chunks_text}\n\n"
         f"Вопрос: {question}"
@@ -669,17 +738,19 @@ def _run_structured_fact_qa_branch(
     if not result.get("ok"):
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
+    message, used_sources = parse_citations(str(result.get("text") or ""), build_source_refs(results))
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
     _, out = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
-        message=str(result.get("text") or ""),
+        message=message,
         usage=usage,
         ctx=ctx,
         client_turn_id=client_turn_id,
         action="structured_fact_qa",
         action_payload={"results_count": len(results), "source_type": source_type},
+        sources=used_sources,
         now_ms=_now_ms(),
     )
     return out
@@ -696,9 +767,20 @@ def _run_free_answer_branch(
     client_turn_id: Optional[str] = None,
     intent: str = "smalltalk",
 ) -> AgentChatOut:
-    """Smalltalk / free-answer fallback. Preserves AGENT-0 action-JSON fallback."""
+    """Smalltalk / free-answer fallback. Preserves AGENT-0 action-JSON fallback.
+
+    E2: explicit smalltalk получает org-wide RAG по bpmn_xml (гейт G1 — вопросы
+    о других сессиях org) и cite-контракт; doc_qa_fallback идёт без повторного
+    поиска (doc_qa уже искал и не нашёл).
+    """
     conversation_summary = get_conversation_summary(session_id, user_id, org_id)
-    call_kwargs = PromptBuilder.build(intent, ctx, payload, conversation_summary=conversation_summary)
+    rag_results: List[Dict[str, Any]] = []
+    if intent == "smalltalk":
+        rag_results = _search_rag_org_wide(payload.message, token, org_id)
+    call_kwargs = PromptBuilder.build(
+        intent, ctx, payload, rag_results=rag_results, conversation_summary=conversation_summary
+    )
+    refs = call_kwargs.get("rag_refs") or []
     result = complete(
         FEATURE,
         payload=call_kwargs["payload"],
@@ -715,12 +797,13 @@ def _run_free_answer_branch(
     if not result.get("ok"):
         return _gateway_error_out(session_id, user_id, org_id, result, ctx, client_turn_id=client_turn_id)
 
-    llm_text = str(result.get("text") or "")
+    llm_text, used_sources = parse_citations(str(result.get("text") or ""), refs)
     action_obj = _extract_json_block(llm_text)
 
     action_name: Optional[str] = None
     action_payload: Dict[str, Any] = {}
     assistant_message = llm_text
+    message_is_cited_llm_text = bool(rag_results)
     has_fence = bool(re.search(r"```", llm_text))
 
     if action_obj and isinstance(action_obj, dict):
@@ -731,16 +814,21 @@ def _run_free_answer_branch(
                 action_name = possible_action
                 action_payload = action_result
                 assistant_message = str(action_result.get("message") or action_result.get("note") or llm_text)
+                # Ответ действия не из отрывков — цитаты не применяются.
+                message_is_cited_llm_text = False
             else:
                 # action валиден, но не выполнился (пустая схема/unknown step):
                 # сырой JSON не показываем (N1/M3, audit llm-agent-audit-v1).
                 assistant_message = _action_fallback_text(payload.message)
+                message_is_cited_llm_text = False
         elif possible_action or has_fence:
             # не-whitelist action-JSON или fenced-блок без ключа action
             assistant_message = _action_fallback_text(payload.message)
+            message_is_cited_llm_text = False
     elif has_fence:
         # fenced-блок, который не распарсился как JSON
         assistant_message = _action_fallback_text(payload.message)
+        message_is_cited_llm_text = False
 
     _, out = _persist_assistant_turn(
         session_id,
@@ -752,6 +840,7 @@ def _run_free_answer_branch(
         client_turn_id=client_turn_id,
         action=action_name,
         action_payload=action_payload,
+        sources=(used_sources if message_is_cited_llm_text else ([] if rag_results else None)),
         now_ms=_now_ms(),
     )
 
@@ -1011,6 +1100,7 @@ def _run_structured_fact_qa_branch_stream(
         )
         return
 
+    refs = build_source_refs(results)
     prompt_text = _build_structured_fact_prompt(payload.message, results)
     collected_text = ""
     final_usage: Dict[str, Any] = {}
@@ -1065,20 +1155,198 @@ def _run_structured_fact_qa_branch_stream(
         yield ("error", {"status": err_status, "error": err_text})
         return
 
+    message, used_sources = parse_citations(collected_text, refs)
     schedule_memory_update(session_id, org_id, ctx.digest, projection=ctx.projection)
     _ = _persist_assistant_turn(
         session_id,
         user_id,
         org_id,
-        message=collected_text,
+        message=message,
         usage=final_usage,
         ctx=ctx,
         client_turn_id=client_turn_id,
         action="structured_fact_qa",
         action_payload={"results_count": len(results), "source_type": source_type},
+        sources=used_sources,
         now_ms=_now_ms(),
     )
-    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest})
+    yield ("sources", {"sources": used_sources})
+    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest, "sources": used_sources})
+
+
+def _stream_llm_turn(
+    *,
+    intent: str,
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    call_kwargs: Dict[str, Any],
+    refs: List[Dict[str, Any]],
+    client_turn_id: Optional[str],
+    action_fallback: bool,
+    save_schema_memory: bool,
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Общий stream-хвост: complete_stream → цитаты → action-fallback → persist → sources/done.
+
+    Используется ветками doc_qa, schema_overview (miss) и free-answer
+    (_run_free_answer_branch_stream) — вместо трёх копий одной логики.
+    """
+    project_id = str(getattr(ctx.session, "project_id", "") or "")
+    collected_text = ""
+    final_usage: Dict[str, Any] = {}
+    stream_error: Optional[Dict[str, Any]] = None
+
+    for event_type, event_data in complete_stream(
+        FEATURE,
+        payload=call_kwargs["payload"],
+        user_id=user_id,
+        project_id=project_id,
+        session_id=session_id,
+        org_id=org_id,
+        max_tokens=call_kwargs["max_tokens"],
+        model_class=call_kwargs["model_class"],
+    ):
+        if event_type == "token":
+            delta = str(event_data.get("delta") or "")
+            collected_text += delta
+            yield ("token", {"delta": delta})
+        elif event_type == "error":
+            stream_error = event_data
+            break
+        elif event_type == "usage":
+            final_usage = {
+                "prompt_tokens": int(event_data.get("usage", {}).get("prompt_tokens", 0)),
+                "completion_tokens": int(event_data.get("usage", {}).get("completion_tokens", 0)),
+                "provider_id": str(event_data.get("provider_id") or ""),
+                "model": str(event_data.get("model") or ""),
+                "prompt_version": int(event_data.get("prompt_version") or 0),
+                "fallback": bool(event_data.get("fallback")),
+                "cached": False,
+                "cost_usd": float(event_data.get("cost_usd") or 0.0),
+            }
+
+    if stream_error is not None:
+        # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
+        err_status = str(stream_error.get("status") or "error")
+        err_text = sanitize_llm_error(err_status, str(stream_error.get("error", "") or ""))
+        text = f"[{err_status}] {err_text}"
+        provider_id = stream_error.get("provider_id") or final_usage.get("provider_id") or ""
+        model_name = stream_error.get("model") or final_usage.get("model") or ""
+        logger.warning(
+            "processman stream error session=%s provider=%s model=%s status=%s error=%s",
+            session_id,
+            provider_id,
+            model_name,
+            stream_error.get("status"),
+            stream_error.get("error", ""),
+        )
+        _ = _persist_assistant_turn(
+            session_id,
+            user_id,
+            org_id,
+            message=text,
+            usage=final_usage,
+            ctx=ctx,
+            client_turn_id=client_turn_id,
+            action=None,
+            action_payload={},
+            now_ms=_now_ms(),
+        )
+        yield (
+            "error",
+            {
+                "status": err_status,
+                "error": err_text,
+                "provider_id": provider_id,
+                "model": model_name,
+            },
+        )
+        return
+
+    message, used_sources = parse_citations(collected_text, refs)
+    rag_applied = bool(refs)
+
+    # AGENT-0 action-JSON fallback preserved for streaming free-answer.
+    action_name: Optional[str] = None
+    action_payload: Dict[str, Any] = {}
+    assistant_message = message
+    message_is_cited_llm_text = rag_applied
+    if action_fallback:
+        action_obj = _extract_json_block(message)
+        if action_obj and isinstance(action_obj, dict):
+            possible_action = str(action_obj.get("action") or "").strip()
+            if possible_action in {"suggest-next", "explain-step", "step-qa"}:
+                action_result = _run_action(possible_action, action_obj, session_id, token, ctx, payload.message, org_id=org_id)
+                if action_result is not None:
+                    action_name = possible_action
+                    action_payload = action_result
+                    assistant_message = str(action_result.get("message") or action_result.get("note") or message)
+                    message_is_cited_llm_text = False
+                    yield ("action", {"action": action_name, "payload": action_payload})
+
+    if save_schema_memory and assistant_message:
+        _save_schema_memory_sync(session_id, org_id, assistant_message, ctx.digest)
+
+    final_sources = used_sources if message_is_cited_llm_text else ([] if rag_applied else None)
+    _ = _persist_assistant_turn(
+        session_id,
+        user_id,
+        org_id,
+        message=assistant_message,
+        usage=final_usage,
+        ctx=ctx,
+        client_turn_id=client_turn_id,
+        action=action_name,
+        action_payload=action_payload,
+        sources=final_sources,
+        now_ms=_now_ms(),
+    )
+    if final_sources:
+        yield ("sources", {"sources": final_sources})
+    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest, "sources": final_sources})
+
+
+def _run_free_answer_branch_stream(
+    payload: AgentChatIn,
+    ctx: AgentContext,
+    session_id: str,
+    user_id: str,
+    org_id: str,
+    token: str,
+    *,
+    client_turn_id: Optional[str] = None,
+    intent: str = "smalltalk",
+) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+    """Streaming free-answer (E2): org-wide RAG + cite-контракт.
+
+    Раньше функция отсутствовала (dangling reference на main: вызов в
+    fallback structured_fact_qa падал с NameError → generic SSE error).
+    """
+    conversation_summary = get_conversation_summary(session_id, user_id, org_id)
+    rag_results: List[Dict[str, Any]] = []
+    if intent == "smalltalk":
+        rag_results = _search_rag_org_wide(payload.message, token, org_id)
+    call_kwargs = PromptBuilder.build(
+        intent, ctx, payload, rag_results=rag_results, conversation_summary=conversation_summary
+    )
+    refs = call_kwargs.get("rag_refs") or []
+    yield from _stream_llm_turn(
+        intent=intent,
+        payload=payload,
+        ctx=ctx,
+        session_id=session_id,
+        user_id=user_id,
+        org_id=org_id,
+        token=token,
+        call_kwargs=call_kwargs,
+        refs=refs,
+        client_turn_id=client_turn_id,
+        action_fallback=True,
+        save_schema_memory=False,
+    )
 
 
 def _gateway_error_out(
@@ -1235,7 +1503,7 @@ def run_turn_stream(
         org_id=oid,
     )
 
-    def _finish(text: str, usage: Dict[str, Any], action: Optional[str] = None, action_payload: Dict[str, Any] = None) -> None:
+    def _finish(text: str, usage: Dict[str, Any], action: Optional[str] = None, action_payload: Dict[str, Any] = None, sources: Optional[List[Dict[str, Any]]] = None) -> None:
         _ = _persist_assistant_turn(
             sid,
             uid,
@@ -1246,9 +1514,10 @@ def run_turn_stream(
             client_turn_id=client_turn_id,
             action=action,
             action_payload=(action_payload or {}),
+            sources=sources,
             now_ms=_now_ms(),
         )
-        yield ("done", {"usage": usage, "projection_digest": ctx.digest})
+        yield ("done", {"usage": usage, "projection_digest": ctx.digest, "sources": sources})
 
     if intent == "node_qa" and _step_in_projection(ctx.projection, payload.selected_step_id):
         result = run_step_qa(sid, token, step_id=str(payload.selected_step_id), question=payload.message, org_id=oid)
@@ -1283,123 +1552,55 @@ def run_turn_stream(
             yield from _finish(memory["summary"], {"cached": True}, action="schema_overview")
             return
 
-    conversation_summary = get_conversation_summary(sid, uid, oid)
-
-    if intent == "schema_overview":
+        # Miss-путь: RAG по чанкам текущей сессии (E2). Hit-путь выше — без LLM и без RAG (G3).
         schedule_memory_update(sid, oid, ctx.digest)
+        rag_results = _search_rag_session(payload.message, sid, token, oid)
+        call_kwargs = PromptBuilder.build("schema_overview", ctx, payload, rag_results=rag_results)
+        refs = call_kwargs.get("rag_refs") or []
+        yield from _stream_llm_turn(
+            intent=intent,
+            payload=payload,
+            ctx=ctx,
+            session_id=sid,
+            user_id=uid,
+            org_id=oid,
+            token=token,
+            call_kwargs=call_kwargs,
+            refs=refs,
+            client_turn_id=client_turn_id,
+            action_fallback=False,
+            save_schema_memory=True,
+        )
+        return
 
     if intent == "doc_qa":
         try:
             results = _search_rag_prioritized(payload.message, sid, token, org_id=oid, top_k=5)
         except Exception:
             results = []
+        refs = build_source_refs(results)
         stream_intent = "doc_qa" if results else "doc_qa_fallback"
         call_kwargs = PromptBuilder.build(
-            stream_intent, ctx, payload, rag_results=results or [], conversation_summary=conversation_summary
+            stream_intent, ctx, payload, rag_results=results or [],
+            conversation_summary=get_conversation_summary(sid, uid, oid),
         )
-    else:
-        call_kwargs = PromptBuilder.build(intent, ctx, payload, conversation_summary=conversation_summary)
-
-    collected_text = ""
-    final_usage: Dict[str, Any] = {}
-    stream_error: Optional[Dict[str, Any]] = None
-
-    for event_type, event_data in complete_stream(
-        FEATURE,
-        payload=call_kwargs["payload"],
-        user_id=uid,
-        project_id=project_id,
-        session_id=sid,
-        org_id=oid,
-        max_tokens=call_kwargs["max_tokens"],
-        model_class=call_kwargs["model_class"],
-    ):
-        if event_type == "token":
-            delta = str(event_data.get("delta") or "")
-            collected_text += delta
-            yield ("token", {"delta": delta})
-        elif event_type == "error":
-            stream_error = event_data
-            break
-        elif event_type == "usage":
-            final_usage = {
-                "prompt_tokens": int(event_data.get("usage", {}).get("prompt_tokens", 0)),
-                "completion_tokens": int(event_data.get("usage", {}).get("completion_tokens", 0)),
-                "provider_id": str(event_data.get("provider_id") or ""),
-                "model": str(event_data.get("model") or ""),
-                "prompt_version": int(event_data.get("prompt_version") or 0),
-                "fallback": bool(event_data.get("fallback")),
-                "cached": False,
-                "cost_usd": float(event_data.get("cost_usd") or 0.0),
-            }
-
-    if stream_error is not None:
-        # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
-        err_status = str(stream_error.get("status") or "error")
-        err_text = sanitize_llm_error(err_status, str(stream_error.get("error", "") or ""))
-        text = f"[{err_status}] {err_text}"
-        provider_id = stream_error.get("provider_id") or final_usage.get("provider_id") or ""
-        model_name = stream_error.get("model") or final_usage.get("model") or ""
-        logger.warning(
-            "processman stream error session=%s provider=%s model=%s status=%s error=%s",
-            sid,
-            provider_id,
-            model_name,
-            stream_error.get("status"),
-            stream_error.get("error", ""),
-        )
-        _ = _persist_assistant_turn(
-            sid,
-            uid,
-            oid,
-            message=text,
-            usage=final_usage,
+        yield from _stream_llm_turn(
+            intent=intent,
+            payload=payload,
             ctx=ctx,
+            session_id=sid,
+            user_id=uid,
+            org_id=oid,
+            token=token,
+            call_kwargs=call_kwargs,
+            refs=refs,
             client_turn_id=client_turn_id,
-            action=None,
-            action_payload={},
-            now_ms=_now_ms(),
-        )
-        yield (
-            "error",
-            {
-                "status": err_status,
-                "error": err_text,
-                "provider_id": provider_id,
-                "model": model_name,
-            },
+            action_fallback=True,
+            save_schema_memory=False,
         )
         return
 
-    # AGENT-0 action-JSON fallback preserved for streaming free-answer.
-    action_name: Optional[str] = None
-    action_payload: Dict[str, Any] = {}
-    assistant_message = collected_text
-    if intent in {"smalltalk", "doc_qa"}:
-        action_obj = _extract_json_block(collected_text)
-        if action_obj and isinstance(action_obj, dict):
-            possible_action = str(action_obj.get("action") or "").strip()
-            if possible_action in {"suggest-next", "explain-step", "step-qa"}:
-                action_result = _run_action(possible_action, action_obj, sid, token, ctx, payload.message, org_id=oid)
-                if action_result is not None:
-                    action_name = possible_action
-                    action_payload = action_result
-                    assistant_message = str(action_result.get("message") or action_result.get("note") or collected_text)
-                    yield ("action", {"action": action_name, "payload": action_payload})
-
-    if intent == "schema_overview" and assistant_message:
-        _save_schema_memory_sync(sid, oid, assistant_message, ctx.digest)
-
-    _ = _persist_assistant_turn(
-        sid,
-        uid,
-        oid,
-        message=assistant_message,
-        usage=final_usage,
-        ctx=ctx,
-        client_turn_id=client_turn_id,
-        action=action_name,
-        action_payload=action_payload,
-        now_ms=_now_ms(),
+    # smalltalk / doc_qa_fallback / unknown intents — free-answer с org-wide RAG (E2).
+    yield from _run_free_answer_branch_stream(
+        payload, ctx, sid, uid, oid, token, client_turn_id=client_turn_id, intent=intent
     )
-    yield ("done", {"usage": final_usage, "projection_digest": ctx.digest})

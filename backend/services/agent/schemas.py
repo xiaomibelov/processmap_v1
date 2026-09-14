@@ -5,9 +5,28 @@ DTO идентичны монолитным: контракт публичных
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class SourceRef(BaseModel):
+    """Источник RAG-цитаты в ответе агента (cite-контракт E2).
+
+    source_id — уникальный id чанка (chunk_id из /api/rag/search).
+    Сессионные/слоевые поля опциональны: зависят от типа корпуса и
+    доступности metadata (process_layer — после мержа E1 #972).
+    """
+
+    source_id: str = Field(..., description="Уникальный id чанка-источника (chunk_id).")
+    source_type: str = Field(default="", description="Тип корпуса: bpmn_xml | property_dictionary | ...")
+    session_id: Optional[str] = Field(default=None, description="Сессия-источник (для bpmn_xml).")
+    session_title: Optional[str] = Field(default=None, description="Название сессии-источника.")
+    process_layer: Optional[str] = Field(default=None, description="as_is | to_be (после E1 #972).")
+    element_id: Optional[str] = Field(default=None, description="BPMN-элемент-источник (навигация для E5).")
+    element_name: Optional[str] = Field(default=None, description="Имя BPMN-элемента-источника.")
+    snippet: str = Field(default="", description="Фрагмент чанка (~200 символов).")
+    score: float = Field(default=0.0, description="BM25-скор чанка.")
 
 
 class AgentChatIn(BaseModel):
@@ -33,6 +52,10 @@ class AgentChatOut(BaseModel):
     action_payload: Dict[str, Any] = Field(default_factory=dict, description="Результат выполненного действия.")
     usage: Dict[str, Any] = Field(default_factory=dict, description="Токены и метаданные LLM-вызова.")
     projection_digest: str = Field(default="", description="Digest схемы на момент ответа.")
+    sources: Optional[List[SourceRef]] = Field(
+        default=None,
+        description="Процитированные RAG-источники (null — retrieval не участвовал или деградация).",
+    )
 
 
 class AgentTurnOut(BaseModel):
