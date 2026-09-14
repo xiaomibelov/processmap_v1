@@ -1982,6 +1982,74 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   };
 }
 
+/**
+ * Дельта-сохранение: батч ops с CAS baseVersion
+ * (contour feature/async-save-pipeline-step1, POST /api/sessions/{id}/operations).
+ *
+ * Протокол (PLAN §5): body {baseVersion, operations:[{opId, type, ...payload, source}]};
+ * 200 {version, applied, skipped} — version = новый diagram_state_version (на батч);
+ * 409 {code: DIAGRAM_STATE_CONFLICT, currentVersion, currentXml}; 422 OPERATION_UNSUPPORTED.
+ *
+ * options.keepalive — flush при уходе со страницы: fetch(..., {keepalive: true}) с
+ * Authorization, НЕ sendBeacon (sendBeacon не умеет кастомные заголовки, backend
+ * требует JWT bearer). Ответ уходящей странице не нужен: fire-and-forget,
+ * серверная идемпотентность по opId закрывает двойную доставку.
+ */
+export async function apiPostSessionOperations(sessionId, payload = {}, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = {
+    baseVersion: Number.isFinite(Number(payload?.baseVersion)) ? Math.round(Number(payload.baseVersion)) : null,
+    operations: Array.isArray(payload?.operations) ? payload.operations : [],
+  };
+
+  if (options?.keepalive === true) {
+    const url = joinUrl(apiRoutes.sessions.operations(sid));
+    const headers = new Headers({ "Content-Type": "application/json", ...getClientIdHeader() });
+    const token = String(getAccessToken() || "").trim();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        keepalive: true,
+        credentials: "include",
+      });
+      const data = response?.ok ? await response.json().catch(() => ({})) : {};
+      const version = Number(data?.version);
+      return {
+        ok: response?.ok === true,
+        status: Number(response?.status) || 0,
+        version: Number.isFinite(version) ? Math.round(version) : null,
+        applied: Number(data?.applied) || 0,
+        skipped: Number(data?.skipped) || 0,
+        diagramStateVersion: Number.isFinite(version) ? Math.round(version) : null,
+      };
+    } catch (error) {
+      return { ok: false, status: 0, error: String(error?.message || error || "keepalive fetch failed") };
+    }
+  }
+
+  const r = okOrError(await request(apiRoutes.sessions.operations(sid), {
+    method: "POST",
+    body,
+    headers: getClientIdHeader(),
+    signal: options?.signal,
+  }));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const version = Number(data.version);
+  return {
+    ok: true,
+    status: r.status,
+    version: Number.isFinite(version) ? Math.round(version) : null,
+    applied: Number(data.applied) || 0,
+    skipped: Number(data.skipped) || 0,
+    diagramStateVersion: Number.isFinite(version) ? Math.round(version) : null,
+  };
+}
+
 export async function apiDeleteBpmnXml(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
