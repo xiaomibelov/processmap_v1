@@ -4,7 +4,7 @@ import json
 import os
 import re
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, File, Query, Request, UploadFile
@@ -1988,6 +1988,112 @@ def admin_rag_get_settings(request: Request) -> Any:
             "vector_search_enabled": bool(settings.get("hybrid_enabled")),
         },
         "status": status,
+    }
+
+
+# Read-model расписания ночного индексирования. Константы дублируют beat-schedule
+# из celery_app.py (rag-index-nightly-refresh, crontab 04:30 Europe/Moscow):
+# настройка расписания через UI не поддерживается, поэтому читаем фиксированный
+# контракт, а не парсим живую celery-конфигурацию.
+_RAG_INDEX_SCHEDULE = {
+    "task": "rag-index-nightly-refresh",
+    "crontab": "30 4 * * *",
+    "tz": "Europe/Moscow",
+    "hour": 4,
+    "minute": 30,
+}
+
+# Тестовый крючок: подмена «сейчас» для детерминированного next_run_at.
+_RAG_INDEX_NOW_TS: Optional[Any] = None
+
+
+def _rag_index_next_run_at() -> int:
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(str(_RAG_INDEX_SCHEDULE["tz"]))
+    now_ts = (
+        int(_RAG_INDEX_NOW_TS())
+        if callable(_RAG_INDEX_NOW_TS)
+        else int(datetime.now(tz).timestamp())
+    )
+    now = datetime.fromtimestamp(now_ts, tz)
+    candidate = now.replace(
+        hour=int(_RAG_INDEX_SCHEDULE["hour"]),
+        minute=int(_RAG_INDEX_SCHEDULE["minute"]),
+        second=0,
+        microsecond=0,
+    )
+    if int(candidate.timestamp()) <= now_ts:
+        candidate = candidate + timedelta(days=1)
+    return int(candidate.timestamp())
+
+
+def _rag_readiness_counts(con: Any, org_id: str) -> Dict[str, int]:
+    counts = {"not_ready": 0, "queued": 0, "indexed": 0, "error": 0}
+    rows = con.execute(
+        """
+        SELECT rag_readiness_status, COUNT(*) AS cnt
+          FROM sessions
+         WHERE org_id = ? AND deleted_at = 0
+         GROUP BY rag_readiness_status
+        """,
+        [org_id],
+    ).fetchall()
+    for row in rows:
+        key = str(row["rag_readiness_status"] or "not_ready")
+        if key in counts:
+            counts[key] = int(row["cnt"] or 0)
+    return counts
+
+
+@router.get("/api/admin/rag/indexing-plan")
+def admin_rag_get_indexing_plan(request: Request) -> Any:
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    org_id = _as_text(oid)
+    storage = get_storage()
+    queue_rows = list(storage.list_sessions_by_rag_status("queued", org_id=org_id) or [])
+    preview_rows = queue_rows[:50]
+    updated_map: Dict[str, int] = {}
+    if preview_rows:
+        # list_sessions_by_rag_status не отдаёт updated_at (лёгкий read-model):
+        # добираем одним коротким SELECT по id превью — без full-row writes.
+        marks = ",".join("?" for _ in preview_rows)
+        with _connect() as con:
+            for row in con.execute(
+                f"SELECT id, updated_at FROM sessions WHERE id IN ({marks})",
+                [str(r.get("id") or "") for r in preview_rows],
+            ).fetchall():
+                updated_map[str(row["id"])] = int(row["updated_at"] or 0)
+    preview = [
+        {
+            "session_id": str(r.get("id") or ""),
+            "title": str(r.get("title") or ""),
+            "rag_queued_at": r.get("rag_queued_at"),
+            "updated_at": updated_map.get(str(r.get("id") or "")),
+        }
+        for r in preview_rows
+    ]
+    with _connect() as con:
+        readiness = _rag_readiness_counts(con, org_id)
+        status = _rag_status_counts(con, org_id)
+    return {
+        "ok": True,
+        "schedule": {
+            "task": _RAG_INDEX_SCHEDULE["task"],
+            "crontab": _RAG_INDEX_SCHEDULE["crontab"],
+            "tz": _RAG_INDEX_SCHEDULE["tz"],
+            "next_run_at": _rag_index_next_run_at(),
+        },
+        "queue": {"total": len(queue_rows), "preview": preview},
+        "readiness_counts": readiness,
+        "index_size": {
+            "documents": int(status.get("documents_count") or 0),
+            "active_documents": int(status.get("active_documents_count") or 0),
+            "chunks": int(status.get("chunks_count") or 0),
+        },
+        "disclaimer": "preview = кандидаты; фактическая индексация определяется сравнением content-hash",
     }
 
 

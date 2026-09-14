@@ -6834,6 +6834,29 @@ paths:
       summary: Получить проекты
       tags:
       - admin
+  /api/admin/rag/indexing-plan:
+    get:
+      description: 'Получить indexing plan. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_rag_get_indexing_plan_api_admin_rag_indexing_plan_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Rag Get Indexing Plan Api Admin Rag Indexing
+                  Plan Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить indexing plan
+      tags:
+      - admin
   /api/admin/rag/settings:
     get:
       description: 'Получить settings. Особенности: доступ: администратор платформы/организации.'
