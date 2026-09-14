@@ -10,8 +10,9 @@
 
 | Набор | main | ветка | Дельта |
 |---|---|---|---|
-| `backend/services/agent/tests/` (полный) | 151 passed / 1 failed / 1 skipped | 173 passed / 1 failed / 1 skipped | +22 passed, регрессий 0 |
-| Монолит `backend/tests` RAG-подмножество (rag_api, rag_bpmn_chunker, rag_bm25) | (см. EXEC_REPORT) | (см. EXEC_REPORT) | 0 |
+| `backend/services/agent/tests/` (полный) | 151 passed / 1 failed / 1 skipped | 177 passed / 1 failed / 1 skipped | +26 passed, регрессий 0 |
+| Монолит `backend/tests`: test_rag_bm25 + test_rag_bpmn_chunker | — | 21 passed | 0 |
+| Монолит `backend/tests`: test_rag_api (host, ~15 мин) | — | 41 passed | 0 |
 
 Единственный failed — `test_measurement_baseline.py::test_baseline_measurement`:
 пред-существующий дефект main (падение идентично на чистом origin/main,
