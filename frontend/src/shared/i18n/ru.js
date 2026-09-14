@@ -412,6 +412,9 @@ export const ru = {
         duration: "Длительность",
         lastError: "Последняя ошибка",
         updated: "Обновлено",
+        filterLabel: "Тип задания:",
+        filterAll: "Все типы",
+        typeAgentAnalysis: "Анализ агентом",
       },
     },
     auditPage: {
