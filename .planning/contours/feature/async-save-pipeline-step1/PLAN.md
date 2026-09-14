@@ -29,6 +29,28 @@ Save-pipeline синхронный: фронт сериализует полны
 4. **Bounded vocabulary = bounded server-side applier.** Клиент преобразует только whitelisted команды; всё остальное уходит в существующий full-save путь (fallback, см. §7). Сервер применяет ops к ElementTree в одной транзакции — применение проверяемо и тестируемо оп из опа.
 5. **Prior art на клиенте:** `frontend/src/features/process/bpmn/ops/` (`applyOps.js`, `parseOps.js`) уже содержит op-vocabulary и аппликатор op-листов к live modeler (AI edit plans). Step1 выравнивает серверный vocabulary с существующим клиентским и расширяет его направлением modeler→server. Одна реализация, два направления (правило единой реализации, AGENTS.md §2 skill processmap-agents п.10).
 
+### 3.1 Маппинг commandStack → op-типы (по amend'у владельца, 2026-09-14)
+
+| commandStack command | op-тип(ы) | Примечание |
+|---|---|---|
+| `element.updateProperties` / `element.updateLabel` | `element.updateProperties` | rename, plain attrs |
+| `shape.move` | `shape.move` | drag-шторм: coalesce keep-last по `(elementId)`, окно 300–500 ms (дефолт 400 ms), **commit на mouseup** |
+| `shape.resize` | `shape.resize` | keep-last по `(elementId)` |
+| `connection.updateWaypoints` | `element.updateDi` | **в vocabulary** (DI-only правка waypoints) |
+| `label.move` / `connection.layout` | `element.updateDi` | DI-only |
+| `shape.create` | `shape.create` | полный descriptor |
+| `connection.create` | `connection.create` | + waypoints |
+| `shape.delete` / `connection.delete` | `shape.delete` / `connection.delete` | инцидентные connection — семантика bpmn-js |
+| undo/redo (`commandStack.changed` re-fire) | удаление op из буфера (не ушла) / compensating op (ушла) | UI.md §4 |
+| `connection.reconnect` / `reconnectStart` / `reconnectEnd` | **fallback (needsFullSave) в step1** | см. обоснование ниже |
+| `spaceTool`, `lane.*`, `canvas.updateRoot`, paste-мульти, subprocess-структурные | fallback (needsFullSave) | редкие команды |
+
+**Решение по `connection.updateWaypoints` / reconnect:**
+- `connection.updateWaypoints` → в vocabulary как `element.updateDi` (DI-only, без семантических правок — безопасно применять на сервере к `bpmndi` edge).
+- `connection.reconnect*` → **обоснованный fallback**, не входит в step1-vocabulary: reconnect меняет source/target с валидационными правилами bpmn-js (SequenceFlow внутри процесса, MessageFlow между участниками, conditional flows), а серверный applier не дублирует rules-движок. Частота низкая → bounded fallback на существующий full-save безопаснее половинчатой серверной семантики. Включение в vocabulary — step2 (после замера доли).
+
+**Метрика покрытия ≥95% (определение):** доля команд commandStack, попавших в op-маппинг, от всех немuted команд за сценарий (undo/redo-команды исключаются — это compensating-путь). Инструмент: счётчик `window.__PM_OPS_COVERAGE__ = {total, mapped, fullSave}` в `commandToOps.js`. Порог: ≥95% на расширенном e2e-корпусе (async-save spec + canvas-heavy-editing + canvas-editing-stability); фактическое значение фиксируется в EXEC_REPORT; падение ниже порога = блокер PR (не «тихое» понижение).
+
 ## 4. Scope step1
 
 **В контуре:**
@@ -51,7 +73,7 @@ body: { baseVersion: int, operations: [{ opId: uuid, type, ...payload }] }
 
 - CAS: `baseVersion` против текущего `diagram_state_version`; reuse существующих примитивов (`_require_diagram_cas_or_409`, `storage.save(..., expected_diagram_state_version=...)`, Redis lock `acquire_session_lock`).
 - Версия инкрементится **на батч** (не на op) — семантика версий не меняется.
-- Идемпотентность: таблица `session_applied_ops (session_id, op_id, applied_version, applied_at)` с unique `(session_id, op_id)`; вставка в той же транзакции, что и apply. Повтор батча → все opId уже есть → 200 `{version: current}` без инкремента.
+- Идемпотентность: таблица `session_applied_ops (session_id, op_id, applied_version, applied_at, source)` с unique `(session_id, op_id)`; вставка в той же транзакции, что и apply. Повтор батча → все opId уже есть → 200 `{version: current}` без инкремента. Поле `source` (`user|agent|e2e|replay`) хранится для трассировки; **retention — TTL 30 дней, cleanup-джоба** (детали API.md §4).
 - Неизвестный/невалидный op в батче → весь батч откатывается (атомарность), 422 `OPERATION_UNSUPPORTED` с указанием opId; клиент переводит сессию на full-save fallback.
 
 ## 6. Фронт (кратко, подробности в UI.md)
@@ -59,6 +81,14 @@ body: { baseVersion: int, operations: [{ opId: uuid, type, ...payload }] }
 - **SaveOutbox** — четвёртый pipeline в существующем `saveCoordinator` (`features/session/saveCoordinator.js`), не отдельная очередь: получаем debounce, retry/backoff, AbortController, conflict gate, status events бесплатно. Mutual exclusion с pipelines `xml`/`rawXml`/`meta` — один writer на сессию (решение #924 save-single-writer сохраняется).
 - Источник ops: существующая подписка `commandStack.changed` (`createBpmnRuntime.js:201`) → маппер command→op (whitelisted: `element.updateProperties`, `shape.move`, `shape.resize`, `shape.create`, `shape.delete`, `connection.create`, `connection.delete`).
 - Flush: debounce 2.5 s; порог 50 ops; `visibilitychange→hidden` и `beforeunload/pagehide` — немедленно.
+- Coalesce drag-move: окно 300–500 ms (дефолт 400 ms, `opsOutboxConfig.coalesceMs`), keep-last по `(elementId, type)`; **commit на mouseup** (`shape.move.end`) — буферизованная move-op немедленно коммитится в outbox, не дожидаясь debounce (drag-final-flush 500 ms из #924 остаётся единственным таймером конца drag).
+
+### Mutation gateway (подтверждено grep'ом baseline `b8285741`)
+
+Все production-модации диаграммы проходят через bpmn-js `modeling`-API → `commandStack` (invariant bpmn-js: каждый `modeling.*` вызов — команда). Проверено по коду: context-menu (`executeBpmnContextMenuAction.js` — `modeling.updateProperties/updateLabel/createShape/connect`), drag/palette/keyboard — editor actions. Прямые записи `businessObject.*` — только в тестах, в production-коде отсутствуют. Следствия:
+1. Outbox имеет **единую точку наблюдения** — подписку на `commandStack.changed`; новые пути мутации (сайдбар, хоткеи, AI) обязаны идти через `modeling` API и автоматически покрываются vocabulary.
+2. Property-* правки идут через meta-pipeline (#924) и commandStack не касаются — в outbox не попадают, как и задумано.
+3. Echo suppression: replay rebase через `applyOps` помечает контекст команд флагами `__pmOpId` + `__pmOpSource: "replay"`; `commandToOps` **пропускает помеченные команды** (контракт: ни одна replay-команда не становится op, дубликатов не возникает). Поле `source` (`user|agent|e2e|replay`) уходит в API и хранится сервером в `session_applied_ops.source`.
 - **beforeunload: `fetch(..., {keepalive: true})`, не `sendBeacon`** — sendBeacon не умеет `Authorization` header, а backend требует JWT bearer. `keepalive` сохраняет заголовки и работает во время unload. Это осознанное отступление от формулировки миссии («sendBeacon») с обоснованием; эффект тот же (best-effort доставка при уходе).
 - CAS: единый источник истины — `casVersionTracker` + `casResponse.js` (resolve base at send time, bump on success, rollback only if self-bumped) — тот же контракт, что у pipelines `xml`/`meta`.
 - Индикатор: расширение `DiagramToolbarSaveStatusSlot` состояниями outbox (сохраняется/сохранено/конфликт-rebase) через существующий `useSaveUploadLifecycle` + debounced emit.

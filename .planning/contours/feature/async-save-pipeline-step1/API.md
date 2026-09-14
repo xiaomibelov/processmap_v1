@@ -31,14 +31,16 @@ Content-Type: application/json
       "connectionId": "Flow_new", "bpmnType": "bpmn:SequenceFlow",
       "sourceId": "Activity_1", "targetId": "Activity_new",
       "waypoints": [[200,140],[300,140]] },
-    { "opId": "b1b1b1...", "type": "shape.delete", "elementId": "Activity_old" }
+    { "opId": "b1b1b1...", "type": "shape.delete", "elementId": "Activity_old" },
+    { "opId": "d4d4d4...", "type": "element.updateDi",
+      "elementId": "Flow_1", "waypoints": [[200,140],[300,140]], "source": "user" }
   ]
 }
 ```
 
 Поля:
 - `baseVersion: int` — обязательное. Клиентский CAS base = `diagram_state_version`, известный на момент последнего ack (resolve at send time через `casVersionTracker`). Допускается header `x-base-diagram-state-version` / `If-Match` как в `_resolve_base_diagram_state_version` (`backend/app/utils/session_helpers.py:58-89`) — route использует тот же резолвер.
-- `operations: []` — 1..200 ops. Каждая op: `opId` (uuid, обяз.), `type` (обяз.), payload по типу. Определение порядка внутри батча — порядок массива; применяется последовательно.
+- `operations: []` — 1..200 ops. Каждая op: `opId` (uuid, обяз.), `type` (обяз.), `source` (`user|agent|e2e|replay`, default `user`), payload по типу. Порядок внутри батча — порядок массива; применяется последовательно.
 
 ### Response 200
 
@@ -95,13 +97,14 @@ CREATE TABLE IF NOT EXISTS session_applied_ops (
   op_id TEXT NOT NULL,
   applied_version INTEGER NOT NULL,
   applied_at INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT 'user',
   PRIMARY KEY (session_id, op_id)
 );
 CREATE INDEX IF NOT EXISTS idx_session_applied_ops_cleanup ON session_applied_ops(applied_at);
 ```
 
 - Вставка — в транзакции apply (п.10). Retry после commit-fail невозможен частично: либо весь батч + строки есть, либо нет.
-- Cleanup: retention-удаление записей старше N дней фоновой задачей/лениво при flush (N=7, деталь реализации; не блокирует протокол).
+- **Retention — TTL 30 дней** (amend владельца, 2026-09-14). Cleanup-джоба: ежедневная celery-задача `session_applied_ops.cleanup` (существующий celery-worker), batched `DELETE ... WHERE applied_at < epoch(now - 30d)`. Lazy-fallback: с вероятностью ~1/200 вызовов endpoint выполняет тот же cleanup, если celery недоступен. Оба пути идемпотентны.
 - Не alembic-миграция в step1: compat-DDL стиль (как `diagram_state_version` колонка, idempotent ensure). Отдельный alembic-вариант — open question, если потребует ревьюер.
 
 ## 5. Whitelist op-типов step1

@@ -10,7 +10,7 @@ frontend/src/features/process/bpmn/save/opsOutbox/
 ├── opsBatchSerializer.js      # сборка body {baseVersion, operations}, coalesce move-штормов
 ├── createSaveOutbox.js        # накопитель: subscribe → buffer → debounce/threshold → flush
 ├── opsRebase.js               # 409-rebase: adopt currentXml + replay через bpmn/ops/applyOps
-└── opsOutboxConfig.js         # debounceMs:2500, maxOpsPerFlush:50, keepalive таймауты
+└── opsOutboxConfig.js         # flushDebounceMs:2500, maxOpsPerFlush:50, coalesceMs:400 (окно 300–500), mouseupCommit, keepalive таймауты
 frontend/src/features/session/saveCoordinator.js        # + pipeline "ops" (регистрация, без переписывания)
 frontend/src/features/process/stage/ui/                 # + outbox-состояния в saveStatusSlotModel
 ```
@@ -63,7 +63,13 @@ commandStack.changed (runtime, существующий)
 | `shape.delete` / `connection.delete` | `shape.delete` / `connection.delete` | |
 | undo/redo (`commandStack.changed` re-fire) | та же сериализация | undo удаляет op из буфера, если она ещё не ушла; ушедшие undo'ы уходят как новая compensating-op через тот же маппинг |
 
-Вне whitelist (step1): `spaceTool`, `lane.*` resize-композиты, `canvas.updateRoot`, подпроцесс-структурные команды, paste мульти-элементный → `needsFullSave`. Доля таких команд мала в типовом редактировании; каждая просто переводит текущий flush на существующий полный путь.
+Вне whitelist (step1): `connection.reconnect*` (обоснованный fallback — PLAN §3.1: сложная валидация source/target, низкая частота), `spaceTool`, `lane.*` resize-композиты, `canvas.updateRoot`, подпроцесс-структурные команды, paste мульти-элементный → `needsFullSave`. Доля таких команд мала в типовом редактировании; каждая просто переводит текущий flush на существующий полный путь. Замер доли — coverage-метрика ≥95% (PLAN §3.1, счётчик `window.__PM_OPS_COVERAGE__`).
+
+### 4.1 Mutation gateway и echo suppression
+
+Все production-мутации диаграммы идут через bpmn-js `modeling`-API → `commandStack` (подтверждено grep'ом baseline: context-menu `modeling.updateProperties/createShape/connect`, editor actions; прямые `businessObject.*`-записи — только в тестах). Outbox наблюдает единственную точку входа; сайдбар, хоткеи, AI-права автоматически покрываются vocabulary, если идут через `modeling`.
+
+**Echo suppression контракт:** replay rebase (§5) применяет ops через `applyOps` с пометкой контекста команд `__pmOpId` + `__pmOpSource: "replay"`; `commandToOps` пропускает такие команды — ни одна replay-команда не становится op, оп-дубликатов не возникает. Поле `source` (`user|agent|e2e|replay`) уходит в body запроса и хранится сервером.
 
 ## 5. Rebase при 409 (same-tab race)
 
