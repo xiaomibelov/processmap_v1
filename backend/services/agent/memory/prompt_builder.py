@@ -15,6 +15,11 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from .citations import (
+    CITATION_INSTRUCTION_MARKER,
+    build_source_refs,
+    rag_block_within_budget,
+)
 from .context import AgentContext
 from .memory_store import AgentTurn
 
@@ -57,6 +62,8 @@ class PromptAssembly:
     history_text: str
     estimated_prompt_tokens: int
     layer_tokens: Dict[str, int] = field(default_factory=dict)
+    # refs фактически попавшей в промпт ступени trim-ladder (для парсера цитат).
+    rag_refs: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def _int_env(name: str, default: int) -> int:
@@ -386,20 +393,21 @@ class PromptBuilder:
         """Return kwargs for gateway.complete() for the given intent."""
         builder = cls()
         if intent == "schema_overview":
-            assembly = builder.build_schema_overview_prompt(ctx)
+            assembly = builder.build_schema_overview_prompt(ctx, rag_chunks=rag_results or [])
             return {
                 "model_class": "cheap",
                 "payload": {"input": assembly.user_prompt},
                 "max_tokens": SCHEMA_OVERVIEW_MAX_TOKENS,
                 "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
                 "layer_tokens": assembly.layer_tokens,
+                "rag_refs": assembly.rag_refs,
             }
         if intent == "doc_qa":
             return builder._doc_qa(ctx, payload, rag_results or [])
 
         # smalltalk / doc_qa_fallback / unknown intents all use the free-answer prompt.
         assembly = builder.build_processman_prompt(
-            ctx, payload, conversation_summary=conversation_summary
+            ctx, payload, rag_chunks=rag_results or [], conversation_summary=conversation_summary
         )
         if intent == "smalltalk":
             model_class = "cheap"
@@ -415,6 +423,7 @@ class PromptBuilder:
             "max_tokens": max_tokens,
             "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
             "layer_tokens": assembly.layer_tokens,
+            "rag_refs": assembly.rag_refs,
         }
 
     def build_processman_prompt(
@@ -448,10 +457,20 @@ class PromptBuilder:
             parts.append(f"Выбранный шаг: {selected}")
         parts.append(f"Сообщение пользователя: {payload.message}")
 
+        base_text = "\n\n".join(parts)
+        base_tokens = estimate_tokens(base_text)
+        # Trim-ladder (гейт G2): RAG-блок ограничен остатком общего бюджета.
+        rag_block, rag_refs = rag_block_within_budget(
+            rag_chunks or [],
+            max(0, self.config.max_total_prompt_tokens - base_tokens),
+        )
+        if rag_block:
+            parts.insert(1, rag_block)
         user_prompt = "\n\n".join(parts)
 
         layer_tokens = {
             "projection": estimate_tokens(projection_text),
+            "rag": estimate_tokens(rag_block),
             "history": history_tokens,
             "user": estimate_tokens(
                 f"Выбранный шаг: {selected}\n\nСообщение пользователя: {payload.message}"
@@ -467,6 +486,7 @@ class PromptBuilder:
             history_text=history_text,
             estimated_prompt_tokens=total,
             layer_tokens=layer_tokens,
+            rag_refs=rag_refs,
         )
 
     def build_schema_overview_prompt(
@@ -486,17 +506,18 @@ class PromptBuilder:
             "Кратко опиши BPMN-схему ниже на русском языке. Не более 400 токенов. Схема:\n\n"
             + projection_text,
         ]
-        if rag_chunks:
-            parts.append("Дополнительный контекст из BPMN/RAG:\n")
-            for c in rag_chunks[:5]:
-                eid = str(c.get("element_id") or "").strip()
-                name = str(c.get("element_name") or "").strip()
-                text = str(c.get("chunk_text") or "").strip()
-                header = f"{name} ({eid})" if (name and eid) else (name or eid or "chunk")
-                parts.append(f"{header}: {text}")
+        base_text = "\n\n".join(parts)
+        # Trim-ladder (гейт G2): RAG-блок ограничен остатком общего бюджета.
+        rag_block, rag_refs = rag_block_within_budget(
+            rag_chunks or [],
+            max(0, self.config.max_total_prompt_tokens - estimate_tokens(base_text)),
+        )
+        if rag_block:
+            parts.append(rag_block)
         user_prompt = "\n\n".join(parts)
         layer_tokens = {
             "projection": estimate_tokens(projection_text),
+            "rag": estimate_tokens(rag_block),
             "history": 0,
             "user": estimate_tokens(user_prompt) - estimate_tokens(projection_text),
         }
@@ -506,6 +527,7 @@ class PromptBuilder:
             history_text="",
             estimated_prompt_tokens=sum(layer_tokens.values()),
             layer_tokens=layer_tokens,
+            rag_refs=rag_refs,
         )
 
     def _doc_qa(self, ctx: AgentContext, payload: Any, rag_results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -518,13 +540,17 @@ class PromptBuilder:
                 "max_tokens": SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS,
                 "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
                 "layer_tokens": assembly.layer_tokens,
+                "rag_refs": [],
             }
-        chunks_text = "\n---\n".join(
-            str(r.get("chunk_text") or r.get("chunk") or r.get("text") or "").strip() for r in rag_results[:5]
+        refs = build_source_refs(rag_results)
+        chunks_text = "\n\n".join(
+            f"[S{i}] {ref['snippet']}" for i, ref in enumerate(refs, start=1)
         )
         prompt_text = (
             "Ответь на вопрос пользователя на основе предоставленных отрывков документации. "
-            "Отвечай на русском языке. Если ответа нет в отрывках, скажи об этом.\n\n"
+            "Каждое утверждение, основанное на отрывке, помечай маркером [S1], [S2] и т.д. "
+            "Если ответа нет в отрывках, скажи об этом — "
+            f"{CITATION_INSTRUCTION_MARKER}.\n\n"
             f"Отрывки:\n{chunks_text}\n\n"
             f"Вопрос: {payload.message}"
         )
@@ -534,4 +560,5 @@ class PromptBuilder:
             "max_tokens": MAX_TOKENS,
             "estimated_prompt_tokens": estimate_tokens(prompt_text),
             "layer_tokens": {"projection": 0, "history": 0, "user": estimate_tokens(prompt_text)},
+            "rag_refs": refs,
         }

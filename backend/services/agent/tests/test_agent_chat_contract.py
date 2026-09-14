@@ -66,6 +66,9 @@ _CHAT_OUT_KEYS = {
     "action_payload",
     "usage",
     "projection_digest",
+    # E2 (agent-rag-retrieval-citations-v1): процитированные RAG-источники
+    # (null — retrieval не участвовал; см. test_citations.py).
+    "sources",
 }
 
 
