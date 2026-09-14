@@ -1,0 +1,49 @@
+{
+  "contour": "audit/dup-logic-audit-v1",
+  "type": "audit",
+  "status": "READY_FOR_REVIEW",
+  "created": "2026-09-14",
+  "baseline": {
+    "remote": "https://github.com/xiaomibelov/processmap_v1.git",
+    "branch": "main",
+    "commit": "add38c240fbc48afc8bb1b92d40535ad3699c101",
+    "commit_date": "2026-09-14T11:16:09Z"
+  },
+  "scope": "static duplicated-logic audit: exact clones, AST structural clones, same-name clusters, monolith/services fork drift, module import graph",
+  "artifacts": [
+    "PLAN.md",
+    "DIAGNOSIS.md",
+    "EVIDENCE-DATA.md",
+    "FIVE-PLANE-PROOF.md",
+    "RECOMMENDATIONS.md",
+    "STATE.json"
+  ],
+  "product_code_changed": false,
+  "key_metrics": {
+    "backend_clones_jscpd": {"groups": 535, "lines": 7095, "percent": 7.56},
+    "frontend_clones_jscpd": {"groups": 222, "lines": 2506, "percent": 2.41},
+    "backend_ast_clone_groups": 77,
+    "frontend_ast_clone_groups": 563,
+    "backend_same_name_clusters": 361,
+    "frontend_same_name_clusters": 565,
+    "graph": {"nodes": 1389, "edges": 3055, "frontend_backend_edges": 0}
+  },
+  "findings": {
+    "P0": "monolith<->agent-svc fork drift (chat.py 287 vs 1629 LOC; twin-drift incident in #976)",
+    "P1": [
+      "dead router sessions_new.py (40/40 subset of sessions.py, unmounted)",
+      "frontend coerce utils copy-paste: toText x222 files/5 semantic variants, asObject x150, asArray x130, fnv1aHex x15",
+      "backend private coerce copies despite app/shared (60+ defs)",
+      "session domain: 5 parallel layers defining add_node/patch_node/delete_node/add_edge"
+    ],
+    "P2": [
+      "registry routers pair (448 clone-lines)",
+      "orgs.py <-> org_service.py (174)",
+      "storage repositories CRUD pattern repetition (2800+ clone-lines)",
+      "frontend large self-clones (Workspace.jsx 233L etc.)"
+    ],
+    "P3": "god-hubs: storage.py (in 82), ProcessStage.jsx (deg 135), _legacy_main.py (6131 LOC)"
+  },
+  "obsidian_mirror": "PENDING (no /srv/obsidian in audit environment; mirror via tools/pm-agent-mirror-report.sh from canonical workspace)",
+  "merge_deploy": "none (audit contour; no approve requested)"
+}
