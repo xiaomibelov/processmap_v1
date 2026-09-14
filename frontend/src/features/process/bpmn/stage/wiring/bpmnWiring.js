@@ -268,6 +268,16 @@ export function createBpmnWiring(ctxBase, deps = {}) {
             command,
           });
         }
+        // SaveOutbox fan-out (contour feature/async-save-pipeline-step1,
+        // UI.md §2): та же существующая commandStack.changed-каскадная
+        // подписка координатора — отдельной подписки на bpmn-js нет.
+        // Дескриптор события сериализуем (command/action/commandContext);
+        // pushCommand сам пропускает replay-команды и маппит whitelist.
+        try {
+          refs.opsOutboxRef?.current?.pushCommand?.(ev);
+        } catch {
+          // outbox must never break the existing change cascade
+        }
       },
       onRuntimeStatus: (runtimeStatus) => {
         refs.modelerReadyRef.current = !!runtimeStatus?.ready && !!runtimeStatus?.defs;

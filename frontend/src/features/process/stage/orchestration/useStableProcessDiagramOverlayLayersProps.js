@@ -84,6 +84,7 @@ const BPMN_INPUT_KEYS = [
   "handleBpmnSelectionChange",
   "isInterviewMode",
   "onBpmnSaveLifecycleEvent",
+  "onOpsSaveStatus",
   "onDiagramContextMenuDismiss",
   "onDiagramContextMenuRequest",
   "onElementNotesRemap",

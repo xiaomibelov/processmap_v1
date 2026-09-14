@@ -1288,6 +1288,11 @@ function ProcessStage({
     visible: false,
     message: "",
   });
+  // SaveOutbox (contour feature/async-save-pipeline-step1): текущая
+  // outbox-стадия (ops-saving/ops-rebase/ops-degraded/ops-saved) из
+  // BpmnStage; публикуется в saveUploadStatus.opsStage (словарь
+  // OPS_STAGE_VIEW в saveStatusSlotModel).
+  const [opsSaveStage, setOpsSaveStage] = useState("");
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
     tone: "success",
@@ -1421,10 +1426,15 @@ function ProcessStage({
     () => asObject(sessionCompanionBridgeSnapshot.save),
     [sessionCompanionBridgeSnapshot.save],
   );
-  const saveUploadStatus = useMemo(
-    () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
-    [saveUploadLifecycleEvent],
-  );
+  const saveUploadStatus = useMemo(() => {
+    const badge = buildSaveUploadStatusBadge(saveUploadLifecycleEvent);
+    // Outbox-стадия дельта-сохранения: view-модель слота читает
+    // status.opsStage (saveStatusSlotModel OPS_STAGE_VIEW, UI.md §2).
+    return opsSaveStage ? { ...badge, opsStage: opsSaveStage } : badge;
+  }, [saveUploadLifecycleEvent, opsSaveStage]);
+  useEffect(() => {
+    setOpsSaveStage("");
+  }, [sid]);
   useEffect(() => {
     if (isManualSaveBusy === true) return;
     const state = toText(saveUploadStatus?.state);
@@ -7522,6 +7532,7 @@ function ProcessStage({
     hybridViewportMatrixRef,
     isInterviewMode,
     onBpmnSaveLifecycleEvent,
+    onOpsSaveStatus: setOpsSaveStage,
     onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
     onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,
