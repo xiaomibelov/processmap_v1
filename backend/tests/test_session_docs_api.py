@@ -137,6 +137,16 @@ class TestAttach:
         assert "Параграф один техкарты" in text
         assert "Параграф два техкарты" in text
 
+    def test_attach_docx_zip_bomb_guard(self, client, auth, session_id):
+        """zip-bomb guard: член архива с разжатым размером > лимита → 422, без чтения в память."""
+        data = _make_docx_bytes(["безопасный параграф"])
+        fake_info = mock.Mock(file_size=21 * 1024 * 1024)  # > _DOCX_MAX_MEMBER_BYTES
+        with mock.patch("app.services.session_docs_service.zipfile.ZipFile") as zf_mock:
+            zf_mock.return_value.__enter__.return_value.getinfo.return_value = fake_info
+            r = _attach(client, auth, session_id, "bomb.docx", data)
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"]["error"] == "doc_unparseable"
+
     def test_attach_doc_external_converter(self, client, auth, session_id):
         data = b"\xd0\xcf\x11\xe0 binary ole garbage" + b"\x00" * 64
         converted = "Текст технологической карты извлечённый конвертером antiword. " * 3
