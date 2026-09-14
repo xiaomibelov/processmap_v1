@@ -115,6 +115,43 @@ def _insert_note_comment_mentions(
         )
 
 
+def _get_live_thread(con: Any, thread_id: str, org_id: str) -> Optional[Dict[str, Any]]:
+    return base.get_by_id(
+        con,
+        "note_threads",
+        "id",
+        thread_id,
+        org_id=org_id or None,
+        soft_delete=True,
+    )
+
+
+def _list_thread_comment_dicts(con: Any, thread_id: str) -> List[Dict[str, Any]]:
+    rows = con.execute(
+        "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
+        [thread_id],
+    ).fetchall()
+    return [_note_comment_row_to_dict(row) for row in rows]
+
+
+def _fetch_note_mentions_by_comment_ids(
+    con: Any,
+    comment_ids: Iterable[str],
+) -> Dict[str, List[Dict[str, Any]]]:
+    ids = [str(cid or "") for cid in comment_ids or [] if str(cid or "")]
+    mapping: Dict[str, List[Dict[str, Any]]] = {cid: [] for cid in ids}
+    if not ids:
+        return mapping
+    placeholders = ", ".join(["?"] * len(ids))
+    for row in con.execute(
+        f"SELECT * FROM note_comment_mentions WHERE comment_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+        ids,
+    ).fetchall():
+        mention = _note_mention_row_to_dict(row)
+        mapping.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
+    return mapping
+
+
 def _latest_note_comment_info(comments: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     latest_at = 0
     latest_id = ""
@@ -245,27 +282,29 @@ def acknowledge_note_mention(
     if not mid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?", "mentioned_user_id = ?"]
-    params: List[Any] = [mid, actor]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
     now = _now_ts()
     with _connect() as con:
-        row = con.execute(
-            f"SELECT * FROM note_comment_mentions WHERE {' AND '.join(filters)} LIMIT 1",
-            params,
-        ).fetchone()
+        row = base.get_by_id(
+            con,
+            "note_comment_mentions",
+            "id",
+            mid,
+            org_id=oid or None,
+            extra="mentioned_user_id = ?",
+            extra_params=[actor],
+        )
         if not row:
             return None
-        if int(_row_value(row, "acknowledged_at", 0) or 0) <= 0:
-            con.execute(
-                "UPDATE note_comment_mentions SET acknowledged_at = ? WHERE id = ?",
-                [now, mid],
-            )
-            con.commit()
-        refreshed = con.execute("SELECT * FROM note_comment_mentions WHERE id = ? LIMIT 1", [mid]).fetchone()
-    return _note_mention_row_to_dict(refreshed) if refreshed else None
+        if int(row.get("acknowledged_at", 0) or 0) <= 0:
+            base.update_fields(con, "note_comment_mentions", {"acknowledged_at": now}, {"id": mid})
+        return base.reselect(
+            con,
+            "note_comment_mentions",
+            "id",
+            mid,
+            mapper=_note_mention_row_to_dict,
+        )
+    return None
 
 
 def acknowledge_note_thread_attention(
@@ -280,17 +319,9 @@ def acknowledge_note_thread_attention(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?", "deleted_at = 0"]
-    params: List[Any] = [tid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
     now = _now_ts()
     with _connect() as con:
-        thread_row = con.execute(
-            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
-            params,
-        ).fetchone()
+        thread_row = _get_live_thread(con, tid, oid)
         if not thread_row:
             return None
         row_org_id = str(_row_value(thread_row, "org_id") or "").strip() or _default_org_id()
@@ -330,21 +361,12 @@ def add_note_comment(
     if not tid:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
-    params: List[Any] = [tid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
     actor = str(actor_user_id or "").strip()
     reply_to_id = str(reply_to_comment_id or "").strip()
     now = _now_ts()
     comment_id = uuid.uuid4().hex[:12]
-    filters.append("deleted_at = 0")
     with _connect() as con:
-        thread_row = con.execute(
-            f"SELECT id, session_id, org_id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
-            params,
-        ).fetchone()
+        thread_row = _get_live_thread(con, tid, oid)
         if not thread_row:
             return None
         if reply_to_id:
@@ -356,12 +378,20 @@ def add_note_comment(
                 raise LookupError("reply target not found")
             if str(_row_value(reply_row, "thread_id") or "").strip() != tid:
                 raise ValueError("reply target must belong to the same thread")
-        con.execute(
-            """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, reply_to_comment_id, created_at, updated_at, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [comment_id, tid, actor, text, reply_to_id, now, now, actor],
+        base.insert(
+            con,
+            "note_comments",
+            {
+                "id": comment_id,
+                "thread_id": tid,
+                "author_user_id": actor,
+                "body": text,
+                "reply_to_comment_id": reply_to_id,
+                "created_at": now,
+                "updated_at": now,
+                "updated_by": actor,
+            },
+            commit=False,
         )
         _insert_note_comment_mentions(
             con,
@@ -380,7 +410,13 @@ def add_note_comment(
             last_read_at=now,
             last_seen_comment_id=comment_id,
         )
-        con.execute("UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?", [now, actor, tid])
+        base.update_fields(
+            con,
+            "note_threads",
+            {"updated_at": now, "updated_by": actor},
+            {"id": tid},
+            commit=False,
+        )
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
@@ -415,35 +451,44 @@ def create_note_thread(
     comment_id = uuid.uuid4().hex[:12]
     with _connect() as con:
         workspace_id = _project_workspace_id_for_session(con, sess, oid)
-        con.execute(
-            """
-            INSERT INTO note_threads (
-              id, org_id, workspace_id, project_id, session_id, scope_type, scope_ref_json,
-              status, priority, requires_attention, created_by, created_at, updated_at, updated_by, resolved_by, resolved_at, deleted_at, deleted_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, '', 0, 0, '')
-            """,
-            [
-                thread_id,
-                oid,
-                workspace_id,
-                project_id,
-                sid,
-                normalized_scope_type,
-                _json_dumps(normalized_scope_ref, {}),
-                normalized_priority,
-                1 if normalized_requires_attention else 0,
-                actor,
-                now,
-                now,
-                actor,
-            ],
+        base.insert(
+            con,
+            "note_threads",
+            {
+                "id": thread_id,
+                "org_id": oid,
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "session_id": sid,
+                "scope_type": normalized_scope_type,
+                "scope_ref_json": _json_dumps(normalized_scope_ref, {}),
+                "status": "open",
+                "priority": normalized_priority,
+                "requires_attention": 1 if normalized_requires_attention else 0,
+                "created_by": actor,
+                "created_at": now,
+                "updated_at": now,
+                "updated_by": actor,
+                "resolved_by": "",
+                "resolved_at": 0,
+                "deleted_at": 0,
+                "deleted_by": "",
+            },
+            commit=False,
         )
-        con.execute(
-            """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [comment_id, thread_id, actor, text, now, now, actor],
+        base.insert(
+            con,
+            "note_comments",
+            {
+                "id": comment_id,
+                "thread_id": thread_id,
+                "author_user_id": actor,
+                "body": text,
+                "created_at": now,
+                "updated_at": now,
+                "updated_by": actor,
+            },
+            commit=False,
         )
         _insert_note_comment_mentions(
             con,
@@ -481,11 +526,10 @@ def delete_note_comment(
     if not cid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["c.id = ?", "c.deleted_at = 0", "t.deleted_at = 0"]
-    params: List[Any] = [cid]
+    eq: Dict[str, Any] = {"c.id": cid}
     if oid:
-        filters.append("t.org_id = ?")
-        params.append(oid)
+        eq["t.org_id"] = oid
+    where, params = base.build_where(eq, extra="c.deleted_at = 0 AND t.deleted_at = 0")
     now = _now_ts()
     with _connect() as con:
         row = con.execute(
@@ -493,7 +537,7 @@ def delete_note_comment(
             SELECT c.id, c.thread_id
             FROM note_comments c
             JOIN note_threads t ON t.id = c.thread_id
-            WHERE {' AND '.join(filters)}
+            {where}
             LIMIT 1
             """,
             params,
@@ -501,18 +545,20 @@ def delete_note_comment(
         if not row:
             return None
         tid = str(_row_value(row, "thread_id") or "").strip()
-        con.execute(
-            """
-            UPDATE note_comments
-               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
-             WHERE id = ? AND deleted_at = 0
-            """,
-            [now, actor, now, actor, cid],
+        base.update_fields(
+            con,
+            "note_comments",
+            {"updated_at": now, "updated_by": actor, "deleted_at": now, "deleted_by": actor},
+            {"id": cid, "deleted_at": 0},
+            commit=False,
         )
         if tid:
-            con.execute(
-                "UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?",
-                [now, actor, tid],
+            base.update_fields(
+                con,
+                "note_threads",
+                {"updated_at": now, "updated_by": actor},
+                {"id": tid},
+                commit=False,
             )
         con.commit()
     return {"comment_id": cid, "thread_id": tid, "deleted_at": now, "deleted_by": actor}
@@ -530,34 +576,24 @@ def delete_note_thread(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?", "deleted_at = 0"]
-    params: List[Any] = [tid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
     now = _now_ts()
     with _connect() as con:
-        thread_row = con.execute(
-            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
-            params,
-        ).fetchone()
+        thread_row = _get_live_thread(con, tid, oid)
         if not thread_row:
             return None
-        con.execute(
-            """
-            UPDATE note_threads
-               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
-             WHERE id = ?
-            """,
-            [now, actor, now, actor, tid],
+        base.update_fields(
+            con,
+            "note_threads",
+            {"updated_at": now, "updated_by": actor, "deleted_at": now, "deleted_by": actor},
+            {"id": tid},
+            commit=False,
         )
-        con.execute(
-            """
-            UPDATE note_comments
-               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
-             WHERE thread_id = ? AND deleted_at = 0
-            """,
-            [now, actor, now, actor, tid],
+        base.update_fields(
+            con,
+            "note_comments",
+            {"updated_at": now, "updated_by": actor, "deleted_at": now, "deleted_by": actor},
+            {"thread_id": tid, "deleted_at": 0},
+            commit=False,
         )
         con.commit()
     return {"thread_id": tid, "deleted_at": now, "deleted_by": actor}
@@ -569,20 +605,17 @@ def get_note_comment(comment_id: str, *, org_id: Optional[str] = None) -> Option
     if not cid:
         return None
     oid = str(org_id or "").strip()
-    filters = ["c.id = ?"]
-    params: List[Any] = [cid]
+    eq: Dict[str, Any] = {"c.id": cid}
     if oid:
-        filters.append("t.org_id = ?")
-        params.append(oid)
+        eq["t.org_id"] = oid
+    where, params = base.build_where(eq, extra="c.deleted_at = 0 AND t.deleted_at = 0")
     with _connect() as con:
         row = con.execute(
             f"""
             SELECT c.*, t.org_id AS thread_org_id, t.session_id AS session_id
             FROM note_comments c
             JOIN note_threads t ON t.id = c.thread_id
-            WHERE {' AND '.join(filters)}
-              AND c.deleted_at = 0
-              AND t.deleted_at = 0
+            {where}
             LIMIT 1
             """,
             params,
@@ -606,39 +639,23 @@ def get_note_thread(
     if not tid:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
-    params: List[Any] = [tid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
+    where, params = base.build_where({"id": tid}, org_id=oid or None, soft_delete=True)
     with _connect() as con:
-        filters.append("deleted_at = 0")
         thread_row = con.execute(
-            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            f"SELECT * FROM note_threads{where} LIMIT 1",
             params,
         ).fetchone()
         if not thread_row:
             return None
         row_org_id = str(_row_value(thread_row, "org_id") or "").strip()
         acknowledged_at = _thread_attention_acknowledged_at(con, tid, row_org_id, viewer_user_id)
-        comment_rows = con.execute(
-            "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
-            [tid],
-        ).fetchall()
-        comment_ids = [str(_row_value(row, "id") or "") for row in comment_rows]
-        mention_rows: Dict[str, List[Dict[str, Any]]] = {cid: [] for cid in comment_ids if cid}
-        if comment_ids:
-            placeholders = ", ".join(["?"] * len(comment_ids))
-            for row in con.execute(
-                f"SELECT * FROM note_comment_mentions WHERE comment_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
-                comment_ids,
-            ).fetchall():
-                mention = _note_mention_row_to_dict(row)
-                mention_rows.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
+        comments = _list_thread_comment_dicts(con, tid)
+        comment_ids = [str(comment.get("id") or "") for comment in comments]
+        mention_rows = _fetch_note_mentions_by_comment_ids(con, comment_ids)
         author_ids = {
             str(_row_value(thread_row, "created_by") or "").strip(),
             str(_row_value(thread_row, "resolved_by") or "").strip(),
-            *[str(_row_value(row, "author_user_id") or "").strip() for row in comment_rows],
+            *[str(comment.get("author_user_id") or "").strip() for comment in comments],
         }
         profiles_by_id = _auth_user_profiles_by_id_with_connection(con, author_ids)
         read_at = 0
@@ -655,11 +672,8 @@ def get_note_thread(
             ).fetchone()
             read_at = int(_row_value(read_row, "last_read_at", 0) or 0)
     thread = _note_thread_row_to_dict(thread_row, attention_acknowledged_at=acknowledged_at)
-    comments = []
-    for row in comment_rows:
-        comment = _note_comment_row_to_dict(row)
+    for comment in comments:
         comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
-        comments.append(comment)
     thread["comments"] = comments
     thread = _apply_note_thread_read_state(thread, comments, viewer_user_id=viewer_user_id, last_read_at=read_at)
     thread = _apply_note_author_profiles(thread, profiles_by_id)
@@ -678,13 +692,13 @@ def list_active_note_mentions_for_user(
     if not uid:
         return []
     oid = str(org_id or "").strip()
-    filters = ["m.mentioned_user_id = ?", "m.acknowledged_at = 0"]
-    params: List[Any] = [uid]
+    eq: Dict[str, Any] = {"m.mentioned_user_id": uid}
     if oid:
-        filters.append("m.org_id = ?")
-        params.append(oid)
-    filters.append("nt.deleted_at = 0")
-    filters.append("c.deleted_at = 0")
+        eq["m.org_id"] = oid
+    where, params = base.build_where(
+        eq,
+        extra="m.acknowledged_at = 0 AND nt.deleted_at = 0 AND c.deleted_at = 0",
+    )
     lim = max(1, min(100, int(limit or 20)))
     with _connect() as con:
         rows = con.execute(
@@ -699,7 +713,7 @@ def list_active_note_mentions_for_user(
             FROM note_comment_mentions m
             JOIN note_threads nt ON nt.id = m.thread_id AND nt.org_id = m.org_id
             JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
-            WHERE {' AND '.join(filters)}
+            {where}
             ORDER BY m.created_at DESC, m.id DESC
             LIMIT ?
             """,
@@ -743,14 +757,20 @@ def list_note_notifications_for_user(
         if not allowed:
             return []
 
-    filters = ["nt.org_id = ?"] if oid else []
-    params: List[Any] = [oid] if oid else []
+    eq: Dict[str, Any] = {}
+    if oid:
+        eq["nt.org_id"] = oid
+    extra_clauses: List[str] = ["nt.deleted_at = 0"]
+    extra_params: List[Any] = []
     if allowed is not None:
         placeholders = ", ".join(["?"] * len(allowed))
-        filters.append(f"nt.project_id IN ({placeholders})")
-        params.extend(allowed)
-    filters.append("nt.deleted_at = 0")
-    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        extra_clauses.insert(0, f"nt.project_id IN ({placeholders})")
+        extra_params.extend(allowed)
+    where, params = base.build_where(
+        eq,
+        extra=" AND ".join(extra_clauses),
+        extra_params=extra_params,
+    )
 
     with _connect() as con:
         rows = con.execute(
@@ -1048,22 +1068,18 @@ def list_note_threads(
     normalized_scope_type = None
     if scope_type is not None and str(scope_type or "").strip():
         normalized_scope_type, _ = _normalize_note_scope(scope_type, {"element_id": "__filter__"} if str(scope_type or "").strip().lower() == "diagram_element" else {})
-    filters = ["session_id = ?"]
-    params: List[Any] = [sid]
+    eq: Dict[str, Any] = {"session_id": sid}
     oid = str(org_id or "").strip()
     if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
+        eq["org_id"] = oid
     if normalized_status:
-        filters.append("status = ?")
-        params.append(normalized_status)
+        eq["status"] = normalized_status
     if normalized_scope_type:
-        filters.append("scope_type = ?")
-        params.append(normalized_scope_type)
-    filters.append("deleted_at = 0")
+        eq["scope_type"] = normalized_scope_type
+    where, params = base.build_where(eq, soft_delete=True)
     with _connect() as con:
         thread_rows = con.execute(
-            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} ORDER BY updated_at DESC, created_at DESC",
+            f"SELECT * FROM note_threads{where} ORDER BY updated_at DESC, created_at DESC",
             params,
         ).fetchall()
         thread_ids = [str(_row_value(row, "id") or "") for row in thread_rows]
@@ -1082,30 +1098,23 @@ def list_note_threads(
             for comment in comments
             if str(comment.get("id") or "")
         ]
-        mention_rows: Dict[str, List[Dict[str, Any]]] = {cid: [] for cid in comment_ids}
-        if comment_ids:
-            placeholders = ", ".join(["?"] * len(comment_ids))
-            for row in con.execute(
-                f"SELECT * FROM note_comment_mentions WHERE comment_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
-                comment_ids,
-            ).fetchall():
-                mention = _note_mention_row_to_dict(row)
-                mention_rows.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
+        mention_rows = _fetch_note_mentions_by_comment_ids(con, comment_ids)
         viewer = str(viewer_user_id or "").strip()
         acknowledgement_rows: Dict[str, int] = {}
         read_rows: Dict[str, int] = {}
         if viewer and thread_ids:
             placeholders = ", ".join(["?"] * len(thread_ids))
-            ack_filters = [f"thread_id IN ({placeholders})", "user_id = ?"]
-            ack_params: List[Any] = [*thread_ids, viewer]
-            if oid:
-                ack_filters.append("org_id = ?")
-                ack_params.append(oid)
+            ack_where, ack_params = base.build_where(
+                {},
+                org_id=oid or None,
+                extra=f"thread_id IN ({placeholders}) AND user_id = ?",
+                extra_params=[*thread_ids, viewer],
+            )
             for row in con.execute(
                 f"""
                 SELECT thread_id, acknowledged_at
                 FROM note_thread_attention_acknowledgements
-                WHERE {' AND '.join(ack_filters)}
+                {ack_where}
                 """,
                 ack_params,
             ).fetchall():
@@ -1167,24 +1176,11 @@ def mark_note_thread_read(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?", "deleted_at = 0"]
-    params: List[Any] = [tid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
-    filters.append("deleted_at = 0")
     with _connect() as con:
-        thread_row = con.execute(
-            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
-            params,
-        ).fetchone()
+        thread_row = _get_live_thread(con, tid, oid)
         if not thread_row:
             return None
-        comment_rows = con.execute(
-            "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
-            [tid],
-        ).fetchall()
-        comments = [_note_comment_row_to_dict(row) for row in comment_rows]
+        comments = _list_thread_comment_dicts(con, tid)
         latest = _latest_note_comment_info(comments)
         last_read_at = int(latest.get("last_comment_at") or _now_ts())
         last_seen_comment_id = str(latest.get("last_seen_comment_id") or "")
@@ -1219,49 +1215,41 @@ def patch_note_thread(
     if not tid:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
-    params: List[Any] = [tid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
     actor = str(actor_user_id or "").strip()
     now = _now_ts()
-    updates: List[str] = ["updated_at = ?", "updated_by = ?"]
-    values: List[Any] = [now, actor]
+    fields: Dict[str, Any] = {"updated_at": now, "updated_by": actor}
     if status is not None:
         next_status = _normalize_note_status(status)
-        updates.extend(["status = ?", "resolved_by = ?", "resolved_at = ?"])
-        values.extend([
-            next_status,
-            actor if next_status == "resolved" else "",
-            now if next_status == "resolved" else 0,
-        ])
+        fields["status"] = next_status
+        fields["resolved_by"] = actor if next_status == "resolved" else ""
+        fields["resolved_at"] = now if next_status == "resolved" else 0
     if priority is not None:
-        updates.append("priority = ?")
-        values.append(_normalize_note_priority(priority))
+        fields["priority"] = _normalize_note_priority(priority)
     if requires_attention is not None:
         normalized_requires_attention = _normalize_bool_flag(requires_attention, field_name="requires_attention")
-        updates.append("requires_attention = ?")
-        values.append(1 if normalized_requires_attention else 0)
-    if len(updates) == 1:
+        fields["requires_attention"] = 1 if normalized_requires_attention else 0
+    if len(fields) == 2:
         raise ValueError("patch required")
     with _connect() as con:
-        thread_row = con.execute(
-            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
-            params,
-        ).fetchone()
+        thread_row = base.get_by_id(
+            con,
+            "note_threads",
+            "id",
+            tid,
+            org_id=oid or None,
+        )
         if not thread_row:
             return None
-        con.execute(f"UPDATE note_threads SET {', '.join(updates)} WHERE id = ?", [*values, tid])
+        base.update_fields(con, "note_threads", fields, {"id": tid}, commit=False)
         if requires_attention is not None:
-            ack_filters = ["thread_id = ?"]
-            ack_params: List[Any] = [tid]
+            ack_where: Dict[str, Any] = {"thread_id": tid}
             if oid:
-                ack_filters.append("org_id = ?")
-                ack_params.append(oid)
-            con.execute(
-                f"DELETE FROM note_thread_attention_acknowledgements WHERE {' AND '.join(ack_filters)}",
-                ack_params,
+                ack_where["org_id"] = oid
+            base.hard_delete(
+                con,
+                "note_thread_attention_acknowledgements",
+                ack_where,
+                commit=False,
             )
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
@@ -1301,18 +1289,17 @@ def update_note_comment(
     oid = str(org_id or "").strip()
     actor = str(actor_user_id or "").strip()
     now = _now_ts()
-    filters = ["c.id = ?"]
-    params: List[Any] = [cid]
+    eq: Dict[str, Any] = {"c.id": cid}
     if oid:
-        filters.append("t.org_id = ?")
-        params.append(oid)
+        eq["t.org_id"] = oid
+    where, params = base.build_where(eq)
     with _connect() as con:
         row = con.execute(
             f"""
             SELECT c.*, t.org_id AS thread_org_id, t.session_id AS session_id
             FROM note_comments c
             JOIN note_threads t ON t.id = c.thread_id
-            WHERE {' AND '.join(filters)}
+            {where}
             LIMIT 1
             """,
             params,
@@ -1322,17 +1309,25 @@ def update_note_comment(
         tid = str(_row_value(row, "thread_id") or "").strip()
         thread_org_id = str(_row_value(row, "thread_org_id") or oid or _default_org_id())
         session_id = str(_row_value(row, "session_id") or "")
-        con.execute(
-            """
-            UPDATE note_comments
-               SET body = ?, updated_at = ?, updated_by = ?, edited_at = ?, edited_by_user_id = ?
-             WHERE id = ?
-            """,
-            [text, now, actor, now, actor, cid],
+        base.update_fields(
+            con,
+            "note_comments",
+            {
+                "body": text,
+                "updated_at": now,
+                "updated_by": actor,
+                "edited_at": now,
+                "edited_by_user_id": actor,
+            },
+            {"id": cid},
+            commit=False,
         )
-        con.execute(
-            "UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?",
-            [now, actor, tid],
+        base.update_fields(
+            con,
+            "note_threads",
+            {"updated_at": now, "updated_by": actor},
+            {"id": tid},
+            commit=False,
         )
         if replace_mentions:
             con.execute("DELETE FROM note_comment_mentions WHERE comment_id = ? AND org_id = ?", [cid, thread_org_id])
@@ -1349,6 +1344,7 @@ def update_note_comment(
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
+from .. import base
 from ..compat.repository import _connect
 from ..compat.repository import _ensure_schema
 from ..compat.repository import _json_dumps

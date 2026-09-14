@@ -6,13 +6,11 @@ import os
 import re
 import sqlite3
 import threading
-import time
 import uuid
 import hashlib
 import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Set
 import xml.etree.ElementTree as ET
@@ -224,7 +222,7 @@ def set_feature_flag(key: str, value: str) -> None:
             VALUES (?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
             """,
-            [str(key or ""), str(value or ""), int(time.time())],
+            [str(key or ""), str(value or ""), _now_ts()],
         )
         con.commit()
 

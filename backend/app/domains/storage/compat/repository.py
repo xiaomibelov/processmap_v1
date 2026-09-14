@@ -6,19 +6,22 @@ import os
 import re
 import sqlite3
 import threading
-import time
 import uuid
 import hashlib
 import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Set
 import xml.etree.ElementTree as ET
 from ....db import get_db_runtime_config, redact_database_url
 from ....models import Project, Session
 from ....session_status import derive_session_status
+from .. import base
+from ..base import _json_dumps
+from ..base import _json_loads
+from ..base import _now_ts
+from ..base import row_to_dict as _row_to_dict
 logger = logging.getLogger(__name__)
 try:
     import psycopg
@@ -2285,7 +2288,7 @@ def _ensure_schema() -> None:
                 INSERT OR IGNORE INTO feature_flags (key, value, description, updated_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", int(time.time())],
+                ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", _now_ts()],
             )
             con.execute(
                 """
@@ -2587,51 +2590,6 @@ def _invite_status(row: Dict[str, Any]) -> str:
     return "pending"
 
 
-def _json_dumps(value: Any, fallback: Any) -> str:
-    source = value if value is not None else fallback
-    def _to_jsonable(obj: Any) -> Any:
-        if obj is None:
-            return None
-        if isinstance(obj, (str, int, float, bool)):
-            return obj
-        if isinstance(obj, dict):
-            out: Dict[str, Any] = {}
-            for k, v in obj.items():
-                out[str(k)] = _to_jsonable(v)
-            return out
-        if isinstance(obj, (list, tuple, set)):
-            return [_to_jsonable(v) for v in obj]
-        if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
-            try:
-                return _to_jsonable(obj.model_dump())
-            except Exception:
-                pass
-        if hasattr(obj, "dict") and callable(getattr(obj, "dict")):
-            try:
-                return _to_jsonable(obj.dict())
-            except Exception:
-                pass
-        return obj
-
-    try:
-        return json.dumps(_to_jsonable(source), ensure_ascii=False)
-    except Exception:
-        return json.dumps(_to_jsonable(fallback), ensure_ascii=False)
-
-
-def _json_loads(value: Any, fallback: Any) -> Any:
-    raw = str(value or "")
-    if not raw:
-        return fallback
-    try:
-        parsed = json.loads(raw)
-        if parsed is None:
-            return fallback
-        return parsed
-    except Exception:
-        return fallback
-
-
 def _json_text(value: Any) -> str:
     return _json_dumps(value, None)
 
@@ -2822,10 +2780,6 @@ def _normalize_org_invite_role(raw: Any) -> str:
     return role
 
 
-def _now_ts() -> int:
-    return int(datetime.now(timezone.utc).timestamp())
-
-
 def _org_property_dictionary_definition_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": str(row["id"] or ""),
@@ -2950,10 +2904,6 @@ def _read_legacy_json(path: Path) -> Dict[str, Any] | None:
     except Exception:
         return None
     return raw if isinstance(raw, dict) else None
-
-
-def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-    return dict(row)
 
 
 def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
@@ -3945,6 +3895,42 @@ def _storage__insert_bpmn_version_row(
     }
 
 
+def _resolve_session_org_scope(con: Any, sid: str, scope_org: str) -> Optional[str]:
+    """Effective org for a session-scoped version query (bpmn/state versions).
+
+    Returns None when the session is missing or the requested org scope does
+    not match the session's org — callers turn that into the empty result.
+    """
+    sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+    if not sess_row:
+        return None
+    session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+    oid = scope_org or session_org
+    if oid != session_org:
+        return None
+    return oid
+
+
+def _bpmn_version_payload(row: Any, *, include_xml: bool) -> Dict[str, Any]:
+    item = {
+        "id": str(row["id"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "version_number": int(row["version_number"] or 0),
+        "diagram_state_version": int(row["diagram_state_version"] or 0),
+        "session_payload_hash": str(row["session_payload_hash"] or ""),
+        "session_version": int(row["session_version"] or 0),
+        "session_updated_at": int(row["session_updated_at"] or 0),
+        "source_action": str(row["source_action"] or ""),
+        "import_note": str(row["import_note"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+    }
+    if include_xml:
+        item["bpmn_xml"] = str(row["bpmn_xml"] or "")
+    return item
+
+
 def _storage_count_bpmn_versions(
     self,
     session_id: str,
@@ -3958,30 +3944,24 @@ def _storage_count_bpmn_versions(
     scope_org = str(org_id or "").strip()
     _ensure_schema()
     with _connect() as con:
-        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
-        if not sess_row:
+        oid = _resolve_session_org_scope(con, sid, scope_org)
+        if oid is None:
             return 0
-        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
-        oid = scope_org or session_org
-        if oid != session_org:
-            return 0
-        filters = ["session_id = ?", "org_id = ?"]
-        params: List[Any] = [sid, oid]
         actions = [
             str(action or "").strip().lower()
             for action in (source_actions or [])
             if str(action or "").strip()
         ]
+        extra = ""
+        extra_params: List[Any] = []
         if actions:
             placeholders = ", ".join(["?"] * len(actions))
-            filters.append(f"lower(source_action) IN ({placeholders})")
-            params.extend(actions)
-        where = f"WHERE {' AND '.join(filters)}"
-        row = con.execute(
-            f"SELECT COUNT(*) AS cnt FROM bpmn_versions {where}",
-            params,
-        ).fetchone()
-    return int((dict(row) if row else {}).get("cnt") or 0)
+            extra = f"lower(source_action) IN ({placeholders})"
+            extra_params = list(actions)
+        where, params = base.build_where(
+            {"session_id": sid}, org_id=oid, extra=extra, extra_params=extra_params
+        )
+        return base.count(con, "bpmn_versions", where=where, params=params)
 
 
 def _storage_count_note_threads(
@@ -3995,25 +3975,19 @@ def _storage_count_note_threads(
     if not sid:
         return 0
     oid = str(org_id or "").strip() or _default_org_id()
-    filters = ["session_id = ?", "deleted_at = 0"]
-    params: List[Any] = [sid]
-    if oid:
-        filters.append("org_id = ?")
-        params.append(oid)
     normalized_status = None
     if status is not None and str(status or "").strip():
         normalized_status = _normalize_note_status(status)
-    if normalized_status:
-        filters.append("status = ?")
-        params.append(normalized_status)
-    where = f"WHERE {' AND '.join(filters)}"
+    where, params = base.build_where(
+        {"session_id": sid},
+        org_id=oid or None,
+        soft_delete=True,
+        extra="status = ?" if normalized_status else "",
+        extra_params=[normalized_status] if normalized_status else [],
+    )
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            f"SELECT COUNT(*) AS cnt FROM note_threads {where}",
-            params,
-        ).fetchone()
-    return int((dict(row) if row else {}).get("cnt") or 0)
+        return base.count(con, "note_threads", where=where, params=params)
 
 
 def _storage_create(
@@ -4164,14 +4138,16 @@ def _storage_delete(
     owner = _scope_user_id(user_id)
     admin = _scope_is_admin(is_admin)
     org = _scope_org_id(org_id) or _default_org_id()
-    clause, params = _owner_clause(owner, admin)
-    org_clause, org_params = _org_clause(org)
+    clause, _owner_params = _owner_clause(owner, admin)
+    eq: Dict[str, Any] = {"id": sid}
+    if clause:
+        # _owner_clause emits a raw " AND owner_user_id = ? " fragment; for a
+        # single-equality guard it is equivalent to an eq filter.
+        eq["owner_user_id"] = owner
+    where, params = base.build_where(eq, org_id=org)
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute(
-            f"DELETE FROM sessions WHERE id = ? {org_clause} {clause}",
-            [sid, *org_params, *params],
-        )
+        cur = con.execute(f"DELETE FROM sessions{where}", params)
         con.commit()
         return int(cur.rowcount or 0) > 0
 
@@ -4216,12 +4192,14 @@ def _storage_find_by_parent_element(
     if not pid or not eid:
         return None
     org = _scope_org_id(org_id) or _default_org_id()
-    org_clause, org_params = _org_clause(org)
     _ensure_schema()
     with _connect() as con:
+        where, params = base.build_where(
+            {"parent_session_id": pid, "element_id_in_parent": eid}, org_id=org
+        )
         row = con.execute(
-            f"SELECT * FROM sessions WHERE parent_session_id = ? AND element_id_in_parent = ? {org_clause} LIMIT 1",
-            [pid, eid, *org_params],
+            f"SELECT * FROM sessions{where} LIMIT 1",
+            params,
         ).fetchone()
     return _session_row_to_model(row) if row else None
 
@@ -4398,12 +4376,8 @@ def _storage_get_bpmn_version(
     scope_org = str(org_id or "").strip()
 
     with _connect() as con:
-        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
-        if not sess_row:
-            return None
-        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
-        oid = scope_org or session_org
-        if oid != session_org:
+        oid = _resolve_session_org_scope(con, sid, scope_org)
+        if oid is None:
             return None
         row = con.execute(
             """
@@ -4421,21 +4395,7 @@ def _storage_get_bpmn_version(
 
     if not row:
         return None
-    return {
-        "id": str(row["id"] or ""),
-        "session_id": str(row["session_id"] or ""),
-        "org_id": str(row["org_id"] or ""),
-        "version_number": int(row["version_number"] or 0),
-        "diagram_state_version": int(row["diagram_state_version"] or 0),
-        "session_payload_hash": str(row["session_payload_hash"] or ""),
-        "session_version": int(row["session_version"] or 0),
-        "session_updated_at": int(row["session_updated_at"] or 0),
-        "bpmn_xml": str(row["bpmn_xml"] or ""),
-        "source_action": str(row["source_action"] or ""),
-        "import_note": str(row["import_note"] or ""),
-        "created_at": int(row["created_at"] or 0),
-        "created_by": str(row["created_by"] or ""),
-    }
+    return _bpmn_version_payload(row, include_xml=True)
 
 
 def _storage_get_rag_readiness(
@@ -4528,12 +4488,8 @@ def _storage_list_bpmn_version_numbers_by_source_actions(
     scope_org = str(org_id or "").strip()
 
     with _connect() as con:
-        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
-        if not sess_row:
-            return []
-        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
-        oid = scope_org or session_org
-        if oid != session_org:
+        oid = _resolve_session_org_scope(con, sid, scope_org)
+        if oid is None:
             return []
         placeholders = ", ".join(["?"] * len(actions))
         rows = con.execute(
@@ -4569,12 +4525,8 @@ def _storage_latest_user_facing_bpmn_version(
         return None
     scope_org = str(org_id or "").strip()
     with _connect() as con:
-        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
-        if not sess_row:
-            return None
-        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
-        oid = scope_org or session_org
-        if oid != session_org:
+        oid = _resolve_session_org_scope(con, sid, scope_org)
+        if oid is None:
             return None
         placeholders = ", ".join(["?"] * len(_USER_FACING_BPMN_VERSION_ACTIONS))
         columns = (
@@ -4596,23 +4548,7 @@ def _storage_latest_user_facing_bpmn_version(
         ).fetchone()
     if not row:
         return None
-    item = {
-        "id": str(row["id"] or ""),
-        "session_id": str(row["session_id"] or ""),
-        "org_id": str(row["org_id"] or ""),
-        "version_number": int(row["version_number"] or 0),
-        "diagram_state_version": int(row["diagram_state_version"] or 0),
-        "session_payload_hash": str(row["session_payload_hash"] or ""),
-        "session_version": int(row["session_version"] or 0),
-        "session_updated_at": int(row["session_updated_at"] or 0),
-        "source_action": str(row["source_action"] or ""),
-        "import_note": str(row["import_note"] or ""),
-        "created_at": int(row["created_at"] or 0),
-        "created_by": str(row["created_by"] or ""),
-    }
-    if include_xml:
-        item["bpmn_xml"] = str(row["bpmn_xml"] or "")
-    return item
+    return _bpmn_version_payload(row, include_xml=include_xml)
 
 
 def _storage_list_bpmn_versions(
@@ -4642,20 +4578,18 @@ def _storage_list_bpmn_versions(
     off = max(off, 0)
 
     with _connect() as con:
-        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
-        if not sess_row:
+        oid = _resolve_session_org_scope(con, sid, scope_org)
+        if oid is None:
             return []
-        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
-        oid = scope_org or session_org
-        if oid != session_org:
-            return []
-        filters = ["session_id = ?", "org_id = ?"]
-        params: List[Any] = [sid, oid]
+        extra = ""
+        extra_params: List[Any] = []
         if not include_technical:
             placeholders = ", ".join(["?"] * len(_USER_FACING_BPMN_VERSION_ACTIONS))
-            filters.append(f"lower(source_action) IN ({placeholders})")
-            params.extend(_USER_FACING_BPMN_VERSION_ACTIONS)
-        where = f"WHERE {' AND '.join(filters)}"
+            extra = f"lower(source_action) IN ({placeholders})"
+            extra_params = list(_USER_FACING_BPMN_VERSION_ACTIONS)
+        where, where_params = base.build_where(
+            {"session_id": sid}, org_id=oid, extra=extra, extra_params=extra_params
+        )
         columns = (
             "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, session_payload_hash, session_version, session_updated_at, source_action, import_note, created_at, created_by"
             if include_xml
@@ -4670,29 +4604,69 @@ def _storage_list_bpmn_versions(
              LIMIT ?
              OFFSET ?
             """,
-            [*params, lim, off],
+            [*where_params, lim, off],
         ).fetchall()
 
-    out: List[Dict[str, Any]] = []
-    for row in rows:
-        item = {
-            "id": str(row["id"] or ""),
-            "session_id": str(row["session_id"] or ""),
-            "org_id": str(row["org_id"] or ""),
-            "version_number": int(row["version_number"] or 0),
-            "diagram_state_version": int(row["diagram_state_version"] or 0),
-            "session_payload_hash": str(row["session_payload_hash"] or ""),
-            "session_version": int(row["session_version"] or 0),
-            "session_updated_at": int(row["session_updated_at"] or 0),
-            "source_action": str(row["source_action"] or ""),
-            "import_note": str(row["import_note"] or ""),
-            "created_at": int(row["created_at"] or 0),
-            "created_by": str(row["created_by"] or ""),
-        }
-        if include_xml:
-            item["bpmn_xml"] = str(row["bpmn_xml"] or "")
-        out.append(item)
-    return out
+    return [_bpmn_version_payload(row, include_xml=include_xml) for row in rows]
+
+
+def _registry_source_scope_where(
+    owner: str,
+    admin: bool,
+    org: str,
+    wid: str,
+    pids: List[str],
+    sids: List[str],
+) -> Tuple[str, List[Any]]:
+    """Shared WHERE fragment for the registry-source session scans."""
+    filters = ["s.org_id = ?"]
+    params: List[Any] = [org]
+    if not admin and owner:
+        filters.append("s.owner_user_id = ?")
+        params.append(owner)
+    if wid:
+        filters.append("COALESCE(p.workspace_id, '') = ?")
+        params.append(wid)
+    if pids:
+        placeholders = ", ".join("?" for _ in pids)
+        filters.append(f"COALESCE(s.project_id, '') IN ({placeholders})")
+        params.extend(pids)
+    if sids:
+        placeholders = ", ".join("?" for _ in sids)
+        filters.append(f"s.id IN ({placeholders})")
+        params.extend(sids)
+    return f"WHERE {' AND '.join(filters)}", params
+
+
+_REGISTRY_SOURCE_FROM = """
+            FROM sessions s
+            LEFT JOIN projects p
+              ON p.id = s.project_id
+             AND p.org_id = s.org_id
+            LEFT JOIN workspace_folders wf
+              ON wf.id = p.folder_id
+             AND wf.org_id = p.org_id
+             AND wf.workspace_id = p.workspace_id
+             AND wf.archived_at IS NULL
+            {where}
+            ORDER BY s.updated_at DESC
+            LIMIT ?
+        """
+
+
+def _registry_source_base_payload(row: Any) -> Dict[str, Any]:
+    return {
+        "org_id": str(_row_value(row, "org_id") or ""),
+        "workspace_id": str(_row_value(row, "workspace_id") or ""),
+        "project_id": str(_row_value(row, "project_id") or ""),
+        "project_title": str(_row_value(row, "project_title") or ""),
+        "folder_id": str(_row_value(row, "folder_id") or ""),
+        "folder_title": str(_row_value(row, "folder_title") or ""),
+        "session_id": str(_row_value(row, "session_id") or ""),
+        "session_title": str(_row_value(row, "session_title") or ""),
+        "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
+        "updated_at": int(_row_value(row, "session_updated_at") or 0),
+    }
 
 
 def _storage_list_process_properties_registry_sources(
@@ -4725,24 +4699,7 @@ def _storage_list_process_properties_registry_sources(
         lim = 5000
     lim = min(max(lim, 1), 10000)
 
-    filters = ["s.org_id = ?"]
-    params: List[Any] = [org]
-    if not admin and owner:
-        filters.append("s.owner_user_id = ?")
-        params.append(owner)
-    if wid:
-        filters.append("COALESCE(p.workspace_id, '') = ?")
-        params.append(wid)
-    if pids:
-        placeholders = ", ".join("?" for _ in pids)
-        filters.append(f"COALESCE(s.project_id, '') IN ({placeholders})")
-        params.extend(pids)
-    if sids:
-        placeholders = ", ".join("?" for _ in sids)
-        filters.append(f"s.id IN ({placeholders})")
-        params.extend(sids)
-
-    where = f"WHERE {' AND '.join(filters)}"
+    where, params = _registry_source_scope_where(owner, admin, org, wid, pids, sids)
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -4760,18 +4717,7 @@ def _storage_list_process_properties_registry_sources(
               p.workspace_id AS workspace_id,
               p.folder_id AS folder_id,
               wf.name AS folder_title
-            FROM sessions s
-            LEFT JOIN projects p
-              ON p.id = s.project_id
-             AND p.org_id = s.org_id
-            LEFT JOIN workspace_folders wf
-              ON wf.id = p.folder_id
-             AND wf.org_id = p.org_id
-             AND wf.workspace_id = p.workspace_id
-             AND wf.archived_at IS NULL
-            {where}
-            ORDER BY s.updated_at DESC
-            LIMIT ?
+            {_REGISTRY_SOURCE_FROM.format(where=where)}
             """,
             [*params, lim],
         ).fetchall()
@@ -4781,20 +4727,10 @@ def _storage_list_process_properties_registry_sources(
         bpmn_meta = _json_loads(_row_value(row, "bpmn_meta_json"), {})
         if not isinstance(bpmn_meta, dict):
             bpmn_meta = {}
-        out.append({
-            "org_id": str(_row_value(row, "org_id") or ""),
-            "workspace_id": str(_row_value(row, "workspace_id") or ""),
-            "project_id": str(_row_value(row, "project_id") or ""),
-            "project_title": str(_row_value(row, "project_title") or ""),
-            "folder_id": str(_row_value(row, "folder_id") or ""),
-            "folder_title": str(_row_value(row, "folder_title") or ""),
-            "session_id": str(_row_value(row, "session_id") or ""),
-            "session_title": str(_row_value(row, "session_title") or ""),
-            "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
-            "updated_at": int(_row_value(row, "session_updated_at") or 0),
-            "bpmn_meta": bpmn_meta,
-            "bpmn_xml": str(_row_value(row, "bpmn_xml") or ""),
-        })
+        item = _registry_source_base_payload(row)
+        item["bpmn_meta"] = bpmn_meta
+        item["bpmn_xml"] = str(_row_value(row, "bpmn_xml") or "")
+        out.append(item)
     return out
 
 
@@ -4827,24 +4763,7 @@ def _storage_list_product_action_registry_sources(
         lim = 5000
     lim = min(max(lim, 1), 10000)
 
-    filters = ["s.org_id = ?"]
-    params: List[Any] = [org]
-    if not admin and owner:
-        filters.append("s.owner_user_id = ?")
-        params.append(owner)
-    if wid:
-        filters.append("COALESCE(p.workspace_id, '') = ?")
-        params.append(wid)
-    if pids:
-        placeholders = ", ".join("?" for _ in pids)
-        filters.append(f"COALESCE(s.project_id, '') IN ({placeholders})")
-        params.extend(pids)
-    if sids:
-        placeholders = ", ".join("?" for _ in sids)
-        filters.append(f"s.id IN ({placeholders})")
-        params.extend(sids)
-
-    where = f"WHERE {' AND '.join(filters)}"
+    where, params = _registry_source_scope_where(owner, admin, org, wid, pids, sids)
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -4861,18 +4780,7 @@ def _storage_list_product_action_registry_sources(
               p.workspace_id AS workspace_id,
               p.folder_id AS folder_id,
               wf.name AS folder_title
-            FROM sessions s
-            LEFT JOIN projects p
-              ON p.id = s.project_id
-             AND p.org_id = s.org_id
-            LEFT JOIN workspace_folders wf
-              ON wf.id = p.folder_id
-             AND wf.org_id = p.org_id
-             AND wf.workspace_id = p.workspace_id
-             AND wf.archived_at IS NULL
-            {where}
-            ORDER BY s.updated_at DESC
-            LIMIT ?
+            {_REGISTRY_SOURCE_FROM.format(where=where)}
             """,
             [*params, lim],
         ).fetchall()
@@ -4888,19 +4796,9 @@ def _storage_list_product_action_registry_sources(
         product_actions = analysis.get("product_actions")
         if not isinstance(product_actions, list):
             product_actions = []
-        out.append({
-            "org_id": str(_row_value(row, "org_id") or ""),
-            "workspace_id": str(_row_value(row, "workspace_id") or ""),
-            "project_id": str(_row_value(row, "project_id") or ""),
-            "project_title": str(_row_value(row, "project_title") or ""),
-            "folder_id": str(_row_value(row, "folder_id") or ""),
-            "folder_title": str(_row_value(row, "folder_title") or ""),
-            "session_id": str(_row_value(row, "session_id") or ""),
-            "session_title": str(_row_value(row, "session_title") or ""),
-            "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
-            "updated_at": int(_row_value(row, "session_updated_at") or 0),
-            "product_actions": product_actions,
-        })
+        item = _registry_source_base_payload(row)
+        item["product_actions"] = product_actions
+        out.append(item)
     return out
 
 
@@ -5072,12 +4970,8 @@ def _storage_list_session_state_versions(
     lim = min(max(lim, 1), 1000)
 
     with _connect() as con:
-        sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
-        if not sess_row:
-            return []
-        session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
-        oid = scope_org or session_org
-        if oid != session_org:
+        oid = _resolve_session_org_scope(con, sid, scope_org)
+        if oid is None:
             return []
         rows = con.execute(
             """
@@ -5120,7 +5014,9 @@ def _storage_list_sessions_by_rag_status(
     """Return lightweight session rows with the requested rag_readiness_status."""
     target = str(status or "").strip() or "queued"
     org = _scope_org_id(org_id) or _default_org_id()
-    org_clause, org_params = _org_clause(org)
+    where, params = base.build_where(
+        {"rag_readiness_status": target}, org_id=org, soft_delete=True
+    )
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -5128,12 +5024,10 @@ def _storage_list_sessions_by_rag_status(
             SELECT id, title, project_id, org_id, rag_readiness_status,
                    rag_queued_at, rag_indexed_at, diagram_state_version
               FROM sessions
-             WHERE rag_readiness_status = ?
-               AND deleted_at = 0
-               {org_clause}
+             {where}
              ORDER BY rag_queued_at ASC, updated_at ASC
             """,
-            [target, *org_params],
+            params,
         ).fetchall()
     return [
         {
@@ -5164,13 +5058,9 @@ def _storage_load(
     owner = _scope_user_id(user_id)
     admin = _scope_is_admin(is_admin)
     org = _scope_org_id(org_id) or _default_org_id()
-    org_clause, org_params = _org_clause(org)
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            f"SELECT * FROM sessions WHERE id = ? {org_clause} LIMIT 1",
-            [sid, *org_params],
-        ).fetchone()
+        row = base.get_by_id(con, "sessions", "id", sid, org_id=org)
     if not row:
         return None
     sess = _session_row_to_model(row)
