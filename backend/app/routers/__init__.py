@@ -44,6 +44,8 @@ from .kitchens import router as kitchens_router
 from .sku_bindings import router as sku_bindings_router
 from .audit_log import router as audit_log_router
 from .agent_chat import router as agent_chat_router
+from .agent_review import router as agent_review_router
+from .session_docs import router as session_docs_router
 from .users_preferences import router as users_preferences_router
 from .admin_endpoint_check import router as admin_endpoint_check_router
 
@@ -96,6 +98,8 @@ ROUTERS = (
     (audit_log_router, ["audit-log"]),
     (health_router, ["health"]),
     (agent_chat_router, ["agent"]),
+    (agent_review_router, ["agent"]),
+    (session_docs_router, ["sessions"]),
     (users_preferences_router, ["users"]),
     (admin_endpoint_check_router, ["admin"]),
 )
