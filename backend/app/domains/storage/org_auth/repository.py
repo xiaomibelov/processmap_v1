@@ -385,6 +385,52 @@ def _group_row_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
+_ORG_ROW_SELECT = """
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              is_active,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """
+
+_INVITE_ROW_SELECT = """
+            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
+              FROM org_invites i
+              LEFT JOIN orgs o ON o.id = i.org_id
+            """
+
+
+def _fetch_org_row(con: Any, org_id: str) -> Any:
+    return con.execute(_ORG_ROW_SELECT, [org_id]).fetchone()
+
+
+def _org_record_payload(row: Any) -> Dict[str, Any]:
+    is_active_raw = _row_value(row, "is_active")
+    out = {
+        "id": str(row["id"] or ""),
+        "name": str(row["name"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "is_active": bool(1 if is_active_raw is None else is_active_raw),
+    }
+    out.update(_org_git_mirror_payload(row))
+    return out
+
+
 def _insert_auth_user_ignore(con: Any, raw: Mapping[str, Any]) -> None:
     user = _auth_user_from_mapping(raw)
     if not user["id"] or not user["email"]:
@@ -828,8 +874,7 @@ def cleanup_org_invites(
 def count_org_records() -> int:
     _ensure_schema()
     with _connect() as con:
-        row = con.execute("SELECT COUNT(1) AS cnt FROM orgs").fetchone()
-    return int((row["cnt"] if row and row["cnt"] is not None else 0) or 0)
+        return base.count(con, "orgs")
 
 
 def create_auth_user(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -842,7 +887,9 @@ def create_auth_user(row: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("email_exists")
         _upsert_auth_user(con, user)
         con.commit()
-        created = _get_auth_user_by_id_with_connection(con, str(user.get("id") or ""))
+        created = base.get_by_id(
+            con, "users", "id", str(user.get("id") or ""), mapper=_auth_user_row_to_dict
+        )
     if not created:
         raise ValueError("user_create_failed")
     return created
@@ -1034,28 +1081,7 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
         )
         _ensure_workspace_record(con, oid, created_by=actor)
         con.commit()
-        row = con.execute(
-            """
-            SELECT
-              id,
-              name,
-              created_at,
-              created_by,
-              is_active,
-              git_mirror_enabled,
-              git_provider,
-              git_repository,
-              git_branch,
-              git_base_path,
-              git_health_status,
-              git_health_message,
-              git_updated_at,
-              git_updated_by
-            FROM orgs
-            WHERE id = ? LIMIT 1
-            """,
-            [oid],
-        ).fetchone()
+        row = _fetch_org_row(con, oid)
     if not row:
         return {
             "id": oid,
@@ -1065,16 +1091,7 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
             "is_active": True,
             **_org_git_mirror_payload({}),
         }
-    is_active_raw = _row_value(row, "is_active")
-    out = {
-        "id": str(row["id"] or ""),
-        "name": str(row["name"] or ""),
-        "created_at": int(row["created_at"] or 0),
-        "created_by": str(row["created_by"] or ""),
-        "is_active": bool(1 if is_active_raw is None else is_active_raw),
-    }
-    out.update(_org_git_mirror_payload(row))
-    return out
+    return _org_record_payload(row)
 
 
 def create_workspace_record(org_id: str, name: str, *, created_by: str, workspace_id: Optional[str] = None) -> Dict[str, Any]:
@@ -1112,9 +1129,8 @@ def delete_org_group(org_id: str, group_id: str) -> bool:
     _ensure_schema()
     with _connect() as con:
         con.execute("DELETE FROM group_memberships WHERE group_id = ?", [gid])
-        cur = con.execute("DELETE FROM groups WHERE org_id = ? AND id = ?", [oid, gid])
-        con.commit()
-    return int(cur.rowcount or 0) > 0
+        deleted = base.hard_delete(con, "groups", {"org_id": oid, "id": gid})
+    return deleted
 
 
 def delete_org_invite(org_id: str, invite_id: str) -> bool:
@@ -1124,15 +1140,7 @@ def delete_org_invite(org_id: str, invite_id: str) -> bool:
         return False
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute(
-            """
-            DELETE FROM org_invites
-             WHERE org_id = ? AND id = ?
-            """,
-            [oid, iid],
-        )
-        con.commit()
-        return int(cur.rowcount or 0) > 0
+        return base.hard_delete(con, "org_invites", {"org_id": oid, "id": iid})
 
 
 def delete_org_membership(org_id: str, user_id: str) -> bool:
@@ -1142,15 +1150,7 @@ def delete_org_membership(org_id: str, user_id: str) -> bool:
         return False
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute(
-            """
-            DELETE FROM org_memberships
-             WHERE org_id = ? AND user_id = ?
-            """,
-            [oid, uid],
-        )
-        con.commit()
-    return int(cur.rowcount or 0) > 0
+        return base.hard_delete(con, "org_memberships", {"org_id": oid, "user_id": uid})
 
 
 def get_auth_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
@@ -1189,24 +1189,7 @@ def get_org_git_mirror_config(org_id: str) -> Dict[str, Any]:
     if not oid:
         raise ValueError("org_id required")
     with _connect() as con:
-        row = con.execute(
-            """
-            SELECT
-              id,
-              git_mirror_enabled,
-              git_provider,
-              git_repository,
-              git_branch,
-              git_base_path,
-              git_health_status,
-              git_health_message,
-              git_updated_at,
-              git_updated_by
-            FROM orgs
-            WHERE id = ? LIMIT 1
-            """,
-            [oid],
-        ).fetchone()
+        row = _fetch_org_row(con, oid)
     if not row:
         raise ValueError("org not found")
     out = {"org_id": str(row["id"] or oid)}
@@ -1254,15 +1237,7 @@ def get_org_invite_by_id(org_id: str, invite_id: str) -> Dict[str, Any]:
     _ensure_schema()
     with _connect() as con:
         row = con.execute(
-            """
-            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
-                   i.permissions_json
-              FROM org_invites i
-              LEFT JOIN orgs o ON o.id = i.org_id
-             WHERE i.org_id = ? AND i.id = ?
-             LIMIT 1
-            """,
+            _INVITE_ROW_SELECT + " WHERE i.org_id = ? AND i.id = ? LIMIT 1",
             [oid, iid],
         ).fetchone()
     if not row:
@@ -1282,35 +1257,7 @@ def get_user_org_role(user_id: str, org_id: str, *, is_admin: Optional[bool] = N
     return ""
 
 
-def get_workspace_record(workspace_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    wid = str(workspace_id or "").strip()
-    oid = str(org_id or "").strip()
-    if not wid:
-        return None
-    _ensure_schema()
-    with _connect() as con:
-        if oid:
-            row = con.execute(
-                """
-                SELECT id, org_id, name, created_at, created_by, updated_at
-                  FROM workspaces
-                 WHERE id = ? AND org_id = ?
-                 LIMIT 1
-                """,
-                [wid, oid],
-            ).fetchone()
-        else:
-            row = con.execute(
-                """
-                SELECT id, org_id, name, created_at, created_by, updated_at
-                  FROM workspaces
-                 WHERE id = ?
-                 LIMIT 1
-                """,
-                [wid],
-            ).fetchone()
-    if not row:
-        return None
+def _workspace_row_to_dict(row: Any) -> Dict[str, Any]:
     return {
         "id": str(row["id"] or ""),
         "org_id": str(row["org_id"] or ""),
@@ -1319,6 +1266,23 @@ def get_workspace_record(workspace_id: str, *, org_id: Optional[str] = None) -> 
         "created_by": str(row["created_by"] or ""),
         "updated_at": int(row["updated_at"] or 0),
     }
+
+
+def get_workspace_record(workspace_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    wid = str(workspace_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not wid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        return base.get_by_id(
+            con,
+            "workspaces",
+            "id",
+            wid,
+            org_id=oid or None,
+            mapper=_workspace_row_to_dict,
+        )
 
 
 def increment_and_get_next_version(session_id: str, *, org_id: str | None = None) -> int:
@@ -1363,9 +1327,7 @@ def is_org_active(org_id: str) -> bool:
         return False
     try:
         with _connect() as con:
-            row = con.execute(
-                "SELECT is_active FROM orgs WHERE id = ? LIMIT 1", [oid]
-            ).fetchone()
+            row = base.get_by_id(con, "orgs", "id", oid)
     except Exception:
         return False
     return bool(row["is_active"]) if row else False
@@ -1439,15 +1401,7 @@ def list_org_invites(
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
-            """
-            SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
-                   i.permissions_json
-              FROM org_invites i
-              LEFT JOIN orgs o ON o.id = i.org_id
-             WHERE i.org_id = ?
-             ORDER BY i.created_at DESC, i.id DESC
-            """,
+            _INVITE_ROW_SELECT + " WHERE i.org_id = ? ORDER BY i.created_at DESC, i.id DESC",
             [oid],
         ).fetchall()
     out: List[Dict[str, Any]] = []
@@ -1810,29 +1764,22 @@ def promote_regenerated_org_invite(
         ).fetchone()
         if not row:
             return False
+        where_others, params_others = base.build_where(
+            {"org_id": oid, "email": em},
+            extra="id <> ? AND accepted_at IS NULL AND revoked_at IS NULL",
+            extra_params=[iid],
+        )
         con.execute(
-            """
-            UPDATE org_invites
-               SET revoked_at = ?, revoked_by = ?
-             WHERE org_id = ?
-               AND email = ?
-               AND id <> ?
-               AND accepted_at IS NULL
-               AND revoked_at IS NULL
-            """,
-            [now, who, oid, em, iid],
+            f"UPDATE org_invites SET revoked_at = ?, revoked_by = ?{where_others}",
+            [now, who, *params_others],
+        )
+        where_target, params_target = base.build_where(
+            {"org_id": oid, "id": iid, "email": em},
+            extra="accepted_at IS NULL AND used_at IS NULL",
         )
         cur = con.execute(
-            """
-            UPDATE org_invites
-               SET revoked_at = NULL, revoked_by = NULL
-             WHERE org_id = ?
-               AND id = ?
-               AND email = ?
-               AND accepted_at IS NULL
-               AND used_at IS NULL
-            """,
-            [oid, iid, em],
+            f"UPDATE org_invites SET revoked_at = NULL, revoked_by = NULL{where_target}",
+            params_target,
         )
         con.commit()
     return int(cur.rowcount or 0) > 0
@@ -1928,14 +1875,12 @@ def remove_group_member(org_id: str, group_id: str, user_id: str) -> bool:
         return False
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute(
-            """
-            DELETE FROM group_memberships
-             WHERE group_id = ? AND user_id = ?
-               AND group_id IN (SELECT id FROM groups WHERE org_id = ? AND id = ?)
-            """,
-            [gid, uid, oid, gid],
+        where, params = base.build_where(
+            {"group_id": gid, "user_id": uid},
+            extra="group_id IN (SELECT id FROM groups WHERE org_id = ? AND id = ?)",
+            extra_params=[oid, gid],
         )
+        cur = con.execute(f"DELETE FROM group_memberships{where}", params)
         con.commit()
     return int(cur.rowcount or 0) > 0
 
@@ -1955,47 +1900,13 @@ def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
         ).fetchone()
         if exists:
             raise ValueError("workspace name already exists")
-        cur = con.execute(
-            "UPDATE orgs SET name = ? WHERE id = ?",
-            [title, oid],
-        )
-        con.commit()
-        if int(cur.rowcount or 0) <= 0:
+        updated = base.update_fields(con, "orgs", {"name": title}, {"id": oid})
+        if updated <= 0:
             raise ValueError("org not found")
-        row = con.execute(
-            """
-            SELECT
-              id,
-              name,
-              created_at,
-              created_by,
-              is_active,
-              git_mirror_enabled,
-              git_provider,
-              git_repository,
-              git_branch,
-              git_base_path,
-              git_health_status,
-              git_health_message,
-              git_updated_at,
-              git_updated_by
-            FROM orgs
-            WHERE id = ? LIMIT 1
-            """,
-            [oid],
-        ).fetchone()
+        row = _fetch_org_row(con, oid)
     if not row:
         raise ValueError("org not found")
-    is_active_raw = _row_value(row, "is_active")
-    out = {
-        "id": str(row["id"] or ""),
-        "name": str(row["name"] or ""),
-        "created_at": int(row["created_at"] or 0),
-        "created_by": str(row["created_by"] or ""),
-        "is_active": bool(1 if is_active_raw is None else is_active_raw),
-    }
-    out.update(_org_git_mirror_payload(row))
-    return out
+    return _org_record_payload(row)
 
 
 def rename_workspace_record(org_id: str, workspace_id: str, name: str) -> Dict[str, Any]:
@@ -2023,11 +1934,12 @@ def rename_workspace_record(org_id: str, workspace_id: str, name: str) -> Dict[s
         if dup:
             raise ValueError("workspace name already exists")
         now = _now_ts()
-        con.execute(
-            "UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ? AND org_id = ?",
-            [title, now, wid, oid],
+        base.update_fields(
+            con,
+            "workspaces",
+            {"name": title, "updated_at": now},
+            {"id": wid, "org_id": oid},
         )
-        con.commit()
     row = get_workspace_record(wid, org_id=oid)
     if not row:
         raise ValueError("workspace not found")
@@ -2076,16 +1988,13 @@ def revoke_org_invite(
     now = _now_ts()
     _ensure_schema()
     with _connect() as con:
+        where, params = base.build_where(
+            {"org_id": oid, "id": iid},
+            extra="accepted_at IS NULL AND revoked_at IS NULL",
+        )
         cur = con.execute(
-            """
-            UPDATE org_invites
-               SET revoked_at = ?, revoked_by = ?
-             WHERE org_id = ?
-               AND id = ?
-               AND accepted_at IS NULL
-               AND revoked_at IS NULL
-            """,
-            [now, actor, oid, iid],
+            f"UPDATE org_invites SET revoked_at = ?, revoked_by = ?{where}",
+            [now, actor, *params],
         )
         con.commit()
         return int(cur.rowcount or 0) > 0
@@ -2097,47 +2006,15 @@ def set_org_active(org_id: str, is_active: bool) -> Dict[str, Any]:
     if not oid:
         raise ValueError("org_id required")
     with _connect() as con:
-        cur = con.execute(
-            "UPDATE orgs SET is_active = ? WHERE id = ?",
-            [1 if is_active else 0, oid],
+        updated = base.update_fields(
+            con, "orgs", {"is_active": 1 if is_active else 0}, {"id": oid}
         )
-        con.commit()
-        if int(cur.rowcount or 0) <= 0:
+        if updated <= 0:
             raise ValueError("org not found")
-        row = con.execute(
-            """
-            SELECT
-              id,
-              name,
-              created_at,
-              created_by,
-              is_active,
-              git_mirror_enabled,
-              git_provider,
-              git_repository,
-              git_branch,
-              git_base_path,
-              git_health_status,
-              git_health_message,
-              git_updated_at,
-              git_updated_by
-            FROM orgs
-            WHERE id = ? LIMIT 1
-            """,
-            [oid],
-        ).fetchone()
+        row = _fetch_org_row(con, oid)
     if not row:
         raise ValueError("org not found")
-    is_active_raw = _row_value(row, "is_active")
-    out = {
-        "id": str(row["id"] or ""),
-        "name": str(row["name"] or ""),
-        "created_at": int(row["created_at"] or 0),
-        "created_by": str(row["created_by"] or ""),
-        "is_active": bool(1 if is_active_raw is None else is_active_raw),
-    }
-    out.update(_org_git_mirror_payload(row))
-    return out
+    return _org_record_payload(row)
 
 
 def update_auth_user(user_id: str, **fields: Any) -> Dict[str, Any]:
@@ -2218,35 +2095,23 @@ def update_org_git_mirror_config(
     if updated_at <= 0:
         updated_at = _now_ts()
     with _connect() as con:
-        cur = con.execute(
-            """
-            UPDATE orgs
-               SET git_mirror_enabled = ?,
-                   git_provider = ?,
-                   git_repository = ?,
-                   git_branch = ?,
-                   git_base_path = ?,
-                   git_health_status = ?,
-                   git_health_message = ?,
-                   git_updated_at = ?,
-                   git_updated_by = ?
-             WHERE id = ?
-            """,
-            [
-                1 if bool(git_mirror_enabled) else 0,
-                provider,
-                repository,
-                branch,
-                base_path,
-                health_status,
-                health_message,
-                max(0, int(updated_at)),
-                updated_by,
-                oid,
-            ],
+        updated = base.update_fields(
+            con,
+            "orgs",
+            {
+                "git_mirror_enabled": 1 if bool(git_mirror_enabled) else 0,
+                "git_provider": provider,
+                "git_repository": repository,
+                "git_branch": branch,
+                "git_base_path": base_path,
+                "git_health_status": health_status,
+                "git_health_message": health_message,
+                "git_updated_at": max(0, int(updated_at)),
+                "git_updated_by": updated_by,
+            },
+            {"id": oid},
         )
-        con.commit()
-        if int(cur.rowcount or 0) <= 0:
+        if updated <= 0:
             raise ValueError("org not found")
     return get_org_git_mirror_config(oid)
 
