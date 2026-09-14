@@ -226,3 +226,35 @@ def test_list_page_invalid_direction_falls_back_desc(con):
     _seed(con, id="b", ts=2)
     rows = base.list_page(con, "item", order_by="ts", order_dir="bogus; DROP", limit=10)
     assert rows[0]["id"] == "b"
+
+
+# --- step 5a: canonical helpers ----------------------------------------------
+
+
+def test_now_ts_equivalent_to_int_time_time():
+    import time as _time
+
+    before = int(_time.time())
+    ts = base._now_ts()
+    after = int(_time.time())
+    assert isinstance(ts, int)
+    assert before <= ts <= after
+
+
+def test_row_to_dict_plain_is_dict_row():
+    con = sqlite3.connect(":memory:")
+    con.row_factory = sqlite3.Row
+    con.execute("CREATE TABLE t (id TEXT, n INTEGER)")
+    con.execute("INSERT INTO t VALUES ('a', 7)")
+    row = con.execute("SELECT * FROM t").fetchone()
+    assert base.row_to_dict(row) == dict(row)
+    assert base.row_to_dict(row, json_cols=None) == dict(row)
+
+
+def test_compat_reexports_are_identical_to_base():
+    from app.domains.storage.compat import repository as compat
+
+    assert compat._json_dumps is base._json_dumps
+    assert compat._json_loads is base._json_loads
+    assert compat._now_ts is base._now_ts
+    assert compat._row_to_dict is base.row_to_dict
