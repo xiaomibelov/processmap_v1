@@ -61,7 +61,7 @@ def _llm_complete(feature: str, payload: Any, **kwargs: Any) -> Dict[str, Any]:
 # product-actions returns structured JSON; ask providers that support json_object
 # mode to constrain output, and keep per-provider timeout short because the
 # primary provider for this org is known to hang on long contexts.
-_PRODUCT_ACTIONS_LLM_KWARGS = {"json_mode": True, "timeout_sec": 30}
+_PRODUCT_ACTIONS_LLM_KWARGS = {"json_mode": True, "timeout_sec": 60}
 
 
 def _call_product_actions_llm(
