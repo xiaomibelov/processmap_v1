@@ -1,0 +1,35 @@
+{
+  "contour": "feature/agent-ui-completion-v1",
+  "type": "feature",
+  "phase": "executed_frontend",
+  "baseline": "df7feabc661add72ffac97c00ea2dda66008bdac",
+  "backend_commit": "295ee2de",
+  "frontend_head": "e67add7f",
+  "worktree": "p0-work-worktrees/feature-agent-ui-completion-v1",
+  "scope": "frontend",
+  "items": {
+    "A_hydration": "done",
+    "B_artifact_card": "done",
+    "B_admin_jobs": "done",
+    "D_dead_code": "done",
+    "tests": "done",
+    "e2e_g1": "spec_written_run_blocked_by_env"
+  },
+  "gates": {
+    "G1": "unit_and_g4_green_e2e_blocked_by_env",
+    "G2": "component_tests_green_stage_verify_after_deploy",
+    "G3": "green",
+    "G4": "green"
+  },
+  "verification": {
+    "npm_test": "3602 run / 79 fail — identical fail set to clean baseline df7feabc, 0 new",
+    "test_smoke": "56/56 green",
+    "processman_suites": "all green"
+  },
+  "ready_for_review": true,
+  "notes": [
+    "D3 spec addendum NOT applied: docs/llm/LLM4_PROCESSMAN_PANEL.md absent in branch (follow-up)",
+    "admin i18n ru-only by design (no en.admin section exists)",
+    "e2e env unusable for processman specs (515 seeded orgs, WorkspaceExplorer render loop) — proven with baseline spec"
+  ]
+}
