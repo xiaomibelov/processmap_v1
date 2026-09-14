@@ -686,6 +686,17 @@ def session_bpmn_save(session_id: str, inp: Any, request: Any = None) -> Dict[st
     return bpmn_save(session_id, inp, request)
 
 
+def operations_apply(
+    session_id: str,
+    inp: Any,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Apply batch of diagram ops (feature/async-save-pipeline-step1, API.md)."""
+    import app._legacy_main as _lm
+
+    return _lm.session_operations_apply(session_id, inp, request)
+
+
 def bpmn_save(
     session_id: str,
     inp: Any,

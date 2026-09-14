@@ -226,6 +226,8 @@ def _save_session_with_cas(
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
     bpmn_snapshot: Optional[Dict[str, Any]] = None,
+    applied_ops: Optional[List[Dict[str, Any]]] = None,
+    state_trace: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Save session with SQL-level CAS on diagram_state_version when a base is available.
 
@@ -250,6 +252,8 @@ def _save_session_with_cas(
                 is_admin=is_admin,
                 org_id=org_id,
                 bpmn_snapshot=bpmn_snapshot,
+                applied_ops=applied_ops,
+                state_trace=state_trace,
             )
             return
         storage.save(
@@ -259,6 +263,8 @@ def _save_session_with_cas(
             org_id=org_id,
             expected_diagram_state_version=base,
             bpmn_snapshot=bpmn_snapshot,
+            applied_ops=applied_ops,
+            state_trace=state_trace,
         )
     except SessionNotFoundError as exc:
         # P-1: the row was deleted between the pre-load and the CAS write.
