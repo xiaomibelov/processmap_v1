@@ -6091,6 +6091,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         bpmnCoordinatorRef,
         viewboxListenersRef,
         bottlenecksRef,
+        opsOutboxRef,
       },
       values: {
         view,

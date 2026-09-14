@@ -154,6 +154,10 @@ export function createSaveOutbox(options = {}) {
   /** @type {Array<Object>} ops-буфер; служебные поля __ts/__committed не уходят на сервер */
   let buffer = [];
   let needsFullSave = false;
+  // Dedup-ledger mutation-lifecycle scheduling (UI.md §2): исход последнего
+  // pushCommand. Сброс в незахваченное состояние ДО маппинга — исключение
+  // маппера не оставляет stale-запись, приводящую к ложному skip full-save.
+  let lastCapture = { command: "", captured: false };
   let stage = "idle";
   let inFlight = false;
   let flushTimer = null;
@@ -294,10 +298,17 @@ export function createSaveOutbox(options = {}) {
      * @returns {Object} результат mapCommandToOps ({ops, needsFullSave, replay, ...})
      */
     pushCommand(descriptor = {}) {
+      lastCapture = { command: asText(descriptor?.command), captured: false };
       if (isReplayCommand(descriptor)) {
         // Echo suppression: replay-команда не становится op. Во время rebase
         // op с тем же opId уже живёт в буфере (сохранён до replay) — просто
-        // пропускаем, дубликатов не возникает.
+        // пропускаем, дубликатов не возникает. Дедуп: replay не добавляет
+        // непокрытых изменений — skippable, только если pending-ops уже
+        // покрывают локальное состояние.
+        lastCapture = {
+          command: asText(descriptor?.command),
+          captured: buffer.length > 0 || inFlight,
+        };
         return { ops: [], needsFullSave: false, replay: true, action: "execute", command: "" };
       }
 
@@ -313,7 +324,9 @@ export function createSaveOutbox(options = {}) {
 
       if (mapped.action === "undo") {
         // Undo ещё не ушедшей op — удалить её из буфера (не уйдёт на сервер).
-        // Undo ушедшей (acked) — compensating-op через тот же маппинг.
+        // Undo ушедшей (acked) — compensating-op через тот же маппинг. В обоих
+        // случаях нет-local изменений вне ops-покрытия: дедуп full-save ок.
+        lastCapture = { command: mapped.command, captured: true };
         const index = buffer.map((op) => op.key).lastIndexOf(incoming.key);
         if (index >= 0) {
           buffer.splice(index, 1);
@@ -325,6 +338,7 @@ export function createSaveOutbox(options = {}) {
       }
 
       const op = { ...incoming, opId: uuid(), __ts: now() };
+      lastCapture = { command: mapped.command, captured: true };
       const coalesced = tryCoalesceIntoBuffer(buffer, op, { coalesceMs: config.coalesceMs, now: now() });
       if (!coalesced) {
         buffer.push(op);
@@ -360,6 +374,23 @@ export function createSaveOutbox(options = {}) {
         needsFullSave,
         inFlight,
       };
+    },
+
+    /**
+     * Dedup-запрос mutation-lifecycle scheduling (UI.md §2): можно ли НЕ
+     * планировать полное автосохранение для мутации с command `command`.
+     * True только если эта команда полностью захвачена outbox (op создан /
+     * coalesce / компенсирующий undo / replay под покрытием буфера) и нет
+     * pending needsFullSave. Чужая или пустая команда (xml.edit,
+     * ops_outbox_fallback и пр.) → false: full-save путь обязан отработать
+     * как раньше. Ручное сохранение этим контрактом не ограничивается —
+     * оно идёт отдельным путём (flushFromActiveTab).
+     */
+    shouldSkipFullSave(command) {
+      if (needsFullSave) return false;
+      const cmd = asText(command);
+      if (!cmd || cmd !== lastCapture.command) return false;
+      return lastCapture.captured === true;
     },
 
     /** Транспорт pipeline "ops" (вызывается координатором). */
@@ -457,6 +488,9 @@ export function createSaveOutbox(options = {}) {
     if (data?.pipeline === "xml" || data?.pipeline === "rawXml") {
       clearBuffer();
       needsFullSave = false;
+      // Full-save ack покрывает все локальные правки — dedup-ledger больше
+      // не валиден: consult без свежего pushCommand обязан отвечать false.
+      lastCapture = { command: "", captured: false };
     }
   }) || (() => {});
 

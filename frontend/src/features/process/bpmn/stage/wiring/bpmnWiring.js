@@ -262,21 +262,24 @@ export function createBpmnWiring(ctxBase, deps = {}) {
             cycleIndex: Number(refs.ensureVisibleCycleRef?.current || 0),
           });
         }
-        if (!positional) {
-          callbacks.emitDiagramMutation?.("diagram.change", {
-            eventName: "commandStack.changed",
-            command,
-          });
-        }
         // SaveOutbox fan-out (contour feature/async-save-pipeline-step1,
         // UI.md §2): та же существующая commandStack.changed-каскадная
         // подписка координатора — отдельной подписки на bpmn-js нет.
         // Дескриптор события сериализуем (command/action/commandContext);
         // pushCommand сам пропускает replay-команды и маппит whitelist.
+        // Порядок контрактен: pushCommand ДО emitDiagramMutation — dedup
+        // scheduling path (useDiagramMutationLifecycle → shouldSkipFullSave)
+        // консультирует outbox синхронно и обязан видеть текущую команду.
         try {
           refs.opsOutboxRef?.current?.pushCommand?.(ev);
         } catch {
           // outbox must never break the existing change cascade
+        }
+        if (!positional) {
+          callbacks.emitDiagramMutation?.("diagram.change", {
+            eventName: "commandStack.changed",
+            command,
+          });
         }
       },
       onRuntimeStatus: (runtimeStatus) => {
