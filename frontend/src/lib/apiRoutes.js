@@ -180,6 +180,8 @@ export const apiRoutes = {
       include_overlay: options?.includeOverlay === false ? "0" : "",
       _ts: options?.cacheBust === true ? String(Date.now()) : "",
     }),
+    // Дельта-сохранение ops-батчами (contour feature/async-save-pipeline-step1).
+    operations: (sessionId) => `/api/sessions/${encode(sessionId)}/operations`,
     bpmnVersions: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn/versions`, {
       limit: String(options?.limit || "").trim(),
       offset: String(options?.offset || "").trim(),
