@@ -370,6 +370,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(suggestion.get("duplicate_of"), "")
         self.assertEqual(suggestion.get("duplicate_reason"), "")
         self.assertEqual(provider.call_args.kwargs.get("max_tokens"), 4000)
+        self.assertEqual(provider.call_args.kwargs.get("timeout_sec"), 60)
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.nodes, after.nodes)
         self.assertEqual(before.edges, after.edges)
