@@ -1,0 +1,25 @@
+{
+  "contour": "feature/agent-rag-retrieval-citations-v1",
+  "type": "feature",
+  "branch": "feature/agent-rag-retrieval-citations-v1",
+  "base": "origin/main@df7feabc661add72ffac97c00ea2dda66008bdac",
+  "workspace": "p0-work-worktrees/feature-agent-rag-retrieval-citations-v1",
+  "phase": "READY_FOR_REVIEW",
+  "head": "c98695f8",
+  "epic": "E2 (agent-architecture-rag-audit-v1; P0 #965 в базе, E1 #972 OPEN с ревертами P0 — не мержить до fix-контура)",
+  "review": "REVIEW_PASS_WITH_NITS (Agent 3, agent-9); nits 1-6 закрыты в c98695f8, №7 намеренно (зафиксировано), №8 ложное замечание (stale baseline ревьюера)",
+  "gates": {
+    "G1": "PASS (unit/e2e уровня сервиса: кросс-сессионная цитата с source_id=chunk_id); live stage-curl — после stage-деплоя",
+    "G2": "ЧАСТИЧНО: p50 +50 мс <= +150 мс OK; tokens +575 est. на микро-сценарии выше +10%, но в бюджете 4096 (trim-ladder); ужесточение default — решение владельца",
+    "G3": "PASS (hit-путь: 0 LLM, search_rag не вызывается; тест зелёный)",
+    "G4": "PASS (degrade-тесты: пустой корпус, ошибка поиска, маркеры вне диапазона)"
+  },
+  "tests": {
+    "service": "177 passed / 1 failed (пред-существующий test_measurement_baseline, идентичен на main) / 1 skipped; дельта к main +26 passed, 0 регрессий",
+    "monolith": "test_rag_bm25 + test_rag_bpmn_chunker: 21 passed; test_rag_api: 41 passed (host, ~15 мин) — итого 62 passed, 0 failed"
+  },
+  "openapi": "docs/openapi.yaml регенерирован (dump_openapi.py), redocly lint 0 ошибок",
+  "notes": "Фикс dangling _run_free_answer_branch_stream внутри контура (обобщение stream-логики в _stream_llm_turn). Prefetch не внедрял — нет независимой работы после route_intent. SSE-маркеры вырезаются MarkerStripper.",
+  "created": "2026-09-14",
+  "updated": "2026-09-14"
+}

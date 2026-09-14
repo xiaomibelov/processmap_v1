@@ -122,6 +122,89 @@ def test_stream_node_qa_emits_action_event(admin_token, session_with_steps, mock
     assert "done" in event_types
 
 
+def _rag_result_b():
+    return {
+        "ok": True,
+        "results": [
+            {
+                "chunk_id": "chunk_b_1",
+                "score": 1.5,
+                "chunk_text": "В сессии B заявку оформляет оператор.",
+                "source_type": "bpmn_xml",
+                "source_id": "sess_b",
+                "metadata": {"session_id": "sess_b", "session_title": "Сессия B"},
+            },
+        ],
+    }
+
+
+def test_stream_free_answer_emits_sources_event(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    """E2: stream free-answer — SSE-ивент sources + sources в done."""
+    mock_route_intent_smalltalk.return_value = "smalltalk"
+    with mock.patch("memory.chat.complete_stream") as fake_stream, mock.patch("memory.chat.search_rag") as fake_rag:
+        fake_rag.return_value = _rag_result_b()
+        fake_stream.return_value = iter([
+            ("token", {"delta": "Оператор оформляет [S1]."}),
+            ("usage", {
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+                "provider_id": "p1",
+                "model": "m",
+                "prompt_version": 1,
+                "fallback": False,
+            }),
+        ])
+        c = TestClient(app)
+        with c.stream(
+            "POST",
+            f"/sessions/{session_with_steps}/agent/stream",
+            headers={**_auth(admin_token), "Accept": "text/event-stream"},
+            json={"message": "кто оформляет заявку?"},
+        ) as r:
+            r.read()
+            text = r.text
+    assert r.status_code == 200, text
+    events = _parse_sse(text)
+    event_types = [e["event"] for e in events]
+    assert "sources" in event_types, "SSE не содержит ивента sources"
+    sources_events = [json.loads(e["data"]) for e in events if e["event"] == "sources"]
+    assert sources_events[0]["sources"][0]["source_id"] == "chunk_b_1"
+    done_events = [json.loads(e["data"]) for e in events if e["event"] == "done"]
+    assert done_events[0]["sources"][0]["source_id"] == "chunk_b_1"
+
+
+def test_stream_structured_fact_empty_rag_falls_back_without_error(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
+    """E2: фикс dangling _run_free_answer_branch_stream — fallback без NameError/SSE-error."""
+    mock_route_intent_smalltalk.return_value = "structured_fact_qa"
+    with mock.patch("memory.chat.complete_stream") as fake_stream, mock.patch("memory.chat.search_rag") as fake_rag:
+        fake_rag.return_value = {"ok": True, "results": []}
+        fake_stream.return_value = iter([
+            ("token", {"delta": "Свободный ответ"}),
+            ("usage", {
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+                "provider_id": "p1",
+                "model": "m",
+                "prompt_version": 1,
+                "fallback": False,
+            }),
+        ])
+        c = TestClient(app)
+        with c.stream(
+            "POST",
+            f"/sessions/{session_with_steps}/agent/stream",
+            headers={**_auth(admin_token), "Accept": "text/event-stream"},
+            json={"message": "какие значения у свойства X?"},
+        ) as r:
+            r.read()
+            text = r.text
+    assert r.status_code == 200, text
+    events = _parse_sse(text)
+    event_types = [e["event"] for e in events]
+    assert "done" in event_types
+    assert "error" not in event_types
+    token_data = "".join(e["data"] for e in events if e["event"] == "token")
+    assert "Свободный ответ" in token_data
+
+
 def test_stream_gateway_error_emits_sse_error(admin_token, session_with_steps, mock_projection, mock_route_intent_smalltalk):
     mock_route_intent_smalltalk.return_value = "smalltalk"
     with mock.patch("memory.chat.complete_stream") as fake_stream:
