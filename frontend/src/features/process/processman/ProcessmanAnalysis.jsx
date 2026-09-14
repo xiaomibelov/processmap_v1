@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { ru } from "../../../shared/i18n/ru";
 import { readLastAnalysis } from "./lastAnalysisStore";
 import { formatClock, resolveLlmStatusView } from "./processmanView";
+import ProcessmanAnalysisArtifact from "./ProcessmanAnalysisArtifact";
 
 // LLM4 — контекст «Анализ» панели PROCESSMAN (документ владельца, ревизия 1):
 // сводка последнего анализа LLM1 (in-memory стор, 0 запросов) + статус
@@ -96,6 +97,8 @@ export default function ProcessmanAnalysis({ sessionId, llmStatus = null, onOpen
           {t.analysisOpenFull}
         </button>
       </div>
+
+      <ProcessmanAnalysisArtifact sessionId={sessionId} />
     </div>
   );
 }
