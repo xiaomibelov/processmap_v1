@@ -11,6 +11,7 @@ from ..legacy.request_context import (
 )
 from ..models import Project
 from ..repositories import project_repo
+from .audit import _audit_log_safe
 from ..services.org_workspace import (
     get_default_org_id,
     org_role_for_request as _org_role_for_request,
@@ -186,37 +187,6 @@ def _clean_name(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _audit_log_safe(
-    request: Optional[Request],
-    *,
-    org_id: str,
-    action: str,
-    entity_type: str,
-    entity_id: str,
-    status: str = "ok",
-    project_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    meta: Optional[Dict[str, Any]] = None,
-) -> None:
-    from ..legacy.request_context import request_user_meta, request_active_org_id
-    from ..storage import append_audit_log
-    uid, _ = request_user_meta(request)
-    if not uid:
-        return
-    try:
-        append_audit_log(
-            actor_user_id=uid,
-            org_id=str(org_id or "").strip() or request_active_org_id(request),
-            action=action,
-            entity_type=entity_type,
-            entity_id=str(entity_id or "").strip() or "-",
-            status=status,
-            project_id=project_id,
-            session_id=session_id,
-            meta=meta if isinstance(meta, dict) else {},
-        )
-    except Exception as exc:
-        print(f"[AUDIT] write_failed action={action} entity={entity_type}:{entity_id} err={exc}")
 
 
 def _invalidate_workspace_cache_for_org(org_id: Any) -> None:

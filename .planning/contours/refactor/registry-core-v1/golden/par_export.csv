@@ -1,0 +1,4 @@
+﻿workspace_title;project_title;project_id;session_title;session_id;product_group;product_name;action_type;action_stage;action_object_category;action_object;action_method;role;step_label;step_id;bpmn_element_id;work_duration_sec;wait_duration_sec;source;confidence;completeness;updated_at
+"weird;value""with
+lines";v_project_title;v_project_id;v_session_title;v_session_id;v_product_group;v_product_name;v_action_type;v_action_stage;v_action_object_category;v_action_object;v_action_method;v_role;v_step_label;v_step_id;v_bpmn_element_id;v_work_duration_sec;v_wait_duration_sec;v_source;v_confidence;v_completeness;v_updated_at
+;;;;;;;;;;;;;;;;;;;;;

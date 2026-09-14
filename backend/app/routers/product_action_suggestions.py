@@ -16,8 +16,8 @@ from ..services.org_workspace import (
     require_org_member_for_enterprise,
 )
 from ..services import product_action_suggestions_service as service
+from ..services.registry_core import csv_bytes, xlsx_bytes_for
 from ..storage import get_storage
-from ._product_action_export_utils import _csv_bytes, _xlsx_bytes
 
 router = APIRouter(tags=["product-action-suggestions"])
 
@@ -202,10 +202,15 @@ def export_product_actions(
     ext = "csv" if format == "csv" else "xlsx"
     filename = f"product-actions-{session_id}-{timestamp}.{ext}"
     if format == "csv":
-        content = _csv_bytes(rows, _SESSION_EXPORT_COLUMNS)
+        content = csv_bytes(_SESSION_EXPORT_COLUMNS, rows)
         media_type = "text/csv; charset=utf-8"
     else:
-        content = _xlsx_bytes(rows, _SESSION_EXPORT_COLUMNS)
+        content = xlsx_bytes_for(
+            _SESSION_EXPORT_COLUMNS,
+            rows,
+            sheet_name="Product actions",
+            column_widths=[18, 22, 18, 24, 18, 18, 22, 18, 18, 22, 22, 18, 18, 24, 18, 18, 16, 16, 14, 12, 14, 22],
+        )
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return Response(
         content=content,
