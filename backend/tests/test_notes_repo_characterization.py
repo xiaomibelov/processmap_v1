@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 
@@ -115,6 +116,11 @@ class NotesRepoCharacterizationTest(unittest.TestCase):
     def test_add_note_comment_appends_and_bumps_thread(self):
         thread = self._create_thread()
         tid = thread["id"]
+        # note_comments are ordered by (created_at ASC, id ASC) with random
+        # uuid ids: same-second timestamps make the order tie on id, so
+        # separate the two comments across a second boundary to keep the
+        # ordering assertion deterministic.
+        time.sleep(1.1)
         updated = self.notes_repo.add_note_comment(
             tid,
             body="Второй комментарий",
