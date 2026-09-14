@@ -3,17 +3,17 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..legacy.request_context import (
     enterprise_error as _enterprise_error,
-    request_active_org_id as _request_active_org_id,
     request_auth_user as _request_auth_user,
     request_user_meta,
 )
 from ..redis_cache import invalidate_workspace_org
 from ..repositories import org_repo, project_repo
+from ..services.audit import _audit_log_safe
 from ..services.org_workspace import (
     enterprise_require_org_member as _enterprise_require_org_member,
     enterprise_require_org_role as _enterprise_require_org_role,
@@ -22,9 +22,11 @@ from ..services.org_workspace import (
     project_scope_for_request as _project_scope_for_request,
 )
 from ..auth import find_user_by_id
+from ..shared.coerce import _env_int
 from ..storage import (
-    append_audit_log,
     get_storage,
+    is_org_active,
+    list_user_org_memberships,
 )
 from ..utils.authz import (
     can_manage_workspace,
@@ -48,35 +50,55 @@ def _invalidate_workspace_cache_for_org(org_id: Any) -> None:
     invalidate_workspace_org(_resolved_org_for_cache(org_id))
 
 
-def _audit_log_safe(
-    request: Optional[Request],
-    *,
-    org_id: str,
-    action: str,
-    entity_type: str,
-    entity_id: str,
-    status: str = "ok",
-    project_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    meta: Optional[Dict[str, Any]] = None,
-) -> None:
-    uid, _ = request_user_meta(request)
-    if not uid:
+def _require_org_active_for_writes(request: Optional[Request], org_id: str) -> None:
+    if not org_id:
         return
-    try:
-        append_audit_log(
-            actor_user_id=uid,
-            org_id=str(org_id or "").strip() or _request_active_org_id(request),
-            action=action,
-            entity_type=entity_type,
-            entity_id=str(entity_id or "").strip() or "-",
-            status=status,
-            project_id=project_id,
-            session_id=session_id,
-            meta=meta if isinstance(meta, dict) else {},
-        )
-    except Exception as exc:
-        print(f"[AUDIT] write_failed action={action} entity={entity_type}:{entity_id} err={exc}")
+    user = _request_auth_user(request) if request is not None else {}
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    if is_admin:
+        return
+    if not is_org_active(org_id):
+        raise HTTPException(status_code=403, detail="organization_inactive")
+
+
+def _user_is_member_of_org(user_id: str, org_id: str, *, is_admin: bool = False) -> bool:
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        return False
+    if bool(is_admin):
+        return True
+    for row in list_user_org_memberships(uid, is_admin=is_admin):
+        if str((row or {}).get("org_id") or "").strip() == oid:
+            return True
+    return False
+
+
+def _request_org_candidates(request: Optional[Request], preferred_org_id: str) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+
+    def _push(org_id_raw: Any) -> None:
+        org_id = str(org_id_raw or "").strip()
+        if not org_id or org_id in seen:
+            return
+        seen.add(org_id)
+        out.append(org_id)
+
+    _push(preferred_org_id)
+    if request is not None:
+        user_id, is_admin = request_user_meta(request)
+        if user_id:
+            for row in list_user_org_memberships(user_id, is_admin=is_admin):
+                if isinstance(row, dict):
+                    _push(row.get("org_id"))
+    if not out:
+        _push(get_default_org_id())
+    return out
+
+
+def _audit_retention_days() -> int:
+    return max(1, _env_int("AUDIT_RETENTION_DAYS", 90))
 
 
 def _clean_name(value: Any) -> str:
@@ -319,7 +341,7 @@ def list_org_project_sessions(org_id: str, project_id: str, request: Request, mo
 
 def create_org_project_session(org_id: str, project_id: str, inp, request=None, mode=None):
     import app._legacy_main as _lm
-    _lm._require_org_active_for_writes(request, org_id)
+    _require_org_active_for_writes(request, org_id)
     return _lm.create_org_project_session(org_id, project_id, inp, request, mode)
 
 
@@ -491,10 +513,6 @@ def cleanup_org_audit(org_id: str, request: Request, retention_days: int = 0):
     return {"ok": True, "org_id": oid, "deleted": int(deleted or 0), "retention_days": int(retention)}
 
 
-def _audit_retention_days() -> int:
-    return int(os.environ.get("AUDIT_RETENTION_DAYS", "90") or "90")
-
-
 # ── Workspace / Invites (thin — keep in legacy for now) ───────────
 
 def get_enterprise_workspace(
@@ -555,5 +573,3 @@ def revoke_org_invite(org_id: str, invite_id: str, request=None):
 def cleanup_org_invites(org_id: str, request=None, keep_days: int = 0):
     import app._legacy_main as _lm
     return _lm.cleanup_org_invites_endpoint(org_id, request, keep_days)
-
-import os

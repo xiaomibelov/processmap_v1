@@ -1,0 +1,16 @@
+{
+  "contour": "refactor/registry-core-v1",
+  "type": "refactor",
+  "branch": "refactor/registry-core-v1",
+  "baseline": "2843f4d0145c019d64f8b74730efdac63ee9ba8f",
+  "worktree": "server-backup/opt/processmap-test-worktrees/refactor-registry-core-v1",
+  "phase": "verification",
+  "tasks": {
+    "registry_core": "done",
+    "ppr_adapter": "done",
+    "par_adapter": "done",
+    "orgs_dedup": "done",
+    "analytics_dedup": "deferred:ANALYTICS_FOLLOWUP_PLAN.md",
+    "verification": "in_progress"
+  }
+}

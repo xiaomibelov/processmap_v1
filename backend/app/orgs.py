@@ -4,7 +4,7 @@ import os
 import smtplib
 from datetime import datetime, timezone
 from email.message import EmailMessage
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, Query, Request, Response
 
@@ -22,7 +22,6 @@ from .legacy.request_context import (
     request_user_meta as _request_user_meta,
 )
 from .models import CreateProjectIn, Session
-from .redis_cache import invalidate_workspace_org
 from .schemas.legacy_api import (
     CreatePathReportVersionIn,
     CreateSessionIn,
@@ -36,6 +35,7 @@ from .schemas.legacy_api import (
     ProjectMemberUpsertIn,
     norm_project_session_mode as _norm_project_session_mode,
 )
+from .services import org_service as _org_service
 from .services.audit import _audit_log_safe
 from .services.org_invites import (
     build_invite_create_audit_meta,
@@ -47,7 +47,6 @@ from .services.org_workspace import (
     enterprise_require_org_role as _enterprise_require_org_role,
     org_role_for_request as _org_role_for_request,
     project_scope_for_request as _project_scope_for_request,
-    rename_org_with_validation,
 )
 from .shared.coerce import (
     _env_bool,
@@ -60,38 +59,26 @@ from .shared.payloads import (
     _pick_current_org_invite,
     _with_invite_links,
 )
-from .shared.text_utils import _clean_name
 from .storage import (
     accept_org_invite,
-    cleanup_audit_log,
     cleanup_org_invites,
     create_org_invite,
     create_org_record,
     delete_org_invite,
-    delete_project_membership,
     get_default_org_id,
-    get_org_git_mirror_config,
     get_org_invite_by_id,
     get_project_storage,
     get_storage,
-    is_org_active,
-    list_audit_log,
     list_org_invites,
     list_org_memberships,
-    list_project_memberships,
     list_user_org_memberships,
     promote_regenerated_org_invite,
     resolve_active_org_id,
     revoke_org_invite,
-    upsert_org_membership,
-    upsert_project_membership,
 )
 from .utils.authz import (
-    can_manage_workspace as _can_manage_workspace,
-    enterprise_manage_project_members_guard as _enterprise_manage_project_members_guard,
     enterprise_require_project_access as _enterprise_require_project_access,
     is_role_allowed as _is_role_allowed,
-    scope_allowed_project_ids as _scope_allowed_project_ids,
     session_access_from_request as _session_access_from_request,
 )
 from .utils.legacy_normalization import (
@@ -116,28 +103,12 @@ _ORG_AUDIT_READ_ROLES = {"org_owner", "org_admin", "auditor", "project_manager"}
 # ── Org membership / guards ──────────────────────────────────────
 
 def _require_org_active_for_writes(request: Optional[Request], org_id: str) -> None:
-    if not org_id:
-        return
-    user = _request_auth_user(request) if request is not None else {}
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    if is_admin:
-        return
-    if not is_org_active(org_id):
-        raise HTTPException(status_code=403, detail="organization_inactive")
+    return _org_service._require_org_active_for_writes(request, org_id)
 
 
 
 def _user_is_member_of_org(user_id: str, org_id: str, *, is_admin: bool = False) -> bool:
-    uid = str(user_id or "").strip()
-    oid = str(org_id or "").strip()
-    if not uid or not oid:
-        return False
-    if bool(is_admin):
-        return True
-    for row in list_user_org_memberships(uid, is_admin=is_admin):
-        if str((row or {}).get("org_id") or "").strip() == oid:
-            return True
-    return False
+    return _org_service._user_is_member_of_org(user_id, org_id, is_admin=is_admin)
 
 
 
@@ -152,7 +123,7 @@ def _invite_ttl_hours_default() -> int:
 
 
 def _audit_retention_days() -> int:
-    return max(1, _env_int("AUDIT_RETENTION_DAYS", 90))
+    return _org_service._audit_retention_days()
 
 
 def _invite_cleanup_keep_days() -> int:
@@ -259,37 +230,18 @@ def _enrich_members_with_email(items_raw: Any) -> List[Dict[str, Any]]:
 
 
 def _request_org_candidates(request: Optional[Request], preferred_org_id: str) -> List[str]:
-    out: List[str] = []
-    seen: Set[str] = set()
-
-    def _push(org_id_raw: Any) -> None:
-        org_id = str(org_id_raw or "").strip()
-        if not org_id or org_id in seen:
-            return
-        seen.add(org_id)
-        out.append(org_id)
-
-    _push(preferred_org_id)
-    if request is not None:
-        user_id, is_admin = _request_user_meta(request)
-        if user_id:
-            for row in list_user_org_memberships(user_id, is_admin=is_admin):
-                if isinstance(row, dict):
-                    _push(row.get("org_id"))
-    if not out:
-        _push(get_default_org_id())
-    return out
+    return _org_service._request_org_candidates(request, preferred_org_id)
 
 
 
 # ── Workspace cache invalidation ─────────────────────────────────
 
 def _resolved_org_for_cache(org_id: Any) -> str:
-    return str(org_id or "").strip() or get_default_org_id()
+    return _org_service._resolved_org_for_cache(org_id)
 
 
 def _invalidate_workspace_cache_for_org(org_id: Any) -> None:
-    invalidate_workspace_org(_resolved_org_for_cache(org_id))
+    _org_service._invalidate_workspace_cache_for_org(org_id)
 
 
 
@@ -321,51 +273,13 @@ def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
 
 
 def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    if not _can_manage_workspace(role, is_admin=is_admin):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    name = _clean_name(getattr(inp, "name", ""))
-    if not name:
-        return _enterprise_error(422, "validation_error", "name is required")
-    try:
-        org = rename_org_with_validation(oid, name)
-    except ValueError as exc:
-        marker = str(exc or "").strip().lower()
-        if "exists" in marker:
-            return _enterprise_error(409, "conflict", "workspace_name_exists")
-        if "not found" in marker:
-            return _enterprise_error(404, "not_found", "not_found")
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="org.rename",
-        entity_type="org",
-        entity_id=oid,
-        meta={"name": name, "actor_user_id": uid},
-    )
-    _invalidate_workspace_cache_for_org(oid)
-    return org
+    return _org_service.patch_org(org_id, inp, request)
+
 
 
 def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    _uid, is_admin = _request_user_meta(request)
-    role_l = str(role or "").strip().lower()
-    if not (is_admin or _is_role_allowed(role_l, _ORG_READ_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    try:
-        config = get_org_git_mirror_config(oid)
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-    return {"ok": True, "org_id": oid, "config": config}
+    return _org_service.get_org_git_mirror(org_id, request)
+
 
 
 def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
@@ -382,84 +296,23 @@ def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
 
 
 def patch_org_member_endpoint(org_id: str, user_id: str, inp: OrgMemberPatchIn, request: Request):
-    oid = str(org_id or "").strip()
-    uid = str(user_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    if not uid:
-        return _enterprise_error(422, "validation_error", "user_id is required")
-    role = str(getattr(inp, "role", "") or "").strip()
-    if not role:
-        return _enterprise_error(422, "validation_error", "role is required")
-    try:
-        row = upsert_org_membership(oid, uid, role)
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="member.role_change",
-        entity_type="org_membership",
-        entity_id=f"{oid}:{uid}",
-        meta={"target_user_id": uid, "role": str(row.get('role') or '')},
-    )
-    return row
+    return _org_service.patch_org_member(org_id, user_id, inp, request)
+
 
 
 def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    scope = _project_scope_for_request(request, oid)
-    st = get_project_storage()
-    items = st.list(org_id=oid, is_admin=True)
-    if str(scope.get("mode") or "") != "all":
-        allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
-        items = [proj for proj in items if str(getattr(proj, "id", "") or "").strip() in allowed]
-    return [p.model_dump() for p in items]
+    return _org_service.list_org_projects(org_id, request)
+
 
 
 def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_WRITE_ROLES)
-    if err is not None:
-        return err
-    title = str(getattr(inp, "title", "") or "").strip()
-    if not title:
-        return _enterprise_error(422, "validation_error", "title required")
-    passport = inp.passport if isinstance(inp.passport, dict) else {}
-    user = _request_auth_user(request)
-    uid = str(user.get("id") or "").strip()
-    st = get_project_storage()
-    pid = st.create(title=title, passport=passport, user_id=uid, org_id=oid)
-    proj = st.load(pid, org_id=oid, is_admin=True)
-    if not proj:
-        return _enterprise_error(404, "not_found", "not_found")
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.create",
-        entity_type="project",
-        entity_id=pid,
-        project_id=pid,
-        meta={"title": str(getattr(proj, "title", "") or title)},
-    )
-    _invalidate_workspace_cache_for_org(oid)
-    return proj.model_dump()
+    return _org_service.create_org_project(org_id, inp, request)
+
 
 
 def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    _, _, err = _enterprise_require_project_access(request, oid, project_id)
-    if err is not None:
-        return err
-    st = get_project_storage()
-    proj = st.load(project_id, org_id=oid, is_admin=True)
-    if not proj:
-        return _enterprise_error(404, "not_found", "not_found")
-    return proj.model_dump()
+    return _org_service.get_org_project(org_id, project_id, request)
+
 
 
 def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None, view: str | None = None) -> List[Dict[str, Any]]:
@@ -558,99 +411,23 @@ def create_org_project_session(
 
 
 def list_org_project_members(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    items = list_project_memberships(oid, project_id=pid)
-    return build_items_count_payload(items)
+    return _org_service.list_org_project_members(org_id, project_id, request)
+
 
 
 def create_org_project_member(org_id: str, project_id: str, inp: ProjectMemberUpsertIn, request: Request):
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    user_id = str(getattr(inp, "user_id", "") or "").strip()
-    role = str(getattr(inp, "role", "") or "").strip()
-    if not user_id or not role:
-        return _enterprise_error(422, "validation_error", "user_id and role are required")
-    try:
-        row = upsert_project_membership(oid, pid, user_id, role)
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.member.add",
-        entity_type="project_membership",
-        entity_id=f"{oid}:{pid}:{user_id}",
-        project_id=pid,
-        meta={"target_user_id": user_id, "role": str(row.get("role") or role)},
-    )
-    return row
+    return _org_service.create_org_project_member(org_id, project_id, inp, request)
+
 
 
 def patch_org_project_member(org_id: str, project_id: str, user_id: str, inp: ProjectMemberPatchIn, request: Request):
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    uid = str(user_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    role = str(getattr(inp, "role", "") or "").strip()
-    if not uid or not role:
-        return _enterprise_error(422, "validation_error", "role is required")
-    try:
-        row = upsert_project_membership(oid, pid, uid, role)
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.member.role_change",
-        entity_type="project_membership",
-        entity_id=f"{oid}:{pid}:{uid}",
-        project_id=pid,
-        meta={"target_user_id": uid, "role": str(row.get("role") or role)},
-    )
-    return row
+    return _org_service.patch_org_project_member(org_id, project_id, user_id, inp, request)
+
 
 
 def delete_org_project_member(org_id: str, project_id: str, user_id: str, request: Request):
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    uid = str(user_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    deleted = delete_project_membership(oid, pid, uid)
-    if not deleted:
-        return _enterprise_error(404, "not_found", "not_found")
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.member.delete",
-        entity_type="project_membership",
-        entity_id=f"{oid}:{pid}:{uid}",
-        project_id=pid,
-        meta={"target_user_id": uid},
-    )
-    return Response(status_code=204)
+    return _org_service.delete_org_project_member(org_id, project_id, user_id, request)
+
 
 
 def list_org_invites_endpoint(org_id: str, request: Request):
@@ -918,66 +695,15 @@ def list_org_audit_endpoint(
     session_id: str = "",
     status: str = "",
 ):
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role_l = str(role or "").strip().lower()
-    if not (is_admin or _is_role_allowed(role_l, _ORG_AUDIT_READ_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    scope = _project_scope_for_request(request, oid)
-    requested_project = str(project_id or "").strip()
-    if requested_project and str(scope.get("mode") or "") != "all":
-        allowed = _scope_allowed_project_ids(scope)
-        if requested_project not in allowed:
-            return _enterprise_error(404, "not_found", "not_found")
-    rows = list_audit_log(
-        oid,
-        limit=limit,
-        action=action,
-        project_id=requested_project or None,
-        session_id=str(session_id or "").strip() or None,
-        status=str(status or "").strip() or None,
+    return _org_service.list_org_audit(
+        org_id, request, limit=limit, action=action, project_id=project_id, session_id=session_id, status=status
     )
-    if str(scope.get("mode") or "") != "all":
-        allowed = _scope_allowed_project_ids(scope)
-        filtered: List[Dict[str, Any]] = []
-        for row in rows:
-            pid = str((row or {}).get("project_id") or "").strip()
-            if not pid or pid in allowed:
-                filtered.append(row)
-        rows = filtered
-    for row in rows:
-        actor_id = str((row or {}).get("actor_user_id") or "").strip()
-        if actor_id:
-            actor = find_user_by_id(actor_id) or {}
-            email = str(actor.get("email") or "").strip().lower()
-            if email:
-                row["actor_email"] = email
-    _ = uid
-    return {"items": rows, "count": len(rows)}
+
 
 
 def cleanup_org_audit_endpoint(org_id: str, request: Request, retention_days: int = 0):
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
-    if err is not None:
-        return err
-    retention = int(retention_days or 0)
-    if retention <= 0:
-        retention = _audit_retention_days()
-    deleted = cleanup_audit_log(oid, retention_days=retention)
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="audit.cleanup",
-        entity_type="audit_log",
-        entity_id=f"cleanup:{oid}",
-        status="ok",
-        meta={"deleted": int(deleted or 0), "retention_days": int(retention)},
-    )
-    return {"ok": True, "org_id": oid, "deleted": int(deleted or 0), "retention_days": int(retention)}
+    return _org_service.cleanup_org_audit(org_id, request, retention_days)
+
 
 
 def list_org_session_report_versions(

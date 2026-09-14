@@ -16,7 +16,7 @@ from .legacy.request_context import (
     request_user_meta as _request_user_meta,
 )
 from .models import Session
-from .orgs import (
+from .services.org_service import (
     _invalidate_workspace_cache_for_org,
     _request_org_candidates,
     _require_org_active_for_writes,
