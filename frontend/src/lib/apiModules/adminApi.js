@@ -457,6 +457,11 @@ export async function apiAdminRagPatchSettings(payload = {}) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminRagGetIndexingPlan() {
+  const r = okOrError(await request(apiRoutes.admin.ragIndexingPlan(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 // ------- Admin Permissions -------
 export async function apiAdminListPermissions(params = {}) {
   const endpoint = apiRoutes.admin.permissions(normalizeAdminParams(params));
