@@ -20,6 +20,7 @@ import AdminAiModulesPage from "./pages/AdminAiModulesPage";
 import AdminLlmPage from "./pages/AdminLlmPage";
 import AdminRagPage from "./pages/AdminRagPage";
 import useAdminRagData from "./hooks/useAdminRagData";
+import useAdminRagIndexingPlan from "./hooks/useAdminRagIndexingPlan";
 import useAdminAgentRunsData from "./api/adminAgentRunsApi";
 import useAdminAgentRunDetailData from "./hooks/useAdminAgentRunDetailData";
 import AdminAgentRunsPage from "./pages/AdminAgentRunsPage";
@@ -160,6 +161,7 @@ function AdminAppInner({
     eventId: telemetryFilters.event_id,
   });
   const ragQ = useAdminRagData({ enabled: route.section === "rag" });
+  const ragPlanQ = useAdminRagIndexingPlan({ enabled: route.section === "rag" });
   const graphsQ = useAdminGraphsData({ enabled: route.section === "graphs" });
   const agentRunsQ = useAdminAgentRunsData({ enabled: route.section === "agent-runs" && !toText(route.runId), userId: "" });
   const agentRunDetailQ = useAdminAgentRunDetailData({
@@ -388,7 +390,7 @@ function AdminAppInner({
       return <AdminLlmPage showTestgen={canOpenApiDocs} showEndpointCheck={canOpenApiDocs} />;
     }
     if (route.section === "rag") {
-      return <AdminRagPage payload={ragQ} />;
+      return <AdminRagPage payload={ragQ} planPayload={ragPlanQ} />;
     }
     if (route.section === "graphs") {
       return <AdminGraphsPage payload={graphsQ} />;
