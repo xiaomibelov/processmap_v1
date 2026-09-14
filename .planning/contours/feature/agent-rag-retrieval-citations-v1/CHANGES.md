@@ -47,6 +47,19 @@
 - Тесты: `test_agent_chat_contract.py` (sources в ключах ответа),
   `test_streaming.py` (SSE-ивент sources + фикс fallback без NameError).
 
+### Nits review (c98695f8, REVIEW_PASS_WITH_NITS → закрыто)
+- `MarkerStripper`: маркеры `[Sn]` не утекают в SSE token-дельты
+  (в т.ч. разорванные между дельтами; источники — по `sources`-ивенту).
+- `parse_citations`: схлопывание пробелов без потери индентации markdown/кода;
+  маркер `[S<цифры>]` любой длины вне диапазона вырезается.
+- `build_source_refs`: дедупликация по `chunk_id`.
+- `PROCESSMAN_RAG_*_TOP_K` — per-call env (как `PromptBudgetConfig.from_env`),
+  не import-time.
+- `_doc_qa` возвращает `rag_refs` (консистентность `call_kwargs`).
+- Намеренное поведенческое изменение (review №7): stream miss-путь
+  schema_overview материализует sync-save schema-memory (на main только
+  async-путь; урок #948 — hit-ветка не должна от него зависеть).
+
 ### SSE-контракт ( additive, под E5 )
 - Новый ивент `sources` {sources: [...]} после токенов, до `done`; поле `sources`
   продублировано в `done` (в т.ч. hit-путь schema_overview: sources=null).
