@@ -129,10 +129,18 @@ def test_artifact_works_with_feature_flag_disabled(client, owner, owner_token, s
     assert resp.status_code == 200
 
 
-def test_artifact_foreign_session_parity_with_status_endpoint(client, owner_token):
+def test_artifact_foreign_session_parity_with_status_endpoint(client):
     # Орг-скоупинг наследуется от _legacy_load_session_scoped (паритет с
     # существующим GET status): чужая сессия обрабатывается обоими эндпоинтами
-    # идентично.
+    # идентично. Запросивший — обычный участник ДРУГОГО орга (не platform
+    # admin): platform admin проходит scoped-loader и получает 200 на artifact,
+    # что ломает паритет со status (404 по отсутствующему job_id) и не проверяет
+    # скоупинг.
+    outsider = create_user(f"aa_outsider_{uuid.uuid4().hex[:8]}@local", "password", is_admin=False)
+    outsider_org = f"org_aa_out_{uuid.uuid4().hex[:8]}"
+    create_org_record("AA Outsider Org", created_by=str(outsider["id"]), org_id=outsider_org)
+    upsert_org_membership(outsider_org, str(outsider["id"]), "owner")
+    outsider_token = create_access_token(outsider["id"])
     foreign = create_user(f"aa_foreign_{uuid.uuid4().hex[:8]}@local", "password", is_admin=True)
     org_id = f"org_aa_{uuid.uuid4().hex[:8]}"
     create_org_record("AA Foreign Org", created_by=str(foreign["id"]), org_id=org_id)
@@ -146,13 +154,14 @@ def test_artifact_foreign_session_parity_with_status_endpoint(client, owner_toke
     _seed_artifact_org(sid, foreign["id"], org_id, dict(_ARTIFACT))
     artifact_resp = client.get(
         f"/api/sessions/{sid}/agent-analysis/artifact",
-        headers=_auth(owner_token),
+        headers=_auth(outsider_token),
     )
     status_resp = client.get(
         f"/api/sessions/{sid}/agent-analysis?job_id=jid_x",
-        headers=_auth(owner_token),
+        headers=_auth(outsider_token),
     )
     assert artifact_resp.status_code == status_resp.status_code
+    assert artifact_resp.status_code == 404
 
 
 def _seed_artifact_org(sid: str, user_id: str, org_id: str, artifact: dict) -> None:
