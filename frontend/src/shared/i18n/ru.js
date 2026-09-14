@@ -1191,12 +1191,14 @@ export const ru = {
     attachDoc: {
       success: "«{filename}» прикреплён ({chunks} фрагментов в индексе)",
       pending: "Прикрепляем…",
+      close: "Закрыть",
       error: {
         doc_too_large: "Файл больше 2 МБ",
         doc_extension_not_allowed: "Формат не поддерживается (.md, .txt, .doc, .docx)",
         doc_limit_reached: "Лимит 20 документов на сессию",
         doc_quota_exceeded: "Превышен суммарный лимит 20 МБ на сессию",
         doc_unparseable: "Не удалось извлечь текст (попробуйте .docx или .txt)",
+      doc_empty: "Файл пустой — нет текста для индексации",
         session_forbidden: "Нет доступа к сессии",
         unknown: "Ошибка: {detail}",
       },

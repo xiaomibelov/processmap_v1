@@ -210,12 +210,14 @@ export const en = {
     attachDoc: {
       success: "\"{filename}\" attached ({chunks} chunks indexed)",
       pending: "Attaching…",
+      close: "Close",
       error: {
         doc_too_large: "File exceeds 2 MB",
         doc_extension_not_allowed: "Unsupported format (.md, .txt, .doc, .docx)",
         doc_limit_reached: "Limit of 20 documents per session",
         doc_quota_exceeded: "Total 20 MB per session limit exceeded",
         doc_unparseable: "Failed to extract text (try .docx or .txt)",
+      doc_empty: "File is empty — no text to index",
         session_forbidden: "No access to the session",
         unknown: "Error: {detail}",
       },

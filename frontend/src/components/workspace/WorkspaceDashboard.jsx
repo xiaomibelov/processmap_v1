@@ -28,6 +28,7 @@ const ATTACH_DOC_TEXTS = {
   pending: toText(workspaceAttachDocI18n.pending) || "Прикрепляем…",
   success: toText(workspaceAttachDocI18n.success) || "«{filename}» прикреплён ({chunks} фрагментов в индексе)",
   unknown: toText(workspaceAttachDocErrors.unknown) || "Ошибка: {detail}",
+  close: toText(workspaceAttachDocI18n.close) || "Закрыть",
 };
 
 const ATTACH_DOC_ERROR_FALLBACKS = {
@@ -1257,8 +1258,8 @@ export default function WorkspaceDashboard({
             className="iconBtn h-5 w-5 min-w-5 shrink-0"
             onClick={dismissAttachNotice}
             data-testid="workspace-attach-doc-toast-close"
-            title="Закрыть"
-            aria-label="Закрыть"
+            title={ATTACH_DOC_TEXTS.close}
+            aria-label={ATTACH_DOC_TEXTS.close}
           >
             ✕
           </button>
