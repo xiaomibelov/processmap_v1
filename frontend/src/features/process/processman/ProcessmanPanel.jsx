@@ -6,6 +6,7 @@ import ProcessmanNeutral from "./ProcessmanNeutral";
 import ProcessmanTobe from "./ProcessmanTobe";
 import ProcessmanContextChip from "./ProcessmanContextChip";
 import ProcessmanOnboarding from "./ProcessmanOnboarding";
+import SessionDocsPanel from "./docs/SessionDocsPanel";
 import { isOnboardingSeen, markOnboardingSeen } from "./chat/processmanOnboarding";
 import { resetChatHistories } from "./chat/processmanChatStore";
 import { resolvePanelContext } from "./processmanView";
@@ -208,6 +209,7 @@ export default function ProcessmanPanel({
           <div className="pm-processman__body" data-testid="processman-body">
             {context === "tobe" ? (
               <div className="pm-processman-workbench" data-testid="processman-workbench">
+                <SessionDocsPanel sessionId={sessionId} />
                 <div className="pm-processman__chat-wrap">
                   <ProcessmanContextChip
                     selectedElement={selectedBpmnElement}
