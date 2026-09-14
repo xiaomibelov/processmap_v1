@@ -314,6 +314,14 @@ components:
           description: Digest схемы на момент ответа.
           title: Projection Digest
           type: string
+        sources:
+          description: Процитированные RAG-источники (null — retrieval не участвовал
+            или деградация).
+          items:
+            $ref: '#/components/schemas/SourceRef'
+          nullable: true
+          title: Sources
+          type: array
         status:
           description: 'Статус ответа: ok | disabled | rate_limited | no_provider
             | error | bad_request.'
@@ -2992,6 +3000,60 @@ components:
       required:
       - title
       title: SessionTitleQuestionsIn
+      type: object
+    SourceRef:
+      description: 'Источник RAG-цитаты в ответе агента (cite-контракт E2, контракт
+        общий
+
+        с agent-сервисом; монолитный контур retrieval не выполняет и поле не заполняет).'
+      properties:
+        element_id:
+          description: BPMN-элемент-источник (навигация для E5).
+          nullable: true
+          title: Element Id
+          type: string
+        element_name:
+          description: Имя BPMN-элемента-источника.
+          nullable: true
+          title: Element Name
+          type: string
+        process_layer:
+          description: 'as_is | to_be (после E1 #972).'
+          nullable: true
+          title: Process Layer
+          type: string
+        score:
+          default: 0.0
+          description: BM25-скор чанка.
+          title: Score
+          type: number
+        session_id:
+          description: Сессия-источник (для bpmn_xml).
+          nullable: true
+          title: Session Id
+          type: string
+        session_title:
+          description: Название сессии-источника.
+          nullable: true
+          title: Session Title
+          type: string
+        snippet:
+          default: ''
+          description: Фрагмент чанка (~200 символов).
+          title: Snippet
+          type: string
+        source_id:
+          description: Уникальный id чанка-источника (chunk_id).
+          title: Source Id
+          type: string
+        source_type:
+          default: ''
+          description: 'Тип корпуса: bpmn_xml | property_dictionary | ...'
+          title: Source Type
+          type: string
+      required:
+      - source_id
+      title: SourceRef
       type: object
     StartPilot:
       properties:
