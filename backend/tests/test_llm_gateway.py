@@ -580,3 +580,92 @@ def test_effective_providers_with_key_prefers_org_then_org_default(sandbox):
     llm_store.delete_provider(own[0]["id"])
     llm_store.delete_provider(fallback[0]["id"])
     assert llm_store.effective_providers_with_key(no_provider_org) == []
+
+
+# ------------------------------------------------------- error_class (M-2)
+
+def _http_error(status: int, body: str = "", url: str = "https://llm-internal-router.example/v1/chat/completions"):
+    resp = requests.models.Response()
+    resp.status_code = status
+    resp.url = url
+    resp._content = body.encode("utf-8")
+    return requests.exceptions.HTTPError(f"{status} error for url: {url}", response=resp)
+
+
+def test_classify_403_auth():
+    from backend.app.ai.error_sanitize import classify_llm_error
+
+    assert classify_llm_error(_http_error(403)) == "403_auth"
+
+
+def test_classify_budget_exceeded():
+    from backend.app.ai.error_sanitize import classify_llm_error
+
+    assert classify_llm_error(_http_error(402, '{"error":{"message":"budget exceeded"}}')) == "budget_exceeded"
+    assert classify_llm_error(RuntimeError("provider says Budget limit reached")) == "budget_exceeded"
+
+
+def test_classify_timeout():
+    from backend.app.ai.error_sanitize import classify_llm_error
+
+    assert classify_llm_error(requests.exceptions.Timeout("primary timed out")) == "timeout"
+    assert classify_llm_error(TimeoutError("slow")) == "timeout"
+
+
+def test_classify_parse_error():
+    import json as _json
+
+    from backend.app.ai.error_sanitize import classify_llm_error
+
+    assert classify_llm_error(_json.JSONDecodeError("Expecting value", "doc", 0)) == "parse_error"
+
+
+def test_classify_connection_http_5xx_no_provider_unknown():
+    from backend.app.ai.error_sanitize import classify_llm_error
+
+    assert classify_llm_error(_http_error(502)) == "http_5xx"
+    assert classify_llm_error(_http_error(503, url="https://other.example/x")) == "http_5xx"
+    assert classify_llm_error(requests.exceptions.ConnectionError("connection refused")) == "connection"
+    assert classify_llm_error(RuntimeError("weird failure")) == "unknown"
+    assert classify_llm_error("no enabled LLM providers with api key") == "no_provider"
+    assert classify_llm_error(None) == "unknown"
+
+
+def test_complete_chain_failure_includes_error_class(sandbox):
+    """M-2: цепочка провайдеров исчерпана → result содержит sanitized error_class."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://a", model="m",
+                              api_key="key-a", priority=10)
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_http_error(403)):
+        result = gateway.complete(feature, {}, org_id=org)
+    assert result["ok"] is False and result["status"] == "error"
+    assert result["error_class"] == "403_auth"
+
+
+def test_no_provider_result_includes_error_class(sandbox):
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    with mock.patch.object(gateway.llm_store, "effective_providers_with_key", return_value=[]), \
+         mock.patch.object(gateway, "_deepseek_chat_request") as mocked:
+        result = gateway.complete(feature, {}, org_id=org)
+    assert result["status"] == "no_provider"
+    assert result["error_class"] == "no_provider"
+    mocked.assert_not_called()
+
+
+def test_chain_failure_result_never_leaks_url_or_key(sandbox):
+    """S1 regression: serialized result не содержит URL провайдера или ключа."""
+    import json as _json
+
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p1", base_url="https://secret-router.internal",
+                              api_key="key-SECRET-A", model="m", priority=10)
+
+    def _fake(**kwargs):
+        raise _http_error(403, url="https://secret-router.internal/v1/chat/completions")
+
+    with mock.patch.object(gateway, "_deepseek_chat_request", side_effect=_fake):
+        result = gateway.complete(feature, {}, org_id=org)
+    serialized = _json.dumps(result, ensure_ascii=False)
+    assert result["error_class"] == "403_auth"
+    assert "secret-router" not in serialized
+    assert "SECRET-A" not in serialized

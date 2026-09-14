@@ -1031,3 +1031,49 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_gateway_provider_error_propagates_error_class(self):
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={
+                "ok": False,
+                "status": "error",
+                "error": "all providers failed",
+                "provider_id": "llmprov_vvproxy",
+                "model": "claude-opus-4-6",
+                "error_class": "403_auth",
+            },
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_ERROR")
+        diagnostics = out.get("diagnostics") or {}
+        self.assertEqual(diagnostics.get("provider_id"), "llmprov_vvproxy")
+        self.assertEqual(diagnostics.get("model"), "claude-opus-4-6")
+        self.assertEqual(diagnostics.get("error_class"), "403_auth")
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_ERROR")
+        self.assertIn("403_auth", str(logs[0].get("error_message") or ""))
+
+    def test_gateway_provider_error_without_error_class_falls_back_to_unknown(self):
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={"ok": False, "status": "error", "error": "all providers failed"},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_ERROR")
+        self.assertEqual((out.get("diagnostics") or {}).get("error_class"), "unknown")
+
+    def test_no_provider_response_includes_error_class(self):
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        with patch(
+            "app.routers.product_actions_ai._llm_complete",
+            return_value={"ok": False, "status": "no_provider", "error": "no provider"},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
+        self.assertEqual((out.get("diagnostics") or {}).get("error_class"), "no_provider")
+        logs = self._logs().get("items") or []
+        self.assertIn("no_provider", str(logs[0].get("error_message") or ""))
