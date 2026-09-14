@@ -31,7 +31,7 @@ except Exception:
 from ..compat.repository import _AI_PROMPT_SCOPE_LEVELS
 from ..compat.repository import _AI_PROMPT_STATUSES
 
-def _build_ai_execution_log_where(
+def _ai_execution_log_where(
     *,
     org_id: str = "",
     module_id: Optional[str] = None,
@@ -42,13 +42,8 @@ def _build_ai_execution_log_where(
     session_id: Optional[str] = None,
     created_from: Optional[int] = None,
     created_to: Optional[int] = None,
-) -> tuple[str, List[Any]]:
-    clauses: List[str] = []
-    params: List[Any] = []
-    oid = str(org_id or "").strip()
-    if oid:
-        clauses.append("org_id = ?")
-        params.append(oid)
+) -> Tuple[str, List[Any]]:
+    eq: Dict[str, Any] = {}
     filters = {
         "module_id": module_id,
         "status": _normalize_ai_execution_status(status) if status else "",
@@ -60,17 +55,19 @@ def _build_ai_execution_log_where(
     for column, raw in filters.items():
         value = str(raw or "").strip()
         if value:
-            clauses.append(f"{column} = ?")
-            params.append(value)
+            eq[column] = value
     from_ts = int(created_from or 0)
-    if from_ts > 0:
-        clauses.append("created_at >= ?")
-        params.append(from_ts)
     to_ts = int(created_to or 0)
-    if to_ts > 0:
-        clauses.append("created_at <= ?")
-        params.append(to_ts)
-    return (" AND ".join(clauses) if clauses else "1 = 1"), params
+    return base.build_where(
+        eq,
+        org_id=str(org_id or "").strip() or None,
+        range_cols={
+            "created_at": (
+                from_ts if from_ts > 0 else None,
+                to_ts if to_ts > 0 else None,
+            )
+        },
+    )
 
 
 def _build_ai_prompt_where(
@@ -229,7 +226,7 @@ def count_ai_execution_log(
     created_from: Optional[int] = None,
     created_to: Optional[int] = None,
 ) -> int:
-    where, params = _build_ai_execution_log_where(
+    where, params = _ai_execution_log_where(
         org_id=org_id,
         module_id=module_id,
         status=status,
@@ -242,13 +239,7 @@ def count_ai_execution_log(
     )
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(f"SELECT COUNT(*) FROM ai_execution_log WHERE {where}", params).fetchone()
-    if not row:
-        return 0
-    try:
-        return int(row[0] or 0)
-    except Exception:
-        return 0
+        return base.count(con, "ai_execution_log", where=where, params=params)
 
 
 def create_ai_prompt_draft(
@@ -280,31 +271,39 @@ def create_ai_prompt_draft(
     actor = str(created_by or "").strip()
     _ensure_schema()
     with _connect() as con:
-        con.execute(
-            """
-            INSERT INTO ai_prompt_versions (
-              prompt_id, module_id, version, status, scope_level, scope_id, template,
-              variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
-              activated_at, archived_at
-            ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
-            """,
-            [pid, mid, ver, level, sid, body, variables_payload, output_payload, actor, now, actor, now],
+        base.insert(
+            con,
+            "ai_prompt_versions",
+            {
+                "prompt_id": pid,
+                "module_id": mid,
+                "version": ver,
+                "status": "draft",
+                "scope_level": level,
+                "scope_id": sid,
+                "template": body,
+                "variables_schema_json": variables_payload,
+                "output_schema_json": output_payload,
+                "created_by": actor,
+                "created_at": now,
+                "updated_by": actor,
+                "updated_at": now,
+                "activated_at": 0,
+                "archived_at": 0,
+            },
+            commit=False,
         )
         con.commit()
-        row = con.execute(
-            """
-            SELECT prompt_id, module_id, version, status, scope_level, scope_id, template,
-                   variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
-                   activated_at, archived_at
-              FROM ai_prompt_versions
-             WHERE prompt_id = ?
-             LIMIT 1
-            """,
-            [pid],
-        ).fetchone()
+        row = base.reselect(
+            con,
+            "ai_prompt_versions",
+            "prompt_id",
+            pid,
+            mapper=_ai_prompt_version_row_to_dict,
+        )
     if not row:
         return {"prompt_id": pid, "module_id": mid, "version": ver, "status": "draft"}
-    return _ai_prompt_version_row_to_dict(row)
+    return row
 
 
 def get_agent_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
@@ -354,18 +353,13 @@ def get_ai_prompt_version(prompt_id: str) -> Optional[Dict[str, Any]]:
         return None
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            """
-            SELECT prompt_id, module_id, version, status, scope_level, scope_id, template,
-                   variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
-                   activated_at, archived_at
-              FROM ai_prompt_versions
-             WHERE prompt_id = ?
-             LIMIT 1
-            """,
-            [pid],
-        ).fetchone()
-    return _ai_prompt_version_row_to_dict(row) if row else None
+        return base.get_by_id(
+            con,
+            "ai_prompt_versions",
+            "prompt_id",
+            pid,
+            mapper=_ai_prompt_version_row_to_dict,
+        )
 
 
 def list_agent_conversation_turns(
@@ -505,7 +499,7 @@ def list_ai_execution_log(
 ) -> List[Dict[str, Any]]:
     lim = max(1, min(int(limit or 50), 200))
     off = max(0, int(offset or 0))
-    where, params = _build_ai_execution_log_where(
+    where, params = _ai_execution_log_where(
         org_id=org_id,
         module_id=module_id,
         status=status,
@@ -516,6 +510,9 @@ def list_ai_execution_log(
         created_from=created_from,
         created_to=created_to,
     )
+    order_by = ", ".join(
+        f"{base.check_ident(col)} DESC" for col in ("created_at", "execution_id")
+    )
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -524,8 +521,8 @@ def list_ai_execution_log(
                    provider, model, prompt_id, prompt_version, status, input_hash, output_summary,
                    usage_json, latency_ms, error_code, error_message, created_at, finished_at
               FROM ai_execution_log
-             WHERE {where}
-             ORDER BY created_at DESC, execution_id DESC
+             {where}
+             ORDER BY {order_by}
              LIMIT ?
             OFFSET ?
             """,
@@ -541,12 +538,14 @@ def update_agent_conversation_summary(conversation_id: str, summary: str) -> Non
     if not cid:
         return
     with _connect() as con:
-        con.execute(
-            "UPDATE agent_conversations SET summary = ? WHERE id = ?",
-            [str(summary or "").strip() or None, cid],
+        base.update_fields(
+            con,
+            "agent_conversations",
+            {"summary": str(summary or "").strip() or None},
+            {"id": cid},
         )
-        con.commit()
 
+from .. import base
 from ..audit_telemetry.repository import _normalize_ai_execution_status
 from ..compat.repository import _ai_execution_log_row_to_dict
 from ..compat.repository import _ai_prompt_version_row_to_dict
