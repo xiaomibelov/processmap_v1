@@ -13,8 +13,8 @@ from ..legacy.request_context import request_active_org_id, require_authenticate
 from ..glossary import load_glossary
 from ..rag.indexer import delete_document, index_document
 from ..rag.metadata import PROCESS_LAYER_VALUES, build_chunk_metadata
-from ..rag.search import BM25Index, fuse_rrf, rank_by_vector
-from ..rag.storage_rag import get_rag_embeddings, list_rag_chunks, upsert_rag_source_status
+from ..rag.service import _MAX_TOP_K, search_rag_chunks
+from ..rag.storage_rag import upsert_rag_source_status
 from ..services.org_workspace import require_org_member_for_enterprise
 from ..startup.static_mounts import GLOSSARY_SEED
 from ..storage import _connect, get_storage, get_rag_settings
@@ -24,103 +24,11 @@ router = APIRouter(tags=["rag"])
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_SOURCE_TYPES = {"bpmn_xml", "product_action", "property_dictionary", "operation_catalog", "glossary"}
-_MAX_TOP_K = 50
-_MAX_CHUNKS_LOAD = 2000
+_ALLOWED_SOURCE_TYPES = {"bpmn_xml", "product_action", "property_dictionary", "operation_catalog", "glossary", "session_doc"}
 
 
 def _text(v: Any) -> str:
     return str(v or "").strip()
-
-
-def _hybrid_fused_results(
-    q: str,
-    org_id: str,
-    settings: Dict[str, Any],
-    chunks: List[Dict[str, Any]],
-    idx: BM25Index,
-    query_embed_future: Any = None,
-) -> Optional[List[Dict[str, Any]]]:
-    """Hybrid-нога: BM25-полка + vector-полка -> RRF-fusion -> score в шкале BM25.
-
-    Возвращает None при любой деградации (sidecar недоступен / нет эмбеддингов):
-    вызывающий код сохраняет сегодняшнее BM25-only поведение без изменений.
-
-    query_embed_future: результат prefetch_query_embedding(q), запущенного до
-    BM25-полки (overlap: общая latency ~ max(BM25, embed) вместо sum). Future,
-    вернувший None/ошибку, — обычная деградация в keyword-only.
-    """
-    from ..rag.embeddings import get_query_embedding
-
-    if query_embed_future is not None:
-        try:
-            query_embedding = query_embed_future.result(timeout=30)
-        except Exception as exc:
-            logger.warning("rag hybrid query-embedding future failed: %s", exc)
-            return None
-    else:
-        query_embedding = get_query_embedding(q)
-    if not query_embedding:
-        return None
-    query_vec, _model_id, _dims = query_embedding
-    if not query_vec:
-        return None
-
-    model_id = _text(settings.get("embedding_model_id")) or "local-e5-small"
-    chunk_ids = [str(c.get("chunk_id") or "") for c in chunks if c.get("chunk_id")]
-    if not chunk_ids:
-        return None
-    embeddings_by_chunk = get_rag_embeddings(org_id, model_id, chunk_ids)
-    if not embeddings_by_chunk:
-        return None
-
-    # BM25-полка по всему кандидатному множеству (без min_score — фильтр после fusion).
-    bm25_ranked = idx.search(q, org_id=org_id, top_k=max(1, len(chunk_ids)), min_score=0.0)
-    vec_ranked = rank_by_vector(chunk_ids, embeddings_by_chunk, query_vec)
-    if not vec_ranked:
-        return None
-
-    w_bm25 = float(settings.get("bm25_weight") if isinstance(settings.get("bm25_weight"), (int, float)) else 0.5)
-    w_vec = float(settings.get("vector_weight") if isinstance(settings.get("vector_weight"), (int, float)) else 0.5)
-    fused_order = fuse_rrf(
-        [(r["chunk_id"], r["score"]) for r in bm25_ranked],
-        vec_ranked,
-        w_bm25,
-        w_vec,
-    )
-
-    bm25_score_by_id = {r["chunk_id"]: float(r["score"]) for r in bm25_ranked}
-    cos_by_id = {chunk_id: float(sim) for chunk_id, sim in vec_ranked}
-    # Шкала для векторной ноги: max BM25 по кандидатам; при пустой/нулевой полке — 1.0.
-    bm25_scores = list(bm25_score_by_id.values())
-    bm25_scale = max(bm25_scores) if bm25_scores else 0.0
-    if bm25_scale <= 0.0:
-        bm25_scale = 1.0
-
-    chunk_by_id = {str(c.get("chunk_id") or ""): c for c in chunks if c.get("chunk_id")}
-    results = []
-    for chunk_id in fused_order:
-        chunk = chunk_by_id.get(chunk_id)
-        if chunk is None:
-            continue
-        bm25_score = bm25_score_by_id.get(chunk_id, 0.0)
-        cos_sim = cos_by_id.get(chunk_id, 0.0)
-        # RRF задаёт только порядок; score — в BM25-шкале для совместимости с min_score.
-        score = max(bm25_score, cos_sim * bm25_scale)
-        meta = chunk.get("metadata_json", "{}")
-        if isinstance(meta, str):
-            try:
-                meta = json.loads(meta)
-            except Exception:
-                meta = {}
-        results.append({
-            "chunk_id": chunk_id,
-            "score": score,
-            "chunk_text": chunk.get("chunk_text", ""),
-            "metadata": meta,
-            "org_id": org_id,
-        })
-    return results
 
 
 def _as_dict(v: Any) -> Dict[str, Any]:
@@ -169,65 +77,18 @@ def rag_search(
     if not settings["enabled"]:
         return {"ok": False, "error": "rag_disabled", "results": []}
 
-    raw_top_k = top_k if isinstance(top_k, int) else None
-    effective_top_k = raw_top_k if raw_top_k is not None else int(settings["default_top_k"])
-    effective_top_k = max(1, min(effective_top_k, int(settings["max_top_k"])))
-
-    raw_min_score = min_score if isinstance(min_score, (int, float)) else None
-    effective_min_score = float(raw_min_score) if raw_min_score is not None else float(settings["default_min_score"] or 0.0)
-
-    # Префетч query-эмбеддинга до BM25-полки: overlap вместо sum латентностей
-    # (fix/rag-embedder-onnx-latency-v1). Только при включённом hybrid; любой
-    # сбой future обрабатывается в _hybrid_fused_results как деградация.
-    query_embed_future = None
-    if settings.get("hybrid_enabled"):
-        try:
-            from ..rag.embeddings import prefetch_query_embedding
-
-            query_embed_future = prefetch_query_embedding(q)
-        except Exception as exc:
-            logger.warning("rag hybrid prefetch start failed: %s", exc)
-            query_embed_future = None
-
-    chunks = list_rag_chunks(
+    # Ядро поиска — единая реализация в app.rag.service (см. API.md контура
+    # session-doc-attachments): роутер и ревьюер вызывают search_rag_chunks.
+    results = search_rag_chunks(
         org_id,
-        source_type=source_type or None,
-        limit=None if source_type else _MAX_CHUNKS_LOAD,
+        q,
+        source_type=_text(source_type) or None,
+        session_id=_text(session_id) or None,
+        process_layer=process_layer,
+        top_k=top_k if isinstance(top_k, int) else None,
+        min_score=min_score if isinstance(min_score, (int, float)) else None,
+        settings=settings,
     )
-
-    idx = BM25Index()
-    idx.add_documents(chunks)
-    raw_results = idx.search(q, org_id=org_id, top_k=_MAX_TOP_K, min_score=effective_min_score)
-
-    if settings.get("hybrid_enabled"):
-        try:
-            fused = _hybrid_fused_results(q, org_id, settings, chunks, idx, query_embed_future=query_embed_future)
-        except Exception as exc:
-            logger.warning("rag hybrid search degraded to keyword-only: %s", exc)
-            fused = None
-        if fused:
-            # Тот же предикат, что в BM25Index.search: score > min_score (после fusion).
-            raw_results = [r for r in fused if r["score"] > effective_min_score]
-
-    results = []
-    for r in raw_results:
-        meta = _as_dict(r.get("metadata"))
-        if source_type and _text(meta.get("source_type")) != _text(source_type):
-            continue
-        if session_id and _text(meta.get("source_id")) != _text(session_id):
-            continue
-        if process_layer and _text(meta.get("process_layer")) != process_layer:
-            continue
-        results.append({
-            "chunk_id": r["chunk_id"],
-            "score": r["score"],
-            "chunk_text": r["chunk_text"],
-            "source_type": _text(meta.get("source_type")),
-            "source_id": _text(meta.get("source_id")),
-            "metadata": meta,
-        })
-        if len(results) >= effective_top_k:
-            break
 
     return {
         "ok": True,
@@ -239,7 +100,7 @@ def rag_search(
 
 
 class RagIndexIn(BaseModel):
-    source_type: str = Field(..., description="'bpmn_xml', 'product_action', 'property_dictionary', 'operation_catalog', or 'glossary'")
+    source_type: str = Field(..., description="'bpmn_xml', 'product_action', 'property_dictionary', 'operation_catalog', 'glossary', or 'session_doc' (via docs attach only)")
     session_id: Optional[str] = Field(default=None)
     force: bool = Field(default=False)
 
@@ -279,6 +140,17 @@ def rag_index(inp: RagIndexIn, request: Request) -> Dict[str, Any]:
                 "error": "invalid_source_type",
                 "allowed": sorted(_ALLOWED_SOURCE_TYPES),
                 "received": source_type,
+            },
+        )
+    if source_type == "session_doc":
+        # session_doc индексируется только через attach документа сессии
+        # (POST /api/sessions/{id}/docs): контент берётся из session_documents,
+        # а не из payload этого endpoint'а.
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "session_doc_indexed_via_attach",
+                "message": "session_doc индексируется через attach документов сессии",
             },
         )
 
