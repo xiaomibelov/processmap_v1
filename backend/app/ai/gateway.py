@@ -34,7 +34,7 @@ import requests
 from ..redis_cache import cache_get_json, cache_set_json
 from . import llm_store
 from .deepseek_questions import _deepseek_chat_request
-from .error_sanitize import sanitize_llm_error
+from .error_sanitize import classify_llm_error, sanitize_llm_error
 
 logger = logging.getLogger(__name__)
 
@@ -176,9 +176,10 @@ def complete(
     # 4–5. провайдеры по priority с фолбэком
     chain = _provider_chain(org_id)
     if not chain:
-        return _finish("no_provider", error="no enabled LLM providers with api key")
+        return _finish("no_provider", error="no enabled LLM providers with api key", error_class="no_provider")
 
     last_error = ""
+    last_error_class = ""
     for provider_index, provider in enumerate(chain):
         # LLM4 S8: fallback = ответил НЕ первый провайдер цепочки (или env-фолбэк,
         # или провайдер из org_default fallback для другой org).
@@ -211,6 +212,10 @@ def complete(
         except Exception as exc:  # фолбэк на следующего провайдера
             is_timeout = isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError))
             last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
+            # M-2: класс сбоя (sanitized) идёт в result и далее в diagnostics/логи.
+            error_class = classify_llm_error(exc)
+            if error_class != "unknown" or not last_error_class:
+                last_error_class = error_class
             llm_store.record_usage(
                 org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
                 provider_id=str(provider.get("id") or ""), cached=False,
@@ -252,6 +257,7 @@ def complete(
     return _finish(
         "error",
         error=sanitize_llm_error("error", last_error or "all providers failed"),
+        error_class=last_error_class or "unknown",
         provider_id=str((chain[-1] if chain else {}).get("id") or ""),
         model=str((chain[-1] if chain else {}).get("model") or ""),
     )
