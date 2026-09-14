@@ -62,6 +62,8 @@ _CHAT_OUT_KEYS = {
     "action_payload",
     "usage",
     "projection_digest",
+    # E2 (#973): cite-контракт — процитированные RAG-источники (null без retrieval).
+    "sources",
 }
 
 
