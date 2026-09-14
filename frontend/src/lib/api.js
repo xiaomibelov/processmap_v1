@@ -2539,3 +2539,79 @@ export async function apiTransitionRagReadiness(sessionId, status) {
   const r = okOrError(await request(apiRoutes.sessions.ragReadiness(sid), { method: "PATCH", body: { rag_readiness_status: normalized } }));
   return r.ok ? { ok: true, status: r.status, readiness: r.data?.data || null, data: r.data?.data || null } : r;
 }
+
+// ------- Session Docs (feature/session-doc-attachments) -------
+// Документы сессии: attach (multipart field "file"), list, get (полный текст),
+// detach. Ошибки бэка — 413/422 с detail, текст уже извлечён okOrError.
+export async function apiSessionDocsList(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.docs(sid)));
+  if (!r.ok) return r;
+  const docs = Array.isArray(r.data?.docs) ? r.data.docs : [];
+  return { ok: true, status: r.status, docs };
+}
+
+export async function apiSessionDocsAttach(sessionId, file) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!file) return { ok: false, status: 0, error: "missing file" };
+  const form = new FormData();
+  form.append("file", file, String(file.name || "document"));
+  const r = okOrError(await request(apiRoutes.sessions.docs(sid), { method: "POST", body: form }));
+  return r.ok ? { ok: true, status: r.status, doc: isPlainObject(r.data) ? r.data : {} } : r;
+}
+
+export async function apiSessionDocsGet(sessionId, docId) {
+  const sid = String(sessionId || "").trim();
+  const did = String(docId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!did) return { ok: false, status: 0, error: "missing doc_id" };
+  const r = okOrError(await request(apiRoutes.sessions.doc(sid, did)));
+  if (!r.ok) return r;
+  const data = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    docId: String(data.docId || did),
+    filename: String(data.filename || ""),
+    ext: String(data.ext || ""),
+    contentText: String(data.contentText || ""),
+  };
+}
+
+export async function apiSessionDocsDetach(sessionId, docId) {
+  const sid = String(sessionId || "").trim();
+  const did = String(docId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  if (!did) return { ok: false, status: 0, error: "missing doc_id" };
+  const r = okOrError(await request(apiRoutes.sessions.doc(sid, did), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
+// Ревьюер по техкарте — ТОЛЬКО явный вызов (иконка / префикс «ревью:»|«/review»).
+// Ответ: { reviewId, retrievalMode: "rag"|"direct", annotations: Annotation[] }.
+export async function apiAgentReview(sessionId, payload = {}, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const text = String(payload?.text || "").trim();
+  if (!text) return { ok: false, status: 0, error: "missing text" };
+  const body = { text };
+  const clientReviewId = String(payload?.clientReviewId || "").trim();
+  if (clientReviewId) body.clientReviewId = clientReviewId;
+  const r = okOrError(await request(apiRoutes.agent.review(sid), {
+    method: "POST",
+    body,
+    signal: options?.signal,
+  }));
+  if (!r.ok) return r;
+  const data = isPlainObject(r.data) ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    reviewId: String(data.reviewId || ""),
+    retrievalMode: String(data.retrievalMode || ""),
+    annotations: Array.isArray(data.annotations) ? data.annotations : [],
+    result: data,
+  };
+}

@@ -207,6 +207,9 @@ export const apiRoutes = {
       { target_element_id: String(targetElementId || "").trim() }
     ),
     subprocessReturn: (sessionId) => `/api/sessions/${encode(sessionId)}/return`,
+    // feature/session-doc-attachments — документы сессии (attach/list/get/detach).
+    docs: (sessionId) => `/api/sessions/${encode(sessionId)}/docs`,
+    doc: (sessionId, docId) => `/api/sessions/${encode(sessionId)}/docs/${encode(docId)}`,
   },
   agent: {
     // AGENT-1 — диалоговый агент PROCESSMAN (chat/history/stream).
@@ -215,6 +218,8 @@ export const apiRoutes = {
     history: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/history`,
     stream: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/stream`,
     resume: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/resume`,
+    // feature/session-doc-attachments — ревьюер по техкарте (только явный вызов).
+    review: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/review`,
     // M9 — чтение сохранённого артефакта фонового анализа (0 LLM).
     analysisArtifact: (sessionId) => `/api/sessions/${encode(sessionId)}/agent-analysis/artifact`,
   },
