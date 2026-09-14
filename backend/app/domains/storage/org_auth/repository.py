@@ -28,6 +28,7 @@ except Exception:
     psycopg = None
     PsycopgIntegrityError = None
     ConnectionPool = None
+from .. import base
 from ..compat.repository import _AUTH_USERS_BACKFILL_MARK
 from ..compat.repository import _BACKFILL_FOLDER_NAME
 from ..compat.repository import _BACKFILL_META_KEY
@@ -755,36 +756,26 @@ def append_audit_log(
     audit_id = f"aud_{uuid.uuid4().hex[:12]}"
     _ensure_schema()
     with _connect() as con:
-        con.execute(
-            """
-            INSERT INTO audit_log (
-              id, ts, actor_user_id, org_id, project_id, session_id, action, entity_type, entity_id, status, meta_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                audit_id,
-                at,
-                actor,
-                oid,
-                str(project_id or "").strip() or None,
-                str(session_id or "").strip() or None,
-                act,
-                etype,
-                eid,
-                state,
-                payload,
-            ],
+        base.insert(
+            con,
+            "audit_log",
+            {
+                "id": audit_id,
+                "ts": at,
+                "actor_user_id": actor,
+                "org_id": oid,
+                "project_id": str(project_id or "").strip() or None,
+                "session_id": str(session_id or "").strip() or None,
+                "action": act,
+                "entity_type": etype,
+                "entity_id": eid,
+                "status": state,
+                "meta_json": payload,
+            },
+            commit=False,
         )
         con.commit()
-        row = con.execute(
-            """
-            SELECT id, ts, actor_user_id, org_id, project_id, session_id, action, entity_type, entity_id, status, meta_json
-              FROM audit_log
-             WHERE id = ?
-             LIMIT 1
-            """,
-            [audit_id],
-        ).fetchone()
+        row = base.reselect(con, "audit_log", "id", audit_id)
     if not row:
         return {
             "id": audit_id,
