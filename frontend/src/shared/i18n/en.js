@@ -201,6 +201,26 @@ export const en = {
     resetCanvasConfirm: "Are you sure? All diagram elements will be removed. This action is irreversible.",
     resetFailed: "Failed to reset canvas",
   },
+  // Workspace dashboard: "Attach document" action in the session row menu.
+  // Paired dictionary: shared/i18n/ru.js.
+  workspace: {
+    sessionActions: {
+      attachDoc: "Attach document",
+    },
+    attachDoc: {
+      success: "\"{filename}\" attached ({chunks} chunks indexed)",
+      pending: "Attaching…",
+      error: {
+        doc_too_large: "File exceeds 2 MB",
+        doc_extension_not_allowed: "Unsupported format (.md, .txt, .doc, .docx)",
+        doc_limit_reached: "Limit of 20 documents per session",
+        doc_quota_exceeded: "Total 20 MB per session limit exceeded",
+        doc_unparseable: "Failed to extract text (try .docx or .txt)",
+        session_forbidden: "No access to the session",
+        unknown: "Error: {detail}",
+      },
+    },
+  },
   analytics: {
     title: "Analytics",
     scopeSession: "Session",
