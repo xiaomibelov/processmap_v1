@@ -25,20 +25,19 @@ def _do_index_session_bpmn_xml(session_id: str, org_id: str) -> Dict[str, Any]:
         return {"status": "skipped", "reason": "no_xml", "session_id": sid}
 
     from .ai.process_projection import build_process_projection, projection_digest
+    from .rag.metadata import build_chunk_metadata
 
     projection = build_process_projection(session)
     digest = projection_digest(projection)
-    session_title = str(getattr(session, "title", "") or "").strip()
     dsv = int(getattr(session, "diagram_state_version", 0) or 0)
 
-    metadata = {
-        "source_type": "bpmn_xml",
-        "source_id": sid,
-        "session_id": sid,
-        "session_title": session_title,
-        "projection_digest": digest,
-        "diagram_state_version": dsv,
-    }
+    metadata = build_chunk_metadata(
+        source_type="bpmn_xml",
+        source_id=sid,
+        session=session,
+        projection_digest=digest,
+        diagram_state_version=dsv,
+    )
 
     result = index_document(
         org_id=oid,
@@ -197,3 +196,165 @@ def embed_chunks(self, chunk_ids: list, org_id: str) -> Dict[str, Any]:
         except Exception:
             pass
         return {"status": "failed", "reason": str(exc), "org_id": oid}
+
+
+# ── Backfill metadata существующего корпуса (feature/rag-schema-layer-indexing-v1) ──
+
+BACKFILL_BATCH_SIZE = 500
+BACKFILL_LOCK_TTL_S = 3600
+BACKFILL_PROGRESS_TTL_S = 24 * 3600
+BACKFILL_SLEEP_S = 0.5
+
+_RELEASE_LOCK_LUA = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+else
+  return 0
+end
+"""
+
+
+def _backfill_lock_key(org_id: str) -> str:
+    return f"pm:lock:rag-backfill:{org_id}"
+
+
+def _backfill_progress_key(org_id: str) -> str:
+    return f"pm:rag-backfill:{org_id}"
+
+
+def _do_backfill_rag_metadata(org_id: str, batch_size: int = BACKFILL_BATCH_SIZE) -> Dict[str, Any]:
+    """Additive-дополнение metadata_json bpmn_xml-чанков недостающими полями.
+
+    Чисто идемпотентно: WHERE-фильтр на отсутствие ключа process_layer, повторный
+    прогон — no-op. Чанки/текст/эмбеддинги не пересоздаются. Батчи по chunk_id.
+    """
+    import json
+    import time
+
+    from .rag.metadata import DEFAULT_PROCESS_LAYER, normalize_process_layer
+    from .storage import _connect
+
+    oid = str(org_id or "").strip() or "org_default"
+    size = max(1, int(batch_size or BACKFILL_BATCH_SIZE))
+    updated = 0
+    scanned = 0
+    last_chunk_id = ""
+
+    # LIKE-фильтр вместо json_extract: кросс-диалектно (SQLite + Postgres).
+    candidate_sql = """
+        SELECT c.chunk_id, c.metadata_json, d.source_id
+          FROM rag_chunks c
+          JOIN rag_documents d ON c.doc_id = d.doc_id AND d.org_id = c.org_id
+         WHERE c.org_id = ?
+           AND d.is_active = 1
+           AND d.source_type = 'bpmn_xml'
+           AND c.metadata_json NOT LIKE '%"process_layer"%'
+           AND c.chunk_id > ?
+         ORDER BY c.chunk_id
+         LIMIT ?
+    """
+
+    while True:
+        with _connect() as con:
+            rows = con.execute(candidate_sql, [oid, last_chunk_id, size]).fetchall()
+            if not rows:
+                break
+            for row in rows:
+                chunk_id = str(row["chunk_id"])
+                last_chunk_id = chunk_id
+                scanned += 1
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except Exception:
+                    meta = {}
+                if "process_layer" in meta:
+                    continue
+                sess = con.execute(
+                    "SELECT title, process_layer FROM sessions WHERE id = ? AND org_id = ? LIMIT 1",
+                    [str(row["source_id"]), oid],
+                ).fetchone()
+                meta["process_layer"] = normalize_process_layer(
+                    sess["process_layer"] if sess is not None else DEFAULT_PROCESS_LAYER
+                )
+                if sess is not None and sess["title"] and not meta.get("session_title"):
+                    meta["session_title"] = str(sess["title"])
+                if not meta.get("session_id"):
+                    meta["session_id"] = str(row["source_id"])
+                con.execute(
+                    "UPDATE rag_chunks SET metadata_json = ? WHERE chunk_id = ? AND org_id = ?",
+                    [json.dumps(meta, ensure_ascii=False), chunk_id, oid],
+                )
+                updated += 1
+            con.commit()
+        if len(rows) < size:
+            break
+        time.sleep(BACKFILL_SLEEP_S)
+
+    return {"status": "ok", "org_id": oid, "scanned": scanned, "updated": updated}
+
+
+@app.task(bind=True, max_retries=1, default_retry_delay=30, name="processmap.rag.backfill_rag_metadata")
+def backfill_rag_metadata(self, org_id: str) -> Dict[str, Any]:
+    """Celery-обёртка backfill: Redis-lock на org (SET NX, TTL, без force-unlock),
+    прогресс в Redis-счётчиках. Ошибка БД — retry; логика батчей не падает
+    частичными исключениями (ошибки батчей фиксируются в результате).
+    """
+    import uuid
+
+    oid = str(org_id or "").strip() or "org_default"
+    client = None
+    try:
+        from .redis_client import get_client
+
+        client = get_client()
+    except Exception as exc:
+        logger.warning("backfill_rag_metadata: redis client unavailable for %s: %s", oid, exc)
+
+    lock_key = _backfill_lock_key(oid)
+    token = uuid.uuid4().hex
+    acquired = False
+    if client is not None:
+        try:
+            acquired = bool(client.set(lock_key, token, nx=True, ex=BACKFILL_LOCK_TTL_S))
+        except Exception as exc:
+            logger.warning("backfill_rag_metadata: lock acquire failed for %s: %s", oid, exc)
+            acquired = False
+    if client is not None and not acquired:
+        logger.info("backfill_rag_metadata: skipped for %s, another run holds the lock", oid)
+        return {"status": "skipped", "reason": "already_running", "org_id": oid}
+
+    progress_key = _backfill_progress_key(oid)
+    try:
+        if client is not None:
+            try:
+                client.hset(progress_key, mapping={"status": "running", "updated": 0, "scanned": 0})
+                client.expire(progress_key, BACKFILL_PROGRESS_TTL_S)
+            except Exception as exc:
+                logger.warning("backfill_rag_metadata: progress init failed for %s: %s", oid, exc)
+        result = _do_backfill_rag_metadata(oid)
+        result["status"] = "ok"
+        if client is not None:
+            try:
+                client.hset(progress_key, mapping={
+                    "status": "done",
+                    "updated": int(result.get("updated") or 0),
+                    "scanned": int(result.get("scanned") or 0),
+                })
+                client.expire(progress_key, BACKFILL_PROGRESS_TTL_S)
+            except Exception as exc:
+                logger.warning("backfill_rag_metadata: progress write failed for %s: %s", oid, exc)
+        logger.info("backfill_rag_metadata: org=%s updated=%s scanned=%s", oid, result.get("updated"), result.get("scanned"))
+        return result
+    except Exception as exc:
+        logger.exception("backfill_rag_metadata failed for %s", oid)
+        try:
+            self.retry(exc=exc)
+        except Exception:
+            pass
+        return {"status": "failed", "reason": str(exc), "org_id": oid}
+    finally:
+        if client is not None and acquired:
+            try:
+                client.eval(_RELEASE_LOCK_LUA, 1, lock_key, token)
+            except Exception as exc:
+                logger.warning("backfill_rag_metadata: lock release failed for %s: %s", oid, exc)

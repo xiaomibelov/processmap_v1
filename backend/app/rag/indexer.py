@@ -36,6 +36,27 @@ def _content_hash(content) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def indexing_disabled_reason(org_id: str) -> str | None:
+    """Канонический enforcement-гейт (PLAN §4): причина skip или None.
+
+    enabled=0 или indexing_enabled=0 в rag_settings org -> все write-paths
+    (все сходятся в insert_rag_chunks через index_document) становятся no-op.
+    Недоступность настроек/БД не блокирует индексацию (fail-open, warn-лог).
+    """
+    try:
+        from app.storage import get_rag_settings
+
+        settings = get_rag_settings(org_id)
+    except Exception as exc:
+        logger.warning("rag: get_rag_settings failed for org=%s, indexing proceeds: %s", org_id, exc)
+        return None
+    if not settings.get("enabled"):
+        return "rag_disabled"
+    if not settings.get("indexing_enabled"):
+        return "rag_indexing_disabled"
+    return None
+
+
 def index_document(
     org_id: str,
     source_type: str,
@@ -45,6 +66,18 @@ def index_document(
     source_version: int | None = None,
 ) -> dict:
     metadata = metadata or {}
+
+    disabled_reason = indexing_disabled_reason(org_id)
+    if disabled_reason:
+        logger.info("rag: index_document skipped for org=%s (%s)", org_id, disabled_reason)
+        existing = get_rag_document_by_source(org_id, source_type, source_id)
+        return {
+            "doc_id": existing["doc_id"] if existing else None,
+            "chunks_created": 0,
+            "was_updated": False,
+            "skipped": disabled_reason,
+        }
+
     new_hash = _content_hash(content)
 
     existing = get_rag_document_by_source(org_id, source_type, source_id)
