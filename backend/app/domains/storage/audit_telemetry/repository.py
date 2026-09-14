@@ -31,7 +31,17 @@ except Exception:
 from ..compat.repository import _AI_EXECUTION_STATUSES
 from ..compat.repository import _ORG_FULL_ACCESS_ROLES
 
-def _build_audit_log_where(
+_AUDIT_LOG_LIKE_COLUMNS = (
+    "action",
+    "actor_user_id",
+    "project_id",
+    "session_id",
+    "entity_type",
+    "entity_id",
+)
+
+
+def _audit_log_where(
     *,
     org_id: str,
     action: Optional[str] = None,
@@ -41,51 +51,43 @@ def _build_audit_log_where(
     q: Optional[str] = None,
     updated_from: Optional[int] = None,
     updated_to: Optional[int] = None,
-) -> tuple[str, List[Any]]:
-    clauses = ["org_id = ?"]
-    params: List[Any] = [org_id]
+) -> Tuple[str, List[Any]]:
+    eq: Dict[str, Any] = {}
     action_value = str(action or "").strip()
     if action_value:
-        clauses.append("action = ?")
-        params.append(action_value)
+        eq["action"] = action_value
     project_value = str(project_id or "").strip()
     if project_value:
-        clauses.append("project_id = ?")
-        params.append(project_value)
+        eq["project_id"] = project_value
     session_value = str(session_id or "").strip()
     if session_value:
-        clauses.append("session_id = ?")
-        params.append(session_value)
+        eq["session_id"] = session_value
     status_value = str(status or "").strip().lower()
     if status_value:
-        clauses.append("status = ?")
-        params.append(status_value)
+        eq["status"] = status_value
     from_ts = int(updated_from or 0)
-    if from_ts > 0:
-        clauses.append("ts >= ?")
-        params.append(from_ts)
     to_ts = int(updated_to or 0)
-    if to_ts > 0:
-        clauses.append("ts <= ?")
-        params.append(to_ts)
     query = str(q or "").strip().lower()
+    extra = ""
+    extra_params: List[Any] = []
     if query:
         like = f"%{query}%"
-        clauses.append(
-            "("
-            "LOWER(COALESCE(action, '')) LIKE ? OR "
-            "LOWER(COALESCE(actor_user_id, '')) LIKE ? OR "
-            "LOWER(COALESCE(project_id, '')) LIKE ? OR "
-            "LOWER(COALESCE(session_id, '')) LIKE ? OR "
-            "LOWER(COALESCE(entity_type, '')) LIKE ? OR "
-            "LOWER(COALESCE(entity_id, '')) LIKE ?"
-            ")"
+        extra = " OR ".join(
+            f"LOWER(COALESCE({base.check_ident(col)}, '')) LIKE ?"
+            for col in _AUDIT_LOG_LIKE_COLUMNS
         )
-        params.extend([like, like, like, like, like, like])
-    return " AND ".join(clauses), params
+        extra_params = [like] * len(_AUDIT_LOG_LIKE_COLUMNS)
+    return base.build_where(
+        eq,
+        org_id=org_id,
+        org_required=True,
+        range_cols={"ts": (from_ts if from_ts > 0 else None, to_ts if to_ts > 0 else None)},
+        extra=extra,
+        extra_params=extra_params,
+    )
 
 
-def _build_error_events_where(
+def _error_events_where(
     *,
     session_id: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -99,32 +101,36 @@ def _build_error_events_where(
     occurred_from: Optional[int] = None,
     occurred_to: Optional[int] = None,
 ) -> Tuple[str, List[Any]]:
-    clauses: List[str] = ["1 = 1"]
-    params: List[Any] = []
-
-    def _eq(column: str, value: Optional[str]) -> None:
-        text = str(value or "").strip()
-        if not text:
-            return
-        clauses.append(f"{column} = ?")
-        params.append(text)
-
-    _eq("session_id", session_id)
-    _eq("request_id", request_id)
-    _eq("correlation_id", correlation_id)
-    _eq("user_id", user_id)
-    _eq("org_id", org_id)
-    _eq("runtime_id", runtime_id)
-    _eq("event_type", event_type)
-    _eq("source", source)
-    _eq("severity", severity)
-    if occurred_from is not None and int(occurred_from or 0) > 0:
-        clauses.append("occurred_at >= ?")
-        params.append(_clamp_int64(occurred_from))
-    if occurred_to is not None and int(occurred_to or 0) > 0:
-        clauses.append("occurred_at <= ?")
-        params.append(_clamp_int64(occurred_to))
-    return " AND ".join(clauses), params
+    eq: Dict[str, Any] = {}
+    for col, val in (
+        ("session_id", session_id),
+        ("request_id", request_id),
+        ("correlation_id", correlation_id),
+        ("user_id", user_id),
+        ("org_id", org_id),
+        ("runtime_id", runtime_id),
+        ("event_type", event_type),
+        ("source", source),
+        ("severity", severity),
+    ):
+        text = str(val or "").strip()
+        if text:
+            eq[col] = text
+    from_ts = (
+        _clamp_int64(occurred_from)
+        if occurred_from is not None and int(occurred_from or 0) > 0
+        else None
+    )
+    to_ts = (
+        _clamp_int64(occurred_to)
+        if occurred_to is not None and int(occurred_to or 0) > 0
+        else None
+    )
+    return base.build_where(
+        eq,
+        range_cols={"occurred_at": (from_ts, to_ts)},
+        extra="1 = 1",
+    )
 
 
 def _normalize_ai_execution_status(status: Any) -> str:
@@ -167,50 +173,36 @@ def append_error_event(
     payload = _json_dumps(context_json if isinstance(context_json, dict) else {}, {})
     _ensure_schema()
     with _connect() as con:
-        con.execute(
-            """
-            INSERT INTO error_events (
-              id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
-              user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
-              correlation_id, app_version, git_sha, fingerprint, context_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                event_id,
-                int(schema_version or 1),
-                int(occurred_at or 0),
-                int(ingested_at or 0),
-                src,
-                etype,
-                sev,
-                text,
-                str(user_id or "").strip() or None,
-                str(org_id or "").strip() or None,
-                str(session_id or "").strip() or None,
-                str(project_id or "").strip() or None,
-                str(route or "").strip() or None,
-                str(runtime_id or "").strip() or None,
-                str(tab_id or "").strip() or None,
-                str(request_id or "").strip() or None,
-                str(correlation_id or "").strip() or None,
-                str(app_version or "").strip() or None,
-                str(git_sha or "").strip() or None,
-                fp,
-                payload,
-            ],
+        base.insert(
+            con,
+            "error_events",
+            {
+                "id": event_id,
+                "schema_version": int(schema_version or 1),
+                "occurred_at": int(occurred_at or 0),
+                "ingested_at": int(ingested_at or 0),
+                "source": src,
+                "event_type": etype,
+                "severity": sev,
+                "message": text,
+                "user_id": str(user_id or "").strip() or None,
+                "org_id": str(org_id or "").strip() or None,
+                "session_id": str(session_id or "").strip() or None,
+                "project_id": str(project_id or "").strip() or None,
+                "route": str(route or "").strip() or None,
+                "runtime_id": str(runtime_id or "").strip() or None,
+                "tab_id": str(tab_id or "").strip() or None,
+                "request_id": str(request_id or "").strip() or None,
+                "correlation_id": str(correlation_id or "").strip() or None,
+                "app_version": str(app_version or "").strip() or None,
+                "git_sha": str(git_sha or "").strip() or None,
+                "fingerprint": fp,
+                "context_json": payload,
+            },
+            commit=False,
         )
         con.commit()
-        row = con.execute(
-            """
-            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
-                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
-                   correlation_id, app_version, git_sha, fingerprint, context_json
-              FROM error_events
-             WHERE id = ?
-             LIMIT 1
-            """,
-            [event_id],
-        ).fetchone()
+        row = base.reselect(con, "error_events", "id", event_id)
     if not row:
         return {
             "id": event_id,
@@ -247,13 +239,10 @@ def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional
     threshold = now - retention * 24 * 60 * 60
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute(
-            """
-            DELETE FROM audit_log
-             WHERE org_id = ? AND ts > 0 AND ts < ?
-            """,
-            [oid, threshold],
+        where, params = base.build_where(
+            {"org_id": oid}, extra="ts > 0 AND ts < ?", extra_params=[threshold]
         )
+        cur = con.execute(f"DELETE FROM audit_log{where}", params)
         con.commit()
         return int(cur.rowcount or 0)
 
@@ -264,13 +253,10 @@ def cleanup_error_events(*, retention_days: int = 30, now_ts: Optional[int] = No
     threshold = now - retention * 24 * 60 * 60
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute(
-            """
-            DELETE FROM error_events
-             WHERE ingested_at > 0 AND ingested_at < ?
-            """,
-            [threshold],
+        where, params = base.build_where(
+            extra="ingested_at > 0 AND ingested_at < ?", extra_params=[threshold]
         )
+        cur = con.execute(f"DELETE FROM error_events{where}", params)
         con.commit()
         return int(cur.rowcount or 0)
 
@@ -289,7 +275,7 @@ def count_audit_log(
     oid = str(org_id or "").strip()
     if not oid:
         return 0
-    where, params = _build_audit_log_where(
+    where, params = _audit_log_where(
         org_id=oid,
         action=action,
         project_id=project_id,
@@ -301,20 +287,7 @@ def count_audit_log(
     )
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            f"""
-            SELECT COUNT(*)
-              FROM audit_log
-             WHERE {where}
-            """,
-            params,
-        ).fetchone()
-    if not row:
-        return 0
-    try:
-        return int(row[0] or 0)
-    except Exception:
-        return 0
+        return base.count(con, "audit_log", where=where, params=params)
 
 
 def count_error_events(
@@ -331,7 +304,7 @@ def count_error_events(
     occurred_from: Optional[int] = None,
     occurred_to: Optional[int] = None,
 ) -> int:
-    where, params = _build_error_events_where(
+    where, params = _error_events_where(
         session_id=session_id,
         request_id=request_id,
         correlation_id=correlation_id,
@@ -346,20 +319,7 @@ def count_error_events(
     )
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            f"""
-            SELECT COUNT(*)
-              FROM error_events
-             WHERE {where}
-            """,
-            params,
-        ).fetchone()
-    if not row:
-        return 0
-    try:
-        return int(row[0] or 0)
-    except Exception:
-        return 0
+        return base.count(con, "error_events", where=where, params=params)
 
 
 def delete_error_event(event_id: str) -> bool:
@@ -369,9 +329,7 @@ def delete_error_event(event_id: str) -> bool:
         return False
     _ensure_schema()
     with _connect() as con:
-        cur = con.execute("DELETE FROM error_events WHERE id = ?", [eid])
-        con.commit()
-        return int(cur.rowcount or 0) > 0
+        return base.hard_delete(con, "error_events", {"id": eid})
 
 
 def get_effective_project_scope(
@@ -407,20 +365,9 @@ def get_error_event(event_id: str) -> Optional[Dict[str, Any]]:
         return None
     _ensure_schema()
     with _connect() as con:
-        row = con.execute(
-            """
-            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
-                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
-                   correlation_id, app_version, git_sha, fingerprint, context_json
-              FROM error_events
-             WHERE id = ?
-             LIMIT 1
-            """,
-            [eid],
-        ).fetchone()
-    if not row:
-        return None
-    return _error_event_row_to_dict(row)
+        return base.get_by_id(
+            con, "error_events", "id", eid, mapper=_error_event_row_to_dict
+        )
 
 
 def list_audit_log(
@@ -441,7 +388,7 @@ def list_audit_log(
         return []
     lim = max(1, min(int(limit or 100), 500))
     off = max(0, int(offset or 0))
-    where, params = _build_audit_log_where(
+    where, params = _audit_log_where(
         org_id=oid,
         action=action,
         project_id=project_id,
@@ -451,14 +398,15 @@ def list_audit_log(
         updated_from=updated_from,
         updated_to=updated_to,
     )
+    order_by = ", ".join(f"{base.check_ident(col)} DESC" for col in ("ts", "id"))
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
             f"""
             SELECT id, ts, actor_user_id, org_id, project_id, session_id, action, entity_type, entity_id, status, meta_json
               FROM audit_log
-             WHERE {where}
-             ORDER BY ts DESC, id DESC
+             {where}
+             ORDER BY {order_by}
              LIMIT ?
             OFFSET ?
             """,
@@ -486,8 +434,7 @@ def list_error_events(
 ) -> List[Dict[str, Any]]:
     lim = max(1, min(int(limit or 50), 100))
     off = max(0, _clamp_int64(offset or 0))
-    direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
-    where, params = _build_error_events_where(
+    where, params = _error_events_where(
         session_id=session_id,
         request_id=request_id,
         correlation_id=correlation_id,
@@ -500,6 +447,10 @@ def list_error_events(
         occurred_from=occurred_from,
         occurred_to=occurred_to,
     )
+    direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
+    order_by = ", ".join(
+        f"{base.check_ident(col)} {direction}" for col in ("occurred_at", "ingested_at", "id")
+    )
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
@@ -508,8 +459,8 @@ def list_error_events(
                    user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
                    correlation_id, app_version, git_sha, fingerprint, context_json
               FROM error_events
-             WHERE {where}
-             ORDER BY occurred_at {direction}, ingested_at {direction}, id {direction}
+             {where}
+             ORDER BY {order_by}
              LIMIT ?
             OFFSET ?
             """,
@@ -545,26 +496,16 @@ def update_error_event(
     if not updates:
         return get_error_event(eid)
 
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    params = list(updates.values()) + [eid]
     _ensure_schema()
     with _connect() as con:
-        con.execute(f"UPDATE error_events SET {set_clause} WHERE id = ?", params)
+        base.update_fields(con, "error_events", updates, {"id": eid}, commit=False)
         con.commit()
-        row = con.execute(
-            """
-            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
-                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
-                   correlation_id, app_version, git_sha, fingerprint, context_json
-              FROM error_events
-             WHERE id = ?
-             LIMIT 1
-            """,
-            [eid],
-        ).fetchone()
+        row = base.reselect(
+            con, "error_events", "id", eid, mapper=_error_event_row_to_dict
+        )
     if not row:
         return None
-    return _error_event_row_to_dict(row)
+    return row
 
 
 def user_has_project_access(
@@ -583,6 +524,7 @@ def user_has_project_access(
     allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
     return pid in allowed
 
+from .. import base
 from ..compat.repository import _audit_row_to_dict
 from ..compat.repository import _clamp_int64
 from ..compat.repository import _connect
