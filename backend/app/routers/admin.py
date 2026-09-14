@@ -1482,6 +1482,31 @@ def admin_jobs(request: Request) -> Any:
             if dur > 0:
                 duration_sum += dur
                 duration_count += 1
+        analysis = _as_dict(bpmn_meta.get("agent_analysis_v1"))
+        analysis_status = _as_text(analysis.get("status")).lower()
+        if analysis_status:
+            items.append(
+                {
+                    "job_type": "agent_analysis",
+                    "job_id": _as_text(analysis.get("run_id") or f"agent_analysis_{sid}"),
+                    "session_id": sid,
+                    "status": analysis_status,
+                    "run_id": _as_text(analysis.get("run_id")),
+                    "retries": 0,
+                    "lock_busy": 0,
+                    "duration_s": 0,
+                    "last_error": _as_text(analysis.get("error")),
+                    "updated_at": _as_text(analysis.get("generated_at")),
+                }
+            )
+            if analysis_status in {"queued", "pending"}:
+                summary["queued"] += 1
+            elif analysis_status in {"running"}:
+                summary["running"] += 1
+            elif analysis_status in {"done", "completed"}:
+                summary["completed"] += 1
+            elif analysis_status in {"failed", "error"}:
+                summary["failed"] += 1
         reports_versions = _as_int(_as_dict(session.get("dod_artifacts")).get("reports_versions"), _as_int(session.get("reports_versions"), 0))
         if reports_versions > 0:
             items.append(

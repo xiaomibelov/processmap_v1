@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from .. import _legacy_main
 from ..ai import llm_store
 from ..celery_app import app
+from ..schemas.agent_chat import AgentAnalysisArtifactOut
 from .settings import FEATURE
 from .tasks import run_agent_analysis_task
 
@@ -89,3 +90,32 @@ def agent_analysis_status(session_id: str, request: Request, job_id: str = Query
         # Celery backend недоступен/невалидный job_id — доменный not_found
         # (по образцу auto_pass_status, см. contract spec_gap).
         return _legacy_main._enterprise_error(404, "not_found", "not_found")
+
+
+@router.get(
+    "/api/sessions/{session_id}/agent-analysis/artifact",
+    response_model=AgentAnalysisArtifactOut,
+)
+def agent_analysis_artifact(session_id: str, request: Request) -> Any:
+    """Отдать сохранённый артефакт bpmn_meta.agent_analysis_v1 владельцу сессии.
+
+    Без флага фичи: чтение собственного артефакта безопасно (флаг остаётся
+    только на POST enqueue). Источник данных — тот же bpmn_meta, что пишет
+    processor (rule of single implementation).
+    """
+    uid, _ = _legacy_main._request_user_meta(request)
+    if not uid:
+        return _legacy_main._enterprise_error(401, "unauthorized", "unauthorized")
+    sess, _, _ = _legacy_main._legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+    meta = _legacy_main._normalize_bpmn_meta(getattr(sess, "bpmn_meta", {}) or {})
+    artifact = meta.get("agent_analysis_v1")
+    if not isinstance(artifact, dict) or not artifact:
+        return _legacy_main._enterprise_error(404, "agent_analysis_not_found", "agent_analysis_not_found")
+    return {
+        "artifact": artifact,
+        "schema_version": str(artifact.get("schema_version") or ""),
+        "version": int(getattr(sess, "version", 0) or 0),
+        "updated_at": str(artifact.get("generated_at") or ""),
+    }

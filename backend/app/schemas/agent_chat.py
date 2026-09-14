@@ -43,3 +43,12 @@ class AgentTurnOut(BaseModel):
 
 class AgentHistoryOut(BaseModel):
     turns: list[AgentTurnOut] = Field(default_factory=list)
+
+
+class AgentAnalysisArtifactOut(BaseModel):
+    """Сохранённый артефакт фонового анализа сессии (bpmn_meta.agent_analysis_v1)."""
+
+    artifact: Dict[str, Any] = Field(default_factory=dict, description="Полный артефакт анализа.")
+    schema_version: str = Field(default="", description="Версия схемы артефакта.")
+    version: int = Field(default=0, description="Версия сессии на момент чтения.")
+    updated_at: str = Field(default="", description="Время генерации артефакта (ISO).")
