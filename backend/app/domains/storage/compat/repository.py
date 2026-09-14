@@ -2240,6 +2240,26 @@ def _ensure_schema() -> None:
                     updated_by              TEXT NOT NULL DEFAULT ''
                 )
             """)
+            # ── Session documents (feature/session-doc-attachments) ─────────────
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS session_documents (
+                    doc_id        TEXT PRIMARY KEY,
+                    org_id        TEXT NOT NULL,
+                    session_id    TEXT NOT NULL,
+                    filename      TEXT NOT NULL,
+                    ext           TEXT NOT NULL,
+                    size_bytes    INTEGER NOT NULL DEFAULT 0,
+                    content_text  TEXT NOT NULL DEFAULT '',
+                    content_hash  TEXT NOT NULL DEFAULT '',
+                    extraction_quality TEXT NOT NULL DEFAULT 'full',
+                    created_by    TEXT NOT NULL DEFAULT '',
+                    created_at    INTEGER NOT NULL,
+                    updated_at    INTEGER NOT NULL,
+                    deleted_at    INTEGER
+                )
+            """)
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_docs_org_session ON session_documents(org_id, session_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_docs_org_session_deleted ON session_documents(org_id, session_id, deleted_at)")
             # 023-колонки: ALTER-гварды для БД, созданных до миграции 023 (sqlite-bootstrap).
             if not _column_exists(con, "rag_settings", "hybrid_enabled"):
                 con.execute("ALTER TABLE rag_settings ADD COLUMN hybrid_enabled INTEGER NOT NULL DEFAULT 0")

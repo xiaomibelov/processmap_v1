@@ -381,6 +381,19 @@ components:
           type: array
       title: AgentHistoryOut
       type: object
+    AgentReviewIn:
+      properties:
+        client_review_id:
+          description: 'Опциональный id идемпотентности (v1: не персистится)'
+          nullable: true
+          title: Client Review Id
+          type: string
+        text:
+          default: ''
+          title: Text
+          type: string
+      title: AgentReviewIn
+      type: object
     AgentTurnOut:
       properties:
         action:
@@ -676,6 +689,16 @@ components:
       required:
       - file
       title: Body_session_bpmn_upload_api_sessions__session_id__bpmn_upload_post
+      type: object
+    Body_session_docs_attach_api_sessions__session_id__docs_post:
+      properties:
+        file:
+          format: binary
+          title: File
+          type: string
+      required:
+      - file
+      title: Body_session_docs_attach_api_sessions__session_id__docs_post
       type: object
     Body_transform_asis_endpoint_api_process_templates_transform_asis_post:
       properties:
@@ -2794,7 +2817,8 @@ components:
           type: string
         source_type:
           description: '''bpmn_xml'', ''product_action'', ''property_dictionary'',
-            ''operation_catalog'', or ''glossary'''
+            ''operation_catalog'', ''glossary'', or ''session_doc'' (via docs attach
+            only)'
           title: Source Type
           type: string
       required:
@@ -15602,6 +15626,57 @@ paths:
       tags:
       - agent
       - agent
+  /api/sessions/{session_id}/agent/review:
+    post:
+      description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);
+        404 — ресурс не найден/вне scope.'
+      operationId: agent_review_api_sessions__session_id__agent_review_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentReviewIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Agent Review Api Sessions  Session Id  Agent Review
+                  Post
+                type: object
+          description: Successful Response
+        '401':
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
+        '404':
+          description: Сессия не найдена
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+        '502':
+          description: LLM недоступен или ответ не распарсился (review_parse_failed
+            / review_llm_error)
+        '504':
+          description: Таймаут LLM-вызова
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить сессию процесса
+      tags:
+      - agent
+      - agent
   /api/sessions/{session_id}/ai/questions:
     post:
       description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
@@ -16963,6 +17038,174 @@ paths:
       - bearerAuth: []
       summary: Создать/выполнить сессию процесса
       tags:
+      - sessions
+  /api/sessions/{session_id}/docs:
+    get:
+      description: 'Получить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: session_docs_list_api_sessions__session_id__docs_get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Session Docs List Api Sessions  Session Id  Docs Get
+                type: object
+          description: Successful Response
+        '401':
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
+        '404':
+          description: Сессия или документ не найдены
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить сессию процесса
+      tags:
+      - sessions
+      - sessions
+    post:
+      description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);
+        404 — ресурс не найден/вне scope.'
+      operationId: session_docs_attach_api_sessions__session_id__docs_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_session_docs_attach_api_sessions__session_id__docs_post'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Session Docs Attach Api Sessions  Session Id  Docs
+                  Post
+                type: object
+          description: Successful Response
+        '401':
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
+        '404':
+          description: Сессия или документ не найдены
+        '413':
+          description: Файл больше лимита (SESSION_DOC_MAX_BYTES)
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить сессию процесса
+      tags:
+      - sessions
+      - sessions
+  /api/sessions/{session_id}/docs/{doc_id}:
+    delete:
+      description: 'Удалить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: session_docs_detach_api_sessions__session_id__docs__doc_id__delete
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: path
+        name: doc_id
+        required: true
+        schema:
+          title: Doc Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
+        '404':
+          description: Сессия или документ не найдены
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Удалить сессию процесса
+      tags:
+      - sessions
+      - sessions
+    get:
+      description: 'Получить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: session_docs_get_api_sessions__session_id__docs__doc_id__get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: path
+        name: doc_id
+        required: true
+        schema:
+          title: Doc Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Session Docs Get Api Sessions  Session Id  Docs  Doc
+                  Id  Get
+                type: object
+          description: Successful Response
+        '401':
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
+        '404':
+          description: Сессия или документ не найдены
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить сессию процесса
+      tags:
+      - sessions
       - sessions
   /api/sessions/{session_id}/edges:
     delete:

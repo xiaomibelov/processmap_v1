@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.144",
+  currentVersion: "v1.0.145",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.145",
+      changes: [
+        "К сессии можно прикреплять документы (.md, .txt, .doc, .docx): панель «Документы сессии» в чате Processman, документы индексируются в RAG.",
+        "Режим ревьюера по техкарте: запуск по иконке или префиксам «ревью:» / «/review», замечания с подсветкой фрагментов и ссылками на пункты техкарты.",
+      ],
+    },
     {
       version: "v1.0.144",
       changes: [

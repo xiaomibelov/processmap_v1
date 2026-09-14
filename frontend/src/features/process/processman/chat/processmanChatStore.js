@@ -140,6 +140,7 @@ export function updateAgentMessage(sessionId, messageId, { text, meta, status } 
 }
 
 /** Прикрепить к агент-сообщению карточку HITL-подтверждения правки. */
+
 export function attachPendingEdit(sessionId, messageId, payload = {}) {
   const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
   if (!msg || msg.role !== CHAT_ROLE.AGENT) return null;
@@ -166,6 +167,57 @@ export function updatePendingEditStatus(sessionId, messageId, { status, result =
   msg.pendingEdit.result = result || null;
   msg.pendingEdit.errorText = String(errorText || "");
   msg.status = status;
+  return msg;
+}
+
+// feature/session-doc-attachments — карточка ревью по техкарте.
+// Новый тип agent-сообщения: { id, role: "agent", review: {...}, at }.
+// review.status живёт внутри review-объекта (pending/done/error) — обычный
+// текстовый flow карточки не трогаем.
+export function appendReviewPending(sessionId, { checkedText = "" } = {}) {
+  const history = getChatHistory(sessionId);
+  const msg = {
+    id: nextId("a"),
+    role: CHAT_ROLE.AGENT,
+    review: {
+      status: AGENT_STATUS.PENDING,
+      reviewId: "",
+      checkedText: String(checkedText || ""),
+      annotations: [],
+      retrievalMode: "",
+      errorText: "",
+    },
+    at: Date.now(),
+  };
+  history.push(msg);
+  return msg;
+}
+
+export function resolveReviewMessage(sessionId, messageId, { reviewId = "", annotations = [], retrievalMode = "" } = {}) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT || !msg.review) return null;
+  msg.review.status = AGENT_STATUS.DONE;
+  msg.review.reviewId = String(reviewId || "");
+  msg.review.annotations = Array.isArray(annotations) ? annotations : [];
+  msg.review.retrievalMode = String(retrievalMode || "");
+  msg.review.errorText = "";
+  return msg;
+}
+
+export function failReviewMessage(sessionId, messageId, { errorText = "" } = {}) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT || !msg.review) return null;
+  msg.review.status = AGENT_STATUS.ERROR;
+  msg.review.errorText = String(errorText || "");
+  return msg;
+}
+
+/** Retry карточки ревью: тот же message сбрасывается в pending (тот же checkedText). */
+export function retryReviewMessage(sessionId, messageId) {
+  const msg = getChatHistory(sessionId).find((m) => m.id === messageId);
+  if (!msg || msg.role !== CHAT_ROLE.AGENT || !msg.review) return null;
+  msg.review.status = AGENT_STATUS.PENDING;
+  msg.review.errorText = "";
   return msg;
 }
 

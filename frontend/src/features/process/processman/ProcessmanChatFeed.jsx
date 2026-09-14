@@ -9,6 +9,7 @@ import {
 } from "./chat/processmanChatStore";
 import AgentMarkdown from "./AgentMarkdown";
 import PendingEditCard from "./chat/PendingEditCard";
+import ProcessmanReviewCard from "./review/ProcessmanReviewCard";
 
 // PROCESSMAN-REDESIGN (PR-2) — лента диалога.
 // user-сообщения — вправо без label; agent — full-width карточка без
@@ -46,6 +47,17 @@ function IconStop() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <rect x="7" y="7" width="10" height="10" rx="1.5" />
+    </svg>
+  );
+}
+
+// feature/session-doc-attachments — иконка ревью в action-row user-сообщения.
+function IconReview() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.6 15.6 21 21" />
+      <path d="M7.6 10.6l1.8 1.8 3.4-3.6" />
     </svg>
   );
 }
@@ -284,6 +296,8 @@ export default function ProcessmanChatFeed({
   onRetry,
   onConfirmEdit,
   onRejectEdit,
+  onReview,
+  onRetryReview,
 }) {
   const feedRef = useRef(null);
   const lastAgentId = (() => {
@@ -323,7 +337,23 @@ export default function ProcessmanChatFeed({
       {messages.map((msg) => (msg.role === "user" ? (
         <div key={msg.id} className="pm-processman-msg pm-processman-msg--user" data-testid="processman-msg-user" title={formatClock(msg.at)}>
           <span className="pm-processman-msg__user-text">{msg.text}</span>
+          {onReview ? (
+            <span className="pm-processman-msg__actions pm-processman-msg__actions--user">
+              <button
+                type="button"
+                className="pm-processman-msg__action"
+                data-testid="processman-msg-review"
+                aria-label={t.reviewAria}
+                title={t.reviewAria}
+                onClick={(e) => { e.stopPropagation(); onReview(String(msg.text || "")); }}
+              >
+                <IconReview />
+              </button>
+            </span>
+          ) : null}
         </div>
+      ) : msg.review ? (
+        <ProcessmanReviewCard key={msg.id} msg={msg} onRetry={onRetryReview} />
       ) : (
         <AgentCard
           key={msg.id}

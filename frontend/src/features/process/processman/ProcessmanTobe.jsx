@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ru } from "../../../shared/i18n/ru";
-import { apiAgentHistory, apiAgentResume, apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
+import { apiAgentHistory, apiAgentResume, apiAgentReview, apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
 import {
   answerCacheKey,
   buildAnswerMeta,
@@ -15,10 +15,12 @@ import {
 import {
   AGENT_STATUS,
   appendAgentPending,
+  appendReviewPending,
   appendStreamingDelta,
   appendUserMessage,
   attachPendingEdit,
   failAgentMessage,
+  failReviewMessage,
   finishAgentMessage,
   getChatHistory,
   hasPendingAgent,
@@ -26,10 +28,13 @@ import {
   isChatHistoryHydrated,
   lastAgentMessage,
   resolveAgentMessage,
+  resolveReviewMessage,
+  retryReviewMessage,
   stopAgentMessage,
   updateAgentMessage,
   updatePendingEditStatus,
 } from "./chat/processmanChatStore";
+import { parseReviewTrigger } from "./chat/processmanReviewTrigger";
 import ProcessmanChatFeed from "./ProcessmanChatFeed";
 import ProcessmanComposer from "./ProcessmanComposer";
 import ProcessmanEmptyState from "./ProcessmanEmptyState";
@@ -65,6 +70,9 @@ export default function ProcessmanTobe({
   diagramNodes = [],
   onFocusElement,
   onHighlightElements,
+  // feature/session-doc-attachments: тестовый шов — api-layer ревьюера можно
+  // подменить пропом (моки в .test.mjs), по умолчанию — реальный apiAgentReview.
+  apiReview = apiAgentReview,
 }) {
   const [, bump] = useReducer((v) => v + 1, 0);
   const [question, setQuestion] = useState("");
@@ -282,12 +290,69 @@ export default function ProcessmanTobe({
     }
   }, [sid, elementId, cacheRef, appendLocalNote, emitHighlight, clearEditHighlight]);
 
+  // feature/session-doc-attachments — ревьюер по техкарте. Запускается ТОЛЬКО
+  // явно: префикс «ревью:»|«/review», иконка в композере или action-row
+  // user-сообщения. Никаких авто-триггеров.
+  const [reviewRunning, setReviewRunning] = useState(false);
+
+  const executeReview = useCallback(async (messageId, text) => {
+    if (!sid) return;
+    try {
+      const result = await apiReview(sid, { text });
+      if (!result.ok) {
+        failReviewMessage(sid, messageId, { errorText: cleanAgentError(result.error, result.status) });
+        bump();
+        return;
+      }
+      resolveReviewMessage(sid, messageId, {
+        reviewId: result.reviewId,
+        annotations: result.annotations,
+        retrievalMode: result.retrievalMode,
+      });
+    } catch (err) {
+      if (String(err?.name || "") === "AbortError") return;
+      failReviewMessage(sid, messageId, { errorText: cleanAgentError(String(err?.message || err || t.errorTitle)) });
+    } finally {
+      setReviewRunning(false);
+      bump();
+    }
+  }, [sid, apiReview]);
+
+  const runReview = useCallback(async (textRaw) => {
+    const text = String(textRaw || "").trim();
+    if (!text || !sid || reviewRunning) return;
+    setReviewRunning(true);
+    appendUserMessage(sid, text);
+    const pendingMsg = appendReviewPending(sid, { checkedText: text });
+    bump();
+    await executeReview(pendingMsg.id, text);
+  }, [sid, reviewRunning, executeReview]);
+
+  const handleReviewRetry = useCallback((msg) => {
+    const text = String(msg?.review?.checkedText || "").trim();
+    if (!text || !sid || reviewRunning) return;
+    setReviewRunning(true);
+    retryReviewMessage(sid, msg.id);
+    bump();
+    void executeReview(msg.id, text);
+  }, [sid, reviewRunning, executeReview]);
+
   const submitQuestion = useCallback(() => {
     const q = String(question || "").trim();
     if (!q || pending || notConfigured || quotaExhausted) return;
+    // feature/session-doc-attachments: явные текстовые триггеры ревьюера
+    // («ревью:» / «/review», case-insensitive) маршрутизируются на review
+    // endpoint; обычный чат не трогаем.
+    const trigger = parseReviewTrigger(q);
+    if (trigger.isReview) {
+      if (!trigger.text) return; // голый префикс без текста — ждём содержимое
+      setQuestion("");
+      void runReview(trigger.text);
+      return;
+    }
     setQuestion("");
     void run("chat", { question: q });
-  }, [question, pending, notConfigured, quotaExhausted, run]);
+  }, [question, pending, notConfigured, quotaExhausted, run, runReview]);
 
   const handleStop = useCallback((msg, visibleText) => {
     abortRef.current?.abort();
@@ -410,6 +475,8 @@ export default function ProcessmanTobe({
           onRetry={handleRetry}
           onConfirmEdit={handleConfirmEdit}
           onRejectEdit={handleRejectEdit}
+          onReview={(text) => { void runReview(text); }}
+          onRetryReview={handleReviewRetry}
         />
       )}
 
@@ -427,8 +494,10 @@ export default function ProcessmanTobe({
         onChange={setQuestion}
         onSubmit={submitQuestion}
         hasSelection={!!elementId}
-        disabled={pending || notConfigured || quotaExhausted}
+        disabled={pending || reviewRunning || notConfigured || quotaExhausted}
         inputRef={composerRef}
+        onReview={(text) => { void runReview(text); }}
+        reviewRunning={reviewRunning}
       />
     </div>
   );
