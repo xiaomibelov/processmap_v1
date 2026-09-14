@@ -3,8 +3,9 @@
 // удалён из панели и из репозитория, его действия живут в чате ProcessmanTobe).
 // Запуск: node --test src/features/process/processman/processmanChatActions.source.test.mjs
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const tobeSrc = readFileSync(fileURLToPath(new URL("./ProcessmanTobe.jsx", import.meta.url)), "utf8");
@@ -98,4 +99,27 @@ test("HOTFIX: панель обёрнута в Error Boundary (сбой пане
   const boundarySrc = readFileSync(fileURLToPath(new URL("./ProcessmanErrorBoundary.jsx", import.meta.url)), "utf8");
   assert.ok(/getDerivedStateFromError/.test(boundarySrc), "boundary ловит ошибки рендера");
   assert.ok(/if \(this\.state\.hasError\) return null;/.test(boundarySrc), "при ошибке — null, канвас жив");
+});
+
+// agent-ui-completion-v1 (G3) — мёртвый legacy-код AgentButton/AgentModal удалён:
+// ни одного runtime-импорта по всему frontend/src (тест-файлы не считаются).
+test("G3: 0 runtime-импортов AgentButton/AgentModal по всему frontend/src", () => {
+  const srcRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../..");
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        walk(full);
+      } else if (/\.(jsx?|tsx?|mjs)$/.test(entry.name) && !/\.(test|spec)\./.test(entry.name)) {
+        const text = readFileSync(full, "utf8");
+        if (/\b(AgentButton|AgentModal)\b/.test(text)) offenders.push(path.relative(srcRoot, full));
+      }
+    }
+  };
+  walk(srcRoot);
+  assert.deepEqual(offenders, [], `runtime-упоминания AgentButton/AgentModal найдены: ${offenders.join(", ")}`);
+  assert.equal(existsSync(path.join(srcRoot, "components/agent/AgentButton.tsx")), false, "AgentButton.tsx удалён");
+  assert.equal(existsSync(path.join(srcRoot, "components/agent/AgentModal.tsx")), false, "AgentModal.tsx удалён");
 });

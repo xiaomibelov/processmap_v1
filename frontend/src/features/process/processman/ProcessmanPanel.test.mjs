@@ -107,9 +107,20 @@ function setupDom({ fetchImpl } = {}) {
   globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
   globalThis.localStorage = dom.window.localStorage;
   const calls = [];
+  const readOnlyFetch = async (url) => {
+    const u = String(url);
+    // D1/M9: гидрация истории и чтение артефакта — штатные read-only GET
+    if (u.includes("/agent/history")) {
+      return new Response(JSON.stringify({ turns: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (u.includes("/agent-analysis/artifact")) {
+      return new Response(JSON.stringify({ detail: "not_found" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
   globalThis.fetch = fetchImpl
     ? async (url, opts) => { calls.push({ url: String(url), opts }); return fetchImpl(url, opts); }
-    : async (url, opts) => { calls.push({ url: String(url), opts }); throw new Error(`unexpected fetch: ${url}`); };
+    : async (url, opts) => { calls.push({ url: String(url), opts }); return readOnlyFetch(url, opts); };
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = dom.window.document.createElement("div");
@@ -190,6 +201,7 @@ async function resetChat() {
 test("каркас: role=complementary, компактная шапка (✦ + PROCESSMAN + статус + новая беседа/?/свернуть/крестик), футер только с дисклеймером", async () => {
   const mod = await loadPanel();
   const env = setupDom();
+  await resetChat();
   try {
     const doc = await renderPanel(env, mod);
     const panel = doc.querySelector('[data-testid="processman-panel"]');
@@ -207,7 +219,11 @@ test("каркас: role=complementary, компактная шапка (✦ + P
     assert.ok(footer?.textContent.includes("Ответ генерирует ИИ"), "дисклеймер в футере");
     assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]'), null, "нет cache/new-request чипа в футере");
     assert.equal(doc.querySelector('[data-testid="processman-feedback"]'), null, "нет feedback-компонента в футере");
-    assert.equal(env.calls.length, 0, "открытие панели = 0 сетевых вызовов");
+    // agent-ui-completion-v1 (D1): открытие панели = 1 read-only GET /agent/history
+    // (гидрация, 0 LLM); других вызовов нет.
+    assert.equal(env.calls.length, 1, "открытие панели = 1 вызов гидрации /agent/history");
+    assert.ok(env.calls[0].url.includes("/agent/history"), `URL гидрации: ${env.calls[0].url}`);
+    assert.ok(!(env.calls.some((c) => /agent\/stream|\/llm\//.test(c.url))), "0 LLM/stream-вызовов");
   } finally {
     await env.cleanup();
   }
@@ -217,12 +233,14 @@ test("каркас: role=complementary, компактная шапка (✦ + P
 test("контент следует за вкладкой: interview → analysis, diagram → чат (quick actions + composer + чип), xml → neutral; SchemaAssistantBlock удалён", async () => {
   const mod = await loadPanel();
   const env = setupDom();
+  await resetChat();
   try {
-    // analysis
+    // analysis (M9: карточка артефакта делает 1 read-only GET artifact, 0 LLM)
     let doc = await renderPanel(env, mod, { tab: "interview" });
     assert.notEqual(doc.querySelector('[data-testid="processman-analysis"]'), null, "analysis-контент");
     assert.notEqual(doc.querySelector('[data-testid="processman-analysis-open-full"]'), null, "CTA «Открыть полный анализ»");
-    // diagram → чат-контент
+    assert.equal(env.calls.filter((c) => /agent-analysis\/artifact/.test(c.url)).length, 1, "analysis-вкладка = 1 read-only GET artifact");
+    // diagram → чат-контент (+1 гидрация history — лента пустая)
     doc = await renderPanel(env, mod, { tab: "diagram" });
     assert.notEqual(doc.querySelector('[data-testid="processman-action-suggest"]'), null, "карточка suggest-next");
     assert.notEqual(doc.querySelector('[data-testid="processman-action-explain"]'), null, "карточка explain-step");
@@ -230,10 +248,12 @@ test("контент следует за вкладкой: interview → analysi
     assert.notEqual(doc.querySelector('[data-testid="processman-context-chip"]'), null, "контекст-чип");
     assert.equal(doc.querySelector('[data-testid="processman-schema-pane"]'), null, "schema-pane удалён из панели");
     assert.equal(doc.querySelector('[data-testid="schema-assistant-block"]'), null, "SchemaAssistantBlock не рендерится");
+    assert.equal(env.calls.filter((c) => /\/agent\/history/.test(c.url)).length, 1, "диаграм-вкладка = 1 гидрация history");
     // neutral
     doc = await renderPanel(env, mod, { tab: "xml" });
     assert.notEqual(doc.querySelector('[data-testid="processman-neutral"]'), null, "нейтральное состояние");
-    assert.equal(env.calls.length, 0, "смена контекста = 0 сетевых вызовов");
+    assert.equal(env.calls.length, 2, "смена контекста = 0 LLM-вызовов (только read-only гидрация + artifact)");
+    assert.ok(!(env.calls.some((c) => /agent\/stream|\/llm\//.test(c.url))), "0 LLM/stream-вызовов");
   } finally {
     await env.cleanup();
   }
@@ -243,13 +263,16 @@ test("контент следует за вкладкой: interview → analysi
 test("S1: нет ключа (configured=false) — действия disabled + честное состояние", async () => {
   const mod = await loadPanel();
   const env = setupDom();
+  await resetChat();
   try {
     const doc = await renderPanel(env, mod, {
       llmStatus: { ok: true, status: 200, result: { configured: false, quota: { used: 0, limit: 0 } } },
     });
     assert.notEqual(doc.querySelector('[data-testid="processman-tobe-no-key"]'), null, "no-key состояние");
     assert.equal(doc.querySelector('[data-testid="processman-action-suggest"]')?.disabled, true);
-    assert.equal(env.calls.length, 0, "0 запросов");
+    assert.equal(env.calls.length, 1, "1 вызов гидрации /agent/history (read-only, 0 LLM)");
+    assert.ok(env.calls[0].url.includes("/agent/history"), `URL гидрации: ${env.calls[0].url}`);
+    assert.ok(!(env.calls.some((c) => /agent\/stream|\/llm\//.test(c.url))), "0 LLM-вызовов");
   } finally {
     await env.cleanup();
   }
@@ -259,13 +282,15 @@ test("S1: нет ключа (configured=false) — действия disabled + �
 test("S7: лимит по quota (used>=limit) — действия disabled + состояние исчерпания", async () => {
   const mod = await loadPanel();
   const env = setupDom();
+  await resetChat();
   try {
     const doc = await renderPanel(env, mod, {
       llmStatus: { ok: true, status: 200, result: { configured: true, quota: { used: 200000, limit: 200000 } } },
     });
     assert.notEqual(doc.querySelector('[data-testid="processman-tobe-quota"]'), null, "quota-состояние");
     assert.equal(doc.querySelector('[data-testid="processman-action-suggest"]')?.disabled, true);
-    assert.equal(env.calls.length, 0, "0 запросов");
+    assert.equal(env.calls.length, 1, "1 вызов гидрации /agent/history (read-only, 0 LLM)");
+    assert.ok(!(env.calls.some((c) => /agent\/stream|\/llm\//.test(c.url))), "0 LLM-вызовов");
   } finally {
     await env.cleanup();
   }
@@ -275,17 +300,18 @@ test("S7: лимит по quota (used>=limit) — действия disabled + с
 test("S2: пустой диалог — empty state с примерами, действия disabled без шага, 0 запросов", async () => {
   const mod = await loadPanel();
   const env = setupDom();
+  await resetChat();
   try {
     const doc = await renderPanel(env, mod, { selectedBpmnElement: null });
     assert.notEqual(doc.querySelector('[data-testid="processman-tobe-empty"]'), null, "пустое состояние");
     assert.equal(doc.querySelector('[data-testid="processman-action-suggest"]')?.disabled, true, "без выбранного шага suggest disabled");
     assert.notEqual(doc.querySelector('[data-testid="processman-example-q1"]'), null, "кликабельные примеры вопросов");
-    assert.equal(env.calls.length, 0);
+    assert.equal(env.calls.length, 1, "1 вызов гидрации /agent/history (read-only, 0 LLM)");
     // клик по примеру → текст в composer (без сети)
     await click(doc, env.dom.window, "processman-example-q1");
     const input = doc.querySelector('[data-testid="processman-qa-input"]');
     assert.ok(String(input?.value || "").length > 3, "пример подставлен в composer");
-    assert.equal(env.calls.length, 0, "подстановка примера = 0 запросов");
+    assert.equal(env.calls.length, 1, "подстановка примера = 0 запросов");
   } finally {
     await env.cleanup();
   }
@@ -305,7 +331,8 @@ test("S4/S5/S8: клик → loading (анти-даблклик) → ответ 
   try {
     const doc = await renderPanel(env, mod);
     await click(doc, env.dom.window, "processman-action-suggest");
-    assert.equal(env.calls.length, 1, "1 запрос suggest-next");
+    assert.equal(env.calls.length, 2, "гидрация (mount) + 1 запрос suggest-next");
+    assert.ok(env.calls[1].url.includes("/suggest-next"), `URL: ${env.calls[1].url}`);
     // quick actions свернулись под «⋯» после первого сообщения
     assert.notEqual(doc.querySelector('[data-testid="processman-actions-more"]'), null, "кнопка «⋯» появилась");
     assert.equal(doc.querySelector('[data-testid="processman-action-suggest"]'), null, "карточки скрыты под «⋯»");
@@ -317,7 +344,7 @@ test("S4/S5/S8: клик → loading (анти-даблклик) → ответ 
       suggestAgain.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     await flush();
-    assert.equal(env.calls.length, 1, "даблклик не добавляет запрос");
+    assert.equal(env.calls.length, 2, "даблклик не добавляет запрос");
     // S4: индикатор загрузки (честные этапы, без фейковых стадий)
     await flush(300);
     assert.notEqual(doc.querySelector('[data-testid="processman-answer-loading"]'), null, "loading-состояние");
@@ -357,12 +384,12 @@ test("S3: повторный клик по тому же шагу — из in-me
     const doc = await renderPanel(env, mod, { cacheRef });
     await click(doc, env.dom.window, "processman-action-explain");
     assert.equal(await waitFor(doc, "processman-answer-ok"), true, "первый ответ доиграл");
-    assert.equal(env.calls.length, 1, "первый клик = 1 запрос");
+    assert.equal(env.calls.length, 2, "гидрация (mount) + 1 запрос explain-step");
     // второй клик (через «⋯») — из кэша
     await click(doc, env.dom.window, "processman-actions-more");
     await click(doc, env.dom.window, "processman-action-explain");
     await flush(120);
-    assert.equal(env.calls.length, 1, "повторный клик = 0 запросов (in-memory)");
+    assert.equal(env.calls.length, 2, "повторный клик = 0 запросов (in-memory)");
     assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]'), null, "cache badge не захламляет footer");
   } finally {
     await env.cleanup();
@@ -374,7 +401,11 @@ test("S6: ошибка LLM (no_provider) — человекочитаемый т
   await resetChat();
   let first = true;
   const env = setupDom({
-    fetchImpl: async () => {
+    fetchImpl: async (url) => {
+      // гидрация history (D1) не трогает сценарий first/retry
+      if (String(url).includes("/agent/history")) {
+        return new Response(JSON.stringify({ turns: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (first) {
         first = false;
         return jsonResponse({ ok: false, status: "no_provider", error: "no enabled LLM providers" })();

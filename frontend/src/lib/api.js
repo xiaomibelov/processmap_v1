@@ -1194,7 +1194,9 @@ export async function apiLlmFeedback({ rating, sessionId = "", action = "" } = {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
-// AGENT-1 — PROCESSMAN диалог (chat/history). Только по явному действию пользователя.
+// AGENT-1 — PROCESSMAN диалог (chat/history). Отправка — только по явному
+// действию пользователя; чтение истории — авто-гидрация при первом открытии
+// панели с пустой лентой (D1, read-only GET, 0 LLM).
 export async function apiAgentChat(sessionId, payload = {}, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
@@ -1214,6 +1216,28 @@ export async function apiAgentHistory(sessionId, options = {}) {
   if (!r.ok) return r;
   const data = r.data && typeof r.data === "object" ? r.data : {};
   return { ok: true, status: r.status, turns: Array.isArray(data.turns) ? data.turns : [] };
+}
+
+// M9 (agent-ui-completion-v1) — чтение сохранённого артефакта фонового анализа
+// (bpmn_meta.agent_analysis_v1). Read-only GET, 0 LLM. Контракт бэка:
+// { artifact, schema_version, version, updated_at }; artifact=null, если анализ
+// ещё не выполнялся; 404 — артефакт отсутствует.
+export async function apiAgentAnalysisArtifact(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  // telemetry: false — 404 «артефакт ещё не сохранён» это штатное состояние,
+  // а не сбой; телеметрия-спам не нужен.
+  const r = okOrError(await request(apiRoutes.agent.analysisArtifact(sid), { signal: options?.signal, telemetry: false }));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    artifact: data.artifact && typeof data.artifact === "object" ? data.artifact : null,
+    schemaVersion: data.schema_version ?? null,
+    version: data.version ?? null,
+    updatedAt: data.updated_at ?? null,
+  };
 }
 
 /**
