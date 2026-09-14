@@ -95,6 +95,10 @@ def agent_analysis_status(session_id: str, request: Request, job_id: str = Query
 @router.get(
     "/api/sessions/{session_id}/agent-analysis/artifact",
     response_model=AgentAnalysisArtifactOut,
+    responses={
+        401: {"description": "Unauthorized"},
+        404: {"description": "Session or agent_analysis artifact not found"},
+    },
 )
 def agent_analysis_artifact(session_id: str, request: Request) -> Any:
     """Отдать сохранённый артефакт bpmn_meta.agent_analysis_v1 владельцу сессии.

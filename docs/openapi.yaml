@@ -15272,10 +15272,9 @@ paths:
                 $ref: '#/components/schemas/AgentAnalysisArtifactOut'
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: Unauthorized
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Session or agent_analysis artifact not found
         '422':
           content:
             application/json:
