@@ -1,9 +1,9 @@
-# EXEC_REPORT — agent-ui-completion-v1 (FRONTEND-половина контура)
+# EXEC_REPORT — agent-ui-completion-v1 (контур целиком)
 
 - **Контур:** `feature/agent-ui-completion-v1` · **Дата:** 2026-09-14
-- **Baseline:** `origin/main` = `df7feabc` → backend-коммит коллеги `295ee2de` → frontend на `e67add7f`
+- **Baseline:** `origin/main` = `df7feabc` → backend `295ee2de` → frontend `e67add7f` → HEAD `5589f4e9`
 - **Worktree:** `p0-work-worktrees/feature-agent-ui-completion-v1`
-- **Скоуп этого отчёта:** только frontend. Backend (GET artifact, /admin/jobs job_type, openapi) — в отчёте backend-агента.
+- **Review-гейт:** backend-половина — ACCEPT (agent-3, без блокеров); frontend-половина — ACCEPT (agent-4, 4 LOW/INFO-находки, не блокируют мерж).
 
 ## 1. Что сделано (commits)
 
@@ -30,17 +30,33 @@
 - Удалены `AgentButton.tsx`, `AgentModal.tsx`, `AgentModal.source.test.mjs`.
 - Grep-gate в `processmanChatActions.source.test.mjs`: скан всего `frontend/src` (вне `*.test./spec.`) — 0 упоминаний AgentButton/AgentModal. `aiContextualActions` не тронут (D4).
 
-## 2. Верификация
+**Backend (commit `295ee2de`, +452/−0, 6 файлов):**
+- `backend/app/agent_analysis/router.py` — `GET /api/sessions/{id}/agent-analysis/artifact`: чтение `bpmn_meta.agent_analysis_v1` владельцу сессии, **без feature-флага** (флаг остаётся на POST enqueue); auth-цепочка `_request_user_meta` + `_legacy_load_session_scoped` — паритет с соседними эндпоинтами; 404 с кодом `agent_analysis_not_found`. Ответ `{artifact, schema_version, version, updated_at}`.
+- `backend/app/routers/admin.py` — эмиссия `job_type="agent_analysis"` в `/api/admin/jobs` из `bpmn_meta.agent_analysis_v1`, форма — полный паритет autopass (`job_id` из `run_id`, статус-маппинг, summary-бакеты); autopass/report_doc не изменены.
+- `backend/app/schemas/agent_chat.py` — `AgentAnalysisArtifactOut`.
+- Тесты: `test_agent_analysis_artifact_api.py` (200/404/401/флаг-независимость/паритет скоупинга), `test_admin_jobs_agent_analysis.py` (эмиссия + побайтово-неизменный autopass) — 10 passed. Регрессии: 0 (1 pre-existing fail подтверждён на baseline).
+- `docs/openapi.yaml` — перегенерирован (`scripts/dump_openapi.py`), `@redocly/cli lint` → 0 errors (гейт §6.1 соблюдён, изменение non-breaking).
+
+## 2. Верификация (frontend)
 
 - **npm test (полный):** 3602 теста, 79 fail — **набор падений идентичен чистому baseline** (df7feabc, отдельный worktree, 3589/79). NEW failures = 0 (нормализованное сравнение по именам). Pre-existing примеры: `dark-theme-contrast`, `i18n keys invariant` (endpointCheck.*), `processmanView.cleanAgentError`, `appVersion v1.0.141`.
 - **Affected suites (ветка):** processman/* все зелёные, включая обновлённые `ProcessmanPanel.test.mjs` (21/21), `processmanTokenEconomy.test.mjs` (7/7, G4-кейсы), `historyMap.test.mjs` (9/9), `ProcessmanAnalysisArtifact.test.mjs` (3/3), `processmanChatActions.source` (9/9, G3), i18n parity (4/4).
 - **npm run test:smoke (vitest):** 13 files / 56 tests — все зелёные.
 
-### Гейты
-- **G1 (история после reload):** unit/G4-покрытие зелёное; e2e-спек написан (`frontend/e2e/processman-chat-history.spec.mjs`), но **прогон в этом окружении невозможен** — см. §3. Статус: blocked-by-env, не по коду.
-- **G2 (M9 виден):** компонентные тесты статусов зелёные; verify на stage — после merge+deploy.
-- **G3:** grep-gate зелёный, ручной grep подтверждает 0 импортов.
-- **G4:** token-economy расширен: mount=1 history GET и 0 прочих; отправка сообщения не добавляет лишних вызовов; offline-гидрация = 0 LLM/stream.
+### Гейты (итог)
+| Гейт | Статус | Доказательство |
+|---|---|---|
+| G1 (история после reload) | 🟡 blocked-by-env | unit/G4-покрытие зелёное; e2e-спек написан, прогон невозможен в локальном окружении (§3 — pre-existing, доказано контрольным экспериментом). Прогон на чистом стеке/CI — после merge |
+| G2 (M9 виден) | 🟢 код | backend-контракт + карточка + job_type в /admin/jobs — тесты зелёные; verify на stage — после deploy |
+| G3 (dead code) | 🟢 | grep-gate + ручной grep: 0 импортов AgentButton/AgentModal |
+| G4 (0 LLM на открытие) | 🟢 | token-economy 7/7: mount=1 history GET, 0 LLM/stream, offline-молча |
+
+## 5-plane proof
+- **code:** ветка `feature/agent-ui-completion-v1`, 6 коммитов от `df7feabc` (= origin/main), diffstat 29 файлов +1740/−231.
+- **workspace:** worktree `p0-work-worktrees/feature-agent-ui-completion-v1` (изолирован, чужих изменений нет).
+- **DB:** чтение `bpmn_meta.agent_analysis_v1` и turns — read-only контракты; тесты на sqlite/pg-фикстурах зелёные; мутаций общей БД контур не вносил.
+- **env/compose:** shared-стек `processmap_v1-*` не пересоздавался; pytest — в выделенном раннер-образе `pm-pytest-runner:local`; restart/lock не потребовались.
+- **serving mode:** локальный dev-serve ветки поднимался только для e2e-попытки; e2e blocked-by-env (§3). Serving-verify — на stage после merge+deploy по регламенту.
 
 ## 3. E2E: статус — ПРОПУСК по окружению (доказано)
 
