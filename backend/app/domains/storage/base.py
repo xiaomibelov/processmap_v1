@@ -11,18 +11,17 @@ SQL behaviour contract (must match pre-refactor code exactly):
   (no RETURNING anywhere in the domain);
 - timestamps are int epoch seconds via ``now_ts()``;
 - JSON columns are serialized with ``_json_dumps`` and deserialized
-  with ``_json_loads`` from compat.
+  with ``_json_loads`` (canonical implementations live in this module;
+  ``compat.repository`` re-exports them).
 """
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
-
-from .compat.repository import _json_dumps
-from .compat.repository import _json_loads
-from .compat.repository import _now_ts
 
 __all__ = [
     "IDENT_RE",
@@ -58,6 +57,56 @@ def check_ident(name: str) -> str:
 def gen_id(prefix: str = "") -> str:
     raw = uuid.uuid4().hex[:12]
     return f"{prefix}{raw}" if prefix else raw
+
+
+def _json_dumps(value: Any, fallback: Any) -> str:
+    source = value if value is not None else fallback
+
+    def _to_jsonable(obj: Any) -> Any:
+        if obj is None:
+            return None
+        if isinstance(obj, (str, int, float, bool)):
+            return obj
+        if isinstance(obj, dict):
+            out: Dict[str, Any] = {}
+            for k, v in obj.items():
+                out[str(k)] = _to_jsonable(v)
+            return out
+        if isinstance(obj, (list, tuple, set)):
+            return [_to_jsonable(v) for v in obj]
+        if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
+            try:
+                return _to_jsonable(obj.model_dump())
+            except Exception:
+                pass
+        if hasattr(obj, "dict") and callable(getattr(obj, "dict")):
+            try:
+                return _to_jsonable(obj.dict())
+            except Exception:
+                pass
+        return obj
+
+    try:
+        return json.dumps(_to_jsonable(source), ensure_ascii=False)
+    except Exception:
+        return json.dumps(_to_jsonable(fallback), ensure_ascii=False)
+
+
+def _json_loads(value: Any, fallback: Any) -> Any:
+    raw = str(value or "")
+    if not raw:
+        return fallback
+    try:
+        parsed = json.loads(raw)
+        if parsed is None:
+            return fallback
+        return parsed
+    except Exception:
+        return fallback
+
+
+def _now_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 def now_ts() -> int:

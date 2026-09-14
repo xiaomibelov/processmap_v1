@@ -6,19 +6,21 @@ import os
 import re
 import sqlite3
 import threading
-import time
 import uuid
 import hashlib
 import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Set
 import xml.etree.ElementTree as ET
 from ....db import get_db_runtime_config, redact_database_url
 from ....models import Project, Session
 from ....session_status import derive_session_status
+from ..base import _json_dumps
+from ..base import _json_loads
+from ..base import _now_ts
+from ..base import row_to_dict as _row_to_dict
 logger = logging.getLogger(__name__)
 try:
     import psycopg
@@ -2265,7 +2267,7 @@ def _ensure_schema() -> None:
                 INSERT OR IGNORE INTO feature_flags (key, value, description, updated_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", int(time.time())],
+                ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", _now_ts()],
             )
             con.execute(
                 """
@@ -2567,51 +2569,6 @@ def _invite_status(row: Dict[str, Any]) -> str:
     return "pending"
 
 
-def _json_dumps(value: Any, fallback: Any) -> str:
-    source = value if value is not None else fallback
-    def _to_jsonable(obj: Any) -> Any:
-        if obj is None:
-            return None
-        if isinstance(obj, (str, int, float, bool)):
-            return obj
-        if isinstance(obj, dict):
-            out: Dict[str, Any] = {}
-            for k, v in obj.items():
-                out[str(k)] = _to_jsonable(v)
-            return out
-        if isinstance(obj, (list, tuple, set)):
-            return [_to_jsonable(v) for v in obj]
-        if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
-            try:
-                return _to_jsonable(obj.model_dump())
-            except Exception:
-                pass
-        if hasattr(obj, "dict") and callable(getattr(obj, "dict")):
-            try:
-                return _to_jsonable(obj.dict())
-            except Exception:
-                pass
-        return obj
-
-    try:
-        return json.dumps(_to_jsonable(source), ensure_ascii=False)
-    except Exception:
-        return json.dumps(_to_jsonable(fallback), ensure_ascii=False)
-
-
-def _json_loads(value: Any, fallback: Any) -> Any:
-    raw = str(value or "")
-    if not raw:
-        return fallback
-    try:
-        parsed = json.loads(raw)
-        if parsed is None:
-            return fallback
-        return parsed
-    except Exception:
-        return fallback
-
-
 def _json_text(value: Any) -> str:
     return _json_dumps(value, None)
 
@@ -2802,10 +2759,6 @@ def _normalize_org_invite_role(raw: Any) -> str:
     return role
 
 
-def _now_ts() -> int:
-    return int(datetime.now(timezone.utc).timestamp())
-
-
 def _org_property_dictionary_definition_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": str(row["id"] or ""),
@@ -2930,10 +2883,6 @@ def _read_legacy_json(path: Path) -> Dict[str, Any] | None:
     except Exception:
         return None
     return raw if isinstance(raw, dict) else None
-
-
-def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-    return dict(row)
 
 
 def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
