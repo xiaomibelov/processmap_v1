@@ -15632,16 +15632,22 @@ paths:
                 type: object
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Сессия не найдена
         '422':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
+        '502':
+          description: LLM недоступен или ответ не распарсился (review_parse_failed
+            / review_llm_error)
+        '504':
+          description: Таймаут LLM-вызова
       security:
       - bearerAuth: []
       summary: Создать/выполнить сессию процесса
@@ -17031,10 +17037,11 @@ paths:
                 type: object
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Сессия или документ не найдены
         '422':
           content:
             application/json:
@@ -17075,10 +17082,13 @@ paths:
                 type: object
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Сессия или документ не найдены
+        '413':
+          description: Файл больше лимита (SESSION_DOC_MAX_BYTES)
         '422':
           content:
             application/json:
@@ -17113,10 +17123,11 @@ paths:
         '204':
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Сессия или документ не найдены
         '422':
           content:
             application/json:
@@ -17156,10 +17167,11 @@ paths:
                 type: object
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: Не аутентифицирован (нет bearer-токена)
+        '403':
+          description: Сессия существует, но недоступна (чужой org)
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Сессия или документ не найдены
         '422':
           content:
             application/json:

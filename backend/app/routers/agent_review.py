@@ -23,7 +23,16 @@ class AgentReviewIn(BaseModel):
     client_review_id: Optional[str] = Field(default=None, description="Опциональный id идемпотентности (v1: не персистится)")
 
 
-@router.post("/api/sessions/{session_id}/agent/review")
+@router.post(
+    "/api/sessions/{session_id}/agent/review",
+    responses={
+        401: {"description": "Не аутентифицирован (нет bearer-токена)"},
+        403: {"description": "Сессия существует, но недоступна (чужой org)"},
+        404: {"description": "Сессия не найдена"},
+        502: {"description": "LLM недоступен или ответ не распарсился (review_parse_failed / review_llm_error)"},
+        504: {"description": "Таймаут LLM-вызова"},
+    },
+)
 def agent_review(session_id: str, body: AgentReviewIn, request: Request) -> Dict[str, Any]:
     ctx = _request_context(request)
     require_session_access(

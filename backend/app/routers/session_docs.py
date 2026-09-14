@@ -24,13 +24,23 @@ from ..sessions_graph import _request_context
 
 router = APIRouter(tags=["sessions"])
 
+# Документированные ошибки (schemathesis contract fuzz: недокументированный статус = фейл).
+_AUTH_ERROR_RESPONSES = {
+    401: {"description": "Не аутентифицирован (нет bearer-токена)"},
+    403: {"description": "Сессия существует, но недоступна (чужой org)"},
+    404: {"description": "Сессия или документ не найдены"},
+}
+_ATTACH_EXTRA_RESPONSES = {
+    413: {"description": "Файл больше лимита (SESSION_DOC_MAX_BYTES)"},
+}
+
 
 def _session_org(sess: Any, ctx: Dict[str, Any]) -> str:
     """Org документа = org сессии (attach пишет под org сессии; чтение/удаление — тем же ключом)."""
     return str(getattr(sess, "org_id", "") or ctx.get("org_id") or "org_default")
 
 
-@router.post("/api/sessions/{session_id}/docs")
+@router.post("/api/sessions/{session_id}/docs", responses={**_AUTH_ERROR_RESPONSES, **_ATTACH_EXTRA_RESPONSES})
 async def session_docs_attach(
     session_id: str,
     request: Request,
@@ -58,7 +68,7 @@ async def session_docs_attach(
     return result
 
 
-@router.get("/api/sessions/{session_id}/docs")
+@router.get("/api/sessions/{session_id}/docs", responses=dict(_AUTH_ERROR_RESPONSES))
 def session_docs_list(session_id: str, request: Request) -> Dict[str, Any]:
     ctx = _request_context(request)
     sess = require_session_access(
@@ -72,7 +82,7 @@ def session_docs_list(session_id: str, request: Request) -> Dict[str, Any]:
     return {"docs": docs}
 
 
-@router.get("/api/sessions/{session_id}/docs/{doc_id}")
+@router.get("/api/sessions/{session_id}/docs/{doc_id}", responses=dict(_AUTH_ERROR_RESPONSES))
 def session_docs_get(session_id: str, doc_id: str, request: Request) -> Dict[str, Any]:
     ctx = _request_context(request)
     sess = require_session_access(
@@ -88,7 +98,7 @@ def session_docs_get(session_id: str, doc_id: str, request: Request) -> Dict[str
     return doc_to_detail(doc)
 
 
-@router.delete("/api/sessions/{session_id}/docs/{doc_id}", status_code=204)
+@router.delete("/api/sessions/{session_id}/docs/{doc_id}", status_code=204, responses=dict(_AUTH_ERROR_RESPONSES))
 def session_docs_detach(session_id: str, doc_id: str, request: Request) -> Response:
     ctx = _request_context(request)
     sess = require_session_access(
