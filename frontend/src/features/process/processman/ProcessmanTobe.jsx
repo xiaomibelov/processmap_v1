@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ru } from "../../../shared/i18n/ru";
-import { apiAgentResume, apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
+import { apiAgentHistory, apiAgentResume, apiAgentStream, apiLlmExplainStep, apiLlmStepQa, apiLlmSuggestNext } from "../../../lib/api";
 import {
   answerCacheKey,
   buildAnswerMeta,
@@ -22,6 +22,8 @@ import {
   finishAgentMessage,
   getChatHistory,
   hasPendingAgent,
+  hydrateChatHistory,
+  isChatHistoryHydrated,
   lastAgentMessage,
   resolveAgentMessage,
   stopAgentMessage,
@@ -36,9 +38,10 @@ import { extractFocusElements } from "./canvas/agentEditHighlight";
 
 // PROCESSMAN-REDESIGN (PR-1) — TO BE-контекст панели = лента диалога.
 // Экономика токенов (не меняется): LLM-вызов ТОЛЬКО по клику действия/retry/Стоп;
-// открытие панели, смена контекста/шага — 0 вызовов; useEffect без apiLlm/fetch.
-// История — in-memory per sessionId (chat/processmanChatStore), переживает
-// закрытие панели. Ответы по-прежнему кэшируются в cacheRef (S3).
+// открытие панели, смена контекста/шага — 0 LLM-вызовов.
+// agent-ui-completion-v1: единственный авто-запрос панели — read-only GET
+// /agent/history при первом открытии с пустой лентой (гидрация, 0 LLM/0 токенов;
+// AGENT-0 не нарушается). Историю читает chat/historyMap + processmanChatStore.
 const t = ru.processman;
 
 const ACTION_RUNNERS = {
@@ -88,6 +91,26 @@ export default function ProcessmanTobe({
   const quotaExhausted = llmView.kind === "configured" && llmView.exhausted; // S7
 
   const messages = getChatHistory(sid);
+  // Гидрация истории (D1): один read-only GET /agent/history при первом
+  // открытии панели с пустой лентой. Не LLM, 0 токенов; при offline ошибка
+  // молча пропускается (пустая лента, пользователь пишет с нуля). Флаг
+  // hydrated — в сторе: переживает размонтирование ProcessmanTobe при
+  // переключении вкладок воркбенча.
+  useEffect(() => {
+    if (!sid || isChatHistoryHydrated(sid)) return;
+    if (getChatHistory(sid).length > 0) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await apiAgentHistory(sid);
+      if (cancelled) return;
+      if (!res.ok) return; // offline/500 — без UI-шума
+      hydrateChatHistory(sid, res.turns); // no-op, если лента уже непуста (гонка)
+      bump();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sid]);
   const pending = hasPendingAgent(sid);
   const actionsDisabled = pending || !elementId || notConfigured || quotaExhausted;
 

@@ -1194,7 +1194,9 @@ export async function apiLlmFeedback({ rating, sessionId = "", action = "" } = {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
-// AGENT-1 — PROCESSMAN диалог (chat/history). Только по явному действию пользователя.
+// AGENT-1 — PROCESSMAN диалог (chat/history). Отправка — только по явному
+// действию пользователя; чтение истории — авто-гидрация при первом открытии
+// панели с пустой лентой (D1, read-only GET, 0 LLM).
 export async function apiAgentChat(sessionId, payload = {}, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

@@ -1,8 +1,10 @@
 // PROCESSMAN-REDESIGN — состояние диалога панели (чистая логика, без React).
 // История хранится in-memory per sessionId (module-level Map): переживает
-// закрытие/открытие панели, умирает с перезагрузкой страницы — как
-// существующий processmanCacheRef ответов (решение из плана: персистентность
-// в БД — отдельный контур).
+// закрытие/открытие панели. agent-ui-completion-v1: гидрация последних turn'ов
+// из БД при первом открытии панели (read-only GET /agent/history, 0 LLM) —
+// история теперь переживает и перезагрузку страницы.
+
+import { mapHistoryTurnsToMessages } from "./historyMap.js";
 
 export const CHAT_ROLE = Object.freeze({ USER: "user", AGENT: "agent" });
 
@@ -25,6 +27,15 @@ export const AGENT_STATUS = Object.freeze({
 export const PENDING_STAGES = Object.freeze(["stageSending", "stageAnalyzing"]);
 
 const histories = new Map(); // sessionId -> messages[]
+// Сессии, для которых гидрация уже выполнялась (даже пустая): защита от
+// повторного GET при размонтировании/ремонтировании ProcessmanTobe
+// (переключение вкладок воркбенча). Живёт вместе со стором — до reload страницы.
+const hydratedSessions = new Set();
+
+/** Гидрация для sid уже выполнялась (не обязательно с сообщениями). */
+export function isChatHistoryHydrated(sessionId) {
+  return hydratedSessions.has(String(sessionId || "").trim());
+}
 
 let seq = 0;
 function nextId(prefix = "m") {
@@ -175,6 +186,28 @@ export function hasPendingAgent(sessionId) {
 /** Тестовый/жизненный сброс историй (node:test beforeEach). */
 export function resetChatHistories(sessionId = "") {
   const sid = String(sessionId || "").trim();
-  if (sid) histories.delete(sid);
-  else histories.clear();
+  if (sid) {
+    histories.delete(sid);
+    hydratedSessions.delete(sid);
+  } else {
+    histories.clear();
+    hydratedSessions.clear();
+  }
+}
+
+/**
+ * Гидрация истории из БД (AgentTurnOut[] из GET /agent/history).
+ * Только если лента сессии ПУСТА (защита живого диалога: пользователь мог
+ * отправить сообщение до ответа гидрации — тогда пропускаем).
+ * Идемпотентна: повторный вызов при непустой ленте — no-op.
+ * Возвращает { hydrated, count }.
+ */
+export function hydrateChatHistory(sessionId, turns) {
+  const sid = String(sessionId || "").trim();
+  const history = getChatHistory(sessionId);
+  hydratedSessions.add(sid);
+  if (history.length > 0) return { hydrated: false, count: 0 };
+  const messages = mapHistoryTurnsToMessages(turns);
+  for (const msg of messages) history.push(msg);
+  return { hydrated: messages.length > 0, count: messages.length };
 }
