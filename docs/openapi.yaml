@@ -261,6 +261,30 @@ components:
           type: boolean
       title: AdminUserPermissionSet
       type: object
+    AgentAnalysisArtifactOut:
+      description: Сохранённый артефакт фонового анализа сессии (bpmn_meta.agent_analysis_v1).
+      properties:
+        artifact:
+          description: Полный артефакт анализа.
+          title: Artifact
+          type: object
+        schema_version:
+          default: ''
+          description: Версия схемы артефакта.
+          title: Schema Version
+          type: string
+        updated_at:
+          default: ''
+          description: Время генерации артефакта (ISO).
+          title: Updated At
+          type: string
+        version:
+          default: 0
+          description: Версия сессии на момент чтения.
+          title: Version
+          type: integer
+      title: AgentAnalysisArtifactOut
+      type: object
     AgentAnalysisRunIn:
       properties: {}
       title: AgentAnalysisRunIn
@@ -15342,6 +15366,48 @@ paths:
       security:
       - bearerAuth: []
       summary: Создать/выполнить сессию процесса
+      tags:
+      - agent-analysis
+      - agent-analysis
+  /api/sessions/{session_id}/agent-analysis/artifact:
+    get:
+      description: 'Отдать сохранённый артефакт bpmn_meta.agent_analysis_v1 владельцу
+        сессии.
+
+
+        Без флага фичи: чтение собственного артефакта безопасно (флаг остаётся
+
+        только на POST enqueue). Источник данных — тот же bpmn_meta, что пишет
+
+        processor (rule of single implementation).'
+      operationId: agent_analysis_artifact_api_sessions__session_id__agent_analysis_artifact_get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAnalysisArtifactOut'
+          description: Successful Response
+        '401':
+          description: Unauthorized
+        '404':
+          description: Session or agent_analysis artifact not found
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить сессию процесса
       tags:
       - agent-analysis
       - agent-analysis

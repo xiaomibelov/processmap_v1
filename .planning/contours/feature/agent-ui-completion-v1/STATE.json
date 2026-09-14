@@ -1,0 +1,14 @@
+{
+  "contour": "feature/agent-ui-completion-v1",
+  "type": "feature",
+  "phase": "ready_for_review",
+  "baseline_origin_main": "df7feabc661add72ffac97c00ea2dda66008bdac",
+  "branch": "feature/agent-ui-completion-v1",
+  "worktree": "p0-work-worktrees/feature-agent-ui-completion-v1",
+  "scope": "contour-complete (backend + frontend)",
+  "commits": ["295ee2de", "e2ad8ce4", "5f81bf9b", "e4c78ba4", "e67add7f", "5589f4e9"],
+  "decisions": {"D1": "auto-hydrate on first open", "D2": "artifact card on Analysis tab", "D3": "keep 440px, spec addendum = follow-up", "D4": "keep aiContextualActions test", "D5": "backend realized here (Phase 2 of autopass-agent-migration plan)"},
+  "gates": {"G1": "blocked-by-env (e2e spec written, run on clean stack/CI)", "G2": "green in code, stage verify after deploy", "G3": "green", "G4": "green"},
+  "review": {"backend": "ACCEPT (agent-3)", "frontend": "ACCEPT (agent-4)"},
+  "next": "PR + owner approve -> merge -> auto stage deploy -> verify G2 -> prod by owner decision"
+}
