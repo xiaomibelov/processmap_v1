@@ -3014,6 +3014,37 @@ components:
           type: array
       title: SessionNoteAggregatesBody
       type: object
+    SessionOperationsIn:
+      additionalProperties: true
+      description: 'Батч diagram-ops для POST /api/sessions/{id}/operations.
+
+
+        Валидация payload per type — серверный applier (ops_applier), который
+
+        отдаёт типизированные ошибки (opId/type/reason) → 422. Здесь — только
+
+        границы батча и обязательность opId/type (API.md §2).'
+      example:
+        baseVersion: 42
+        operations:
+        - elementId: Activity_1
+          opId: 8f6b2c4e-0000-4000-8000-000000000001
+          properties:
+            name: Новое имя
+          type: element.updateProperties
+      properties:
+        baseVersion:
+          example: 42
+          nullable: true
+          title: Baseversion
+          type: integer
+        operations:
+          items:
+            type: object
+          title: Operations
+          type: array
+      title: SessionOperationsIn
+      type: object
     SessionPresenceTouchIn:
       additionalProperties: true
       properties:
@@ -18084,6 +18115,47 @@ paths:
       security:
       - bearerAuth: []
       summary: Создать/выполнить заметки сессии
+      tags:
+      - sessions
+  /api/sessions/{session_id}/operations:
+    post:
+      description: 'Создать/выполнить сессию процесса. Особенности: доступ: член организации
+        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии);
+        404 — ресурс не найден/вне scope.'
+      operationId: session_operations_apply_api_sessions__session_id__operations_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionOperationsIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить сессию процесса
       tags:
       - sessions
   /api/sessions/{session_id}/overlays:
