@@ -1,8 +1,19 @@
 {
   "contour": "feature/async-save-pipeline-step1",
   "type": "feat",
-  "role": "planner",
-  "status": "PLAN_READY_FOR_USER_APPROVAL",
+  "role": "executor",
+  "status": "PLAN_APPROVED_EXECUTION",
+  "plan_approval": {
+    "by": "user",
+    "date": "2026-09-14",
+    "amends": [
+      "mapping table commandStack -> 8 op-types with coverage metric >=95%; connection.updateWaypoints -> element.updateDi (in vocabulary); connection.reconnect* -> justified fallback",
+      "drag-move coalesce window 300-500ms (default 400), commit on mouseup",
+      "session_applied_ops retention TTL 30 days + cleanup job (celery daily + lazy fallback)",
+      "mutation gateway confirmed (grep-verified: production mutations via modeling/commandStack); op.source field (user|agent|e2e|replay); echo suppression contract (__pmOpSource=replay marker)"
+    ],
+    "execution_started_without_new_approve": true
+  },
   "baseline": {
     "origin_main": "b8285741f71c7ab346a8592a5426a36eafb4b707",
     "branch": "feature/async-save-pipeline-step1",
@@ -11,8 +22,8 @@
   },
   "created": "2026-09-14",
   "gates": {
-    "user_plan_approval": "pending",
-    "execution": "blocked_until_approval",
+    "user_plan_approval": "approved",
+    "execution": "in_progress_tdd",
     "review": "pending",
     "merge": "blocked_until_user_approval",
     "deploy": "out_of_scope_step1"
@@ -21,14 +32,16 @@
   "decisions": {
     "delta_format": "bounded op vocabulary derived from commandStack (NOT raw commandStack dump, NOT JSON Patch)",
     "batch_versioning": "one diagram_state_version increment per batch",
-    "idempotency": "session_applied_ops table, unique (session_id, op_id), same-transaction insert",
+    "idempotency": "session_applied_ops table (incl. source column), unique (session_id, op_id), same-transaction insert",
+    "retention": "TTL 30 days, celery daily cleanup job + lazy fallback (~1/200 calls)",
     "unload_flush": "fetch keepalive instead of sendBeacon (JWT Authorization header requirement)",
-    "rebase": "adopt currentXml + replay pending ops via existing bpmn/ops/applyOps; undo/redo-native rebase = investigation"
+    "rebase": "adopt currentXml + replay pending ops via existing bpmn/ops/applyOps; opId preserved, __pmOpSource=replay echo suppression; undo/redo-native rebase = investigation",
+    "drag_coalesce": "300-500ms window (default 400), keep-last, commit on mouseup",
+    "coverage_metric": ">=95% commandStack->op mapping on extended e2e corpus, window.__PM_OPS_COVERAGE__ recorder"
   },
   "open_questions": [
-    "drag move-command coalescing window detail",
     "server applier placement: backend/app/save_services/ops_applier.py vs sessions_core.py",
     "undo/redo-native rebase viability",
-    "session_applied_ops cleanup retention window"
+    "alembic vs compat-DDL for session_applied_ops (compat-DDL in step1; reviewer may request alembic)"
   ]
 }

@@ -8,7 +8,9 @@
 - `element.updateProperties` command → 1 op, корректный payload.
 - `shape.move` drag-шторм (5 команд подряд, одна сессия) → coalesce → 1 keep-last op.
 - undo ещё не ушедшей op → op удаляется из буфера; undo ушедшей → compensating-op.
-- не-whitelisted команда (spaceTool, lane.resize) → `needsFullSave`, op не создаётся.
+- не-whitelisted команда (spaceTool, lane.resize, `connection.reconnect`) → `needsFullSave`, op не создаётся.
+- coalesce drag-move: серия `shape.move` в окне ≤400 ms → одна keep-last op; **commit на mouseup** (`shape.move.end`) — op немедленно уходит в outbox без ожидания debounce; тайминг-контракт окна 300–500 ms на fake timers.
+- coverage-счётчик: `window.__PM_OPS_COVERAGE__ = {total, mapped, fullSave}` инкрементится на каждую команду (фундамент метрики ≥95%).
 
 ### 1.2 `createSaveOutbox.test.mjs`
 - debounce: flush ровно один раз после серии правок + 2.5 s; нет flush при тишине.
@@ -18,6 +20,8 @@
 - повторный flush после retry: те же opId (идемпотентность клиента).
 - visibilitychange=hidden → немедленный flush; beforeunload → keepalive-fetch (mock: заголовки Authorization присутствуют — регрессия против sendBeacon).
 - mutual exclusion: full-save flush и ops flush не пересекаются (per-session queue).
+- echo suppression: команда с контекстом `__pmOpSource: "replay"` не становится op (счётчики `mapped/fullSave` не растут) — replay-эхо не порождает дубликатов.
+- `source` в body: op без source → `"user"`; replay-опы сохраняют исходный `opId` и уходят с `source: "replay"`.
 
 ### 1.3 `opsRebase.test.mjs`
 - 409 → adopt server version, replay pendingOps через applyOps-мок; применённые команды возвращаются в staging с **теми же opId**.
@@ -38,6 +42,8 @@
 - **транзакционность**: батч из [валидная op, невалидная op] → version и XML как до батча.
 - **блокировки**: занятый Redis lock → 423 (фейк-редис по образцу test_bpmn_put_redis_lock.py).
 - **CAS race**: две конкурентные обработки с одним baseVersion → ровно один 200, один 409.
+- **source persisted**: `session_applied_ops.source` == переданный (`agent`/`e2e`/`replay`), default `user`.
+- **TTL cleanup 30 дней**: записи с `applied_at` старше 30 дней удаляются cleanup-джобой; свежие не трогает; lazy-fallback путь идемпотентен (повторный запуск ничего не ломает).
 - **whitelist-валидация каждого типа op** из API.md §5 (create/move/resize/delete connection/shape, updateProperties, updateDi) — golden apply на фикстурном XML.
 
 ### 2.2 `test_ops_applier_parity.py`
@@ -59,6 +65,7 @@
    - В performance-логе **ни одного** `PUT /api/sessions/*/bpmn` и ни одного save-XML body >10 kB; записи — только `POST .../operations`, тело каждого ≤10 kB.
    - Время ответа `operations` <300 ms (p95 по записанным).
    - Нет longtask >200 ms во время серии правок (PerformanceObserver в spec).
+   - **Coverage ≥95%**: `window.__PM_OPS_COVERAGE__` после сценария — `mapped/total ≥ 0.95` (за исключением намеренного fallback-под-сценария, который считается отдельно); фактические значения пишутся в EXEC_REPORT.
    - После ожидания финального flush: reload страницы → диаграмма содержит все 20 правок (сверка через API/XML), `diagram_state_version` инкрементирован корректно.
 5. Под-сценарий 409: принудительный race (через API правка из «другого клиента» между base и flush) → rebase автоматический, правки не потеряны, модал конфликта не показан.
 6. Под-сценарий fallback: правка spaceTool → ровно один полный `PUT /bpmn`, после ack ops-флаши продолжаются.
