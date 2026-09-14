@@ -109,6 +109,28 @@ test("source: панель рендерится независимо от вкл
 });
 
 // ---- Behavior-часть: рендер + смена контекста + выбор узла = 0 fetch ----
+// agent-ui-completion-v1 (D1/G4): единственный авто-запрос панели — read-only
+// GET /agent/history при первом открытии с пустой лентой (гидрация, 0 LLM).
+const HISTORY_URL_RE = /\/agent\/history/;
+
+async function mountWithHistory(props = {}, turns = []) {
+  const mod = await loadPanel();
+  const env = setupDom();
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    if (HISTORY_URL_RE.test(String(url))) {
+      env.calls.push({ url: String(url), method: String(opts?.method || "GET") });
+      return new Response(JSON.stringify({ turns }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return prevFetch(url, opts);
+  };
+  await act(async () => {
+    env.root.render(React.createElement(mod.default, panelProps(props)));
+  });
+  await flush();
+  return env;
+}
+
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true });
@@ -224,37 +246,98 @@ function panelProps(extra = {}) {
   };
 }
 
-test("behavior: открытие панели + смена контекста (вкладка/режим) + выбор узла = 0 сетевых вызовов", async () => {
+test("behavior: открытие панели = ровно 1 read-only GET /agent/history (гидрация, 0 LLM); смена контекста (вкладка/режим) + выбор узла = 0 новых вызовов", async () => {
+  const env = await mountWithHistory();
+  try {
+    assert.equal(env.calls.length, 1, "открытие панели с пустой лентой = 1 запрос гидрации");
+    assert.ok(HISTORY_URL_RE.test(env.calls[0].url), `URL /agent/history: ${env.calls[0].url}`);
+    assert.equal(env.calls[0].method, "GET");
+
+    // смена контекста: diagram → interview (analysis: +1 read-only GET artifact, 0 LLM)
+    // → xml (neutral: 0) → обратно diagram (tobe: гидрация уже была — 0)
+    await act(async () => {
+      env.root.render(React.createElement((await loadPanel()).default, panelProps({ tab: "interview" })));
+    });
+    await flush();
+    assert.equal(env.calls.length, 2, "вкладка interview (Анализ) = +1 read-only GET artifact");
+    assert.ok(/\/agent-analysis\/artifact/.test(env.calls[1].url), `URL artifact: ${env.calls[1].url}`);
+    assert.equal(env.calls[1].method, "GET");
+
+    for (const props of [
+      { tab: "xml" },
+      { tab: "diagram" },
+    ]) {
+      await act(async () => {
+        env.root.render(React.createElement((await loadPanel()).default, panelProps(props)));
+      });
+      await flush();
+      assert.equal(env.calls.length, 2, `контекст ${props.tab} не вызывает сеть`);
+    }
+
+    // выбор другого узла = 0 вызовов
+    await act(async () => {
+      env.root.render(React.createElement((await loadModule()).default, panelProps({
+        selectedBpmnElement: { id: "Act_2", name: "Шаг 2", type: "task" },
+      })));
+    });
+    await flush();
+    assert.equal(env.calls.length, 2, "выбор узла не вызывает сеть");
+    assert.ok(!(env.calls.some((c) => /agent\/stream|\/llm\//.test(c.url))), "0 LLM/stream-вызовов при открытии/смене контекста (G4)");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+async function loadModule() {
+  return loadPanel();
+}
+
+test("behavior G4: гидрация — ровно 1 GET /agent/history, история видна в ленте, ни одного LLM/stream-вызова", async () => {
+  const store = await viteServer.ssrLoadModule("/src/features/process/processman/chat/processmanChatStore.js");
+  store.resetChatHistories();
+  const turns = [
+    { id: "t1", role: "user", content: { text: "Что дальше после шага 1?", selected_step_id: "Task_1" }, created_at: Date.now() - 1000 },
+    { id: "t2", role: "assistant", content: { text: "Добавьте шаг «Проверка качества»." }, action: "suggest-next", created_at: Date.now() },
+  ];
+  const env = await mountWithHistory({}, turns);
+  try {
+    const doc = env.dom.window.document;
+    assert.equal(env.calls.length, 1, "ровно один запрос — гидрация");
+    assert.ok(HISTORY_URL_RE.test(env.calls[0].url), `URL /agent/history: ${env.calls[0].url}`);
+    assert.ok(!(env.calls.some((c) => /agent\/stream/.test(c.url))), "0 stream-вызовов");
+    assert.ok(!(env.calls.some((c) => /\/llm\//.test(c.url))), "0 LLM-вызовов");
+    // лента отрендерила гидрированные сообщения
+    assert.equal(await waitFor(doc, "processman-tobe"), true, "панель отрендерилась");
+    const feedText = doc.querySelector('[data-testid="processman-tobe"]').textContent;
+    assert.ok(feedText.includes("Что дальше после шага 1?"), "user-сообщение гидрации видно");
+    assert.ok(feedText.includes("Добавьте шаг «Проверка качества»."), "assistant-сообщение гидрации видно");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("behavior G4: гидрация молча пропускается при offline (ошибка GET) — 0 LLM-вызовов, пустая лента", async () => {
+  const store = await viteServer.ssrLoadModule("/src/features/process/processman/chat/processmanChatStore.js");
+  store.resetChatHistories();
   const mod = await loadPanel();
   const env = setupDom();
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    if (HISTORY_URL_RE.test(String(url))) {
+      env.calls.push({ url: String(url), method: String(opts?.method || "GET") });
+      return new Response(JSON.stringify({ detail: "server error" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+    return prevFetch(url, opts);
+  };
   try {
     await act(async () => {
       env.root.render(React.createElement(mod.default, panelProps()));
     });
     await flush();
-    assert.equal(env.calls.length, 0, "рендер панели не вызывает сеть");
-
-    // смена контекста: diagram → interview → xml → обратно
-    for (const props of [
-      { tab: "interview" },
-      { tab: "xml" },
-      { tab: "diagram" },
-    ]) {
-      await act(async () => {
-        env.root.render(React.createElement(mod.default, panelProps(props)));
-      });
-      await flush();
-      assert.equal(env.calls.length, 0, `контекст ${props.tab} не вызывает сеть`);
-    }
-
-    // выбор другого узла = 0 вызовов
-    await act(async () => {
-      env.root.render(React.createElement(mod.default, panelProps({
-        selectedBpmnElement: { id: "Act_2", name: "Шаг 2", type: "task" },
-      })));
-    });
-    await flush();
-    assert.equal(env.calls.length, 0, "выбор узла не вызывает сеть");
+    assert.equal(env.calls.length, 1, "была одна попытка гидрации");
+    const store2 = await viteServer.ssrLoadModule("/src/features/process/processman/chat/processmanChatStore.js");
+    assert.equal(store2.getChatHistory("sess_1").length, 0, "лента пустая — пользователь начинает с нуля");
+    assert.ok(!(env.calls.some((c) => /agent\/stream|\/llm\//.test(c.url))), "0 LLM/stream-вызовов");
   } finally {
     await env.cleanup();
   }
@@ -272,6 +355,8 @@ test("behavior: только клик действия = ровно 1 вызов
     });
     await flush();
     doc = env.dom.window.document;
+    assert.equal(env.calls.length, 1, "маунт панели = ровно 1 вызов гидрации /agent/history");
+    assert.ok(HISTORY_URL_RE.test(env.calls[0].url), `URL гидрации: ${env.calls[0].url}`);
 
     // composer: пример вопроса → отправка = ровно 1 вызов /agent/stream (AGENT-1 SSE)
     // (клик по чипу-примеру подставляет текст без сети; send активен при выбранном шаге)
@@ -284,14 +369,14 @@ test("behavior: только клик действия = ровно 1 вызов
     const send = doc.querySelector('[data-testid="processman-action-qa"]');
     assert.notEqual(send, null, "кнопка отправки вопроса");
     assert.equal(send.disabled, false, "send активен после подстановки примера");
-    assert.equal(env.calls.length, 0, "подстановка примера — без вызовов");
+    assert.equal(env.calls.length, 1, "подстановка примера — без вызовов");
     await act(async () => {
       send.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
     });
     await flush();
-    assert.equal(env.calls.length, 1, "отправка вопроса = ровно 1 вызов");
-    assert.ok(env.calls[0].url.includes("/agent/stream"), `URL agent/stream: ${env.calls[0].url}`);
-    assert.equal(env.calls[0].method, "POST");
+    assert.equal(env.calls.length, 2, "отправка вопроса = ровно 1 новый вызов");
+    assert.ok(env.calls[1].url.includes("/agent/stream"), `URL agent/stream: ${env.calls[1].url}`);
+    assert.equal(env.calls[1].method, "POST");
 
     // ждём завершения streaming-ответа (пока reveal — действия disabled)
     assert.equal(await waitFor(doc, "processman-answer-ok"), true, "ответ chat доиграл");
@@ -309,9 +394,9 @@ test("behavior: только клик действия = ровно 1 вызов
       suggest.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
     });
     await flush();
-    assert.equal(env.calls.length, 2, "клик suggest = ровно 1 новый вызов");
-    assert.ok(env.calls[1].url.includes("/suggest-next"), `URL suggest-next: ${env.calls[1].url}`);
-    assert.equal(env.calls[1].method, "POST");
+    assert.equal(env.calls.length, 3, "клик suggest = ровно 1 новый вызов");
+    assert.ok(env.calls[2].url.includes("/suggest-next"), `URL suggest-next: ${env.calls[2].url}`);
+    assert.equal(env.calls[2].method, "POST");
   } finally {
     await env.cleanup();
   }
