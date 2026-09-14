@@ -1,1 +1,37 @@
-{"contour":"refactor/storage-base-repository-v1","status":"IN_PROGRESS_STEP_5","jscpd_config":"--min-lines 5 --min-tokens 25","jscpd_progress":{"baseline":2568,"step1_notes":{"commit":"31e67902","dup_lines":2563,"delta":-5},"step2_audit_telemetry":{"commit":"97d77160","dup_lines":2520,"delta":-43},"step3_ai":{"commit":"d6e1c9fb","dup_lines":2484,"delta":-36},"step4_org_auth":{"commit":"8e469c90","dup_lines":2357,"delta":-127,"tests":"72 passed gate"}},"combined_gate_after_step4":"178 passed","updated":"2026-09-14"}
+{
+ "contour": "refactor/storage-base-repository-v1",
+ "status": "EXEC_DONE_PR_OPEN",
+ "jscpd_config": "--min-lines 5 --min-tokens 25",
+ "jscpd_progress": {
+  "baseline": 2568,
+  "step1_notes": {
+   "commit": "31e67902",
+   "dup_lines": 2563,
+   "delta": -5
+  },
+  "step2_audit_telemetry": {
+   "commit": "97d77160",
+   "dup_lines": 2520,
+   "delta": -43
+  },
+  "step3_ai": {
+   "commit": "d6e1c9fb",
+   "dup_lines": 2484,
+   "delta": -36
+  },
+  "step4_org_auth": {
+   "commit": "8e469c90",
+   "dup_lines": 2357,
+   "delta": -127,
+   "tests": "72 passed gate"
+  }
+ },
+ "combined_gate_after_step4": "178 passed",
+ "updated": "2026-09-14",
+ "jscpd_final": {
+  "clones": 242,
+  "duplicated_lines": 2199,
+  "cumulative_delta": -369
+ },
+ "final_gate": "200 passed (28 files)"
+}
