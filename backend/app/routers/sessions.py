@@ -24,6 +24,7 @@ from ..schemas.legacy_api import (
     OrgReportBuildIn,
     SessionAssigneesReplaceIn,
     SessionPresenceTouchIn,
+    SessionOperationsIn,
     SubprocessNavigateOut,
     SubprocessReturnOut,
     UpdateSessionIn,
@@ -236,6 +237,12 @@ def session_overlays(session_id: str):
 @router.put('/api/sessions/{session_id}/bpmn')
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None):
     return _svc.bpmn_save(session_id, inp, request)
+
+
+# feature/async-save-pipeline-step1: инкрементальное (дельта) сохранение диаграммы.
+@router.post('/api/sessions/{session_id}/operations')
+def session_operations_apply(session_id: str, inp: SessionOperationsIn, request: Request = None):
+    return _svc.operations_apply(session_id, inp, request)
 
 # P6 [Г]: multipart upload .bpmn/.xml (ревизия: не «create → PUT bpmn»).
 # Общий внутренний путь сохранения с PUT (bpmn_save), PUT не меняется.

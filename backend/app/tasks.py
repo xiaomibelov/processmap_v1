@@ -128,3 +128,16 @@ def sync_subprocesses_task(self, session_id: str, org_id: str = "") -> None:
         raise exc
     finally:
         lock.release()
+
+
+# feature/async-save-pipeline-step1: retention session_applied_ops (TTL 30 дней,
+# API.md §4). Lazy-fallback (~1/200) — в ops_applier.maybe_cleanup_applied_ops.
+@app.task(bind=True, max_retries=1, default_retry_delay=300, name="processmap.session_applied_ops.cleanup_task")
+def cleanup_session_applied_ops_task(self, retention_seconds: int | None = None) -> None:
+    try:
+        from .save_services.ops_applier import APPLIED_OPS_RETENTION_SECONDS, cleanup_applied_ops
+
+        cleanup_applied_ops(retention_seconds=int(retention_seconds or APPLIED_OPS_RETENTION_SECONDS))
+    except Exception as exc:
+        logger.exception("cleanup_session_applied_ops_task failed")
+        raise self.retry(exc=exc, countdown=300)
