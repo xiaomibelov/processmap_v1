@@ -24,7 +24,36 @@ CITATION_INSTRUCTION = (
     f"{CITATION_INSTRUCTION_MARKER}."
 )
 
-_MARKER_RE = re.compile(r"\[S(\d{1,3})\]")
+_MARKER_RE = re.compile(r"\[S(\d+)\]")
+# Хвост, который может оказаться началом незакрытого маркера (для stream-дельт).
+_PARTIAL_MARKER_RE = re.compile(r"\[S\d*$")
+
+
+class MarkerStripper:
+    """Инкрементально вырезает маркеры [Sn] из SSE-дельт.
+
+    Маркер может быть разорван между дельтами («[S» + «1]») — carry удерживает
+    хвост до закрытия. В stream-текст маркеры не попадают; структурные
+    источники клиент получает отдельным `sources`-ивентом.
+    """
+
+    def __init__(self) -> None:
+        self._carry = ""
+
+    def feed(self, delta: str) -> str:
+        buf = self._carry + str(delta or "")
+        clean = _MARKER_RE.sub("", buf)
+        partial = _PARTIAL_MARKER_RE.search(clean)
+        if partial:
+            self._carry = clean[partial.start():]
+            clean = clean[:partial.start()]
+        else:
+            self._carry = ""
+        return clean
+
+    def flush(self) -> str:
+        carry, self._carry = self._carry, ""
+        return carry
 
 
 def chunk_excerpt(result: Dict[str, Any]) -> str:
@@ -44,8 +73,13 @@ def build_source_refs(
     для сессионных полей.
     """
     refs: List[Dict[str, Any]] = []
+    seen_ids: set = set()
     for idx, r in enumerate(list(rag_results or [])[:limit]):
         meta = r.get("metadata") or {}
+        chunk_id = str(r.get("chunk_id") or f"rag_{idx + 1}").strip()
+        if chunk_id in seen_ids:
+            continue  # дедупликация: один chunk_id — один источник
+        seen_ids.add(chunk_id)
         source_type = str(r.get("source_type") or meta.get("source_type") or "").strip()
         source_id = str(r.get("source_id") or meta.get("source_id") or "").strip()
         session_id = str(meta.get("session_id") or "").strip()
@@ -58,7 +92,7 @@ def build_source_refs(
             score = 0.0
         refs.append(
             {
-                "source_id": str(r.get("chunk_id") or f"rag_{idx + 1}").strip(),
+                "source_id": chunk_id,
                 "source_type": source_type,
                 "session_id": session_id or None,
                 "session_title": str(meta.get("session_title") or "").strip() or None,
@@ -171,7 +205,8 @@ def parse_citations(
         return ""  # выдуманный маркер — вырезаем молча
 
     clean = _MARKER_RE.sub(_replace, str(text or ""))
-    # Убираем возможные двойные пробелы на месте вырезанных маркеров.
-    clean = re.sub(r"[ \t]{2,}", " ", clean).strip()
+    # Схлопываем пробельные хвости на месте вырезанных маркеров, НЕ трогая
+    # индентацию строк (markdown/код-блоки ответа).
+    clean = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", clean).strip()
     used = [refs[i - 1] for i in used_indexes]
     return clean, used

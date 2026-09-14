@@ -33,7 +33,7 @@ from runners.action_runners import run_explain_step, run_step_qa, run_suggest_ne
 from runners.monolith_client import get_session as monolith_get_session, search_rag
 from schemas import AgentChatIn, AgentChatOut
 
-from .citations import build_source_refs, parse_citations
+from .citations import MarkerStripper, build_source_refs, parse_citations
 from .context import AgentContext, load_context
 from .memory_store import (
     AgentTurn,
@@ -75,15 +75,26 @@ VALID_INTENTS = {"node_qa", "schema_overview", "doc_qa", "suggest_next", "smallt
 # E2 (agent-rag-retrieval-citations-v1): top-k RAG-подмешивания по веткам.
 # free-answer — org-wide bpmn_xml (вопросы о других сессиях org, гейт G1);
 # schema_overview — только miss-путь, текущая сессия (hit-путь 0-LLM не трогаем, гейт G3).
-FREE_ANSWER_RAG_TOP_K = int(os.environ.get("PROCESSMAN_RAG_FREE_ANSWER_TOP_K", "4"))
-OVERVIEW_RAG_TOP_K = int(os.environ.get("PROCESSMAN_RAG_OVERVIEW_TOP_K", "3"))
+# Env читаем per-call (как PromptBudgetConfig.from_env), не в import-time.
+def _free_answer_rag_top_k() -> int:
+    try:
+        return int(os.environ.get("PROCESSMAN_RAG_FREE_ANSWER_TOP_K", "4"))
+    except (TypeError, ValueError):
+        return 4
+
+
+def _overview_rag_top_k() -> int:
+    try:
+        return int(os.environ.get("PROCESSMAN_RAG_OVERVIEW_TOP_K", "3"))
+    except (TypeError, ValueError):
+        return 3
 
 
 def _search_rag_org_wide(
     q: str,
     token: str,
     org_id: str,
-    top_k: int = FREE_ANSWER_RAG_TOP_K,
+    top_k: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Org-wide поиск по bpmn_xml для free-answer. Любая ошибка → [] (degrade, G4)."""
     try:
@@ -93,7 +104,7 @@ def _search_rag_org_wide(
             token,
             org_id=org_id,
             source_type="bpmn_xml",
-            top_k=top_k,
+            top_k=top_k or _free_answer_rag_top_k(),
             min_score=0.0,
         )
         return list(resp.get("results") or [])
@@ -106,7 +117,7 @@ def _search_rag_session(
     session_id: str,
     token: str,
     org_id: str,
-    top_k: int = OVERVIEW_RAG_TOP_K,
+    top_k: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Поиск по чанкам текущей сессии (schema_overview miss-путь). Ошибка → []."""
     try:
@@ -116,7 +127,7 @@ def _search_rag_session(
             token,
             org_id=org_id,
             source_type="bpmn_xml",
-            top_k=top_k,
+            top_k=top_k or _overview_rag_top_k(),
             min_score=0.0,
         )
         return list(resp.get("results") or [])
@@ -1105,6 +1116,7 @@ def _run_structured_fact_qa_branch_stream(
     collected_text = ""
     final_usage: Dict[str, Any] = {}
     stream_error: Optional[Dict[str, Any]] = None
+    stripper = MarkerStripper()
 
     for event_type, event_data in complete_stream(
         FEATURE,
@@ -1119,7 +1131,7 @@ def _run_structured_fact_qa_branch_stream(
         if event_type == "token":
             delta = str(event_data.get("delta") or "")
             collected_text += delta
-            yield ("token", {"delta": delta})
+            yield ("token", {"delta": stripper.feed(delta)})
         elif event_type == "error":
             stream_error = event_data
             break
@@ -1134,6 +1146,11 @@ def _run_structured_fact_qa_branch_stream(
                 "cached": False,
                 "cost_usd": float(event_data.get("cost_usd") or 0.0),
             }
+
+    if stream_error is None:
+        tail = stripper.flush()
+        if tail:
+            yield ("token", {"delta": tail})
 
     if stream_error is not None:
         # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.
@@ -1198,6 +1215,7 @@ def _stream_llm_turn(
     collected_text = ""
     final_usage: Dict[str, Any] = {}
     stream_error: Optional[Dict[str, Any]] = None
+    stripper = MarkerStripper()
 
     for event_type, event_data in complete_stream(
         FEATURE,
@@ -1212,7 +1230,7 @@ def _stream_llm_turn(
         if event_type == "token":
             delta = str(event_data.get("delta") or "")
             collected_text += delta
-            yield ("token", {"delta": delta})
+            yield ("token", {"delta": stripper.feed(delta)})
         elif event_type == "error":
             stream_error = event_data
             break
@@ -1227,6 +1245,11 @@ def _stream_llm_turn(
                 "cached": False,
                 "cost_usd": float(event_data.get("cost_usd") or 0.0),
             }
+
+    if stream_error is None:
+        tail = stripper.flush()
+        if tail:
+            yield ("token", {"delta": tail})
 
     if stream_error is not None:
         # S1: сырой текст ошибки (URL upstream) наружу не отдаём; в логах остаётся.

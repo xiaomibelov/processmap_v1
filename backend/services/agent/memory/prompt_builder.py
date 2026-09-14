@@ -540,6 +540,7 @@ class PromptBuilder:
                 "max_tokens": SMALLTALK_MAX_TOKENS if not _step_ids(ctx.projection) else MAX_TOKENS,
                 "estimated_prompt_tokens": assembly.estimated_prompt_tokens,
                 "layer_tokens": assembly.layer_tokens,
+                "rag_refs": [],
             }
         refs = build_source_refs(rag_results)
         chunks_text = "\n\n".join(
@@ -559,4 +560,5 @@ class PromptBuilder:
             "max_tokens": MAX_TOKENS,
             "estimated_prompt_tokens": estimate_tokens(prompt_text),
             "layer_tokens": {"projection": 0, "history": 0, "user": estimate_tokens(prompt_text)},
+            "rag_refs": refs,
         }

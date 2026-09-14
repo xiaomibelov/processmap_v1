@@ -169,6 +169,52 @@ def test_parse_citations_drops_out_of_range_markers():
     assert [r["source_id"] for r in used] == ["c1"]
 
 
+def test_parse_citations_drops_multidigit_out_of_range_markers():
+    """[S12345] — вне любого диапазона: вырезается, а не остаётся в тексте."""
+    refs = build_source_refs([
+        {"chunk_id": "c1", "chunk_text": "т", "source_type": "bpmn_xml", "source_id": "s1", "metadata": {}},
+    ])
+    clean, used = parse_citations("Ответ [S12345] конец.", refs)
+    assert "[S12345]" not in clean
+    assert clean == "Ответ  конец." or clean == "Ответ конец."
+    assert used == []
+
+
+def test_parse_citations_preserves_line_indentation():
+    """Схлопывание пробелов не должно ломать индентацию markdown/кода."""
+    refs = build_source_refs([
+        {"chunk_id": "c1", "chunk_text": "т", "source_type": "bpmn_xml", "source_id": "s1", "metadata": {}},
+    ])
+    text = "Ввод:\n\n    код с отступом\n    ещё строка [S1]\n\nКонец."
+    clean, _ = parse_citations(text, refs)
+    assert "    код с отступом" in clean
+    assert "    ещё строка" in clean
+    assert "[S1]" not in clean
+
+
+def test_build_source_refs_dedupes_chunk_ids():
+    results = [
+        {"chunk_id": "c1", "chunk_text": "а", "source_type": "bpmn_xml", "source_id": "s1", "metadata": {}},
+        {"chunk_id": "c1", "chunk_text": "а дубль", "source_type": "bpmn_xml", "source_id": "s1", "metadata": {}},
+        {"chunk_id": "c2", "chunk_text": "б", "source_type": "bpmn_xml", "source_id": "s2", "metadata": {}},
+    ]
+    refs = build_source_refs(results)
+    assert [r["source_id"] for r in refs] == ["c1", "c2"]
+
+
+def test_marker_stripper_handles_split_deltas():
+    """SSE-фильтр: маркер, разорванный между дельтами, не попадает в токены."""
+    from memory.citations import MarkerStripper
+
+    stripper = MarkerStripper()
+    out = stripper.feed("Ответ [S")
+    out += stripper.feed("1] продолжение [S2")
+    out += stripper.feed("2] хвост")
+    out += stripper.flush()
+    assert "[S" not in out and "]" not in out.replace("конец", "")
+    assert "Ответ" in out and "продолжение" in out and "хвост" in out
+
+
 # ---------------------------------------------------------------------------
 # Cite-контракт схемы
 # ---------------------------------------------------------------------------
