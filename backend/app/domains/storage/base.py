@@ -44,11 +44,12 @@ __all__ = [
 
 Mapper = Callable[[Any], Dict[str, Any]]
 
-IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
 def check_ident(name: str) -> str:
-    """Validate a SQL identifier (table/column). Identifiers cannot be bound."""
+    """Validate a SQL identifier (table/column, optionally alias-qualified
+    like ``c.id``). Identifiers cannot be bound as params."""
     if not isinstance(name, str) or not IDENT_RE.match(name):
         raise ValueError(f"unsafe SQL identifier: {name!r}")
     return name
