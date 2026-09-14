@@ -1,11 +1,68 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiGetEnterpriseWorkspace } from "../../lib/api";
+import { apiGetEnterpriseWorkspace, apiSessionDocsAttach } from "../../lib/api";
 import { buildWorkspaceTree, filterSessionsForSelection } from "../../features/workspace/workspaceDashboardVm";
 import { computeDodPercent, formatDodBreakdownTooltip } from "../../features/workspace/computeDodPercent";
+import { ru } from "../../shared/i18n/ru";
 
 function toText(value) {
   return String(value || "").trim();
+}
+
+// feature/session-doc-attach-from-workspace: seam для тестов — api-функции
+// дашборда подменяются на модульном уровне (см. WorkspaceDashboard.attachDoc.test.mjs).
+export const workspaceDashboardApi = {
+  getWorkspace: apiGetEnterpriseWorkspace,
+  attachDoc: apiSessionDocsAttach,
+};
+
+// i18n-контракт: только новые строки attach_doc идут через ru.workspace;
+// существующие хардкод-строки dashboard не переводим. Fallback — RU-строки,
+// чтобы отсутствие ключа никогда не роняло рендер.
+const workspaceI18n = (ru && ru.workspace) || {};
+const workspaceAttachDocI18n = workspaceI18n.attachDoc || {};
+const workspaceAttachDocErrors = workspaceAttachDocI18n.error || {};
+
+const ATTACH_DOC_TEXTS = {
+  label: toText(workspaceI18n.sessionActions && workspaceI18n.sessionActions.attachDoc) || "Прикрепить документ",
+  pending: toText(workspaceAttachDocI18n.pending) || "Прикрепляем…",
+  success: toText(workspaceAttachDocI18n.success) || "«{filename}» прикреплён ({chunks} фрагментов в индексе)",
+  unknown: toText(workspaceAttachDocErrors.unknown) || "Ошибка: {detail}",
+};
+
+const ATTACH_DOC_ERROR_FALLBACKS = {
+  doc_too_large: "Файл больше 2 МБ",
+  doc_extension_not_allowed: "Формат не поддерживается (.md, .txt, .doc, .docx)",
+  doc_limit_reached: "Лимит 20 документов на сессию",
+  doc_quota_exceeded: "Превышен суммарный лимит 20 МБ на сессию",
+  doc_unparseable: "Не удалось извлечь текст (попробуйте .docx или .txt)",
+  session_forbidden: "Нет доступа к сессии",
+};
+
+function attachDocErrorText(codeRaw) {
+  const code = toText(codeRaw);
+  if (!code || code === "unknown") return "";
+  const i18nText = toText(workspaceAttachDocErrors[code]);
+  return i18nText || ATTACH_DOC_ERROR_FALLBACKS[code] || "";
+}
+
+function formatAttachDocMessage(templateRaw, vars) {
+  return toText(templateRaw).replace(/\{(filename|chunks|detail)\}/g, (_, key) => toText(vars && vars[key]));
+}
+
+function normalizeAttachDocDetail(res) {
+  const detail = res?.data?.detail ?? res?.data?.error ?? res?.error ?? "";
+  if (detail && typeof detail === "object") {
+    const code = toText(detail.error || detail.code);
+    const mapped = attachDocErrorText(code);
+    if (mapped) return mapped;
+    const rawText = toText(detail.detail || detail.message || detail.error);
+    return formatAttachDocMessage(ATTACH_DOC_TEXTS.unknown, { detail: rawText || code });
+  }
+  const text = toText(detail);
+  const mapped = attachDocErrorText(text);
+  if (mapped) return mapped;
+  return formatAttachDocMessage(ATTACH_DOC_TEXTS.unknown, { detail: text || "attach_failed" });
 }
 
 function formatDateTime(tsRaw) {
@@ -105,6 +162,7 @@ const SESSION_ACTIONS = [
   { id: "duplicate", label: "Duplicate", defaultEnabled: false },
   { id: "delete", label: "Delete", defaultEnabled: false },
   { id: "invite", label: "Invite", defaultEnabled: false },
+  { id: "attach_doc", label: ATTACH_DOC_TEXTS.label, defaultEnabled: true },
 ];
 
 function sessionActionsPrefsKey(userIdRaw) {
@@ -181,6 +239,11 @@ export default function WorkspaceDashboard({
   const [error, setError] = useState("");
   const [actionsMenuSessionId, setActionsMenuSessionId] = useState("");
   const [actionsCustomizeOpen, setActionsCustomizeOpen] = useState(false);
+  const attachInputRef = useRef(null);
+  const attachTargetRowRef = useRef(null);
+  const attachNoticeTimerRef = useRef(null);
+  const [attachPendingRowId, setAttachPendingRowId] = useState("");
+  const [attachNotice, setAttachNotice] = useState(null);
   const [workspace, setWorkspace] = useState({
     org: {},
     summary: {},
@@ -220,7 +283,7 @@ export default function WorkspaceDashboard({
       };
       setLoading(true);
       setError("");
-      void apiGetEnterpriseWorkspace(request)
+      void workspaceDashboardApi.getWorkspace(request)
         .then((res) => {
           if (!res?.ok) {
             const status = Number(res?.status || 0);
@@ -309,6 +372,7 @@ export default function WorkspaceDashboard({
       if (action.id === "duplicate") return hasDuplicate;
       if (action.id === "delete") return hasDelete;
       if (action.id === "invite") return hasInvite;
+      if (action.id === "attach_doc") return true;
       return false;
     });
   }, [onDeleteSession, onDuplicateSession, onExportSession, onInviteUsers, onOpenDoc, onOpenSession]);
@@ -438,6 +502,66 @@ export default function WorkspaceDashboard({
     }
     if (actionId === "invite") {
       await onInviteUsers?.();
+      return;
+    }
+    if (actionId === "attach_doc") {
+      if (attachPendingRowId) return;
+      attachTargetRowRef.current = row;
+      attachInputRef.current?.click();
+    }
+  }
+
+  function showAttachNotice(kind, text) {
+    if (typeof window !== "undefined" && attachNoticeTimerRef.current) {
+      window.clearTimeout(attachNoticeTimerRef.current);
+      attachNoticeTimerRef.current = null;
+    }
+    setAttachNotice({ kind, text });
+    if (typeof window === "undefined") return;
+    attachNoticeTimerRef.current = window.setTimeout(() => {
+      attachNoticeTimerRef.current = null;
+      setAttachNotice(null);
+    }, 4000);
+  }
+
+  function dismissAttachNotice() {
+    if (typeof window !== "undefined" && attachNoticeTimerRef.current) {
+      window.clearTimeout(attachNoticeTimerRef.current);
+      attachNoticeTimerRef.current = null;
+    }
+    setAttachNotice(null);
+  }
+
+  async function onAttachDocPicked(event) {
+    const input = event?.target;
+    const file = input?.files?.[0];
+    const target = attachTargetRowRef.current;
+    const rowId = toText(target?.id);
+    if (!file || !rowId || attachPendingRowId) {
+      if (input) input.value = "";
+      return;
+    }
+    setAttachPendingRowId(rowId);
+    try {
+      try {
+        const res = await workspaceDashboardApi.attachDoc(rowId, file);
+        if (res?.ok) {
+          const doc = res.doc && typeof res.doc === "object" ? res.doc : {};
+          const filename = toText(doc.filename) || toText(file.name);
+          const chunks = Number(doc?.rag?.chunksCreated || 0);
+          showAttachNotice("success", formatAttachDocMessage(ATTACH_DOC_TEXTS.success, { filename, chunks }));
+        } else {
+          showAttachNotice("error", normalizeAttachDocDetail(res));
+        }
+      } catch (err) {
+        showAttachNotice(
+          "error",
+          formatAttachDocMessage(ATTACH_DOC_TEXTS.unknown, { detail: toText(err?.message || err) || "attach_failed" }),
+        );
+      }
+    } finally {
+      setAttachPendingRowId("");
+      if (input) input.value = "";
     }
   }
 
@@ -469,17 +593,27 @@ export default function WorkspaceDashboard({
           >
             {enabledActions.length === 0 ? (
               <div className="px-2 py-1 text-xs text-muted">Нет включённых действий</div>
-            ) : enabledActions.map((action) => (
-              <button
-                key={`${rowId}_${action.id}`}
-                type="button"
-                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-fg hover:bg-panel2/60"
-                onClick={() => { void runSessionRowAction(action.id, row); }}
-                data-testid={`workspace-session-action-${action.id}`}
-              >
-                <span>{action.label}</span>
-              </button>
-            ))}
+            ) : enabledActions.map((action) => {
+              const attachPending = action.id === "attach_doc" && toText(attachPendingRowId) === rowId;
+              return (
+                <button
+                  key={`${rowId}_${action.id}`}
+                  type="button"
+                  className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs text-fg hover:bg-panel2/60${attachPending ? " cursor-not-allowed opacity-60 hover:bg-transparent" : ""}`}
+                  disabled={attachPending}
+                  onClick={() => { void runSessionRowAction(action.id, row); }}
+                  data-testid={`workspace-session-action-${action.id}`}
+                >
+                  <span>{attachPending ? ATTACH_DOC_TEXTS.pending : action.label}</span>
+                  {attachPending ? (
+                    <svg className="ml-2 h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
+                    </svg>
+                  ) : null}
+                </button>
+              );
+            })}
             <div className="my-1 border-t border-border/70" />
             <button
               type="button"
@@ -503,7 +637,7 @@ export default function WorkspaceDashboard({
   }
 
   return (
-    <div className="workspaceDashboard h-full min-h-0 overflow-auto px-3 pb-4 pt-2" data-testid="workspace-dashboard">
+    <div className="workspaceDashboard relative h-full min-h-0 overflow-auto px-3 pb-4 pt-2" data-testid="workspace-dashboard">
       <div className="px-1">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
@@ -1035,6 +1169,16 @@ export default function WorkspaceDashboard({
         </div>
       </div>
 
+      <input
+        ref={attachInputRef}
+        type="file"
+        accept=".md,.txt,.text,.doc,.docx"
+        style={{ display: "none" }}
+        data-testid="workspace-session-attach-doc-input"
+        disabled={!!attachPendingRowId}
+        onChange={(event) => { void onAttachDocPicked(event); }}
+      />
+
       {actionsCustomizeOpen ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 px-4">
           <div
@@ -1094,6 +1238,30 @@ export default function WorkspaceDashboard({
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {attachNotice ? (
+        <div
+          className={`absolute bottom-4 right-4 z-50 flex max-w-sm items-start gap-2 rounded-xl border px-3 py-2 text-xs shadow-panel ${
+            attachNotice.kind === "success"
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-danger/40 bg-danger/10 text-danger"
+          }`}
+          data-testid="workspace-attach-doc-toast"
+          role="status"
+        >
+          <span className="min-w-0 flex-1">{attachNotice.text}</span>
+          <button
+            type="button"
+            className="iconBtn h-5 w-5 min-w-5 shrink-0"
+            onClick={dismissAttachNotice}
+            data-testid="workspace-attach-doc-toast-close"
+            title="Закрыть"
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
         </div>
       ) : null}
     </div>
