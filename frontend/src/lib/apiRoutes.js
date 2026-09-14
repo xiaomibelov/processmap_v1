@@ -215,6 +215,8 @@ export const apiRoutes = {
     history: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/history`,
     stream: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/stream`,
     resume: (sessionId) => `/api/sessions/${encode(sessionId)}/agent/resume`,
+    // M9 — чтение сохранённого артефакта фонового анализа (0 LLM).
+    analysisArtifact: (sessionId) => `/api/sessions/${encode(sessionId)}/agent-analysis/artifact`,
   },
   clipboard: {
     bpmn: () => "/api/clipboard/bpmn",
