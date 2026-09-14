@@ -212,10 +212,18 @@ def total_active_size_bytes(org_id: str, session_id: str) -> int:
 
 # ── Нормализация форматов ────────────────────────────────────────────────────
 
+_DOCX_MAX_MEMBER_BYTES = SESSION_DOC_MAX_BYTES * 10  # защита от zip-bomb: 2MB сжато → не более 20MB разжато
+
+
 def _docx_to_text(data: bytes) -> str:
     """Извлечение текста из .docx через stdlib zipfile + XML (без зависимостей)."""
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            info = zf.getinfo("word/document.xml")
+            if int(getattr(info, "file_size", 0) or 0) > _DOCX_MAX_MEMBER_BYTES:
+                raise ValueError(
+                    f"docx: word/document.xml слишком большой ({info.file_size} байт)"
+                )
             xml_bytes = zf.read("word/document.xml")
     except (zipfile.BadZipFile, KeyError) as exc:
         raise ValueError(f"docx: нет word/document.xml ({exc})")
