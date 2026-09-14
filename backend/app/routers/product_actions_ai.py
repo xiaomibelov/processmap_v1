@@ -61,7 +61,7 @@ def _llm_complete(feature: str, payload: Any, **kwargs: Any) -> Dict[str, Any]:
 # product-actions returns structured JSON; ask providers that support json_object
 # mode to constrain output, and keep per-provider timeout short because the
 # primary provider for this org is known to hang on long contexts.
-_PRODUCT_ACTIONS_LLM_KWARGS = {"json_mode": True, "timeout_sec": 30}
+_PRODUCT_ACTIONS_LLM_KWARGS = {"json_mode": True, "timeout_sec": 60}
 
 
 def _call_product_actions_llm(
@@ -757,9 +757,13 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         usage: Optional[Dict[str, Any]] = None,
         error_code: str = "",
         error_message: str = "",
+        error_class: str = "",
     ) -> Dict[str, Any]:
         finished_at = int(time.time())
         latency_ms = int(max(0.0, time.time() - started_at) * 1000)
+        # M-2: sanitized failure-class префиксом в error_message ai_execution_log
+        # (миграции БД не добавляем; error_code колонка сохраняет публичный код).
+        log_error_message = f"{error_class}: {error_message}" if error_class else error_message
         try:
             record_ai_execution(
                 module_id=_MODULE_ID,
@@ -776,7 +780,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 usage=usage if isinstance(usage, dict) else {},
                 latency_ms=latency_ms,
                 error_code=error_code,
-                error_message=_safe_error_message(error_message),
+                error_message=_safe_error_message(log_error_message),
                 created_at=created_at,
                 finished_at=finished_at,
             )
@@ -991,6 +995,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             "execution_id": execution_id,
             "provider": provider_id or "deepseek",
             "model": model_name or "deepseek-chat",
+            "error_class": "parse_error",
             "parse_error": message,
             "response_excerpt": safe_excerpt,
             "request_payload": {
@@ -1008,11 +1013,16 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         )
     except _ProductActionsLLMNoProviderError as exc:
         return _finish(
-            _controlled_error("AI_PROVIDER_NOT_CONFIGURED", input_hash=input_hash),
+            _controlled_error(
+                "AI_PROVIDER_NOT_CONFIGURED",
+                input_hash=input_hash,
+                diagnostics={"error_class": "no_provider"},
+            ),
             status="error",
             output_summary="no enabled LLM provider",
             error_code="AI_PROVIDER_NOT_CONFIGURED",
             error_message=str(exc) or "AI_PROVIDER_NOT_CONFIGURED",
+            error_class="no_provider",
         )
     except _ProductActionsLLMRateLimitError as exc:
         return _finish(
@@ -1024,9 +1034,11 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         )
     except _ProductActionsLLMProviderError as exc:
         message = str(exc) or "AI_PROVIDER_ERROR"
-        provider_id = _text(getattr(exc, "result", {}).get("provider_id"))
-        model_name = _text(getattr(exc, "result", {}).get("model"))
-        diagnostics = {}
+        provider_result = getattr(exc, "result", {}) or {}
+        provider_id = _text(provider_result.get("provider_id"))
+        model_name = _text(provider_result.get("model"))
+        error_class = _text(provider_result.get("error_class")) or "unknown"
+        diagnostics = {"error_class": error_class}
         if provider_id:
             diagnostics["provider_id"] = provider_id
         if model_name:
@@ -1036,12 +1048,13 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 "AI_PROVIDER_ERROR",
                 input_hash=input_hash,
                 message=message,
-                diagnostics=diagnostics if diagnostics else None,
+                diagnostics=diagnostics,
             ),
             status="error",
             output_summary="product actions suggestion failed",
             error_code="AI_PROVIDER_ERROR",
             error_message=message,
+            error_class=error_class,
         )
     except Exception as exc:
         message = _safe_error_message(exc)
