@@ -10,7 +10,7 @@ from .legacy.request_context import (
     request_auth_user as _request_auth_user,
 )
 from .models import CreateProjectIn, Project, Session, UpdateProjectIn
-from .orgs import (
+from .services.org_service import (
     _invalidate_workspace_cache_for_org,
     _request_org_candidates,
     _resolved_org_for_cache,

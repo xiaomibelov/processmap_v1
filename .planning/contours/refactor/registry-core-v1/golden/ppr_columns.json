@@ -1,0 +1,19 @@
+[
+  "workspace_title",
+  "project_title",
+  "project_id",
+  "session_title",
+  "session_id",
+  "element_id",
+  "element_title",
+  "element_type",
+  "property_name",
+  "property_value",
+  "property_type",
+  "property_group",
+  "source",
+  "source_kind",
+  "status",
+  "completeness",
+  "updated_at"
+]
