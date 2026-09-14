@@ -1,0 +1,34 @@
+{
+  "contour": "feature/async-save-pipeline-step1",
+  "type": "feat",
+  "role": "planner",
+  "status": "PLAN_READY_FOR_USER_APPROVAL",
+  "baseline": {
+    "origin_main": "b8285741f71c7ab346a8592a5426a36eafb4b707",
+    "branch": "feature/async-save-pipeline-step1",
+    "worktree": "/Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step1",
+    "remote": "git@github.com:xiaomibelov/processmap_v1.git"
+  },
+  "created": "2026-09-14",
+  "gates": {
+    "user_plan_approval": "pending",
+    "execution": "blocked_until_approval",
+    "review": "pending",
+    "merge": "blocked_until_user_approval",
+    "deploy": "out_of_scope_step1"
+  },
+  "artifacts": ["PLAN.md", "API.md", "UI.md", "TESTS.md", "PR.md"],
+  "decisions": {
+    "delta_format": "bounded op vocabulary derived from commandStack (NOT raw commandStack dump, NOT JSON Patch)",
+    "batch_versioning": "one diagram_state_version increment per batch",
+    "idempotency": "session_applied_ops table, unique (session_id, op_id), same-transaction insert",
+    "unload_flush": "fetch keepalive instead of sendBeacon (JWT Authorization header requirement)",
+    "rebase": "adopt currentXml + replay pending ops via existing bpmn/ops/applyOps; undo/redo-native rebase = investigation"
+  },
+  "open_questions": [
+    "drag move-command coalescing window detail",
+    "server applier placement: backend/app/save_services/ops_applier.py vs sessions_core.py",
+    "undo/redo-native rebase viability",
+    "session_applied_ops cleanup retention window"
+  ]
+}
