@@ -23,7 +23,104 @@ function GuardrailRow({ text }) {
   );
 }
 
+function formatMsk(ts) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  try {
+    return new Intl.DateTimeFormat("ru-RU", {
+      timeZone: "Europe/Moscow",
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(n * 1000));
+  } catch {
+    return "—";
+  }
+}
+
+function IndexingPlanCard({ planPayload }) {
+  const { data, loading, error } = planPayload || {};
+  if (loading) {
+    return <div className="text-xs text-slate-400 py-4 text-center">Загрузка…</div>;
+  }
+  if (error) {
+    return <div className="text-xs text-rose-600 py-4 text-center">{error}</div>;
+  }
+  if (!data) return null;
+
+  const schedule = data.schedule || {};
+  const queue = data.queue || {};
+  const readiness = data.readiness_counts || {};
+  const indexSize = data.index_size || {};
+  const preview = Array.isArray(queue.preview) ? queue.preview : [];
+
+  return (
+    <>
+      <div className="divide-y divide-slate-100">
+        <StatRow label={t.planScheduleLabel} value={t.planDaily} />
+        <StatRow label={t.planNextRunLabel} value={formatMsk(schedule.next_run_at)} />
+        <StatRow label={t.planTaskLabel} value={schedule.task || "—"} />
+        <StatRow label={t.planQueueTotal} value={queue.total ?? 0} />
+      </div>
+
+      <div className="mt-4">
+        <div className="text-xs font-semibold text-slate-700 mb-2">
+          {t.planPreviewTitle}
+          {Number(queue.total || 0) > preview.length ? (
+            <span className="ml-1 text-slate-400 font-normal">
+              ({t.planPreviewTotalNote} {queue.total})
+            </span>
+          ) : null}
+        </div>
+        {preview.length === 0 ? (
+          <div className="text-xs text-slate-400 py-3 text-center">{t.planEmptyQueue}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-400 border-b border-slate-100">
+                  <th className="py-1 pr-3 font-medium">{t.planColSession}</th>
+                  <th className="py-1 pr-3 font-medium">{t.planColTitle}</th>
+                  <th className="py-1 pr-3 font-medium">{t.planColQueuedAt}</th>
+                  <th className="py-1 font-medium">{t.planColUpdatedAt}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((row) => (
+                  <tr key={row.session_id} className="border-b border-slate-50 last:border-0">
+                    <td className="py-1.5 pr-3 font-mono text-slate-500">{row.session_id}</td>
+                    <td className="py-1.5 pr-3 text-slate-700">{row.title || "—"}</td>
+                    <td className="py-1.5 pr-3 tabular-nums text-slate-600">{formatMsk(row.rag_queued_at)}</td>
+                    <td className="py-1.5 tabular-nums text-slate-600">{formatMsk(row.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <div className="text-xs font-semibold text-slate-700 mb-1">{t.planReadinessTitle}</div>
+        <StatRow label={t.planNotReady} value={readiness.not_ready} />
+        <StatRow label={t.planQueued} value={readiness.queued} />
+        <StatRow label={t.planIndexed} value={readiness.indexed} />
+        <StatRow label={t.planError} value={readiness.error} />
+      </div>
+
+      <div className="mt-4">
+        <div className="text-xs font-semibold text-slate-700 mb-1">{t.planIndexSizeTitle}</div>
+        <StatRow label={t.planDocuments} value={indexSize.documents} />
+        <StatRow label={t.planActiveDocuments} value={indexSize.active_documents} />
+        <StatRow label={t.planChunks} value={indexSize.chunks} />
+      </div>
+
+      <div className="mt-4 text-[11px] text-slate-400">{t.planDisclaimer}</div>
+    </>
+  );
+}
+
 function Toggle({ label, checked, onChange, disabled = false }) {
+
   return (
     <label className="flex items-center justify-between gap-4 py-2 cursor-pointer select-none">
       <span className="text-xs text-slate-700">{label}</span>
@@ -41,7 +138,7 @@ function Toggle({ label, checked, onChange, disabled = false }) {
   );
 }
 
-export default function AdminRagPage({ payload = {} }) {
+export default function AdminRagPage({ payload = {}, planPayload = {} }) {
   const { data, loading, error, saving, savedAt, saveError, save } = payload;
 
   const settings = data?.settings || {};
@@ -111,6 +208,10 @@ export default function AdminRagPage({ payload = {} }) {
           <StatRow label={t.chunksCount} value={status.chunks_count} />
           <StatRow label={t.feedbackCount} value={status.feedback_count} />
           <StatRow label={t.evalCasesCount} value={status.eval_cases_count} />
+        </SectionCard>
+
+        <SectionCard eyebrow={t.planEyebrow} title={t.planTitle} subtitle={t.planSubtitle}>
+          <IndexingPlanCard planPayload={planPayload} />
         </SectionCard>
 
         <SectionCard eyebrow={t.guardrailsEyebrow} title={t.guardrailsTitle} subtitle={t.guardrailsSubtitle}>
