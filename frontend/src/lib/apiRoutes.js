@@ -310,6 +310,7 @@ export const apiRoutes = {
     llmFeatureModel: (feature) => `/api/admin/llm/feature-models/${encode(feature)}`,
     ragSettings: () => "/api/admin/rag/settings",
     ragPatchSettings: () => "/api/admin/rag/settings",
+    ragIndexingPlan: () => "/api/admin/rag/indexing-plan",
     featureFlags: () => "/api/admin/feature-flags",
     featureFlagsPatch: () => "/api/admin/feature-flags",
     endpointCheckRun: () => "/api/admin/endpoint-check/run",
