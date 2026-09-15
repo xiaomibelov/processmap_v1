@@ -4828,8 +4828,24 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         lock.release()
 
 
-def _conflict_with_current_xml(exc: HTTPException, storage, session_id: str) -> None:
-    """409 payload для operations включает server_current_xml (API.md §2)."""
+def _conflict_with_current_xml(
+    exc: HTTPException,
+    storage,
+    session_id: str,
+    *,
+    sess: Optional[Session] = None,
+    org_id: str = "",
+) -> None:
+    """409 payload для operations включает server_current_xml (API.md §2).
+
+    Org-скоупинг критичен: load без org_id опирается на request-scope
+    ContextVar, который пуст в threadpool-контексте sync-endpoint'а (uvicorn
+    def-handlers) — lookup молча падал в дефолтный org, сессии в других org
+    не находились и поле терялось. На stage это 100% org-не-дефолтных сессий:
+    фронт деградировал в full-save и затирал чужие правки (fix/async-save-409-rebase,
+    e2e async-save:625 «other-client edit survived rebase»). Поэтому org передаём
+    явно из scoped-загрузки endpoint'а; sess (загружена под session lock) — fallback.
+    """
     if int(getattr(exc, "status_code", 0) or 0) != 409:
         raise exc
     detail = exc.detail
@@ -4838,10 +4854,18 @@ def _conflict_with_current_xml(exc: HTTPException, storage, session_id: str) -> 
     if detail.get("server_current_xml"):
         raise exc
     detail = dict(detail)
+    current = None
     try:
-        current = storage.load(str(session_id), is_admin=True)
+        current = storage.load(str(session_id), is_admin=True, org_id=str(org_id or "").strip() or None)
+    except Exception:
+        current = None
+    if current is None and sess is not None:
+        current = sess
+    try:
         if current is not None:
-            detail["server_current_xml"] = str(getattr(current, "bpmn_xml", "") or "")
+            xml = str(getattr(current, "bpmn_xml", "") or "")
+            if xml:
+                detail["server_current_xml"] = xml
     except Exception:
         pass
     raise HTTPException(status_code=409, detail=detail) from exc
@@ -4928,7 +4952,7 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
                 client_base_version=client_base_diagram_state_version,
             )
         except HTTPException as exc:
-            _conflict_with_current_xml(exc, st, session_id)
+            _conflict_with_current_xml(exc, st, session_id, sess=s, org_id=oid_locked)
 
         from .save_services import ops_applier
 
@@ -5062,7 +5086,7 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
                 state_trace=state_trace,
             )
         except HTTPException as exc:
-            _conflict_with_current_xml(exc, st, session_id)
+            _conflict_with_current_xml(exc, st, session_id, sess=s, org_id=oid_locked)
         try:
             invalidate_overlay(session_id)
         except Exception:
