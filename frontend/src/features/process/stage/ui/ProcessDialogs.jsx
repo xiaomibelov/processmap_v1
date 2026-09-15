@@ -1,12 +1,12 @@
-import { useState } from "react";
 import Modal from "../../../../shared/ui/Modal";
 import CreateTemplateModal from "../../../templates/ui/CreateTemplateModal";
 import { resolveRevisionHistoryEmptyState } from "./revisionHistoryUiModel";
 import BpmnVersionActions from "./BpmnVersionActions";
-import BpmnVersionDiffOverlay from "./BpmnVersionDiffOverlay";
+import BpmnVersionList from "./BpmnVersionList";
+import BpmnVersionComparePane from "./BpmnVersionComparePane";
+import BpmnVersionCompareHeader from "./BpmnVersionCompareHeader";
 
 export default function ProcessDialogs({ view = {} }) {
-  const [showPreviewXml, setShowPreviewXml] = useState(false);
   const {
     qualityAutoFixOpen,
     qualityAutoFixBusy,
@@ -46,7 +46,6 @@ export default function ProcessDialogs({ view = {} }) {
     closeVersionsDialog,
     refreshSnapshotVersions,
     versionsBusy,
-    hasSession,
     versionsList,
     versionsLoadState,
     versionsLoadError,
@@ -59,39 +58,22 @@ export default function ProcessDialogs({ view = {} }) {
     versionsIncludeTechnical,
     loadMoreSnapshotVersions,
     toggleVersionsIncludeTechnical,
-    setGenErr,
-    setDiffTargetSnapshotId,
-    setDiffBaseSnapshotId,
-    openDiffDialog,
-    clearSnapshotHistory,
+    isAdmin,
     previewSnapshotId,
-    setPreviewSnapshotId,
-    previewSnapshotVersion,
-    formatSnapshotTs,
-    snapshotLabel,
-    shortSnapshotHash,
-    downloadSnapshot,
-    editSnapshotLabel,
-    togglePinSnapshot,
-    openDiffForSnapshot,
-    compareVersionWithCurrent,
-    restoreSnapshot,
-    canRestoreVersion,
-    previewSnapshot,
-    diffOpen,
-    historyDiffOpen,
-    historyDiffLocalXml,
-    historyDiffVersionXml,
-    historyDiffVersionLabel,
-    closeHistoryDiff,
-    closeDiffDialog,
-    diffBaseSnapshotId,
-    setDiffBaseSnapshotId: setDiffBaseId,
-    diffTargetSnapshotId,
-    setDiffTargetSnapshotId: setDiffTargetId,
-    currentBpmnVersionId,
-    diffBaseSnapshot,
-    diffTargetSnapshot,
+    versionSelection,
+    onVersionPreview,
+    onVersionAssign,
+    versionPaneSingle,
+    versionPaneA,
+    versionPaneB,
+    versionCompareCounts,
+    versionCompareBusy,
+    versionCompareNoChanges,
+    versionCompareMode,
+    onVersionCompareModeChange,
+    versionCompareShowPositional,
+    onVersionCompareTogglePositional,
+    getVersionDiffSummary,
   } = view;
   const userFacingVersionsCount = Math.max(
     Number(versionsUserFacingCount || 0),
@@ -103,6 +85,10 @@ export default function ProcessDialogs({ view = {} }) {
     technicalCountRaw: Number(versionsTechnicalEntriesCount || 0),
     serverEntriesCountRaw: Number(versionsServerEntriesCount || 0),
   });
+
+  const compareActive = !!(versionSelection?.compareAId && versionSelection?.compareBId);
+  const versionCount = Array.isArray(versionsList) ? versionsList.length : 0;
+  const showSecondVersionHint = !compareActive && versionCount === 1;
 
   return (
     <>
@@ -252,315 +238,89 @@ export default function ProcessDialogs({ view = {} }) {
         open={versionsOpen}
         title="История версий BPMN"
         onClose={closeVersionsDialog}
-        cardClassName="w-[calc(100vw-32px)] max-w-[1200px] min-w-[900px]"
+        cardClassName="w-[min(1440px,92vw)] max-w-[1440px] h-[min(860px,88vh)]"
+        bodyClassName="flex min-h-0 flex-1 flex-col !overflow-hidden !max-h-none"
         footer={(
           <BpmnVersionActions
-            selected={previewSnapshot}
-            onDownload={() => previewSnapshot && downloadSnapshot(previewSnapshot)}
-            onRestore={() => previewSnapshot && restoreSnapshot(previewSnapshot)}
-            onDiffWithCurrent={() => previewSnapshot && openDiffForSnapshot(previewSnapshot)}
-            onDiffAB={() => {
-              const list = asArray(versionsList);
-              const latestId = String(list[0]?.id || "");
-              const prevId = String(list[1]?.id || "");
-              if (!latestId || !prevId) {
-                setGenErr("Для сравнения нужно минимум две версии.");
-                return;
-              }
-              setDiffTargetSnapshotId(latestId);
-              setDiffBaseSnapshotId(prevId);
-              openDiffDialog();
-            }}
             onRefresh={() => void refreshSnapshotVersions()}
             onClose={closeVersionsDialog}
-            onToggleXml={() => setShowPreviewXml((prev) => !prev)}
             busy={versionsBusy}
-            isCurrent={String(previewSnapshot?.id || "") === String(currentBpmnVersionId || "")}
-            hasEnoughForDiff={asArray(versionsList).length >= 2}
           />
         )}
         footerClassName="!border-t-0 !p-0"
       >
-        <div className="grid h-[65vh] min-h-[480px] gap-3 overflow-hidden md:grid-cols-[280px_1fr] lg:grid-cols-[minmax(260px,30%)_minmax(0,70%)]" data-testid="bpmn-versions-modal">
-          <div className="flex min-h-0 flex-col">
-            <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
-              <div className="flex items-center justify-between gap-2">
-                <span data-testid="bpmn-versions-shown-count">
-                  Показано {asArray(versionsList).length} из {Math.max(versionsTotalCount || 0, asArray(versionsList).length)} версий
-                </span>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={!!versionsIncludeTechnical}
-                    onChange={() => void toggleVersionsIncludeTechnical?.()}
-                    disabled={versionsBusy || versionsLoadingMore}
-                    data-testid="bpmn-versions-show-technical"
-                  />
-                  Показать технические
-                </label>
-              </div>
-              <div className="mt-1 text-[11px] leading-snug text-muted">
-                Текущий BPMN сохраняется отдельно от опубликованных версий. Пустая история не означает, что черновик не сохранён.
-                Новая версия BPMN создаётся, когда изменилось состояние сессии. Чтобы понять, кто и что изменил, используйте compare-first.
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
-              {versionsLoadState === "loading" ? (
-                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-loading">
-                  Загружаем историю версий...
-                </div>
-              ) : versionsLoadState === "failed" ? (
-                <div className="rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2 text-sm text-red-200" data-testid="bpmn-versions-error">
-                  Не удалось загрузить историю версий: {String(versionsLoadError || "ошибка загрузки")}
-                </div>
-              ) : versionsLoadState === "empty" || (versionsLoadState === "ready" && versionsList.length === 0) ? (
-                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-empty">
-                  {String(revisionEmptyState.message || "Версий пока нет. Текущий BPMN может быть сохранён как черновик; новая версия создаётся отдельным действием.")}
-                </div>
-              ) : versionsList.length === 0 ? (
-                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-idle">
-                  История версий ещё не загружена.
-                </div>
-              ) : (
-                <>
-                {versionsList.map((item) => {
-                  const id = String(item?.id || "");
-                  const active = id === String(previewSnapshotId || "");
-                  const isLatest = id === String(asArray(versionsList)[0]?.id || "");
-                  return (
-                    <div
-                      key={id}
-                      className={"rounded-lg border px-3 py-2 transition-colors " + (active ? "border-accent bg-accentSoft/35" : "border-border bg-panel hover:border-accent hover:bg-accentSoft/15")}
-                      data-testid="bpmn-version-item"
-                      data-snapshot-id={id}
-                    >
-                      <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted">
-                        <span>{formatSnapshotTs(item?.ts)}</span>
-                        <span>{String(item?.reasonLabel || item?.reason || "Импорт BPMN")}</span>
-                      </div>
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-semibold text-fg" data-testid="bpmn-version-label">
-                          {snapshotLabel(item)}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {isLatest ? (
-                            <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-300">
-                              последняя
-                            </span>
-                          ) : null}
-                          <span className="rounded-full border border-accent/40 bg-accentSoft/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                            {Number(item?.revisionNumber || item?.rev || 0) > 0
-                              ? `версия ${Number(item?.revisionNumber || item?.rev || 0)}`
-                              : "без номера версии"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mb-1 text-xs text-muted">
-                        кто изменил: {String(item?.authorLabel || item?.authorName || item?.authorEmail || item?.authorId || "Автор не указан")}
-                      </div>
-                      <div className="mb-1 text-xs text-muted">
-                        комментарий: {String(item?.comment || "—")}
-                      </div>
-                      <div className="mb-1 text-xs text-muted">
-                        что изменилось: откройте «Сравнить» для diff с соседней версией.
-                      </div>
-                      <div className="mb-1 text-xs text-muted">
-                        хэш: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · размер: {Number(item?.len || String(item?.xml || "").length)}
-                      </div>
-                      <div className="mb-1 text-xs text-muted">
-                        состояние диаграммы (dsv):{" "}
-                        <span
-                          className="font-mono text-fg"
-                          data-testid="bpmn-version-diagram-state-version"
-                        >
-                          {Number(item?.diagramStateVersion || 0) > 0
-                            ? Number(item.diagramStateVersion)
-                            : "—"}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void (previewSnapshotVersion ? previewSnapshotVersion(item) : setPreviewSnapshotId(id))}
-                          data-testid="bpmn-version-preview"
-                        >
-                          Предпросмотр XML
-                        </button>
-                        <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={() => void downloadSnapshot(item)}>
-                          Скачать .bpmn
-                        </button>
-                        <button
-                          type="button"
-                          className="secondaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void openDiffForSnapshot(item)}
-                          disabled={versionsBusy || versionsList.length < 2}
-                          data-testid="bpmn-version-diff"
-                        >
-                          Сравнить
-                        </button>
-                        <button
-                          type="button"
-                          className="primaryBtn h-7 px-2 text-[11px]"
-                          onClick={() => void restoreSnapshot(item)}
-                          disabled={versionsBusy}
-                          data-testid="bpmn-version-restore"
-                        >
-                          Восстановить
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {versionsLoadState === "ready" && versionsList.length > 0 ? (
-                  <div className="flex items-center justify-center gap-2 pt-2">
-                    {versionsHasMore ? (
-                      <button
-                        type="button"
-                        className="secondaryBtn h-8 px-3 text-xs"
-                        onClick={() => void loadMoreSnapshotVersions?.()}
-                        disabled={versionsBusy || versionsLoadingMore}
-                        data-testid="bpmn-versions-load-more"
-                      >
-                        {versionsLoadingMore ? "Загрузка..." : "Загрузить ещё 10"}
-                      </button>
-                    ) : (
-                      <span className="text-[11px] text-muted">Все версии загружены</span>
-                    )}
-                  </div>
-                ) : null}
-                {versionsLoadState === "failed" ? (
-                  <div className="flex items-center justify-center gap-2 pt-2">
-                    <button
-                      type="button"
-                      className="secondaryBtn h-8 px-3 text-xs"
-                      onClick={() => void refreshSnapshotVersions?.()}
-                      disabled={versionsBusy || versionsLoadingMore}
-                      data-testid="bpmn-versions-retry"
-                    >
-                      Обновить список версий
-                    </button>
-                  </div>
-                ) : null}
-                </>
-              )}
-            </div>
+        <div
+          className={compareActive
+            ? "grid h-full min-h-0 gap-3 overflow-hidden [grid-template-rows:minmax(0,1fr)] md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)_minmax(0,1fr)] lg:[grid-template-rows:auto_minmax(0,1fr)]"
+            : "grid h-full min-h-0 gap-3 overflow-hidden [grid-template-rows:minmax(0,1fr)] md:grid-cols-[300px_minmax(0,1fr)]"}
+          data-testid="bpmn-versions-modal"
+        >
+          <div className={compareActive ? "flex min-h-0 flex-col md:row-span-2" : "flex min-h-0 flex-col"}>
+            <BpmnVersionList
+              items={versionsList}
+              previewId={previewSnapshotId}
+              compareAId={versionSelection?.compareAId || ""}
+              compareBId={versionSelection?.compareBId || ""}
+              busy={versionsBusy}
+              loadingMore={versionsLoadingMore}
+              hasMore={versionsHasMore}
+              loadState={versionsLoadState}
+              loadError={versionsLoadError}
+              emptyMessage={revisionEmptyState.message}
+              totalCount={versionsTotalCount}
+              includeTechnical={versionsIncludeTechnical}
+              isAdmin={isAdmin}
+              onPreview={onVersionPreview}
+              onAssign={onVersionAssign}
+              onLoadMore={() => void loadMoreSnapshotVersions?.()}
+              onRefresh={() => void refreshSnapshotVersions?.()}
+              onToggleTechnical={() => void toggleVersionsIncludeTechnical?.()}
+              getDiffSummary={getVersionDiffSummary}
+            />
           </div>
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
-            <div className="border-b border-border px-3 py-2 text-xs text-muted">
-              {previewSnapshot ? `XML предпросмотр · ${formatSnapshotTs(previewSnapshot.ts)}` : "Выберите версию слева"}
-            </div>
-            <div className="min-h-0 flex-1 p-3">
-              {previewSnapshot && !String(previewSnapshot?.xml || "").trim() ? (
-                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-version-preview-lazy">
-                  XML этой версии подгружается по требованию. Нажмите «Предпросмотр XML», если загрузка ещё не началась.
-                </div>
-              ) : (
-                <textarea
-                  className="xmlEditorTextarea h-full min-h-[44vh] w-full"
-                  value={String(previewSnapshot?.xml || "")}
-                  readOnly
-                  data-testid="bpmn-version-preview-xml"
+
+          {compareActive ? (
+            <>
+              <div className="min-h-0 lg:col-start-2 lg:col-end-4">
+                <BpmnVersionCompareHeader
+                  counts={versionCompareCounts}
+                  mode={versionCompareMode}
+                  onModeChange={onVersionCompareModeChange}
+                  showPositional={versionCompareShowPositional}
+                  onTogglePositional={onVersionCompareTogglePositional}
+                  diffBusy={versionCompareBusy}
+                  noChanges={versionCompareNoChanges}
                 />
+              </div>
+              <div className="min-h-0 h-full overflow-hidden">
+                <BpmnVersionComparePane {...versionPaneA} />
+              </div>
+              <div className="min-h-0 h-full overflow-hidden">
+                <BpmnVersionComparePane {...versionPaneB} />
+              </div>
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-col gap-2">
+              {versionPaneSingle ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <BpmnVersionComparePane {...versionPaneSingle} />
+                </div>
+              ) : (
+                <div
+                  className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-border bg-panel2/35 px-4 text-center text-sm text-muted"
+                  data-testid="bpmn-versions-pane-idle"
+                >
+                  Выберите версию слева
+                </div>
               )}
-            </div>
-          </div>
-
-        </div>
-      </Modal>
-
-      <Modal
-        open={diffOpen}
-        title="Семантический diff BPMN"
-        onClose={closeDiffDialog}
-        footer={(
-          <>
-            <button type="button" className="secondaryBtn" onClick={closeDiffDialog}>
-              Закрыть
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3" data-testid="bpmn-versions-diff-modal">
-          <div className="grid gap-2 md:grid-cols-2">
-            <label className="block space-y-1 text-xs text-muted">
-              <span>Версия A (база)</span>
-              <select
-                className="select w-full"
-                value={String(diffBaseSnapshotId || "")}
-                onChange={(e) => setDiffBaseId(String(e.target.value || ""))}
-                data-testid="bpmn-diff-base-select"
-              >
-                <option value="">Выберите версию</option>
-                {asArray(versionsList).map((item) => {
-                  const id = String(item?.id || "");
-                  return (
-                    <option key={`base_${id}`} value={id}>
-                      {snapshotLabel(item)} · {formatSnapshotTs(item?.ts)}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-            <label className="block space-y-1 text-xs text-muted">
-              <span>Версия B (цель)</span>
-              <select
-                className="select w-full"
-                value={String(diffTargetSnapshotId || "")}
-                onChange={(e) => setDiffTargetId(String(e.target.value || ""))}
-                data-testid="bpmn-diff-target-select"
-              >
-                <option value="">Выберите версию</option>
-                {asArray(versionsList).map((item) => {
-                  const id = String(item?.id || "");
-                  return (
-                    <option key={`target_${id}`} value={id}>
-                      {snapshotLabel(item)} · {formatSnapshotTs(item?.ts)}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          </div>
-
-          {diffBaseSnapshot && diffTargetSnapshot ? (
-            <BpmnVersionDiffOverlay
-              previousXml={String(diffBaseSnapshot.xml || "")}
-              nextXml={String(diffTargetSnapshot.xml || "")}
-              previousLabel={`${snapshotLabel(diffBaseSnapshot)} · ${formatSnapshotTs(diffBaseSnapshot?.ts)}`}
-              nextLabel={`${snapshotLabel(diffTargetSnapshot)} · ${formatSnapshotTs(diffTargetSnapshot?.ts)}`}
-              onClose={closeDiffDialog}
-            />
-          ) : (
-            <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
-              Выберите две версии для сравнения.
-            </div>
-          )}
-        </div>
-      </Modal>
-
-      <Modal
-        open={historyDiffOpen}
-        title="Сравнение с текущей диаграммой"
-        onClose={closeHistoryDiff}
-        footer={(
-          <button type="button" className="secondaryBtn" onClick={closeHistoryDiff}>
-            Закрыть
-          </button>
-        )}
-      >
-        <div className="space-y-3" data-testid="bpmn-history-diff-modal">
-          {historyDiffVersionXml && historyDiffLocalXml ? (
-            <BpmnVersionDiffOverlay
-              previousXml={String(historyDiffVersionXml || "")}
-              nextXml={String(historyDiffLocalXml || "")}
-              previousLabel={String(historyDiffVersionLabel || "Выбранная версия")}
-              nextLabel="Текущая диаграмма"
-              onClose={closeHistoryDiff}
-            />
-          ) : (
-            <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
-              {historyDiffVersionXml ? "Загрузка текущей диаграммы..." : "Загрузка версии для сравнения..."}
+              {showSecondVersionHint ? (
+                <div
+                  className="rounded-lg border border-border bg-panel px-3 py-2 text-xs text-muted"
+                  data-testid="bpmn-versions-hint-second"
+                >
+                  Выберите вторую версию для сравнения (метка B на карточке)
+                </div>
+              ) : null}
             </div>
           )}
         </div>

@@ -9,9 +9,6 @@ export default function useProcessStageDialogState() {
   const [versionsLoadError, setVersionsLoadError] = useState("");
   const [previewSnapshotId, setPreviewSnapshotId] = useState("");
   const [showTechnicalVersions, setShowTechnicalVersions] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
-  const [diffBaseSnapshotId, setDiffBaseSnapshotId] = useState("");
-  const [diffTargetSnapshotId, setDiffTargetSnapshotId] = useState("");
   const [qualityAutoFixOpen, setQualityAutoFixOpen] = useState(false);
   const [qualityAutoFixBusy, setQualityAutoFixBusy] = useState(false);
   const [insertBetweenOpen, setInsertBetweenOpen] = useState(false);
@@ -28,9 +25,6 @@ export default function useProcessStageDialogState() {
     setVersionsLoadError("");
     setPreviewSnapshotId("");
     setShowTechnicalVersions(false);
-    setDiffOpen(false);
-    setDiffBaseSnapshotId("");
-    setDiffTargetSnapshotId("");
     setQualityAutoFixOpen(false);
     setQualityAutoFixBusy(false);
     setInsertBetweenOpen(false);
@@ -56,12 +50,6 @@ export default function useProcessStageDialogState() {
     setPreviewSnapshotId,
     showTechnicalVersions,
     setShowTechnicalVersions,
-    diffOpen,
-    setDiffOpen,
-    diffBaseSnapshotId,
-    setDiffBaseSnapshotId,
-    diffTargetSnapshotId,
-    setDiffTargetSnapshotId,
     qualityAutoFixOpen,
     setQualityAutoFixOpen,
     qualityAutoFixBusy,

@@ -1,0 +1,134 @@
+/* Version History compare: scoped bpmn-js theming + diff markers (vcc-*) */
+
+/* ---- Base viewer surfaces (light) ---- */
+.bpmnVersionPreview .djs-container,
+.bpmnVersionPreview .djs-container svg {
+  background: hsl(var(--panel)) !important;
+}
+
+.bpmnVersionPreview .djs-container .djs-background {
+  fill: hsl(var(--panel)) !important;
+}
+
+.bpmnVersionPreview .djs-label,
+.bpmnVersionPreview .djs-visual text {
+  fill: hsl(var(--text) / 0.88) !important;
+}
+
+.bpmnVersionPreview .djs-element[data-element-id^="Participant_"] .djs-visual > rect,
+.bpmnVersionPreview .djs-element[data-element-id^="Participant"] .djs-visual > rect,
+.bpmnVersionPreview .djs-element[data-element-id^="Lane_"] .djs-visual > rect,
+.bpmnVersionPreview .djs-element[data-element-id^="Lane"] .djs-visual > rect {
+  fill: hsl(var(--panel2)) !important;
+  stroke: hsl(var(--border-strong)) !important;
+}
+
+.bpmnVersionPreview .djs-element[data-element-id^="Participant_"] .djs-visual > rect + rect,
+.bpmnVersionPreview .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: hsl(var(--panel2) / 0.6) !important;
+}
+
+.bpmnVersionPreview .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > rect,
+.bpmnVersionPreview .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > polygon,
+.bpmnVersionPreview .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > circle {
+  fill: hsl(var(--bg-elevated)) !important;
+  stroke: hsl(var(--border-strong)) !important;
+}
+
+.bpmnVersionPreview .djs-connection .djs-visual > path {
+  stroke: hsl(var(--muted)) !important;
+}
+
+.bpmnVersionPreview .djs-shape .djs-visual > path {
+  stroke: hsl(var(--muted)) !important;
+}
+
+/* ---- Dark theme overrides ---- */
+.dark .bpmnVersionPreview .djs-container,
+.dark .bpmnVersionPreview .djs-container svg {
+  background: hsl(var(--panel)) !important;
+}
+
+.dark .bpmnVersionPreview .djs-container .djs-background {
+  fill: hsl(var(--panel)) !important;
+}
+
+.dark .bpmnVersionPreview .djs-label,
+.dark .bpmnVersionPreview .djs-visual text {
+  fill: rgba(255, 255, 255, 0.86) !important;
+}
+
+.dark .bpmnVersionPreview .djs-element[data-element-id^="Participant_"] .djs-visual > rect,
+.dark .bpmnVersionPreview .djs-element[data-element-id^="Participant"] .djs-visual > rect,
+.dark .bpmnVersionPreview .djs-element[data-element-id^="Lane_"] .djs-visual > rect,
+.dark .bpmnVersionPreview .djs-element[data-element-id^="Lane"] .djs-visual > rect {
+  fill: rgba(255, 255, 255, 0.03) !important;
+  stroke: rgba(255, 255, 255, 0.18) !important;
+}
+
+.dark .bpmnVersionPreview .djs-element[data-element-id^="Participant_"] .djs-visual > rect + rect,
+.dark .bpmnVersionPreview .djs-element[data-element-id^="Participant"] .djs-visual > rect + rect {
+  fill: rgba(255, 255, 255, 0.01) !important;
+}
+
+.dark .bpmnVersionPreview .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > rect,
+.dark .bpmnVersionPreview .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > polygon,
+.dark .bpmnVersionPreview .djs-element:not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > circle {
+  fill: rgba(255, 255, 255, 0.03) !important;
+  stroke: rgba(255, 255, 255, 0.28) !important;
+}
+
+.dark .bpmnVersionPreview .djs-connection .djs-visual > path {
+  stroke: rgba(255, 255, 255, 0.32) !important;
+}
+
+.dark .bpmnVersionPreview .djs-shape .djs-visual > path {
+  stroke: rgba(255, 255, 255, 0.32) !important;
+}
+
+/* ---- Diff markers (vcc-*): outline + subtle fill, legend colors ---- */
+.bpmnVersionPreview .djs-element.vcc-added .djs-visual > rect,
+.bpmnVersionPreview .djs-element.vcc-added .djs-visual > polygon,
+.bpmnVersionPreview .djs-element.vcc-added .djs-visual > circle,
+.bpmnVersionPreview .djs-connection.vcc-added .djs-visual > path {
+  stroke: #059669 !important;
+  fill: rgba(5, 150, 105, 0.14) !important;
+}
+
+.bpmnVersionPreview .djs-element.vcc-removed .djs-visual > rect,
+.bpmnVersionPreview .djs-element.vcc-removed .djs-visual > polygon,
+.bpmnVersionPreview .djs-element.vcc-removed .djs-visual > circle,
+.bpmnVersionPreview .djs-connection.vcc-removed .djs-visual > path {
+  stroke: #E11D48 !important;
+  fill: rgba(225, 29, 72, 0.14) !important;
+}
+
+.bpmnVersionPreview .djs-element.vcc-changed .djs-visual > rect,
+.bpmnVersionPreview .djs-element.vcc-changed .djs-visual > polygon,
+.bpmnVersionPreview .djs-element.vcc-changed .djs-visual > circle,
+.bpmnVersionPreview .djs-connection.vcc-changed .djs-visual > path {
+  stroke: #B45309 !important;
+  fill: rgba(217, 119, 6, 0.14) !important;
+}
+
+.dark .bpmnVersionPreview .djs-element.vcc-changed .djs-visual > rect,
+.dark .bpmnVersionPreview .djs-element.vcc-changed .djs-visual > polygon,
+.dark .bpmnVersionPreview .djs-element.vcc-changed .djs-visual > circle,
+.dark .bpmnVersionPreview .djs-connection.vcc-changed .djs-visual > path {
+  stroke: #F59E0B !important;
+  fill: rgba(245, 158, 11, 0.16) !important;
+}
+
+.bpmnVersionPreview .djs-element.vcc-moved .djs-visual > rect,
+.bpmnVersionPreview .djs-element.vcc-moved .djs-visual > polygon,
+.bpmnVersionPreview .djs-element.vcc-moved .djs-visual > circle {
+  stroke: #2563EB !important;
+  fill: rgba(37, 99, 235, 0.12) !important;
+}
+
+.bpmnVersionPreview .djs-element.vcc-resized .djs-visual > rect,
+.bpmnVersionPreview .djs-element.vcc-resized .djs-visual > polygon,
+.bpmnVersionPreview .djs-element.vcc-resized .djs-visual > circle {
+  stroke: #4F46E5 !important;
+  fill: rgba(79, 70, 229, 0.12) !important;
+}
