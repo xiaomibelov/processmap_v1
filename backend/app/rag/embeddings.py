@@ -32,6 +32,10 @@ DEFAULT_BASE_URL = "http://rag-embedder:8000"
 QUERY_TIMEOUT_DEFAULT_SECONDS = 5.0
 PASSAGE_TIMEOUT_DEFAULT_SECONDS = 60.0
 FAILURE_COOLDOWN_SECONDS = 30.0
+# Celery-батч индексации: размер одного запроса к sidecar. Один запрос на весь
+# список убивает sidecar на крупных индексациях (stage 2026-09-15: 1465 чанков
+# в одном запросе -> anon-rss 3.5 ГБ -> global OOM хоста 4 ГБ, fix/stage-slow-load-auth-outage).
+PASSAGE_BATCH_SIZE_DEFAULT = 64
 
 
 def _query_timeout_seconds() -> float:
@@ -40,6 +44,16 @@ def _query_timeout_seconds() -> float:
 
 def _passage_timeout_seconds() -> float:
     return float(os.environ.get("EMBEDDINGS_PASSAGE_TIMEOUT_SECONDS", PASSAGE_TIMEOUT_DEFAULT_SECONDS))
+
+
+def _passage_batch_size() -> int:
+    raw = str(os.environ.get("EMBEDDINGS_PASSAGE_BATCH_SIZE") or "").strip()
+    if not raw:
+        return PASSAGE_BATCH_SIZE_DEFAULT
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return PASSAGE_BATCH_SIZE_DEFAULT
 
 _state_lock = threading.Lock()
 _failures = 0
@@ -106,8 +120,27 @@ def get_query_embedding(text: str) -> Optional[QueryEmbedding]:
 
 
 def get_embeddings_for_texts(texts: list) -> Optional[QueryEmbedding]:
-    """Celery-батч индексации: длинный таймаут под пачки чанков."""
-    return _post_embed(list(texts or []), "passage", _passage_timeout_seconds())
+    """Celery-батч индексации: длинный таймаут, батчи ограниченного размера.
+
+    Провал любого батча -> None (вызывающий код деградирует на keyword-only /
+    откладывает индексацию); порядок эмбеддингов соответствует порядку texts.
+    """
+    texts = [str(t) for t in (texts or []) if str(t or "").strip()]
+    if not texts:
+        return None
+    batch_size = _passage_batch_size()
+    if len(texts) <= batch_size:
+        return _post_embed(texts, "passage", _passage_timeout_seconds())
+    embeddings_all: list = []
+    model_id = ""
+    dimensions = 0
+    for offset in range(0, len(texts), batch_size):
+        part = _post_embed(texts[offset:offset + batch_size], "passage", _passage_timeout_seconds())
+        if not part:
+            return None
+        part_embeddings, model_id, dimensions = part
+        embeddings_all.extend(part_embeddings)
+    return (embeddings_all, model_id, dimensions)
 
 
 _prefetch_pool = None

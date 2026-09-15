@@ -180,6 +180,10 @@ services:
     environment:
       - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}
       - EMBEDDINGS_ORT_THREADS=${EMBEDDINGS_ORT_THREADS:-4}
+    # Жёсткий потолок памяти: без него баг клиента/модели превращается в
+    # global OOM хоста (stage 2026-09-15: anon-rss 3.5 ГБ на хосте 4 ГБ
+    # убил и api-окно доступности — fix/stage-slow-load-auth-outage).
+    mem_limit: ${EMBEDDINGS_MEM_LIMIT:-1536m}
     restart: unless-stopped
     stop_signal: SIGTERM
     stop_grace_period: 10s

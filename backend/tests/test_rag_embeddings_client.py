@@ -162,6 +162,116 @@ class EmbeddingsClientTests(unittest.TestCase):
             self.assertIsNotNone(emb.get_embeddings_for_texts(["a", "b"]))
         self.assertEqual(_FakeClient.instances[-1].client_kwargs.get("timeout"), 60.0)
 
+    def test_passage_large_input_split_into_bounded_batches(self):
+        # fix/stage-slow-load-auth-outage: один запрос на весь список убивал
+        # sidecar (stage 2026-09-15: 1465 чанков -> anon-rss 3.5 ГБ -> OOM хоста).
+        # 150 текстов при batch=64 -> 3 запроса (64+64+22), порядок сохранён.
+        texts = [f"текст {i}" for i in range(150)]
+        shared_calls = []
+
+        class _BatchClient:
+            def __init__(self, **kwargs):
+                self.post_calls = shared_calls
+                _FakeClient.instances.append(self)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def post(self, url, json=None):
+                batch = list((json or {}).get("texts") or [])
+                offset = sum(len(c["json"]["texts"]) for c in shared_calls)
+                shared_calls.append({"url": url, "json": json})
+                payload = {
+                    "embeddings": [[float(offset + i)] for i, _ in enumerate(batch)],
+                    "model_id": "local-e5-small",
+                    "dimensions": 384,
+                }
+                return _FakeResponse(payload)
+
+        with mock.patch.object(emb.httpx, "Client", lambda *a, **k: _BatchClient(**k)):
+            result = emb.get_embeddings_for_texts(texts)
+
+        self.assertIsNotNone(result)
+        embeddings, model_id, dimensions = result
+        self.assertEqual(model_id, "local-e5-small")
+        self.assertEqual(dimensions, 384)
+        batches = [c["json"]["texts"] for c in shared_calls]
+        self.assertEqual([len(b) for b in batches], [64, 64, 22])
+        self.assertEqual(len(embeddings), 150)
+        # Порядок глобально сохранён: i-й текст -> [float(i)].
+        self.assertEqual(embeddings[0], [0.0])
+        self.assertEqual(embeddings[63], [63.0])
+        self.assertEqual(embeddings[64], [64.0])
+        self.assertEqual(embeddings[149], [149.0])
+
+    def test_passage_batch_size_env_override(self):
+        texts = [f"текст {i}" for i in range(70)]
+        shared_calls = []
+
+        class _BatchClient:
+            def __init__(self, **kwargs):
+                self.post_calls = shared_calls
+                _FakeClient.instances.append(self)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def post(self, url, json=None):
+                batch = list((json or {}).get("texts") or [])
+                self.post_calls.append({"url": url, "json": json})
+                payload = {
+                    "embeddings": [[0.1] for _ in batch],
+                    "model_id": "local-e5-small",
+                    "dimensions": 384,
+                }
+                return _FakeResponse(payload)
+
+        with mock.patch.dict("os.environ", {"EMBEDDINGS_PASSAGE_BATCH_SIZE": "32"}):
+            with mock.patch.object(emb.httpx, "Client", lambda *a, **k: _BatchClient(**k)):
+                result = emb.get_embeddings_for_texts(texts)
+
+        self.assertIsNotNone(result)
+        batches = [c["json"]["texts"] for c in shared_calls]
+        self.assertEqual([len(b) for b in batches], [32, 32, 6])
+
+    def test_passage_failing_batch_aborts_whole_call(self):
+        # Любой провалившийся батч -> None (существующая семантика деградации).
+        texts = [f"текст {i}" for i in range(70)]
+        shared_calls = []
+        status_exc = httpx.HTTPStatusError(
+            "502", request=httpx.Request("POST", "http://x/embed"), response=httpx.Response(502),
+        )
+
+        class _FlakyClient:
+            def __init__(self, **kwargs):
+                self.post_calls = shared_calls
+                _FakeClient.instances.append(self)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def post(self, url, json=None):
+                batch = list((json or {}).get("texts") or [])
+                shared_calls.append({"url": url, "json": json})
+                if len(shared_calls) == 2:
+                    return _FakeResponse(status_exc=status_exc)
+                return _FakeResponse({"embeddings": [[0.1]] * len(batch), "model_id": "local-e5-small", "dimensions": 384})
+
+        with mock.patch.object(emb.httpx, "Client", lambda *a, **k: _FlakyClient(**k)):
+            with self.assertLogs("app.rag.embeddings", level="WARNING"):
+                result = emb.get_embeddings_for_texts(texts)
+
+        self.assertIsNone(result)
+
     def test_timeouts_env_override(self):
         payload = {"embeddings": [[0.1]], "model_id": "local-e5-small", "dimensions": 384}
         with mock.patch.dict("os.environ", {"EMBEDDINGS_QUERY_TIMEOUT_SECONDS": "2.5"}):
