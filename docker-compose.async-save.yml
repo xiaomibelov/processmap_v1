@@ -1,0 +1,26 @@
+# docker-compose.async-save.yml — repoint overlay for contour feature/async-save-pipeline-step1.
+# Run from THIS worktree with the base file, keeping the shared project name so
+# postgres/redis/network are reused (no volumes recreated):
+#   docker compose -p processmap_v1 \
+#     -f docker-compose.yml -f docker-compose.async-save.yml \
+#     up -d --build api frontend celery-worker
+# Build contexts and bind mounts below resolve relative to this worktree, so the
+# stack serves THIS checkout instead of server-backup/.../deploy-main-v1.
+
+services:
+  api:
+    build:
+      context: .
+    volumes:
+      - ./workspace:/app/workspace
+      - ./backend:/app/backend
+      - ./graphify-out:/app/graphify-out
+
+  celery-worker:
+    build:
+      context: .
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile

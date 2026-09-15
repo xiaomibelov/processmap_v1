@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AuthLoginIn(BaseModel):
@@ -321,6 +321,64 @@ class BpmnXmlIn(BaseModel):
                 "base_diagram_state_version": 2,
             }
         }
+    )
+
+
+class SessionOperationsIn(BaseModel):
+    """Батч diagram-ops для POST /api/sessions/{id}/operations.
+
+    Валидация payload per type — серверный applier (ops_applier), который
+    отдаёт типизированные ошибки (opId/type/reason) → 422. Здесь — только
+    границы батча и обязательность opId/type (API.md §2).
+    """
+
+    baseVersion: Optional[int] = Field(default=None, examples=[42])
+    operations: List[Dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("operations")
+    @classmethod
+    def _validate_operations(cls, value: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not isinstance(value, list):
+            raise ValueError("operations must be a list")
+        if not 1 <= len(value) <= 200:
+            raise ValueError("operations must contain 1..200 items")
+        for index, op in enumerate(value):
+            if not isinstance(op, dict):
+                raise ValueError(f"operations[{index}] must be an object")
+            op_id = str(op.get("opId") or "").strip()
+            op_type = str(op.get("type") or "").strip()
+            if not op_id:
+                raise ValueError(f"operations[{index}].opId is required")
+            if not op_type:
+                raise ValueError(f"operations[{index}].type is required")
+            op["opId"] = op_id
+            op["type"] = op_type
+        # Дубликат opId внутри батча — невалидный payload клиента: иначе
+        # integrity error на INSERT session_applied_ops маппится в 409
+        # SESSION_WRITE_CONFLICT вместо честного 422 (review NIT-3).
+        seen_op_ids = set()
+        for op in value:
+            op_id = str(op.get("opId") or "").strip()
+            if op_id in seen_op_ids:
+                raise ValueError(f"duplicate opId in operations: {op_id}")
+            seen_op_ids.add(op_id)
+        return value
+
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "baseVersion": 42,
+                "operations": [
+                    {
+                        "opId": "8f6b2c4e-0000-4000-8000-000000000001",
+                        "type": "element.updateProperties",
+                        "elementId": "Activity_1",
+                        "properties": {"name": "Новое имя"},
+                    }
+                ],
+            }
+        },
     )
 
 

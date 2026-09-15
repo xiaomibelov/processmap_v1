@@ -1288,6 +1288,11 @@ function ProcessStage({
     visible: false,
     message: "",
   });
+  // SaveOutbox (contour feature/async-save-pipeline-step1): текущая
+  // outbox-стадия (ops-saving/ops-rebase/ops-degraded/ops-saved) из
+  // BpmnStage; публикуется в saveUploadStatus.opsStage (словарь
+  // OPS_STAGE_VIEW в saveStatusSlotModel).
+  const [opsSaveStage, setOpsSaveStage] = useState("");
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
     tone: "success",
@@ -1421,10 +1426,15 @@ function ProcessStage({
     () => asObject(sessionCompanionBridgeSnapshot.save),
     [sessionCompanionBridgeSnapshot.save],
   );
-  const saveUploadStatus = useMemo(
-    () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
-    [saveUploadLifecycleEvent],
-  );
+  const saveUploadStatus = useMemo(() => {
+    const badge = buildSaveUploadStatusBadge(saveUploadLifecycleEvent);
+    // Outbox-стадия дельта-сохранения: view-модель слота читает
+    // status.opsStage (saveStatusSlotModel OPS_STAGE_VIEW, UI.md §2).
+    return opsSaveStage ? { ...badge, opsStage: opsSaveStage } : badge;
+  }, [saveUploadLifecycleEvent, opsSaveStage]);
+  useEffect(() => {
+    setOpsSaveStage("");
+  }, [sid]);
   useEffect(() => {
     if (isManualSaveBusy === true) return;
     const state = toText(saveUploadStatus?.state);
@@ -2230,6 +2240,22 @@ function ProcessStage({
     [],
   );
 
+  // Dedup full-save scheduling (contour feature/async-save-pipeline-step1,
+  // UI.md §2): если SaveOutbox полностью захватил правку как ops, полное
+  // автосохранение для этой мутации не планируем. Контракт честности —
+  // outbox.shouldSkipFullSave(command): true только для команды, которую он
+  // только что захватил, при отсутствии pending needsFullSave; любые чужие
+  // мутации (xml.edit, ops_outbox_fallback, template emits) → false.
+  const shouldSkipAutosaveSchedule = useCallback((mutation) => {
+    const outbox = bpmnRef?.current?.getOpsOutbox?.();
+    if (!outbox || typeof outbox.shouldSkipFullSave !== "function") return false;
+    try {
+      return outbox.shouldSkipFullSave(mutation?.command) === true;
+    } catch {
+      return false;
+    }
+  }, [bpmnRef]);
+
   const {
     tab,
     setTab,
@@ -2258,6 +2284,7 @@ function ProcessStage({
     rememberDiagramStateVersion,
     onSessionSync: onSessionSyncWithVersion,
     onError: setGenErr,
+    shouldSkipAutosaveSchedule,
   });
 
   const {
@@ -7522,6 +7549,7 @@ function ProcessStage({
     hybridViewportMatrixRef,
     isInterviewMode,
     onBpmnSaveLifecycleEvent,
+    onOpsSaveStatus: setOpsSaveStage,
     onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
     onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,

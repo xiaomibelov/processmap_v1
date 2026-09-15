@@ -31,15 +31,28 @@ export function stripSaveStatusSlotPrefix(messageRaw = "") {
 /**
  * П3: единый узел статуса сохранения в правом слоте хедера.
  * Словарь state зафиксирован контрактом: saving/dirty/saved/failed/stale/conflict.
+ *
+ * Outbox-стадии дельта-сохранения (contour feature/async-save-pipeline-step1,
+ * UI.md §2): ops-saving / ops-rebase / ops-degraded. На словарь state не
+ * расширяемся — стадии меняют label/title внутри зафиксированных состояний
+ * и публикуются в view.opsStage для JSX/тестов.
  */
+const OPS_STAGE_VIEW = Object.freeze({
+  "ops-saving": { state: "saving", label: "Сохранение (дельта)…", title: "Сохраняем изменения дельта-операциями." },
+  "ops-rebase": { state: "saving", label: "Синхронизация версии…", title: "Конфликт версий разрешается автоматически: правки применяются к серверной версии." },
+  "ops-degraded": { state: "failed", label: "Полное сохранение (дельта недоступна)", title: "Дельта-сохранение недоступно до перезагрузки страницы: работает обычное полное сохранение." },
+});
+
 export function buildSaveStatusSlotView({
   saveUploadStatusRaw = null,
   saveSnapshotRaw = null,
   flashRaw = null,
+  opsStageRaw = null,
 } = {}) {
   const status = asObject(saveUploadStatusRaw);
   const snapshot = asObject(saveSnapshotRaw);
   const flash = asObject(flashRaw);
+  const opsStage = toText(opsStageRaw) || toText(status.opsStage);
 
   const uploadState = toText(status.state);
   let state = "saved";
@@ -48,6 +61,13 @@ export function buildSaveStatusSlotView({
   else if (uploadState === "save_failed" || snapshot.isFailed === true) state = "failed";
   else if (snapshot.isStale === true) state = "stale";
   else if (snapshot.isDirty === true) state = "dirty";
+
+  // Degraded важнее спокойных состояний: дельта-протокол отказал, full-save
+  // fallback активен — пользователь должен видеть это даже при «saved».
+  const opsOverride = OPS_STAGE_VIEW[opsStage] || null;
+  if (opsOverride && (opsOverride.state === "failed" ? state !== "conflict" : state === "saving" || state === "saved" || state === "dirty")) {
+    state = opsOverride.state;
+  }
 
   const labels = {
     conflict: "Конфликт сохранения",
@@ -66,6 +86,11 @@ export function buildSaveStatusSlotView({
     saved: "Черновик сессии сохранён.",
   };
 
+  if (opsOverride && state === opsOverride.state) {
+    labels[opsOverride.state] = opsOverride.label;
+    titles[opsOverride.state] = opsOverride.title;
+  }
+
   const flashMessage = toText(flash.message);
   const flashVisible = flash.visible === true && flashMessage.length > 0;
 
@@ -80,6 +105,7 @@ export function buildSaveStatusSlotView({
     state,
     label: labels[state],
     title: titles[state],
+    opsStage,
     flashVisible,
     flashLabel: flashVisible ? stripSaveStatusSlotPrefix(flashMessage) : "",
     subprocessesSyncLabel: subprocessesSyncPending ? "Подпроцессы синхронизируются…" : "",

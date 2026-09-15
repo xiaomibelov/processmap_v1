@@ -250,3 +250,79 @@ test("ensureBpmnPersistence forwards external diagram state version hooks", () =
   assert.equal(capturedOptions.getBaseDiagramStateVersion(), 7);
   assert.equal(capturedOptions.rememberDiagramStateVersion(9, { sessionId: "sid_1" }), 8);
 });
+
+test("onRuntimeChange pushes to ops outbox before emitting diagram mutation (dedup ordering contract)", () => {
+  const ctx = createCtx();
+  ctx.refs.opsOutboxRef = ref(null);
+  const calls = [];
+  ctx.refs.opsOutboxRef.current = {
+    pushCommand: (ev) => calls.push(["pushCommand", String(ev?.command || "")]),
+  };
+  ctx.callbacks.emitDiagramMutation = (kind, payload) => {
+    calls.push(["emitDiagramMutation", String(kind || ""), String(payload?.command || "")]);
+  };
+
+  let capturedOptions = null;
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "" }),
+    }),
+    createBpmnPersistence: () => ({
+      saveRaw: async () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true }),
+      cacheRaw: () => ({ ok: true }),
+    }),
+    createBpmnCoordinator: (options) => {
+      capturedOptions = options;
+      return { bindRuntime() {} };
+    },
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  wiring.ensureBpmnCoordinator();
+  assert.equal(typeof capturedOptions?.onRuntimeChange, "function");
+
+  capturedOptions.onRuntimeChange({ command: "element.updateProperties" });
+  assert.deepEqual(calls, [
+    ["pushCommand", "element.updateProperties"],
+    ["emitDiagramMutation", "diagram.change", "element.updateProperties"],
+  ], "outbox must see the command before the scheduling path consults it");
+});
+
+test("onRuntimeChange outbox push failure does not break the mutation cascade", () => {
+  const ctx = createCtx();
+  ctx.refs.opsOutboxRef = ref({
+    pushCommand: () => {
+      throw new Error("outbox boom");
+    },
+  });
+  const emitted = [];
+  ctx.callbacks.emitDiagramMutation = (kind, payload) => {
+    emitted.push([String(kind || ""), String(payload?.command || "")]);
+  };
+
+  let capturedOptions = null;
+  const deps = {
+    createBpmnStore: () => ({
+      subscribe: () => () => {},
+      getState: () => ({ xml: "" }),
+    }),
+    createBpmnPersistence: () => ({
+      saveRaw: async () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true }),
+      cacheRaw: () => ({ ok: true }),
+    }),
+    createBpmnCoordinator: (options) => {
+      capturedOptions = options;
+      return { bindRuntime() {} };
+    },
+  };
+
+  const wiring = createBpmnWiring(() => ctx, deps);
+  wiring.ensureBpmnCoordinator();
+  assert.doesNotThrow(() => {
+    capturedOptions.onRuntimeChange({ command: "element.updateProperties" });
+  });
+  assert.deepEqual(emitted, [["diagram.change", "element.updateProperties"]]);
+});
