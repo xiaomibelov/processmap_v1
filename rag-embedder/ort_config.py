@@ -41,10 +41,14 @@ def build_session_options(environ=None) -> "object":
 
 
 def max_batch_size(environ=None) -> int:
-    """Потолок числа текстов в одном /embed-запросе (server-side защита)."""
+    """Потолок числа текстов в одном /embed-запросе (server-side защита).
+
+    Согласовано с дефолтом клиентского батчинга (16) × 2 — legacy-клиент
+    без батчинга всё равно не убьёт sidecar (пик RSS ~0.8 ГБ < mem_limit).
+    """
     env = os.environ if environ is None else environ
-    raw = str(env.get("EMBEDDINGS_MAX_BATCH", "128") or "128").strip()
+    raw = str(env.get("EMBEDDINGS_MAX_BATCH", "32") or "32").strip()
     try:
         return max(1, int(raw))
     except ValueError:
-        return 128
+        return 32
