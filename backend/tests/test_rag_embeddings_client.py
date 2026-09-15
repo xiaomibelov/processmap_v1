@@ -165,7 +165,7 @@ class EmbeddingsClientTests(unittest.TestCase):
     def test_passage_large_input_split_into_bounded_batches(self):
         # fix/stage-slow-load-auth-outage: один запрос на весь список убивал
         # sidecar (stage 2026-09-15: 1465 чанков -> anon-rss 3.5 ГБ -> OOM хоста).
-        # 150 текстов при batch=64 -> 3 запроса (64+64+22), порядок сохранён.
+        # 150 текстов при batch=16 -> 10 запросов (16x9+6), порядок сохранён.
         texts = [f"текст {i}" for i in range(150)]
         shared_calls = []
 
@@ -199,7 +199,7 @@ class EmbeddingsClientTests(unittest.TestCase):
         self.assertEqual(model_id, "local-e5-small")
         self.assertEqual(dimensions, 384)
         batches = [c["json"]["texts"] for c in shared_calls]
-        self.assertEqual([len(b) for b in batches], [64, 64, 22])
+        self.assertEqual([len(b) for b in batches], [16] * 9 + [6])
         self.assertEqual(len(embeddings), 150)
         # Порядок глобально сохранён: i-й текст -> [float(i)].
         self.assertEqual(embeddings[0], [0.0])

@@ -33,9 +33,9 @@ class OrtConfigTests(unittest.TestCase):
         self.assertEqual(opts.intra_op_num_threads, 0)
 
     def test_max_batch_default_and_override(self):
-        self.assertEqual(ort_config.max_batch_size({}), 128)
+        self.assertEqual(ort_config.max_batch_size({}), 32)
         self.assertEqual(ort_config.max_batch_size({"EMBEDDINGS_MAX_BATCH": "64"}), 64)
-        self.assertEqual(ort_config.max_batch_size({"EMBEDDINGS_MAX_BATCH": "junk"}), 128)
+        self.assertEqual(ort_config.max_batch_size({"EMBEDDINGS_MAX_BATCH": "junk"}), 32)
         self.assertEqual(ort_config.max_batch_size({"EMBEDDINGS_MAX_BATCH": "0"}), 1)
 
 

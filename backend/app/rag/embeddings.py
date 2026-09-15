@@ -32,10 +32,12 @@ DEFAULT_BASE_URL = "http://rag-embedder:8000"
 QUERY_TIMEOUT_DEFAULT_SECONDS = 5.0
 PASSAGE_TIMEOUT_DEFAULT_SECONDS = 60.0
 FAILURE_COOLDOWN_SECONDS = 30.0
-# Celery-батч индексации: размер одного запроса к sidecar. Один запрос на весь
-# список убивает sidecar на крупных индексациях (stage 2026-09-15: 1465 чанков
-# в одном запросе -> anon-rss 3.5 ГБ -> global OOM хоста 4 ГБ, fix/stage-slow-load-auth-outage).
-PASSAGE_BATCH_SIZE_DEFAULT = 64
+# Celery-батч индексации: размер одного запроса к sidecar. Пиковая память
+# sidecar'а линейна от размера батча (intra-run live-set слоёв трансформера):
+# stage-замеры 2026-09-15 (fix/stage-slow-load-auth-outage) — батч 64 → пик
+# ~1.5 GiB (кап), 16 → ~0.4 GiB. Дефолт держим консервативным; оператор может
+# поднять через env на машинах с запасом памяти.
+PASSAGE_BATCH_SIZE_DEFAULT = 16
 
 
 def _query_timeout_seconds() -> float:
