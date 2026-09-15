@@ -285,6 +285,55 @@ class SessionOperationsApiTests(unittest.TestCase):
         # Ничего не применилось.
         self.assertEqual(self._loaded_xml(), SAMPLE_BPMN_XML)
 
+    def test_conflict_includes_server_xml_for_non_default_org(self):
+        """fix/async-save-409-rebase: сессия в org != _default_org_id().
+
+        409 обязан содержать server_current_xml и здесь. Репродукция условия
+        stage (async-save:625 «other-client edit survived rebase»): helper
+        конфликта делал storage.load(is_admin=True) без org → скоупинг на
+        дефолтный org → None → поле терялось → фронт деградировал в
+        full-save и затирал чужие правки. На stage org-ContextVar пуст в
+        threadpool-контексте sync-endpoint'а — эмулируем патчем middleware
+        (org НЕ прокидывается в storage scope), при этом endpoint сам сессию
+        находит по X-Org-Id кандидатам.
+        """
+        from app.auth import create_access_token, create_user
+        import app.startup.middleware as auth_middleware
+
+        real_push = auth_middleware.push_storage_request_scope
+
+        def push_without_org(user_id, is_admin=False, org_id=None):
+            # Эмуляция stage: org не доезжает до storage-request-scope.
+            return real_push(user_id, is_admin, "")
+
+        suffix = uuid.uuid4().hex
+        other_org = f"org_nondefault_{suffix}"
+        owner2 = create_user(f"owner2_{suffix}@local", "password", is_admin=True)
+        token2 = create_access_token(str(owner2["id"]))
+        sid2 = self.st.create(title=f"ops-org-{suffix}", user_id=str(owner2["id"]), org_id=other_org)
+        sess2 = self.st.load(sid2, is_admin=True, org_id=other_org)
+        sess2.bpmn_xml = SAMPLE_BPMN_XML
+        sess2.diagram_state_version = 7
+        self.st.save(sess2)
+
+        with patch.object(auth_middleware, "push_storage_request_scope", push_without_org):
+            resp = self.client.post(
+                f"/api/sessions/{sid2}/operations",
+                json={
+                    "baseVersion": 6,
+                    "operations": [
+                        self._op("op-org-1", "element.updateProperties", elementId="Task_1", properties={"name": "X"}),
+                    ],
+                },
+                headers={"Authorization": f"Bearer {token2}", "X-Org-Id": other_org},
+            )
+        self.assertEqual(resp.status_code, 409, resp.text)
+        detail = resp.json().get("detail", {})
+        self.assertEqual(detail.get("code"), "DIAGRAM_STATE_CONFLICT")
+        server_xml = detail.get("server_current_xml") or ""
+        self.assertTrue(server_xml.strip(), "409 must include server_current_xml for non-default org")
+        self.assertEqual(server_xml, SAMPLE_BPMN_XML)
+
     def test_missing_base_version_returns_base_required_409(self):
         resp = self._post({
             "operations": [
