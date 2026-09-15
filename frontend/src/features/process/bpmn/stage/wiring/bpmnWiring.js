@@ -209,6 +209,16 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       getRuntime: () => refs.modelerRuntimeRef?.current,
       getSessionId: () => String(refs.activeSessionRef?.current || ""),
       debounceMs: AUTOSAVE_CONFIG.coordinator.debounceMs,
+      // Dedup SaveOutbox (UI.md §2): тот же предикат, что у React-очереди
+      // (shouldSkipAutosaveSchedule → outbox.shouldSkipFullSave) — staging
+      // консультирует его ПОСЛЕ pushCommand, lastCapture уже свежий.
+      shouldSkipAutosave: (command) => {
+        try {
+          return refs.opsOutboxRef?.current?.shouldSkipFullSave?.(command) === true;
+        } catch {
+          return false;
+        }
+      },
       getIsDragging: () => isDiagramDragging(),
       getIsDirectEditing: () => {
         try {

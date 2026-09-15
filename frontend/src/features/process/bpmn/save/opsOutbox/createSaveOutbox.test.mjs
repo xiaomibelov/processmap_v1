@@ -482,7 +482,7 @@ test("409 → rebase: adopt server version, replay pending ops, ops resent with 
             ok: false,
             status: 409,
             error: "DIAGRAM_STATE_CONFLICT",
-            data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, current_xml: "<xml/>" } },
+            data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, server_current_xml: "<xml/>" } },
           };
         }
         return { ok: true, status: 200, version: 10, applied: body.operations.length, skipped: 0, diagramStateVersion: 10 };
@@ -520,7 +520,7 @@ test("replay echo during rebase: replay-flagged command restores op with same op
         ok: false,
         status: 409,
         error: "DIAGRAM_STATE_CONFLICT",
-        data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, current_xml: "<xml/>" } },
+        data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, server_current_xml: "<xml/>" } },
       }),
     });
     const ctx = makeOutbox(t, { api, applyOpsFn: async () => ({ ok: true, applied: 1, failed: 0, results: [] }) });
@@ -555,7 +555,7 @@ test("double 409 → ops-degraded, full-save fallback requested", async (t) => {
         ok: false,
         status: 409,
         error: "DIAGRAM_STATE_CONFLICT",
-        data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, current_xml: "<xml/>" } },
+        data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, server_current_xml: "<xml/>" } },
       }),
     });
     const ctx = makeOutbox(t, { api, applyOpsFn: async () => ({ ok: true, applied: 1, failed: 0, results: [] }) });
@@ -614,7 +614,7 @@ test("fuzzy miss during rebase replay → needsFullSave → degraded + full-save
         ok: false,
         status: 409,
         error: "DIAGRAM_STATE_CONFLICT",
-        data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, current_xml: "<xml/>" } },
+        data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, server_current_xml: "<xml/>" } },
       }),
     });
     const applyOpsFn = async () => ({
@@ -748,4 +748,66 @@ test("dedup: replay command is skippable only while pending ops cover the state"
   } finally {
     ctx.destroy();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Регрессии по ревью (REVIEW_REPORT.md, 2026-09-15):
+//  - BLOCKER-2 (ack-wipe): op, дописанная в буфер во время полёта flush'а,
+//    ack'ом не стирается — уходит следующим flush'ем.
+//  - MAJOR-1 (undo coalesced-op): undo op, в которую слито несколько команд,
+//    не вырезает молча всю слитую delta — консервативный needsFullSave.
+// ---------------------------------------------------------------------------
+
+test("BLOCKER-2: op pushed during in-flight flush survives ack and goes in the next flush", async (t) => {
+  let call = 0;
+  let ackResolve = null;
+  const firstAck = new Promise((resolve) => { ackResolve = resolve; });
+  const api = makeApi({
+    postSessionOperations: async () => {
+      call += 1;
+      if (call === 1) {
+        // Первый flush висит до ручного ack — окно для push во время полёта.
+        return firstAck;
+      }
+      return { ok: true, status: 200, version: 9, applied: 1, skipped: 0, diagramStateVersion: 9 };
+    },
+  });
+  const ctx = makeOutbox(t, { api, configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushRename(ctx.outbox, "Task_1", "A");
+  const flushing = ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  assert.equal(call, 1, "first flush dispatched");
+  pushRename(ctx.outbox, "Task_2", "B");
+  ackResolve({ ok: true, status: 200, version: 8, applied: 1, skipped: 0, diagramStateVersion: 8 });
+  await flushing;
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(call, 2, "second op flushed after ack");
+  assert.equal(ctx.api.calls[1].body.operations.length, 1, "only the during-flight op remains");
+  assert.equal(ctx.api.calls[1].body.operations[0].elementId, "Task_2");
+  ctx.destroy();
+});
+
+test("MAJOR-1: undo of a coalesced op (merged drag deltas) falls back to full save", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { coalesceMs: 400, flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushMove(ctx.outbox, "Task_1", 10, 0);
+  ctx.tickNow(100);
+  pushMove(ctx.outbox, "Task_1", 20, 0);
+  // Откат только второй команды: слитая op держит keep-last delta (A→C),
+  // промежуточное состояние (B) не восстановить — полный save обязан отработать.
+  ctx.outbox.pushCommand({
+    command: "shape.move",
+    action: "undo",
+    context: { shape: { id: "Task_1" }, delta: { x: 20, y: 0 } },
+  });
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 0, "no ops sent — merged delta is unrecoverable");
+  assert.ok(ctx.fullSaveRequests.length >= 1, "honest full-save fallback requested");
+  ctx.destroy();
 });

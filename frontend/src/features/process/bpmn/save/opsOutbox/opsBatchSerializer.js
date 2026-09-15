@@ -30,8 +30,12 @@ export function tryCoalesceIntoBuffer(buffer, incoming, { coalesceMs, now }) {
     if (Number(now) - Number(existing.__ts) > coalesceMs) continue;
     // keep-last: opId и __ts якоря первой команды burst'а сохраняются
     // (окно НЕ скользящее — контракт TESTS §1.1), payload — последний.
+    // __coalesceCount — сколько команд слито в op: undo такой op не может
+    // восстановить промежуточные delta — зона ответственности outbox
+    // (консервативный needsFullSave, UI.md §5 / REVIEW MAJOR-1).
     existing.delta = incoming.delta;
     existing.bounds = incoming.bounds;
+    existing.__coalesceCount = (Number(existing.__coalesceCount) || 1) + 1;
     return true;
   }
   return false;

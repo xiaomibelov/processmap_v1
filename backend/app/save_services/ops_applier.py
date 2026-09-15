@@ -281,6 +281,10 @@ def _apply_update_properties(root: ET.Element, op: Dict[str, Any]) -> None:
         name = str(key or "").strip()
         if not name:
             continue
+        # Смена id элемента опом недопустима (клиент такого не шлёт; защита
+        # от повреждения ссылок DI/incoming/outgoing — review NIT-4).
+        if name == "id":
+            raise OperationApplyError(_op_id(op), _op_type(op), "protected_property: id")
         if value is None:
             element.attrib.pop(name, None)
             continue
@@ -381,6 +385,16 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> 
     if _find_semantic(root, element_id) is not None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"element_already_exists: {element_id}")
     parent = _find_semantic(root, parent_id) if parent_id else None
+    if parent is not None and _local(parent.tag) == "participant":
+        # Wire bpmn-js может нести parentId=participant (контекст createShape) —
+        # flow node внутри bpmn:participant невалидна и bpmn-js дропает её при
+        # импорте. Размещаем в processRef участника (паритет с connection.create,
+        # который уже опирается на parent source-элемента).
+        process_ref = str(parent.get("processRef") or "").strip()
+        if process_ref:
+            process = _find_semantic(root, process_ref)
+            if process is not None:
+                parent = process
     if parent is None:
         # Fallback (wire может не нести parentId): первый bpmn:process.
         for el in root.iter():

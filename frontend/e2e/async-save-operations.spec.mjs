@@ -74,30 +74,59 @@ function collectPageErrors(page) {
 
 // Трафик сохранения: POST .../operations (тело+длительность+статус) и
 // PUT .../bpmn. Записи вида { kind, method, url, bytes, durationMs, status }.
+// durationMs читаем на requestfinished: в Chromium timing().responseEnd ещё
+// -1 на событии response (Playwright 1.58) — ранняя попытка давала вечный null.
 function collectSaveTraffic(page) {
   const records = [];
-  const pendingOps = new Map();
+  // FIFO очередь ops-запросов: identity объекта Request между событиями
+  // Playwright нестабильна (redirect-цепочки/прокси) — matching по порядку,
+  // ops-флаши идут последовательно.
+  const pendingOps = [];
+  const OPS_URL = /\/api\/sessions\/[^/]+\/operations$/;
   page.on("request", (request) => {
     const url = request.url();
     const method = request.method();
-    const isOps = method === "POST" && /\/api\/sessions\/[^/]+\/operations$/.test(url);
+    const isOps = method === "POST" && OPS_URL.test(url);
     const isPutBpmn = method === "PUT" && /\/api\/sessions\/[^/]+\/bpmn$/.test(url);
     if (!isOps && !isPutBpmn) return;
     const bytes = Buffer.byteLength(request.postData() || "", "utf8");
-    const record = { kind: isOps ? "operations" : "put_bpmn", method, url, bytes, durationMs: null, status: null };
+    const record = { kind: isOps ? "operations" : "put_bpmn", method, url, bytes, durationMs: null, status: null, requestAtMs: Date.now() };
     records.push(record);
-    if (isOps) pendingOps.set(request, record);
+    if (isOps) {
+      pendingOps.push(record);
+      request.timing();
+    }
+  });
+  page.on("requestfinished", (request) => {
+    if (!OPS_URL.test(request.url())) return;
+    const record = pendingOps.shift();
+    if (!record) return;
+    const timing = request.timing();
+    // Playwright/Chromium: startTime — epoch, остальные поля — относительные
+    // (requestStart ≈ 0). Длительность = responseEnd - requestStart; ранняя
+    // формула responseEnd - startTime давала отрицательное и вечный null.
+    const start = Number(timing?.requestStart);
+    const end = Number(timing?.responseEnd);
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start && start >= 0) {
+      record.durationMs = end - start;
+    } else if (Number.isFinite(end) && end >= 0) {
+      record.durationMs = end;
+    }
+  });
+  page.on("requestfailed", (request) => {
+    if (!OPS_URL.test(request.url())) return;
+    pendingOps.shift();
   });
   page.on("response", (response) => {
-    const record = pendingOps.get(response.request());
+    if (response.request().method() !== "POST" || !OPS_URL.test(response.url())) return;
+    const record = pendingOps[0];
     if (!record) return;
-    pendingOps.delete(response.request());
     record.status = response.status();
-    const timing = response.request().timing();
-    const start = Number(timing?.startTime);
-    const end = Number(timing?.responseEnd);
-    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
-      record.durationMs = end - start;
+    // Wall-clock fallback: requestfinished-timing в Chromium не всегда
+    // финализирован (responseEnd -1) — для бюджета p95 достаточно точности
+    // событий Playwright (~мс).
+    if (record.durationMs === null && Number.isFinite(record.requestAtMs)) {
+      record.durationMs = Date.now() - record.requestAtMs;
     }
   });
   return records;
@@ -465,7 +494,16 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   expect(bigBodies, `no save body >${OPS_BODY_BUDGET_BYTES}B allowed`).toHaveLength(0);
   expect(putBpmn, "zero PUT /bpmn during the edit series (fallback is a separate scenario)").toHaveLength(0);
 
-  const durations = opsPosts.map((r) => r.durationMs).filter((d) => Number.isFinite(d));
+  // Длительности — из Resource Timing API страницы (responseEnd - startTime,
+  // обе метки в одной базе): без задержек диспетчеризации событий Playwright
+  // и с учётом только сети+сервера. Fallback — замеры коллектора.
+  const inPageDurations = await page.evaluate(() => performance
+    .getEntriesByType("resource")
+    .filter((entry) => /\/api\/sessions\/[^/]+\/operations$/.test(entry.name || ""))
+    .map((entry) => entry.responseEnd - entry.startTime)
+    .filter((value) => Number.isFinite(value) && value >= 0));
+  const collected = opsPosts.map((r) => r.durationMs).filter((d) => Number.isFinite(d));
+  const durations = inPageDurations.length > 0 ? inPageDurations : collected;
   expect(durations.length).toBeGreaterThanOrEqual(1);
   durations.sort((a, b) => a - b);
   const p95 = durations[Math.min(durations.length - 1, Math.ceil(durations.length * 0.95) - 1)];
@@ -487,6 +525,38 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   // --- Reload → все правки на месте ---
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForDiagramReady(page, { timeout: 90_000 });
+  // Импорт 300+ элементов прогрессивен: waitForDiagramReady ≠ полный
+  // elementRegistry. Порог MIN_ELEMENTS недостаточен — созданные в серии
+  // элементы идут в хвосте документа и регистрируются последними. Ждём
+  // стабилизации размера реестра (два одинаковых считывания подряд).
+  const readRegistrySize = () => page.evaluate(() => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return 0;
+    try {
+      return modeler.get("elementRegistry").getAll().length;
+    } catch {
+      return 0;
+    }
+  });
+  await expect
+    .poll(
+      async () => readRegistrySize(),
+      { timeout: 90_000, message: "elementRegistry must reach MIN_ELEMENTS after reload" },
+    )
+    .toBeGreaterThanOrEqual(MIN_ELEMENTS);
+  let lastSize = -1;
+  let stableReads = 0;
+  await expect
+    .poll(
+      async () => {
+        const size = await readRegistrySize();
+        stableReads = size === lastSize ? stableReads + 1 : 0;
+        lastSize = size;
+        return stableReads;
+      },
+      { timeout: 90_000, message: "elementRegistry must stabilize after reload (import complete)" },
+    )
+    .toBeGreaterThanOrEqual(3);
 
   for (const marker of markers) {
     if (marker.kind === "rename") {

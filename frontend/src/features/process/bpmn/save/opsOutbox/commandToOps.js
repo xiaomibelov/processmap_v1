@@ -191,9 +191,13 @@ function elementTypeOf(ref) {
 
 function mapShapeCreate(context, inverse) {
   if (inverse) return { needsFullSave: true };
-  const elementId = elementIdOf(context?.shape);
-  const elementType = elementTypeOf(context?.shape);
-  const b = bounds(context?.shape);
+  // Рантайм-снапшот нормализует ref элемента в context.element (wire-форма:
+  // bounds вложены в ref.bounds); нативная форма commandStack — context.shape
+  // с плоскими x/y/width/height на самом элементе.
+  const ref = context?.shape || context?.element;
+  const elementId = elementIdOf(ref);
+  const elementType = elementTypeOf(ref);
+  const b = bounds(ref?.bounds || ref);
   if (!elementId || !elementType || !b) return { needsFullSave: true };
   return {
     op: makeOp("shape.create", elementId, {
@@ -206,7 +210,8 @@ function mapShapeCreate(context, inverse) {
 
 function mapConnectionCreate(context, inverse) {
   if (inverse) return { needsFullSave: true };
-  const connection = context?.connection;
+  // Wire-форма несёт соединение в context.element (нативная — context.connection).
+  const connection = context?.connection || context?.element;
   const elementId = elementIdOf(connection);
   const sourceId = elementIdOf(context?.source || connection?.source);
   const targetId = elementIdOf(context?.target || connection?.target);
