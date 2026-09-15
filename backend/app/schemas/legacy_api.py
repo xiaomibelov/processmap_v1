@@ -353,6 +353,15 @@ class SessionOperationsIn(BaseModel):
                 raise ValueError(f"operations[{index}].type is required")
             op["opId"] = op_id
             op["type"] = op_type
+        # Дубликат opId внутри батча — невалидный payload клиента: иначе
+        # integrity error на INSERT session_applied_ops маппится в 409
+        # SESSION_WRITE_CONFLICT вместо честного 422 (review NIT-3).
+        seen_op_ids = set()
+        for op in value:
+            op_id = str(op.get("opId") or "").strip()
+            if op_id in seen_op_ids:
+                raise ValueError(f"duplicate opId in operations: {op_id}")
+            seen_op_ids.add(op_id)
         return value
 
     model_config = ConfigDict(

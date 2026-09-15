@@ -163,6 +163,11 @@ export function createSaveOutbox(options = {}) {
   let flushTimer = null;
   let busyPollTimer = null;
   let consecutiveConflicts = 0;
+  // Ack-wipe защита (review BLOCKER-2): срез буфера, реально ушедший в полёте
+  // ops-flush'а, и марка полного сохранения, инициированного outbox'ом —
+  // ops, дописанные во время полёта, ack'ом не стираются.
+  let inFlightSentCount = 0;
+  let fullSavePreserveFrom = 0;
 
   const emitStatus = (detail) => {
     try {
@@ -252,8 +257,10 @@ export function createSaveOutbox(options = {}) {
       // Не-whitelisted команда: текущий flush уходит существующим полным путём.
       // Буфер НЕ чистим здесь: после ack full-save придёт coordinator
       // "success" (xml/rawXml) и сбросит буфер (серверное состояние покрывает
-      // все применённые локально ops).
+      // все применённые локально ops). Ops, дописанные в буфер ПОСЛЕ этого
+      // момента, ack'ом полного сохранения не покрыты — сохраняем срез.
       needsFullSave = false;
+      fullSavePreserveFrom = buffer.length;
       requestFullSave();
       scheduleFlush();
       return null;
@@ -276,6 +283,7 @@ export function createSaveOutbox(options = {}) {
 
     inFlight = true;
     const wireOps = buffer.map(toWireOp);
+    inFlightSentCount = buffer.length;
     emitStatus({ stage: "ops-saving", opCount: wireOps.length, reason });
     traceOpsFlush({ ts: now(), reason, opCount: wireOps.length, keepalive: false });
     try {
@@ -286,6 +294,7 @@ export function createSaveOutbox(options = {}) {
       });
     } catch {
       inFlight = false;
+      inFlightSentCount = 0;
       return null;
     }
   }
@@ -326,10 +335,18 @@ export function createSaveOutbox(options = {}) {
         // Undo ещё не ушедшей op — удалить её из буфера (не уйдёт на сервер).
         // Undo ушедшей (acked) — compensating-op через тот же маппинг. В обоих
         // случаях нет-local изменений вне ops-покрытия: дедуп full-save ок.
+        // Исключение (REVIEW MAJOR-1): op, в которую слито несколько команд
+        // (__coalesceCount > 1) — удаление целиком теряет delta ранних
+        // команд, а промежуточное состояние op не восстановить → честный
+        // full-save fallback вместо молчаливой дивергенции.
         lastCapture = { command: mapped.command, captured: true };
         const index = buffer.map((op) => op.key).lastIndexOf(incoming.key);
         if (index >= 0) {
+          const coalesceCount = Number(buffer[index].__coalesceCount) || 1;
           buffer.splice(index, 1);
+          if (coalesceCount > 1) {
+            needsFullSave = true;
+          }
         } else {
           buffer.push({ ...incoming, opId: uuid(), __ts: now() });
         }
@@ -408,18 +425,29 @@ export function createSaveOutbox(options = {}) {
       });
     },
 
-    /** onSuccess pipeline "ops": ack — буфер чист, CAS bump делает координатор. */
+    /** onSuccess pipeline "ops": ack — снимаются только отправленные ops. */
     _onAck() {
       inFlight = false;
       consecutiveConflicts = 0;
-      needsFullSave = false;
-      clearBuffer();
+      // Ack-wipe защита: ack покрывает ТОЛЬКО ops ушедшего батча; дописанные
+      // во время полёта остаются в буфере и уходят следующим flush (иначе
+      // правки пользователя во время запроса теряются молча — review BLOCKER-2).
+      if (inFlightSentCount > 0) {
+        buffer.splice(0, Math.min(inFlightSentCount, buffer.length));
+        inFlightSentCount = 0;
+      }
+      // needsFullSave, выставленный во время полёта, ack'ом не гасится —
+      // full-save fallback обязан отработать.
+      if (needsFullSave) {
+        scheduleFlush();
+      }
       emitStatus({ stage: "ops-saved" });
     },
 
     /** on409 pipeline "ops": same-tab race → opsRebase (UI.md §5). */
     async _onConflict(response) {
       inFlight = false;
+      inFlightSentCount = 0;
       consecutiveConflicts += 1;
       if (consecutiveConflicts >= 2) {
         // Двойной 409 подряд — auto-rebase не сходится, честная деградация.
@@ -429,14 +457,26 @@ export function createSaveOutbox(options = {}) {
       stage = "rebasing";
       emitStatus({ stage: "ops-rebase" });
       const pendingOps = buffer.map(toWireOp);
-      const serverXml = response?.data?.detail?.current_xml || response?.currentXml || response?.data?.currentXml || null;
-      if (serverXml) {
-        try {
-          await loadServerXml(serverXml);
-        } catch {
-          degrade("reload-failed");
-          return;
-        }
+      // Реальный wire 409 (API.md §2): detail.server_current_version +
+      // detail.server_current_xml. Без серверного XML replay delta-ops на
+      // локальном документе небезопасен (shape.move/resize применятся второй
+      // раз) — честная деградация вместо риска дивергенции.
+      const conflictDetail = response?.data?.detail || {};
+      const serverXml = conflictDetail.server_current_xml
+        || conflictDetail.current_xml
+        || response?.data?.server_current_xml
+        || response?.serverCurrentXml
+        || response?.currentXml
+        || null;
+      if (!serverXml) {
+        degrade("rebase-no-server-xml");
+        return;
+      }
+      try {
+        await loadServerXml(serverXml);
+      } catch {
+        degrade("reload-failed");
+        return;
       }
       let result;
       try {
@@ -465,6 +505,7 @@ export function createSaveOutbox(options = {}) {
     /** onError pipeline "ops" (retry-исчерпан / 422 / transport fail). */
     _onError(result) {
       inFlight = false;
+      inFlightSentCount = 0;
       if (stage === "degraded") return;
       degrade(result?.status === 422 ? "operation-unsupported" : "transport-failed");
     },
@@ -481,12 +522,19 @@ export function createSaveOutbox(options = {}) {
   entry.bySession.set(sessionId, outbox);
 
   // Full save ack (manual, tab-switch, beforeunload fallback) покрывает все
-  // локальные ops — сбрасываем буфер (PLAN §7).
+  // локальные ops — сбрасываем буфер (PLAN §7). Ops, дописанные после того,
+  // как outbox инициировал полное сохранение (fullSavePreserveFrom), ack'ом
+  // НЕ покрыты — сохраняем хвост буфера (review BLOCKER-2, ack-wipe).
   const unsubscribeCoordinator = coordinator.subscribe?.((event, data) => {
     if (event !== "success") return;
     if (data?.sessionId !== sessionId) return;
     if (data?.pipeline === "xml" || data?.pipeline === "rawXml") {
-      clearBuffer();
+      if (fullSavePreserveFrom > 0) {
+        buffer = buffer.slice(fullSavePreserveFrom);
+        fullSavePreserveFrom = 0;
+      } else {
+        clearBuffer();
+      }
       needsFullSave = false;
       // Full-save ack покрывает все локальные правки — dedup-ledger больше
       // не валиден: consult без свежего pushCommand обязан отвечать false.

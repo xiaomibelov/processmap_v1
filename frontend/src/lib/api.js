@@ -1988,7 +1988,10 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
  *
  * Протокол (PLAN §5): body {baseVersion, operations:[{opId, type, ...payload, source}]};
  * 200 {version, applied, skipped} — version = новый diagram_state_version (на батч);
- * 409 {code: DIAGRAM_STATE_CONFLICT, currentVersion, currentXml}; 422 OPERATION_UNSUPPORTED.
+ * 409 detail {code: DIAGRAM_STATE_CONFLICT, server_current_version, server_current_xml,
+ * server_last_write} (API.md §2 — camelCase-имена, НЕ currentVersion/currentXml:
+ * прежняя форма документации была источником бага rebase);
+ * 422 detail {code: OPERATION_UNSUPPORTED, opId, type, reason}.
  *
  * options.keepalive — flush при уходе со страницы: fetch(..., {keepalive: true}) с
  * Authorization, НЕ sendBeacon (sendBeacon не умеет кастомные заголовки, backend

@@ -254,3 +254,57 @@ test("stageRuntimeCommand infers command from commandStack top when event comman
   assert.equal(result.autosaveRequested, false);
   assert.deepEqual(autosaveReasons, []);
 });
+
+// ---------------------------------------------------------------------------
+// Регрессия e2е 409-под-сценария (2026-09-15): whitelisted-команда, полностью
+// захваченная SaveOutbox как ops, НЕ должна получать параллельный полный
+// autosave от координаторного staging-пути (иначе stale-PUT затирает чужие
+// правки после ops-rebase). Предикат инжектируется владельцем и консультируется
+// ПОСЛЕ onRuntimeChange(ev) — там outbox.pushCommand обновляет dedup-ledger.
+// ---------------------------------------------------------------------------
+
+test("stageRuntimeChange skips autosave when SaveOutbox predicate captures the command", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const consulted = [];
+  const { staging, autosaveReasons, emitted } = makeStaging(store, {
+    shouldSkipAutosave: (command) => {
+      consulted.push(command);
+      return command === "element.updateLabel";
+    },
+  });
+
+  const captured = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "element.updateLabel" });
+  assert.equal(captured.autosaveRequested, false);
+  assert.equal(captured.skipReason, "ops_outbox_captured");
+  assert.deepEqual(autosaveReasons, []);
+
+  const missed = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "spaceTool" });
+  assert.equal(missed.autosaveRequested, true);
+  assert.deepEqual(autosaveReasons, ["autosave"]);
+
+  assert.deepEqual(consulted, ["element.updateLabel", "spaceTool"]);
+  assert.ok(emitted.some((e) => e.event === "STAGE_POSITIONAL_CHANGE" && e.payload.command === "spaceTool") === false);
+});
+
+test("stageRuntimeChange shouldSkipAutosave predicate failure falls back to normal autosave", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const { staging, autosaveReasons } = makeStaging(store, {
+    shouldSkipAutosave: () => {
+      throw new Error("predicate exploded");
+    },
+  });
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "element.updateLabel" });
+  assert.equal(result.autosaveRequested, true);
+  assert.deepEqual(autosaveReasons, ["autosave"]);
+});

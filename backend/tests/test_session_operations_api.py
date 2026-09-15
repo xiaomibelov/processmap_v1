@@ -549,3 +549,167 @@ class SessionOperationsApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionOperationsApiNegativePathTests(unittest.TestCase):
+    """Отрицательные пути route (REVIEW MAJOR-3 / NIT-3 / NIT-4)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_storage_dir = os.environ.get("PROCESS_STORAGE_DIR")
+        self.old_redis_url = os.environ.get("REDIS_URL")
+        self.old_cas_bypass = os.environ.get("FPC_E2E_CAS_BYPASS")
+        os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
+        os.environ.pop("REDIS_URL", None)
+        os.environ.pop("FPC_E2E_CAS_BYPASS", None)
+        os.environ.setdefault("JWT_SECRET", "test-secret")
+
+        from app.auth import create_access_token, create_user
+        from app.main import app
+        from app.storage import get_storage
+
+        self.client = TestClient(app)
+        self.st = get_storage()
+        enqueue_patch = patch.object(
+            type(self.st), "_enqueue_rag_index_after_version", lambda *args, **kwargs: None
+        )
+        enqueue_patch.start()
+        self.addCleanup(enqueue_patch.stop)
+        suffix = uuid.uuid4().hex
+        self.owner = create_user(f"owner_neg_{suffix}@local", "password", is_admin=True)
+        self.token = create_access_token(str(self.owner["id"]))
+        self.sid = self.st.create(title=f"ops-neg-{suffix}", user_id=str(self.owner["id"]))
+        sess = self.st.load(self.sid, is_admin=True)
+        sess.bpmn_xml = SAMPLE_BPMN_XML
+        sess.diagram_state_version = 7
+        self.st.save(sess)
+
+    def tearDown(self):
+        if self.old_storage_dir is None:
+            os.environ.pop("PROCESS_STORAGE_DIR", None)
+        else:
+            os.environ["PROCESS_STORAGE_DIR"] = self.old_storage_dir
+        if self.old_redis_url is None:
+            os.environ.pop("REDIS_URL", None)
+        else:
+            os.environ["REDIS_URL"] = self.old_redis_url
+        if self.old_cas_bypass is not None:
+            os.environ["FPC_E2E_CAS_BYPASS"] = self.old_cas_bypass
+        self.tmp.cleanup()
+
+    def _post(self, body):
+        return self.client.post(
+            f"/api/sessions/{self.sid}/operations",
+            json=body,
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+
+    def _rename_body(self, op_id="op-neg-1"):
+        return {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": op_id, "type": "element.updateProperties",
+                 "elementId": "Task_1", "properties": {"name": "X"}},
+            ],
+        }
+
+    def test_missing_token_401(self):
+        res = self.client.post(f"/api/sessions/{self.sid}/operations", json=self._rename_body())
+        self.assertEqual(res.status_code, 401)
+
+    def test_viewer_role_forbidden_403(self):
+        from app.auth import create_access_token, create_user
+        from app.domains.storage.org_auth import repository as org_auth_repo
+
+        viewer = create_user(f"viewer_{uuid.uuid4().hex}@local", "password", is_admin=False)
+        viewer_token = create_access_token(str(viewer["id"]))
+        # Single-default-org harness auto-grants 'editor' на первом обращении —
+        # фиксируем явное viewer-membership ДО вызова route.
+        sess = self.st.load(self.sid, is_admin=True)
+        org_id = str(getattr(sess, "org_id", "") or "").strip()
+        with org_auth_repo._connect() as con:
+            con.execute(
+                "INSERT OR REPLACE INTO org_memberships (org_id, user_id, role, created_at)"
+                " VALUES (?, ?, 'viewer', ?)",
+                [org_id, str(viewer["id"]), int(time.time())],
+            )
+            con.commit()
+        res = self.client.post(
+            f"/api/sessions/{self.sid}/operations",
+            json=self._rename_body(),
+            headers={"Authorization": f"Bearer {viewer_token}"},
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_unknown_session_404(self):
+        res = self.client.post(
+            "/api/sessions/no-such-session/operations",
+            json=self._rename_body(),
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.json()["detail"]["code"], "SESSION_NOT_FOUND")
+
+    def test_duplicate_op_id_in_batch_422(self):
+        body = {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "dup-1", "type": "element.updateProperties",
+                 "elementId": "Task_1", "properties": {"name": "A"}},
+                {"opId": "dup-1", "type": "element.updateProperties",
+                 "elementId": "Task_2", "properties": {"name": "B"}},
+            ],
+        }
+        res = self._post(body)
+        self.assertEqual(res.status_code, 422)
+        version_after = int(getattr(self.st.load(self.sid, is_admin=True), "diagram_state_version", 0) or 0)
+        self.assertEqual(version_after, 7, "batch with duplicate opId must not be applied")
+
+    def test_protected_id_property_rejected_422(self):
+        body = {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "op-id-1", "type": "element.updateProperties",
+                 "elementId": "Task_1", "properties": {"id": "Task_Evil"}},
+            ],
+        }
+        res = self._post(body)
+        self.assertEqual(res.status_code, 422)
+        self.assertIn("protected_property", res.json()["detail"]["reason"])
+        xml_after = str(getattr(self.st.load(self.sid, is_admin=True), "bpmn_xml", "") or "")
+        self.assertIn('id="Task_1"', xml_after)
+
+    def test_shape_create_with_participant_parent_lands_in_process(self):
+        # Wire bpmn-js createShape несёт parentId=participant: flow node внутри
+        # bpmn:participant невалидна (bpmn-js дропает её при импорте) — сервер
+        # обязан разместить элемент в processRef участника.
+        body = {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "op-par-1", "type": "shape.create", "elementId": "Task_created",
+                 "elementType": "bpmn:Task", "parentId": "Participant_1",
+                 "bounds": {"x": 900, "y": 300, "width": 100, "height": 80}},
+            ],
+        }
+        # SAMPLE_BPMN_XML без collaboration/participant — добавляем обёртку.
+        wrapped = SAMPLE_BPMN_XML.replace(
+            '<bpmn:process id="Process_ops"',
+            '<bpmn:collaboration id="Collaboration_1">'
+            '<bpmn:participant id="Participant_1" processRef="Process_ops" /></bpmn:collaboration>'
+            '<bpmn:process id="Process_ops"',
+        )
+        sess = self.st.load(self.sid, is_admin=True)
+        sess.bpmn_xml = wrapped
+        self.st.save(sess)
+        res = self._post(body)
+        self.assertEqual(res.status_code, 200)
+        xml_after = str(getattr(self.st.load(self.sid, is_admin=True), "bpmn_xml", "") or "")
+        self.assertIn('id="Task_created"', xml_after)
+        participant_idx = xml_after.index('id="Participant_1"')
+        task_idx = xml_after.index('id="Task_created"')
+        process_idx = xml_after.index('id="Process_ops"')
+        # Task создан ПОСЛЕ открывающего process, а не внутри participant
+        # (participant — self-closing в обёртке: task не может быть внутри).
+        self.assertGreater(task_idx, process_idx)
+        self.assertGreater(participant_idx, 0)
+        self.assertIn('bpmnElement="Task_created"', xml_after, "DI shape for created element")

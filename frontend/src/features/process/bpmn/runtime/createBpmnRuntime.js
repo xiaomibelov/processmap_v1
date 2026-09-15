@@ -142,8 +142,12 @@ export default function createBpmnRuntime(options = {}) {
     out.type = boType || asText(ref.type);
     const bounds = snapshotBounds(ref);
     if (bounds) out.bounds = bounds;
-    const name = asText(ref?.businessObject?.name);
+    const name = asText(ref?.businessObject?.$type ? ref.businessObject.name : ref.name);
     if (name) out.name = name;
+    // connection.create wire-op требует waypoints на сервере: тащим маршрут
+    // соединения на ref, чтобы сериализованный контекст его не терял.
+    const refWaypoints = snapshotWaypoints(ref.waypoints);
+    if (refWaypoints) out.waypoints = refWaypoints;
     return out;
   }
 
@@ -193,10 +197,28 @@ export default function createBpmnRuntime(options = {}) {
     try {
       const commandStack = instance?.get?.("commandStack");
       const stack = commandStack?._stack;
+      const length = Array.isArray(stack) ? stack.length : 0;
+      const top = length > 0 ? stack[length - 1] : null;
+      // Вложенные behavior-команды diagram-js шарят id внешней команды
+      // (_pushAction: baseAction.id) и лежат ВВЕРХУ undo-стека: top — это
+      // последняя ВЛОЖЕННАЯ команда (lane.updateRefs/connection.layout/...),
+      // а не та, что породила commandStack.changed. Идём по run'у записей
+      // с тем же id к ПЕРВОЙ — это и есть команда верхнего уровня.
+      let topLevel = top;
+      if (top && typeof top === "object" && top.id !== undefined && top.id !== null) {
+        let i = length - 1;
+        while (i > 0) {
+          const prev = stack[i - 1];
+          if (!prev || typeof prev !== "object" || prev.id !== top.id) break;
+          i -= 1;
+        }
+        topLevel = stack[i];
+      }
       return {
-        length: Array.isArray(stack) ? stack.length : 0,
+        length,
         idx: Number.isFinite(Number(commandStack?._stackIdx)) ? Number(commandStack._stackIdx) : 0,
-        top: Array.isArray(stack) && stack.length > 0 ? stack[stack.length - 1] : null,
+        top,
+        topLevel,
       };
     } catch {
       return null;
@@ -289,25 +311,67 @@ export default function createBpmnRuntime(options = {}) {
     try {
       const eventBus = instance.get("eventBus");
       if (!eventBus || typeof eventBus.on !== "function") return;
+      // Команда верхнего уровня execute: вложенные behavior-команды
+      // (connection.layout/lane.updateRefs/id.updateClaim/...) исполняются
+      // ВНУТРИ execute внешней команды — как до её _executedAction-push
+      // (preExecute-ветка), так и после (postExecute-ветка), поэтому по
+      // _stack run одного execution не опознать (order не фиксирован).
+      // Трекаем глубину execute явно: на 0→1 запоминаем внешнее действие —
+      // commandStack.changed синхронен и видит его до выхода из execute.
+      const commandStack = instance.get("commandStack");
+      const outerExecute = { current: null };
+      let executeDepth = 0;
+      let restoreExecute = null;
+      if (commandStack && typeof commandStack.execute === "function" && !commandStack.__pmOuterTrack) {
+        const originalExecute = commandStack.execute.bind(commandStack);
+        const wrappedExecute = (cmd, ctx) => {
+          const isOuter = executeDepth === 0;
+          executeDepth += 1;
+          if (isOuter) outerExecute.current = { command: cmd, context: ctx };
+          try {
+            return originalExecute(cmd, ctx);
+          } finally {
+            executeDepth -= 1;
+            if (executeDepth === 0) outerExecute.current = null;
+          }
+        };
+        wrappedExecute.__pmOuterTrack = true;
+        commandStack.execute = wrappedExecute;
+        restoreExecute = () => {
+          if (commandStack.execute === wrappedExecute) {
+            commandStack.execute = originalExecute;
+          }
+        };
+      }
       const onCommandChanged = (ev) => {
         let command = asText(ev?.command || ev?.context?.command || "").trim();
-        // bpmn-js sometimes emits commandStack.changed without a command name on
-        // the event itself. The command that was just executed is on the top of
-        // the commandStack internal stack, so fall back to it for classification.
         const cursor = readStackCursor();
-        if (!command && cursor?.top) {
-          command = asText(cursor.top.command || cursor.top.id || "").trim();
+        const action = classifyStackAction(cursor);
+        let contextSource = null;
+        if (action === "execute" && outerExecute.current) {
+          if (!command) command = asText(outerExecute.current.command).trim();
+          contextSource = outerExecute.current.context;
+        } else {
+          // undo/redo (execute-патч их не покрывает): run одного execution в
+          // _stack — смешанный порядок (см. выше), берём верх run'а.
+          const actionEntry = cursor?.topLevel || cursor?.top;
+          if (!command) command = asText(actionEntry?.command || actionEntry?.id || "").trim();
+          contextSource = actionEntry?.context;
         }
         notifyChange({
           command,
-          action: classifyStackAction(cursor),
-          commandContext: snapshotCommandContext(cursor?.top?.context),
+          action,
+          commandContext: snapshotCommandContext(contextSource),
         });
       };
       eventBus.on("commandStack.changed", 1000, onCommandChanged);
       unbindCommandStack = () => {
         try {
           eventBus.off?.("commandStack.changed", onCommandChanged);
+        } catch {
+        }
+        try {
+          restoreExecute?.();
         } catch {
         }
       };

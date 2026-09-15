@@ -352,3 +352,124 @@ test("runtime event shape: commandContext field (createBpmnRuntime notifyChange 
   assert.equal(out.ops[0].elementId, "Task_7");
   assert.deepEqual(out.ops[0].delta, { x: 12, y: 8 });
 });
+
+// ---------------------------------------------------------------------------
+// Регрессия e2e-прогона async-save-operations (2026-09-15): реальный wire-контекст
+// рантайма НЕ содержит shape/connection — snapshotCommandContext нормализует
+// ref элемента в `element` (id/type/bounds/name/waypoints). Мапперы обязаны
+// принимать обе формы, иначе connection.create молча уходит в needsFullSave,
+// а connection.delete уходит опом → серверный 422 connection_not_found.
+// Формы ниже скопированы с захваченных payload реального прогона.
+// ---------------------------------------------------------------------------
+
+test("wire form: shape.move with element-normalized ref + delta maps to op", () => {
+  const out = mapCommandToOps({
+    command: "shape.move",
+    action: "execute",
+    source: "user",
+    commandContext: {
+      element: { id: "Task_1_3", type: "bpmn:Task", bounds: { x: 430, y: 212, width: 120, height: 80 } },
+      __elementId: "Task_1_3",
+      delta: { x: 30, y: 12 },
+      newParent: { id: "Lane_1", type: "bpmn:Lane" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.move");
+  assert.equal(out.ops[0].elementId, "Task_1_3");
+  assert.deepEqual(out.ops[0].delta, { x: 30, y: 12 });
+});
+
+test("wire form: shape.resize with element ref + newBounds maps to op", () => {
+  const out = mapCommandToOps({
+    command: "shape.resize",
+    action: "execute",
+    source: "user",
+    commandContext: {
+      element: { id: "Task_1_5", type: "bpmn:Task", bounds: { x: 100, y: 200, width: 132, height: 90 } },
+      __elementId: "Task_1_5",
+      newBounds: { x: 100, y: 200, width: 132, height: 90 },
+      oldBounds: { x: 100, y: 200, width: 120, height: 80 },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.resize");
+  assert.equal(out.ops[0].elementId, "Task_1_5");
+  assert.deepEqual(out.ops[0].bounds, { x: 100, y: 200, width: 132, height: 90 });
+});
+
+test("wire form: shape.create with element ref (id/type/bounds) + lane parent maps to op", () => {
+  const out = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    source: "user",
+    commandContext: {
+      element: { id: "Activity_1xpagaq", type: "bpmn:Task", bounds: { x: 1750, y: 306, width: 120, height: 80 } },
+      __elementId: "Activity_1xpagaq",
+      parent: { id: "Lane_1", type: "bpmn:Lane" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementId, "Activity_1xpagaq");
+  assert.equal(out.ops[0].elementType, "bpmn:Task");
+  assert.deepEqual(out.ops[0].bounds, { x: 1750, y: 306, width: 120, height: 80 });
+  assert.equal(out.ops[0].parentId, "Lane_1");
+});
+
+test("wire form: connection.create with element ref carrying waypoints maps to op", () => {
+  const out = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    source: "user",
+    commandContext: {
+      element: {
+        id: "Flow_1480jvh",
+        type: "bpmn:SequenceFlow",
+        waypoints: [
+          [1870, 346],
+          [1930, 346],
+        ],
+      },
+      __elementId: "Flow_1480jvh",
+      parent: { id: "Participant_1", type: "bpmn:Participant" },
+      source: { id: "Activity_1xpagaq", type: "bpmn:Task" },
+      target: { id: "Activity_1y3kfa", type: "bpmn:Task" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "connection.create");
+  assert.equal(out.ops[0].elementId, "Flow_1480jvh");
+  assert.equal(out.ops[0].sourceId, "Activity_1xpagaq");
+  assert.equal(out.ops[0].targetId, "Activity_1y3kfa");
+  assert.equal(out.ops[0].parentId, "Participant_1");
+  // waypoints обязаны уйти на сервер (connection.create без них → 422).
+  assert.deepEqual(out.ops[0].waypoints, [
+    [1870, 346],
+    [1930, 346],
+  ]);
+});
+
+test("wire form: connection.delete with element ref maps to op (пара к create)", () => {
+  const out = mapCommandToOps({
+    command: "connection.delete",
+    action: "execute",
+    source: "user",
+    commandContext: {
+      element: { id: "Flow_1480jvh", type: "bpmn:SequenceFlow" },
+      __elementId: "Flow_1480jvh",
+      parent: { id: "Participant_1", type: "bpmn:Participant" },
+      source: { id: "Activity_1xpagaq", type: "bpmn:Task" },
+      target: { id: "Activity_1y3kfa", type: "bpmn:Task" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(
+    out.ops.map((o) => [o.type, o.elementId]),
+    [["connection.delete", "Flow_1480jvh"]],
+  );
+});
