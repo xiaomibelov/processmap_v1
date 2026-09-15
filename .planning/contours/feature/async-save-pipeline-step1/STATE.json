@@ -2,7 +2,7 @@
   "contour": "feature/async-save-pipeline-step1",
   "type": "feat",
   "role": "executor",
-  "status": "PLAN_APPROVED_EXECUTION",
+  "status": "EXECUTION_COMPLETE_REVIEW_PASS_WITH_NITS",
   "plan_approval": {
     "by": "user",
     "date": "2026-09-14",
@@ -23,12 +23,18 @@
   "created": "2026-09-14",
   "gates": {
     "user_plan_approval": "approved",
-    "execution": "in_progress_tdd",
-    "review": "pending",
+    "execution": "done",
+    "review": "pass_with_nits",
     "merge": "blocked_until_user_approval",
     "deploy": "out_of_scope_step1"
   },
-  "artifacts": ["PLAN.md", "API.md", "UI.md", "TESTS.md", "PR.md"],
+  "artifacts": [
+    "PLAN.md",
+    "API.md",
+    "UI.md",
+    "TESTS.md",
+    "PR.md"
+  ],
   "decisions": {
     "delta_format": "bounded op vocabulary derived from commandStack (NOT raw commandStack dump, NOT JSON Patch)",
     "batch_versioning": "one diagram_state_version increment per batch",
@@ -43,5 +49,17 @@
     "server applier placement: backend/app/save_services/ops_applier.py vs sessions_core.py",
     "undo/redo-native rebase viability",
     "alembic vs compat-DDL for session_applied_ops (compat-DDL in step1; reviewer may request alembic)"
-  ]
+  ],
+  "re_review": {
+    "date": "2026-09-15",
+    "verdict": "PASS_WITH_NITS",
+    "commit": "417c486f",
+    "residuals": [
+      "N-new-1: undo sent-unacked op в окне RTT — splice misalignment, step2 (детач префикса в pendingAck)",
+      "NIT-1 parent re-embed ordering — step2",
+      "NIT-2 dead keepalive-budget — step2",
+      "двойная регистрация роута — step2",
+      "manual full-save ack wipe — step2 version-based reconciliation"
+    ]
+  }
 }
