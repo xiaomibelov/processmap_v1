@@ -110,6 +110,10 @@ class SaveCoordinator {
    * @param {number} [config.retryDelayMs]
    * @param {number} [config.transportTimeoutMs] - max time a single transport call may hang (default 10000)
    * @param {number} [config.maxRetryDelayMs] - cap for exponential backoff (default 4000)
+   * @param {number} [config.retryJitterRatio] - jitter amplitude 0..1 applied to the capped
+   *   backoff delay (default 0 = no jitter; delay *= 1 + (random*2-1)*ratio)
+   * @param {Function} [config.retryJitterRandom] - jitter random source (default Math.random;
+   *   pipelines may inject a deterministic source for tests)
    */
   registerPipeline(name, config = {}) {
     const pipelineName = asText(name);
@@ -134,6 +138,8 @@ class SaveCoordinator {
       retryDelayMs: Math.max(0, asNumber(config.retryDelayMs, 1000)),
       transportTimeoutMs: Math.max(50, asNumber(config.transportTimeoutMs, 10000)),
       maxRetryDelayMs: Math.max(0, asNumber(config.maxRetryDelayMs, 4000)),
+      retryJitterRatio: Math.max(0, asNumber(config.retryJitterRatio, 0)),
+      retryJitterRandom: typeof config.retryJitterRandom === "function" ? config.retryJitterRandom : Math.random,
     });
   }
 
@@ -659,7 +665,18 @@ class SaveCoordinator {
 
         const isTimeoutError = lastError && /timeout/i.test(String(lastError?.message || lastError));
         if (attempt < pipeline.retryCount && !isTimeoutError) {
-          const delay = Math.min(pipeline.maxRetryDelayMs, pipeline.retryDelayMs * 2 ** attempt);
+          // Backoff: base = retryDelayMs * 2^attempt, capped at maxRetryDelayMs;
+          // jitter *= (1 + (random*2-1) * retryJitterRatio) — декорреляция
+          // retry-шторма вкладок (fix/post-step1-load-regression). Jitter
+          // применяется к capped base, поэтому верхняя граница —
+          // maxRetryDelayMs * (1 + ratio).
+          const baseDelay = Math.min(pipeline.maxRetryDelayMs, pipeline.retryDelayMs * 2 ** attempt);
+          let delay = baseDelay;
+          if (baseDelay > 0 && pipeline.retryJitterRatio > 0) {
+            const roll = Number(pipeline.retryJitterRandom());
+            const r = Number.isFinite(roll) ? Math.min(1, Math.max(0, roll)) : 0.5;
+            delay = Math.max(0, Math.round(baseDelay * (1 + (r * 2 - 1) * pipeline.retryJitterRatio)));
+          }
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "retry", attempt, delayMs: delay });
           await sleep(delay);
           refreshBaseVersion();

@@ -61,6 +61,10 @@ function makeOutbox(t, options = {}) {
     api,
     uuid: seqUuid(),
     now: () => nowValue,
+    // Детерминизм тайминг-тестов: r=0.5 → jitter-фактор ровно 1.0 (базовая
+    // задержка без отклонения). Джиттер покрывается отдельным файлом
+    // createSaveOutbox.retryJitter.test.mjs.
+    jitterRandom: typeof options.jitterRandom === "function" ? options.jitterRandom : () => 0.5,
     requestFullSave: () => fullSaveRequests.push(Date.now()),
     onStatus: (ev) => statuses.push(ev),
     modeler: options.modeler || null,

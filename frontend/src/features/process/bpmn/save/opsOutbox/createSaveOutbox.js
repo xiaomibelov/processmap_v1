@@ -79,7 +79,7 @@ function traceOpsFlush(entry) {
 // (аналог singleton-пайплайнов xml/meta, но мульти-сессионный).
 const dispatchRegistry = new WeakMap();
 
-function registerOpsPipeline(coordinator, config) {
+function registerOpsPipeline(coordinator, config, factoryOptions = {}) {
   const existing = dispatchRegistry.get(coordinator);
   if (existing?.registered === true) return;
   const entry = existing || { bySession: new Map(), registered: false };
@@ -113,9 +113,15 @@ function registerOpsPipeline(coordinator, config) {
     },
     debounceMs: 0,
     retryCount: 3,
-    retryDelayMs: 1000,
+    retryDelayMs: config.retryDelayMs,
     transportTimeoutMs: 10_000,
-    maxRetryDelayMs: 4000,
+    maxRetryDelayMs: config.maxRetryDelayMs,
+    retryJitterRatio: config.retryJitterRatio,
+    // Детерминированный источник джиттера для тестов (default — Math.random
+    // внутри координатора).
+    ...(typeof factoryOptions.jitterRandom === "function"
+      ? { retryJitterRandom: factoryOptions.jitterRandom }
+      : {}),
   });
 }
 
@@ -129,6 +135,8 @@ function registerOpsPipeline(coordinator, config) {
  * @param {Function} [options.onStatus] - (event {stage, ...}) => void
  * @param {Function} [options.uuid] - генератор opId (тесты)
  * @param {Function} [options.now] - часы (тесты)
+ * @param {Function} [options.jitterRandom] - рандом джиттера retry-backoff
+ *   (тесты; default Math.random в координаторе)
  * @param {Object} [options.modeler] - live modeler для rebase-replay
  * @param {Function} [options.loadServerXml] - reload currentXml в modeler (409)
  * @param {Function} [options.applyOpsFn] - replay pendingOps (тесты)
@@ -145,6 +153,7 @@ export function createSaveOutbox(options = {}) {
   const onStatus = typeof options.onStatus === "function" ? options.onStatus : () => {};
   const uuid = typeof options.uuid === "function" ? options.uuid : defaultUuid;
   const now = typeof options.now === "function" ? options.now : () => Date.now();
+  const jitterRandom = typeof options.jitterRandom === "function" ? options.jitterRandom : null;
   const loadServerXml = typeof options.loadServerXml === "function"
     ? options.loadServerXml
     : async () => ({ ok: true });
@@ -236,17 +245,47 @@ export function createSaveOutbox(options = {}) {
       // Flush при уходе со страницы: fire-and-forget keepalive-fetch с
       // Authorization (UI.md §7 — НЕ sendBeacon). Буфер не чистим: доставка
       // неподтверждена, идемпотентность по opId закрывает двойную отправку
-      // (unload-flush + восстановленная страница).
+      // (unload-flush + восстановленная страница). Запрос обрывается через
+      // keepaliveAbortMs: зависший keepalive не должен держать браузерное
+      // соединение неограниченно (connection-pool starvation класса H3);
+      // abort — best-effort, без retry (страница умирает).
       if (buffer.length === 0 && !needsFullSave) return null;
       const { body } = buildBatchBody({
         baseVersion: getTrackedDiagramStateVersion(sessionId),
         operations: buffer.map(toWireOp),
       });
       traceOpsFlush({ ts: now(), reason, opCount: body.operations.length, keepalive: true });
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      let abortTimer = null;
+      const abortMs = Number(config.keepaliveAbortMs);
+      if (controller && Number.isFinite(abortMs) && abortMs > 0) {
+        abortTimer = setTimeout(() => {
+          try {
+            controller.abort();
+          } catch {
+            // no-op
+          }
+        }, abortMs);
+        if (typeof abortTimer.unref === "function") abortTimer.unref();
+      }
       try {
-        await api.postSessionOperations(sessionId, body, { keepalive: true });
+        await api.postSessionOperations(sessionId, body, {
+          keepalive: true,
+          ...(controller ? { signal: controller.signal } : {}),
+        });
       } catch {
+        if (controller?.signal?.aborted === true) {
+          traceOpsFlush({
+            ts: now(),
+            reason,
+            event: "ops_flush_keepalive_aborted",
+            opCount: body.operations.length,
+            keepalive: true,
+          });
+        }
         // best-effort: страница умирает, серверная идемпотентность — граница отказа
+      } finally {
+        if (abortTimer) clearTimeout(abortTimer);
       }
       return null;
     }
@@ -517,7 +556,7 @@ export function createSaveOutbox(options = {}) {
     },
   };
 
-  registerOpsPipeline(coordinator, config);
+  registerOpsPipeline(coordinator, config, { jitterRandom });
   const entry = dispatchRegistry.get(coordinator);
   entry.bySession.set(sessionId, outbox);
 
