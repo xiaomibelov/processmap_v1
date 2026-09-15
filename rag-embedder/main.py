@@ -14,8 +14,10 @@ import os
 from typing import List, Optional
 
 import numpy as np
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from ort_config import build_session_options, max_batch_size
 
 MODEL_DIR = os.environ.get("EMBEDDINGS_MODEL_DIR", "/models")
 MODEL_ID = "local-e5-small"
@@ -33,12 +35,11 @@ def _load_model() -> None:
     import onnxruntime as ort
     from tokenizers import Tokenizer
 
-    opts = ort.SessionOptions()
-    threads = int(os.environ.get("EMBEDDINGS_ORT_THREADS", "0") or 0)
-    if threads > 0:
-        opts.intra_op_num_threads = threads
     sess_path = os.path.join(MODEL_DIR, "model_int8.onnx")
-    _sess = ort.InferenceSession(sess_path, providers=["CPUExecutionProvider"], sess_options=opts)
+    # Политика памяти/потоков — в ort_config (enable_cpu_mem_arena=False по
+    # умолчанию: default-арена ORT не возвращает память ОС между запросами и
+    # уходила в OOM-цикл на celery-батчах, stage 2026-09-15).
+    _sess = ort.InferenceSession(sess_path, providers=["CPUExecutionProvider"], sess_options=build_session_options())
     _tok = Tokenizer.from_file(os.path.join(MODEL_DIR, "tokenizer.json"))
     _tok.enable_truncation(max_length=MAX_SEQ)
     # Прогрев сессии (инициализация тред-пула ort) до первого реального запроса.
@@ -85,6 +86,14 @@ def embed(inp: EmbedIn) -> dict:
     texts = [str(t) for t in (inp.texts or []) if str(t or "").strip()]
     if not texts:
         return {"embeddings": [], "model_id": MODEL_ID, "dimensions": DIMENSIONS}
+    # Server-side потолок размера батча: защита sidecar'а от клиентов без
+    # батчинга (legacy/внешние вызовы). Клиент проекта батчит по 64.
+    cap = max_batch_size()
+    if len(texts) > cap:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "BATCH_TOO_LARGE", "max_batch": cap, "received": len(texts)},
+        )
     vectors = _embed(texts, inp.input_type)
     return {
         "embeddings": [[float(v) for v in row] for row in vectors],
