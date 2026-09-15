@@ -154,3 +154,55 @@ majors: 3
 - **Процесс:** без EXEC_REPORT и следов e2e/регрессионных прогонов критерии приёмки PLAN §9 непроверяемы.
 
 **Рекомендация:** исправить BLOCKER-1/2 + MAJOR-1 (минимальный набор для корректности), дописать регрессионные тесты из списка, прогнать e2e + регрессии, записать EXEC_REPORT — затем повторное ревью. MAJOR-2/3 — обязательны до открытия PR, могут идти параллельно.
+
+---
+
+## Re-review (2026-09-15, fix commit 417c486f)
+
+> Верификационный проход по `417c486f` (+702/−47, 15 файлов). Код-ридинг первичен, spot-check'и прогнаны.
+
+### Вердикт: **PASS_WITH_NITS**
+
+Оба BLOCKER'а и все заявленные MAJOR/NIT исправлены по существу, регрессионные тесты реальные (не косметические), EXEC_REPORT с метриками существует и числа в нём подтверждены моими прогонами. Один узкий новый residual (N-new-1) и пара наблюдений — не блокируют merge-готовность контура, годятся в step2.
+
+### Проверочная база (прогнано ревьюером)
+
+| Прогон | Результат |
+|---|---|
+| `pytest tests/test_session_operations_api.py tests/test_ops_applier_parity.py` (`/tmp/review-tobe-venv/bin/python`) | **36 passed** (+3 subtests) — совпадает с EXEC_REPORT (23 API incl. negative + 13 parity) |
+| `node --test` 5 touched-файлов (commandToOps/createSaveOutbox/opsRebase/createLocalMutationStaging/bpmnWiring) | **77/77 pass** |
+| EXEC_REPORT-метрики | Спека усилена (Resource Timing API, стабилизация registry после reload) — ассерты 0 PUT / ≤10 kB / p95 / coverage НЕ ослаблены, только инструментация |
+
+### По-файндинг статус
+
+| Finding | Статус | Доказательство |
+|---|---|---|
+| **BLOCKER-1** (409 читал `current_xml`) | **FIXED_VERIFIED** | `createSaveOutbox.js:463-470` — `server_current_xml` первым кандидатом (fallback-цепочка сохранена), при отсутствии XML → `degrade("rebase-no-server-xml")` БЕЗ replay (replay без серверного документа для delta-ops запрещён — корректно). Все 4 тестовых payload'а мигрированы на реальное поле (`createSaveOutbox.test.mjs:485,523,558,617`); `lib/api.js:1991-1994` doc-comment исправлен. |
+| **BLOCKER-2** (ack-wipe) | **FIXED_VERIFIED** (с узким residual, см. N-new-1) | `createSaveOutbox.js:288,444-455` — `inFlightSentCount` фиксируется на диспетчеризации, `_onAck` снимает `splice(0, min(sentCount, len))` только отправленный префикс; `needsFullSave` ack'ом не гасится (`scheduleFlush` при выставленном). Регрессионный тест **реально гоняет race**: transport-мок с ручным resolve, push второго op во время полёта, ack → второй op уходит следующим flush'ем (`createSaveOutbox.test.mjs:761-793`). `fullSavePreserveFrom` (`:263,532-540`) защищает outbox-initiated full-save ack. |
+| **MAJOR-1** (undo coalesced-op) | **FIXED_VERIFIED** | `opsBatchSerializer.js:36-38` — `__coalesceCount` инкрементируется при слиянии; `createSaveOutbox.js:344-350` — undo op с count>1 → splice + `needsFullSave = true` (честный full-save вместо потери delta). Тест с двумя coalesced move + undo: 0 ops отправлено, ≥1 full-save requested (`createSaveOutbox.test.mjs:795-819`). |
+| **MAJOR-2** (EXEC_REPORT) | **FIXED_VERIFIED** | `EXEC_REPORT.md` существует: e2e 3/3 ×3 runs, тело 4042 B (≤10 kB), 0 PUT /bpmn, p95 163 ms (<300), longtask 0, coverage 20/20 = 1.00 (≥0.95), 409-подсценарий и fallback подтверждены; backend 36/36 (подтверждено моим прогоном); 5-plane proof зафиксирован; env-lock released. |
+| **MAJOR-3** (negative-path тесты) | **FIXED_VERIFIED** | `test_session_operations_api.py` +6 тестов с реальными ассертами: 401 (без токена), 403 (viewer-membership явно фиксируется INSERT'ом в `org_memberships`, не надеется на auto-grant), 404 (+`SESSION_NOT_FOUND` code), duplicate opId → 422 (+версия не изменена), protected `id` → 422 (+XML не повреждён), participant-parented create → 200 (+элемент в processRef, DI на месте). Все проходят. |
+| **NIT-3** (duplicate opId → 422) | **FIXED_VERIFIED** | Валидация в `legacy_api.py:356-363` (schema-level), тест выше подтверждает 422 + отсутствие apply. |
+| **NIT-4** (protected `id`, participant processRef, doc-comment) | **FIXED_VERIFIED** (частично deferred) | `ops_applier.py:284-287` — `protected_property: id` → 422; `ops_applier.py:388-397` — participant → processRef resolution. Оба с тестами. api.js doc-comment исправлен. Не закрыты (честно отложены в EXEC «step2»): двойная регистрация роута, openapi-описание операции, dead keepalive-бюджет код (NIT-2) — приемлемо как известные остатки. |
+| **NIT-1** (parent re-embed order) | **NOT_FIXED** (осознанно deferred) | Зафиксирован в EXEC «открытые остатки». Зеркалит PUT /bpmn — приемлемо для step1, не блокер. |
+
+### Три stacked 422 root cause'а (фокус #6)
+
+1. **Command misclassification** (`createBpmnRuntime.js:317-346`) — wrap `commandStack.execute` с execute-depth tracking: внешняя команда+контекст фиксируются на 0→1 глубины. Премиза **верифицирована против исходников diagram-js** (`CommandStack.js:176-186` — nested execute шарит `baseAction.id`; `_popAction` — `commandStack.changed` фирится РОВНО ОДИН раз на top-level execution; `undo()/redo()` ревертят весь contiguous run одного id — значит `topLevel`-резолв для undo/redo корректен). Restore на unbind + guard от двойного wrap есть. Отступление от replay через `applyOps` по-прежнему документировано — обосновано.
+2. **element-normalized refs** (`commandToOps.js:196-199,213-214`) — мапперы принимают `context.element` наряду с нативными `shape`/`connection` — sound.
+3. **bounds/waypoints wire-shapes** (`createBpmnRuntime.js:145-150` — waypoints/name теперь тащатся на ref-снапшот) — sound; +5 wire-тестов скопированы с захваченных payload реального прогона, включая критичный ассерт «connection.create без waypoints → 422» (раньше уходил молча в needsFullSave/delete → 422 connection_not_found).
+
+### Новые риски самого fix-коммита (фокус #7)
+
+- **Dedup skip-branch split** (`createLocalMutationStaging.js:196-205,239-251`): `autosaveSkipped` выставляется ровно в трёх случаях — positional, drag_in_progress (коэрсит `positional=true` → ветка идентична baseline), `ops_outbox_captured`. Split sound: ops-captured НЕ получает positional-таймер (иначе параллельный PUT поверх ops-flush — именно регрессия e2е-409, которую ловит новый staging-тест). Порядок консультации верный: `stageRuntimeChange` зовёт `onRuntimeChange(ev)` (wiring → `pushCommand` обновляет dedup-ledger) ДО предиката; behavioral-тесты есть (`createLocalMutationStaging.test.mjs:260-310`). Predicate-throw → консервативный autosave ✓.
+- **N-new-1 (NIT-MAJOR, узкий residual BLOCKER-2)**: индексная ack-семантика ломается мутацией отправленного префикса во время полёта. Сценарий: dispatch [A,B,C] (`inFlightSentCount=3`) → во время RTT undo неподтверждённого B (splice, index < sentCount) → push D → ack `splice(0,3)` снимает вместе с A,C(✓ acked) и **D (не отправлен — теряется)**. Тот же класс у `fullSavePreserveFrom` (индекс в буфер). Окно = RTT ops-запроса (~100–300 мс), нужен undo в нём + последующая правка. Фикс-рекомендация (step2): детач отправленного префикса в отдельный список на диспетчеризации (`pendingAck = buffer.splice(0)`; буфер продолжает жить своей жизнью) — снимает и этот edge, и неоднозначность undo-unacked. Регрессионный тест: push → flush(hang) → undo отправленной op → push → ack → вторая op обязана уйти.
+- **N-new-2 (NIT, pre-existing)**: `isPositionalCommand` lowercases команду, но `POSITIONAL_COMMANDS` содержит `"spaceTool"` в mixed case → spaceTool НИКОГДА не классифицируется positional в staging/wiring (standalone spaceTool идёт structural-путём). Pre-existing (вне diff контура), на контуре влияния нет (spaceTool → needsFullSave → full save), но касинг стоит починить отдельно.
+- **N-new-3 (NIT, observation)**: staging-consult обходится для positional-команд (`!autosaveSkipped` guard) — ops-captured `shape.move` формально до-сих-пор вооружает positional keep-final таймер координатора. Эмпирически e2e (3 runs, strict 0-PUT assertion, moves через modeling API) показывает подавление на живой системе; механизм статически не прослежен до конца — рекомендую step2-trace (`SAVE_POSITIONAL_FINAL_*` события) либо консультацию предиката и для positional-после-pushCommand. Не блокер: измеренные критерии приёмки держатся.
+
+### Остатки, перенесённые в step2 (зафиксированы в EXEC_REPORT, приняты)
+
+NIT-1 (parent re-embed order), NIT-2 (dead keepalive-бюджет код), двойная регистрация роута, openapi-описание операции, manual-save ack-wipe residual (version-based reconciliation), undo/redo-native rebase, create-op replay.
+
+### Итог
+
+Контур в merge-готовом состоянии по коду: оба BLOCKER'а закрыты верифицируемо, тестовая база усилена реальными регрессиями, acceptance-метрики подтверждены независимым прогоном. N-new-1 — единственный осмысленный остаток класса «молчаливая дивергенция», узкий по окну; рекомендую исправить в step2 до prod-деплоя, не блокируя PR-флоу. Условие: перед PR — regenerate openapi (описание операции) по чек-листу PR.md, merge/deploy — только после явного approve владельца.
