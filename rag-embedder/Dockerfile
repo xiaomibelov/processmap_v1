@@ -36,6 +36,7 @@ RUN pip install --no-cache-dir --timeout 30 --retries 10 -r requirements.txt
 
 COPY --from=exporter /models /models
 COPY main.py ./
+COPY ort_config.py ./
 
 EXPOSE 8000
 
