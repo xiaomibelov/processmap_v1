@@ -14,6 +14,7 @@ import {
   pickValidActiveOrgId,
 } from "../../lib/api";
 import { setTelemetryUserContext } from "../telemetry/telemetryClient.js";
+import { withTransientRetry } from "./authBootRetry.js";
 
 const AuthContext = createContext(null);
 
@@ -116,7 +117,10 @@ export function AuthProvider({ children }) {
       const hasAccess = Boolean(getAccessToken());
 
       if (hasAccess) {
-        const me = await hydrateUser();
+        // Transient-сбои (5xx/сеть) повторяем: одиночный 502 в окне деградации
+        // бэкенда не должен выбрасывать живого пользователя на /?next=
+        // (fix/stage-slow-load-auth-outage).
+        const me = await withTransientRetry(() => hydrateUser());
         if (me.ok) {
           if (!disposed) {
             setReauthRequired(false);
@@ -126,9 +130,9 @@ export function AuthProvider({ children }) {
         }
       }
 
-      const refreshed = await apiAuthRefresh({ silent: true });
+      const refreshed = await withTransientRetry(() => apiAuthRefresh({ silent: true }));
       if (refreshed.ok) {
-        const me = await hydrateUser();
+        const me = await withTransientRetry(() => hydrateUser());
         if (me.ok) {
           if (!disposed) {
             setReauthRequired(false);
