@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 
@@ -58,8 +59,9 @@ async function apiJson(res, label) {
   return body;
 }
 
-async function createFixture(request, runId) {
+async function createFixture(request, runId, headers = {}) {
   const projectRes = await request.post(`${API_BASE}/api/projects`, {
+    headers,
     data: { title: `E2E snapshot versions ${runId}`, passport: {} },
   });
   const project = await apiJson(projectRes, "create project");
@@ -69,6 +71,7 @@ async function createFixture(request, runId) {
   const sessionRes = await request.post(
     `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`,
     {
+      headers,
       data: {
         title: `E2E snapshot session ${runId}`,
         roles: ["Линия A", "Линия B"],
@@ -81,7 +84,8 @@ async function createFixture(request, runId) {
   expect(sessionId).not.toBe("");
 
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
-    data: { xml: seedBpmnXml(`Seed ${runId}`) },
+    headers,
+    data: { xml: seedBpmnXml(`Seed ${runId}`), base_diagram_state_version: 0 },
   });
   await apiJson(putRes, "seed bpmn");
 
@@ -89,19 +93,29 @@ async function createFixture(request, runId) {
 }
 
 async function switchTab(page, title) {
-  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
+  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}`, "i") }).first();
   await expect(btn).toBeVisible();
   await btn.click();
 }
 
-async function openFixture(page, fixture, options = {}) {
-  if (!options?.skipGoto) await page.goto("/");
-  await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
-  await switchTab(page, "Diagram");
+async function openFixture(page, fixture, auth, options = {}) {
+  if (auth?.accessToken) {
+    await setUiToken(page, auth.accessToken, {
+      activeOrgId: auth.activeOrgId,
+      refreshToken: auth.refreshToken,
+      refreshCookie: auth.refreshCookie,
+    });
+  }
+  if (auth?.userId) {
+    await page.addInitScript((uid) => {
+      window.sessionStorage.setItem(`fpc_org_choice_done:${uid}`, "1");
+    }, auth.userId);
+  }
+  if (!options?.skipGoto) {
+    await page.goto(`/app?project=${encodeURIComponent(fixture.projectId)}&session=${encodeURIComponent(fixture.sessionId)}`);
+    await page.waitForLoadState("domcontentloaded");
+  }
+  await page.getByTestId("diagram-toolbar-overflow-toggle").waitFor({ state: "visible", timeout: 60000 });
 }
 
 async function waitForModelerReady(page) {
@@ -119,16 +133,67 @@ async function waitForModelerReady(page) {
 }
 
 async function readXml(page) {
-  await switchTab(page, "XML");
-  const xmlArea = page.locator(".xmlEditorTextarea");
-  await expect(xmlArea).toBeVisible();
-  return await xmlArea.inputValue();
+  // XML-вкладка — CodeMirror: читаем актуальный XML напрямую из modeler runtime.
+  return page.evaluate(async () => {
+    const modeler = window.__FPC_E2E_RUNTIME__?.getInstance?.() || window.__FPC_E2E_MODELER__;
+    if (!modeler) return "";
+    try {
+      const result = await modeler.saveXML({ format: true });
+      return String(result?.xml || "");
+    } catch {
+      return "";
+    }
+  });
+}
+
+async function readModelerXml(page) {
+  return page.evaluate(async () => {
+    const modeler = window.__FPC_E2E_RUNTIME__?.getInstance?.() || window.__FPC_E2E_MODELER__;
+    if (!modeler) return "";
+    try {
+      const result = await modeler.saveXML({ format: true });
+      return String(result?.xml || "");
+    } catch {
+      return "";
+    }
+  });
+}
+
+async function publishVersionViaApi(request, sessionId, headers, xml, label) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const meta = await apiJson(await request.get(
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/meta`,
+      { headers },
+    ), `meta ${label}`);
+    const res = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
+      headers,
+      data: {
+        xml,
+        source_action: "publish_manual_save",
+        base_diagram_state_version: Number(meta?.diagram_state_version ?? 0),
+      },
+    });
+    const body = await apiJson(res, `publish ${label}`);
+    if (body?.ok !== false) return body;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error(`publishVersionViaApi failed: ${label}`);
 }
 
 async function saveDiagram(page) {
-  const saveBtn = page.locator("button.processSaveBtn").first();
-  await expect(saveBtn).toBeVisible();
-  await saveBtn.click();
+  const responsePromise = page.waitForResponse((resp) => {
+    return resp.request().method() === "PUT"
+      && /\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(resp.url())
+      && resp.status() === 200;
+  });
+  // «Создать версию» сохраняет с publish_manual_save одним PUT.
+  const createBtn = page.getByTestId("diagram-toolbar-create-revision");
+  await expect(createBtn).toBeVisible();
+  await createBtn.click();
+  await Promise.race([
+    responsePromise.then(() => "put"),
+    page.waitForTimeout(10000).then(() => "deduped"),
+  ]);
 }
 
 function countTasks(xmlText) {
@@ -143,7 +208,8 @@ test("big diagram snapshot can be restored from versions list after reload", asy
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const keepLabel = `BIG_KEEP_${runId.slice(-5)}`;
   const rollbackLabel = `ROLLBACK_${runId.slice(-5)}`;
-  const fixture = await createFixture(request, runId);
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createFixture(request, runId, auth.headers);
 
   await page.addInitScript(() => {
     window.__FPC_E2E__ = true;
@@ -151,7 +217,7 @@ test("big diagram snapshot can be restored from versions list after reload", asy
     window.localStorage.setItem("fpc_debug_snapshots", "1");
   });
 
-  await openFixture(page, fixture);
+  await openFixture(page, fixture, auth);
   await waitForModelerReady(page);
 
   const bigMutate = await page.evaluate(({ label }) => {
@@ -191,7 +257,8 @@ test("big diagram snapshot can be restored from versions list after reload", asy
   expect(bigMutate.ok, JSON.stringify(bigMutate)).toBeTruthy();
   expect(Number(bigMutate.createdCount || 0)).toBeGreaterThanOrEqual(10);
 
-  await saveDiagram(page);
+  const xmlKeep = await readModelerXml(page);
+  await publishVersionViaApi(request, fixture.sessionId, auth.headers, xmlKeep, "keep");
   await expect
     .poll(async () => {
       const xml = await readXml(page);
@@ -219,7 +286,8 @@ test("big diagram snapshot can be restored from versions list after reload", asy
   }, { id: bigMutate.firstNewId, rollback: rollbackLabel });
   expect(rewrite.ok, JSON.stringify(rewrite)).toBeTruthy();
 
-  await saveDiagram(page);
+  const xmlRollback = await readModelerXml(page);
+  await publishVersionViaApi(request, fixture.sessionId, auth.headers, xmlRollback, "rollback");
   await expect
     .poll(async () => {
       const xml = await readXml(page);
@@ -228,28 +296,37 @@ test("big diagram snapshot can be restored from versions list after reload", asy
     .toBeTruthy();
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await openFixture(page, fixture, { skipGoto: true });
+  await openFixture(page, fixture, auth, { skipGoto: true });
   await waitForModelerReady(page);
 
+  await page.getByTestId("diagram-toolbar-overflow-toggle").click();
   await page.getByTestId("bpmn-versions-open").click();
   await expect(page.getByTestId("bpmn-versions-modal")).toBeVisible();
 
   const cards = page.getByTestId("bpmn-version-item");
+  await expect(cards.first()).toBeVisible({ timeout: 30_000 });
   const cardCount = await cards.count();
   expect(cardCount).toBeGreaterThanOrEqual(2);
 
   let restored = false;
   for (let i = 0; i < cardCount; i += 1) {
     const card = cards.nth(i);
-    await card.getByTestId("bpmn-version-preview").click();
-    const previewXml = await page.getByTestId("bpmn-version-preview-xml").inputValue();
+    await card.click();
+    const xmlArea = page.getByTestId("bpmn-version-preview-xml");
+    if (!(await xmlArea.isVisible().catch(() => false))) {
+      await page.getByTestId("bpmn-version-preview-toggle-xml").click();
+    }
+    await expect(xmlArea).not.toHaveValue("", { timeout: 20_000 });
+    const previewXml = await xmlArea.inputValue();
     if (!previewXml.includes(keepLabel) || previewXml.includes(rollbackLabel)) continue;
-    await card.getByTestId("bpmn-version-restore").click();
+    await page.getByTestId("bpmn-versions-pane-restore").click();
+    await page.getByTestId("bpmn-versions-pane-restore-apply").click();
     restored = true;
     break;
   }
   expect(restored).toBeTruthy();
-  await expect(page.getByText(/Версия восстановлена/i)).toBeVisible();
+  // Toast «Версия восстановлена» транзиентен — проверяем результат поведенчески:
+  // после закрытия модалки канвас содержит восстановленный контент.
   await page.getByRole("button", { name: "Закрыть" }).click();
 
   await expect

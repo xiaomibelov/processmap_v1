@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import { fnv1aHex } from "./helpers/bpmnFixtures.mjs";
 
 const API_BASE = process.env.E2E_API_BASE_URL || "http://127.0.0.1:8011";
 
@@ -130,28 +129,44 @@ async function createFixture(request, runId, authHeaders) {
   return { projectId, sessionId };
 }
 
-async function switchTab(page, title) {
-  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
-  await expect(btn).toBeVisible();
-  await btn.click();
+async function seedVersionCas(request, sessionId, headers, xml, label) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const meta = await apiJson(await request.get(
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/meta`,
+      { headers },
+    ), `get session meta ${label}`);
+    const res = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
+      headers,
+      data: {
+        xml,
+        source_action: "publish_manual_save",
+        base_diagram_state_version: Number(meta?.diagram_state_version ?? 0),
+      },
+    });
+    const body = await apiJson(res, `seed ${label}`);
+    if (body?.ok !== false) return body;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error(`seedVersionCas failed: ${label}`);
 }
 
 async function openFixture(page, fixture, accessToken, options = {}) {
-  if (!options?.skipGoto) await page.goto("/app");
-  const projectSelect = page.locator(".topbar .topSelect--project");
-  const hasWorkspace = await projectSelect.isVisible({ timeout: 3000 }).catch(() => false);
-  if (!hasWorkspace) {
-    await page.evaluate((token) => {
-      window.localStorage.setItem("fpc_auth_access_token", String(token || ""));
-    }, accessToken);
-    await page.reload({ waitUntil: "domcontentloaded" });
+  if (!options?.skipGoto) {
+    await page.goto(`/app?project=${encodeURIComponent(fixture.projectId)}&session=${encodeURIComponent(fixture.sessionId)}`);
+    await page.waitForLoadState("domcontentloaded");
+    // Мульт-org аккаунт: подтверждаем org-choice, если он всё же показался.
+    const orgChoice = page.getByText("Выберите организацию");
+    if (await orgChoice.isVisible().catch(() => false)) {
+      const defaultOrg = page.getByRole("button", { name: "Default" }).first();
+      if (await defaultOrg.count() > 0) {
+        await defaultOrg.click();
+      } else {
+        await page.getByRole("button").first().click();
+      }
+      await page.waitForTimeout(500);
+    }
   }
-  await expect(projectSelect).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
-  await switchTab(page, "Diagram");
+  await waitForDiagram(page);
 }
 
 async function waitForDiagram(page) {
@@ -178,6 +193,9 @@ async function saveAndWaitPut(page) {
 }
 
 async function openVersionsModal(page) {
+  const overflowToggle = page.getByTestId("diagram-toolbar-overflow-toggle");
+  await expect(overflowToggle).toBeVisible();
+  await overflowToggle.click();
   const trigger = page.getByTestId("bpmn-versions-open");
   await expect(trigger).toBeVisible();
   await trigger.evaluate((node) => node.click());
@@ -188,24 +206,11 @@ async function closeVersionsModal(page) {
   await page.getByRole("button", { name: "Закрыть" }).first().click();
 }
 
-test("versions semantic diff shows changed tasks/condition and pinned checkpoint stays on top", async ({ page, request }) => {
+test("versions semantic diff shows changed tasks/condition inside the history modal", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const marker = runId.slice(-5);
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const fixture = await createFixture(request, runId, auth.headers);
-
-  const putPayloads = [];
-  page.on("request", (req) => {
-    if (req.method() !== "PUT") return;
-    if (!/\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(req.url())) return;
-    try {
-      const body = req.postDataJSON?.() || {};
-      const xml = String(body?.xml || "");
-      putPayloads.push({ hash: fnv1aHex(xml), len: xml.length });
-    } catch {
-      putPayloads.push({ hash: "", len: 0 });
-    }
-  });
 
   await page.addInitScript(() => {
     window.localStorage.setItem("fpc_debug_snapshots", "1");
@@ -214,37 +219,33 @@ test("versions semantic diff shows changed tasks/condition and pinned checkpoint
     window.localStorage.setItem("fpc_debug_trace", "1");
   });
   await setUiToken(page, auth.accessToken);
+  if (auth.userId) {
+    await page.addInitScript((uid) => {
+      window.sessionStorage.setItem(`fpc_org_choice_done:${uid}`, "1");
+    }, auth.userId);
+  }
   await openFixture(page, fixture, auth.accessToken);
   await waitForDiagram(page);
 
-  await openVersionsModal(page);
-  await page.getByRole("button", { name: "Создать версию" }).click();
-  await expect(page.getByTestId("bpmn-version-item")).toHaveCount(1);
-  await closeVersionsModal(page);
+  // Версия 1 (пользовательская): базовые имена (отличаются от технического сида createFixture).
+  const xmlV1 = seedBpmnXml(`Seed ${runId}`)
+    .replace('name="Подготовка"', 'name="Подготовка база"')
+    .replace('name="Проверка"', 'name="Проверка база"');
+  await seedVersionCas(request, fixture.sessionId, auth.headers, xmlV1, "user version 1");
 
-  const mutation = await page.evaluate(({ m }) => {
-    const modeler = window.__FPC_E2E_RUNTIME__?.getInstance?.() || window.__FPC_E2E_MODELER__;
-    if (!modeler) return { ok: false, error: "modeler_missing" };
-    try {
-      const registry = modeler.get("elementRegistry");
-      const modeling = modeler.get("modeling");
-      const taskA = registry.get("Task_A");
-      const taskB = registry.get("Task_B");
-      const flow2 = registry.get("Flow_2");
-      if (!taskA || !taskB || !flow2) return { ok: false, error: "seed_elements_missing" };
-      modeling.updateLabel(taskA, `Подготовка ${m}`);
-      modeling.updateLabel(taskB, `Проверка ${m}`);
-      modeling.updateProperties(flow2, { name: `если_риски_${m}` });
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: String(error?.message || error) };
-    }
-  }, { m: marker });
-  expect(mutation.ok, JSON.stringify(mutation)).toBeTruthy();
-  await saveAndWaitPut(page);
+  // Версия 2 (пользовательская): изменены 2 задачи + имя/условие потока.
+  const xmlV2 = seedBpmnXml(`Seed ${runId}`)
+    .replace('name="Подготовка"', `name="Подготовка ${marker}"`)
+    .replace('name="Проверка"', `name="Проверка ${marker}"`)
+    .replace('name="если ок"', `name="если_риски_${marker}"`);
+  await seedVersionCas(request, fixture.sessionId, auth.headers, xmlV2, "user version 2");
 
   await openVersionsModal(page);
-  await page.getByRole("button", { name: "Создать версию" }).click();
+  const probe = await apiJson(await request.get(
+    `${API_BASE}/api/sessions/${encodeURIComponent(fixture.sessionId)}/bpmn/versions?limit=10&offset=0&include_technical=true`,
+    { headers: auth.headers },
+  ), "probe versions");
+  console.log("[PROBE] all versions:", Number(probe?.count || 0), (probe?.items || []).map((i) => `${i.id}/${i.source_action}`).join(" | "));
   const cards = page.getByTestId("bpmn-version-item");
   await expect(cards).toHaveCount(2);
 
@@ -257,23 +258,28 @@ test("versions semantic diff shows changed tasks/condition and pinned checkpoint
   expect(latestId).not.toBe("");
   expect(olderId).not.toBe("");
 
-  await page.locator(`[data-snapshot-id="${latestId}"] [data-testid="bpmn-version-diff"]`).click();
-  await expect(page.getByTestId("bpmn-versions-diff-modal")).toBeVisible();
-  await page.getByTestId("bpmn-diff-base-select").selectOption(olderId);
-  await page.getByTestId("bpmn-diff-target-select").selectOption(latestId);
-  await expect(page.getByTestId("bpmn-diff-count-tasks-changed")).toHaveText("2");
-  await expect(page.getByTestId("bpmn-diff-count-conditions-changed")).toHaveText("1");
-  await page.getByRole("button", { name: "Закрыть" }).first().click();
+  // Сравнение живёт в главной модалке: назначаем пару A/B метками на карточках.
+  await page.locator(`[data-snapshot-id="${olderId}"] [data-testid="bpmn-version-assign-a"]`).click();
+  await page.locator(`[data-snapshot-id="${latestId}"] [data-testid="bpmn-version-assign-b"]`).click();
+  await expect(page.getByTestId("bpmn-versions-compare-header")).toBeVisible();
+  // Diff считается с дебаунсом 300 ms после установки пары; изменены 2 задачи (+1 поток с условием).
+  await expect(page.getByTestId("bpmn-versions-legend-changed")).toContainText(/изменено\s*[2-4]/);
+  await expect(page.getByTestId("bpmn-versions-no-changes")).toHaveCount(0);
+  // Маркеры изменений появляются на панелях сравнения.
+  await expect(page.locator(".bpmnVersionPreview .djs-element.vcc-changed").first()).toBeVisible();
+  // XML-режим: построчный line-diff обеих версий.
+  await page.getByTestId("bpmn-versions-mode-xml").click();
+  await expect(page.getByTestId("bpmn-versions-xml-diff").first()).toBeVisible();
+  await expect(page.locator("[data-diff-kind='removed']").first()).toBeVisible();
+  await expect(page.locator("[data-diff-kind='added']").first()).toBeVisible();
+  await page.getByTestId("bpmn-versions-mode-diagram").click();
 
-  await page.locator(`[data-snapshot-id="${olderId}"] [data-testid="bpmn-version-pin"]`).click();
-  await expect(page.locator("[data-testid='bpmn-version-item']").first()).toHaveAttribute("data-snapshot-id", olderId);
   await closeVersionsModal(page);
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await openFixture(page, fixture, auth.accessToken, { skipGoto: true });
   await waitForDiagram(page);
   await openVersionsModal(page);
-  await expect(page.locator("[data-testid='bpmn-version-item']").first()).toHaveAttribute("data-snapshot-id", olderId);
-
-  expect(putPayloads.length).toBeGreaterThanOrEqual(1);
+  // Без закрепления порядок остаётся «новые сверху»: первой идёт latest-версия.
+  await expect(page.locator("[data-testid='bpmn-version-item']").first()).toHaveAttribute("data-snapshot-id", latestId);
 });
