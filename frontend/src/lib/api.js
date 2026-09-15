@@ -2018,6 +2018,9 @@ export async function apiPostSessionOperations(sessionId, payload = {}, options 
         body: JSON.stringify(body),
         keepalive: true,
         credentials: "include",
+        // AbortSignal от keepalive-таймаута outbox'а: зависший keepalive-запрос
+        // обрывается, а не держит соединение неограниченно.
+        signal: options?.signal ?? null,
       });
       const data = response?.ok ? await response.json().catch(() => ({})) : {};
       const version = Number(data?.version);
