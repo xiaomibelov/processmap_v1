@@ -18,9 +18,21 @@ export const OPS_OUTBOX_CONFIG = Object.freeze({
   // mutual exclusion с full-save обеспечиваем явным poll'ом busy-статуса
   // pipelines xml/rawXml перед ops-flush.
   fullSaveBusyPollMs: 200,
+  // Retry-политика pipeline "ops" (hardening fix/post-step1-load-regression):
+  // экспоненциальный backoff 1s→8s (base = retryDelayMs * 2^(n-1), cap =
+  // maxRetryDelayMs) с джиттером ±retryJitterRatio против синхронизации
+  // retry-шторма вкладок при деградации сети/сервера. Джиттер инжектируется
+  // в координатор через retryJitterRandom (default Math.random).
+  retryDelayMs: 1000,
+  maxRetryDelayMs: 8000,
+  retryJitterRatio: 0.3,
   // Лимит keepalive-тела (~64 kB по спецификации fetch keepalive); батч ops
   // ≤ ~10 kB, запас на порядок.
   keepaliveBodyLimitBytes: 64 * 1024,
+  // Keepalive-flush (уход со страницы) обрывается через keepaliveAbortMs:
+  // зависший keepalive-запрос не должен держать браузерное соединение
+  // неограниченно (connection-pool starvation класса H3).
+  keepaliveAbortMs: 5000,
   // Таймаут drain очереди при выгрузке страницы (см. installOpsOutboxPageFlush).
   pageHideDrainTimeoutMs: 1500,
 });
