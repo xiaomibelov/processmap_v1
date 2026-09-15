@@ -172,6 +172,7 @@ from .schemas.legacy_api import (
     ProjectMemberUpsertIn,
     SessionPresenceTouchIn,
     SessionTitleQuestionsIn,
+    SessionOperationsIn,
     UpdateSessionIn,
     norm_project_session_mode as _norm_project_session_mode,
 )
@@ -4823,6 +4824,258 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         if bpmn_version_snapshot is not None:
             out["bpmn_version_snapshot"] = bpmn_version_snapshot
         return out
+    finally:
+        lock.release()
+
+
+def _conflict_with_current_xml(exc: HTTPException, storage, session_id: str) -> None:
+    """409 payload для operations включает server_current_xml (API.md §2)."""
+    if int(getattr(exc, "status_code", 0) or 0) != 409:
+        raise exc
+    detail = exc.detail
+    if not isinstance(detail, dict):
+        raise exc
+    if detail.get("server_current_xml"):
+        raise exc
+    detail = dict(detail)
+    try:
+        current = storage.load(str(session_id), is_admin=True)
+        if current is not None:
+            detail["server_current_xml"] = str(getattr(current, "bpmn_xml", "") or "")
+    except Exception:
+        pass
+    raise HTTPException(status_code=409, detail=detail) from exc
+
+
+# feature/async-save-pipeline-step1: инкрементальное (дельта) сохранение диаграммы.
+@app.post("/api/sessions/{session_id}/operations")
+def session_operations_apply(session_id: str, inp: SessionOperationsIn, request: Request = None) -> Dict[str, Any]:
+    sid = str(session_id or "").strip()
+    if not sid or sid.lower() == "none":
+        logger.warning("session_operations_apply_invalid_session_id: received session_id=%r", session_id)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_SESSION_ID",
+                "session_id": sid,
+                "message": "session_id is required and must not be the literal string 'None'",
+            },
+        )
+
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    effective_is_admin = is_admin or request is None
+
+    sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess_pre:
+        raise_session_not_found(session_id)
+    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
+    if not _can_edit_workspace(role, is_admin=effective_is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    payload = dict(inp.model_dump(exclude_unset=True))
+    # Тело использует camelCase baseVersion; резолвер знает snake_case keys.
+    if inp.baseVersion is not None:
+        payload.setdefault("base_diagram_state_version", inp.baseVersion)
+    client_base_diagram_state_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=payload,
+    )
+    client_id = _resolve_client_id_from_request(request)
+    operations = list(inp.operations or [])
+
+    lock = acquire_session_lock(session_id, ttl_ms=15000)
+    if not lock.acquired:
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "code": "SESSION_LOCK_BUSY",
+                "message": "Session is being updated, retry",
+                "server_current_version": int(getattr(sess_pre, "diagram_state_version", 0) or 0),
+            },
+        )
+
+    try:
+        st = get_storage()
+        s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
+        if not s:
+            raise_session_not_found(session_id)
+        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
+        current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
+
+        # Идемпотентность (replay fast path) до строгого CAS: повтор батча
+        # с устаревшим base — 200 с текущей версией, без инкремента
+        # (API.md §2: «Если ВСЕ opId уже применены → 200 {version: current}»).
+        op_ids = [str(op.get("opId") or "") for op in operations]
+        already_applied = st.list_applied_op_ids(session_id, op_ids)
+        pending = [op for op in operations if str(op.get("opId") or "") not in already_applied]
+        skipped = len(operations) - len(pending)
+        if not pending:
+            return {
+                "ok": True,
+                "session_id": s.id,
+                "version": current_diagram_state_version,
+                "applied": 0,
+                "skipped": skipped,
+            }
+
+        try:
+            _require_diagram_cas_or_409(
+                sess=s,
+                session_id=session_id,
+                request=request,
+                client_base_version=client_base_diagram_state_version,
+            )
+        except HTTPException as exc:
+            _conflict_with_current_xml(exc, st, session_id)
+
+        from .save_services import ops_applier
+
+        # Lazy-fallback retention cleanup (~1/200), если celery-джоба недоступна.
+        try:
+            ops_applier.maybe_cleanup_applied_ops()
+        except Exception:
+            pass
+
+        try:
+            new_xml = ops_applier.apply_operations(previous_xml, pending)
+        except ops_applier.OperationApplyError as exc:
+            # Атомарность: ничего не сохранено, весь батч откатывается (API.md §3 п.6).
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "OPERATION_UNSUPPORTED",
+                    "opId": exc.op_id,
+                    "type": exc.op_type,
+                    "reason": exc.reason,
+                },
+            ) from exc
+        except Exception as exc:
+            logger.warning("session_operations_apply_failed: session=%s error=%s", session_id, exc, exc_info=True)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "OPERATION_UNSUPPORTED",
+                    "opId": "",
+                    "type": "",
+                    "reason": f"apply_failed: {exc}",
+                },
+            ) from exc
+
+        # F1 (parse-once): один парсинг нового XML на батч (bpmn_xml_derivatives).
+        from app.services.bpmn_xml_derivatives import get_bpmn_xml_derivatives
+
+        _deriv = get_bpmn_xml_derivatives(new_xml)
+        s.bpmn_xml = new_xml
+        s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+        s.activity_count = _deriv.activity_count
+        s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+        _mark_diagram_truth_write(
+            s,
+            changed_keys=["bpmn_xml"],
+            actor_user_id=user_id,
+            actor_label=_resolve_actor_label_from_user(user, user_id),
+            client_id=client_id,
+        )
+        bpmn_version_snapshot = _plan_bpmn_revision_snapshot_if_needed(
+            storage=st,
+            session=s,
+            previous_xml=previous_xml,
+            next_xml=new_xml,
+            source_action="ops_save",
+            created_by=user_id,
+            org_id=oid_locked,
+            import_note="",
+            diagram_state_version=current_diagram_state_version + 1,
+        )
+
+        # Sync child BPMN back into the parent subprocess XML (best-effort,
+        # как в session_bpmn_save).
+        parent_session_id = str(getattr(s, "parent_session_id", "") or "").strip()
+        element_id_in_parent = str(getattr(s, "element_id_in_parent", "") or "").strip()
+        parent_synced = False
+        if parent_session_id and element_id_in_parent:
+            try:
+                from app.services.bpmn_navigation import re_embed_child_xml_into_parent
+
+                parent = st.load(parent_session_id, user_id=user_id, org_id=oid_locked, is_admin=True)
+                if parent:
+                    parent_xml = str(getattr(parent, "bpmn_xml", "") or "")
+                    new_parent_xml = re_embed_child_xml_into_parent(parent_xml, element_id_in_parent, new_xml)
+                    if new_parent_xml and new_parent_xml != parent_xml:
+                        parent.bpmn_xml = new_parent_xml
+                        parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
+                        parent.activity_count = _count_bpmn_activities(new_parent_xml)
+                        parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
+                        _mark_diagram_truth_write(
+                            parent,
+                            changed_keys=["bpmn_xml"],
+                            actor_user_id=user_id,
+                            actor_label=_resolve_actor_label_from_user(user, user_id),
+                            client_id=client_id,
+                        )
+                        st.save(parent, user_id=user_id, org_id=oid_locked, is_admin=True)
+                        _invalidate_session_caches(
+                            parent,
+                            session_id=parent.id,
+                            org_id=getattr(parent, "org_id", "") or get_default_org_id(),
+                        )
+                        parent_synced = True
+            except Exception as exc:
+                logger.warning(
+                    "subprocess_parent_sync_failed: child=%s parent=%s element=%s error=%s",
+                    session_id,
+                    parent_session_id,
+                    element_id_in_parent,
+                    exc,
+                    exc_info=True,
+                )
+
+        batch_payload = json.dumps(
+            [{"opId": str(op.get("opId") or ""), "type": str(op.get("type") or "")} for op in pending],
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        applied_rows = [
+            {"op_id": str(op.get("opId") or ""), "source": ops_applier.normalize_op_source(op.get("source"))}
+            for op in pending
+        ]
+        state_trace = {
+            "changed_keys": ["bpmn_xml"],
+            "payload_hash": hashlib.sha1(batch_payload.encode("utf-8")).hexdigest(),
+            "actor_user_id": user_id,
+            "actor_label": _resolve_actor_label_from_user(user, user_id),
+        }
+
+        # SQL-CAS + applied_ops + state trace + snapshot в одной транзакции.
+        try:
+            _save_session_with_cas(
+                st,
+                s,
+                client_base_version=client_base_diagram_state_version,
+                user_id=user_id,
+                org_id=oid_locked,
+                is_admin=True,
+                bpmn_snapshot=bpmn_version_snapshot,
+                applied_ops=applied_rows,
+                state_trace=state_trace,
+            )
+        except HTTPException as exc:
+            _conflict_with_current_xml(exc, st, session_id)
+        try:
+            invalidate_overlay(session_id)
+        except Exception:
+            pass
+        _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
+        return {
+            "ok": True,
+            "session_id": s.id,
+            "version": int(getattr(s, "diagram_state_version", 0) or 0),
+            "applied": len(pending),
+            "skipped": skipped,
+            "parent_synced": parent_synced,
+        }
     finally:
         lock.release()
 

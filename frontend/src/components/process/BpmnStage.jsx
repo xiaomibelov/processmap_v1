@@ -6,6 +6,8 @@ import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
+import { createSaveOutbox } from "../../features/process/bpmn/save/opsOutbox/createSaveOutbox.js";
+import { onDiagramDragEnd } from "../../features/process/bpmn/stage/diagramDragState.js";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
@@ -1031,6 +1033,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   getBaseDiagramStateVersion = null,
   rememberDiagramStateVersion = null,
   onSaveLifecycleEvent,
+  onOpsSaveStatus = null,
   aiQuestionsModeEnabled,
   diagramDisplayMode = "normal",
   stepTimeUnit = "min",
@@ -1142,6 +1145,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onAiQuestionsByElementChangeRef = useRef(onAiQuestionsByElementChange);
   const onSessionSyncRef = useRef(onSessionSync);
   const onSaveLifecycleEventRef = useRef(onSaveLifecycleEvent);
+  const onOpsSaveStatusRef = useRef(onOpsSaveStatus);
   const onDiagramContextMenuRequestRef = useRef(onDiagramContextMenuRequest);
   const onDiagramContextMenuDismissRef = useRef(onDiagramContextMenuDismiss);
   const onNavigateToSubprocessRef = useRef(onNavigateToSubprocess);
@@ -1172,6 +1176,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const importCamundaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
   const copyPasteRobotMetaPreserveGuardRef = useRef({ ids: [], expiresAt: 0 });
   const suppressCommandStackRef = useRef(0);
+  // SaveOutbox (contour feature/async-save-pipeline-step1): конструируется
+  // раз на сессию, teardown на unmount/смене сессии; bpmnWiring фан-аутит
+  // сюда commandStack.changed-каскад (см. ensureBpmnCoordinator options).
+  const opsOutboxRef = useRef(null);
   const suppressViewboxEventRef = useRef(0);
   const modelerReadyRef = useRef(false);
   const viewerReadyRef = useRef(false);
@@ -1269,6 +1277,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onSaveLifecycleEventRef.current = onSaveLifecycleEvent;
   }, [onSaveLifecycleEvent]);
+
+  useEffect(() => {
+    onOpsSaveStatusRef.current = onOpsSaveStatus;
+  }, [onOpsSaveStatus]);
 
   useEffect(() => {
     onDiagramContextMenuRequestRef.current = onDiagramContextMenuRequest;
@@ -1445,6 +1457,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         runtimeTokenRef,
         modelerRef,
         draftRef,
+        opsOutboxRef,
       },
       state: {
         setXml,
@@ -5514,6 +5527,13 @@ const BpmnStage = forwardRef(function BpmnStage({
         user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
       });
       flushPendingCoordinatorSave();
+      // SaveOutbox page-exit flush (UI.md §2/§7): keepalive-fetch с Authorization
+      // в тех же слушателях, без второго набора listener'ов.
+      try {
+        void opsOutboxRef.current?.flushNow?.({ reason: "unload", keepalive: true });
+      } catch {
+        // best-effort only
+      }
     };
     const onPageHide = (event) => {
       traceProcess("bpmn.lifecycle.pagehide", {
@@ -5524,6 +5544,11 @@ const BpmnStage = forwardRef(function BpmnStage({
         user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
       });
       flushPendingCoordinatorSave();
+      try {
+        void opsOutboxRef.current?.flushNow?.({ reason: "unload", keepalive: true });
+      } catch {
+        // best-effort only
+      }
     };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "hidden") return;
@@ -5533,6 +5558,11 @@ const BpmnStage = forwardRef(function BpmnStage({
         view: String(view || "diagram"),
         user_mutation_observed: userMutationObservedRef.current ? 1 : 0,
       });
+      try {
+        void opsOutboxRef.current?.flushNow?.({ reason: "visibility" });
+      } catch {
+        // best-effort only
+      }
     };
     // Best-effort flush of the coordinator save queue on page exit — in
     // ADDITION to the mutation-queue flush in useAutosaveQueue. Синхронный
@@ -5560,6 +5590,57 @@ const BpmnStage = forwardRef(function BpmnStage({
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [activeProjectId, sessionId, view]);
+
+  // SaveOutbox (contour feature/async-save-pipeline-step1, UI.md §2):
+  // один инстанс на сессию, teardown на смене сессии/unmount. CAS-версии
+  // outbox берёт из casVersionTracker внутри pipeline-регистрации
+  // saveCoordinator — параллельный version tracking не создаём.
+  useEffect(() => {
+    const sid = String(sessionId || "");
+    if (!sid) return undefined;
+    const outbox = createSaveOutbox({
+      sessionId: sid,
+      // Тот же full-save вход, что и у autosave-очереди: queueDiagramMutation →
+      // useAutosaveQueue → commitDiagramAutosave → bpmnSync.saveFromModeler.
+      requestFullSave: () => {
+        emitDiagramMutation("diagram.change", { source: "ops_outbox_fallback" });
+      },
+      onStatus: (event) => {
+        const callback = onOpsSaveStatusRef.current;
+        if (typeof callback !== "function") return;
+        try {
+          callback(event);
+        } catch {
+          // indicator callback must not break the save path
+        }
+      },
+      // Live-адаптер: modeler создаётся лениво (ensureModeler), поэтому
+      // сервисы резолвим на момент rebase-replay, а не конструирования.
+      modeler: {
+        get: (serviceName) => modelerRef.current?.get?.(serviceName),
+      },
+      // 409-rebase (UI.md §5): серверный currentXml грузим в live modeler
+      // существованным echo-muted путём runtime.load (import под
+      // muteChangeDepth — replay-команды не становятся op-дубликатами).
+      loadServerXml: async (serverXml) => {
+        const xml = String(serverXml || "");
+        const runtime = modelerRuntimeRef.current;
+        if (!xml.trim() || !runtime || typeof runtime.load !== "function") {
+          return { ok: false, reason: "runtime_not_ready" };
+        }
+        return runtime.load(xml, { source: "ops_rebase" });
+      },
+    });
+    opsOutboxRef.current = outbox;
+    // Mouseup drag-commit (UI.md §2): существующий diagramDragState bus.
+    const unsubscribeDragEnd = onDiagramDragEnd(() => outbox.commitDrag());
+    return () => {
+      unsubscribeDragEnd();
+      opsOutboxRef.current = null;
+      outbox.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   useEffect(() => {
     const sid = String(sessionId || "");
@@ -6010,6 +6091,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         bpmnCoordinatorRef,
         viewboxListenersRef,
         bottlenecksRef,
+        opsOutboxRef,
       },
       values: {
         view,

@@ -21,6 +21,12 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=40),
         "options": {"queue": "celery"},
     },
+    "session-applied-ops-cleanup": {
+        # feature/async-save-pipeline-step1: retention session_applied_ops, TTL 30 дней.
+        "task": "processmap.session_applied_ops.cleanup_task",
+        "schedule": crontab(hour=5, minute=10),
+        "options": {"queue": "celery"},
+    },
 }
 app.conf.timezone = "Europe/Moscow"
 

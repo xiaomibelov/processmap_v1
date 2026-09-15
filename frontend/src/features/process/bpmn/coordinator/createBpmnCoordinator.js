@@ -78,6 +78,9 @@ export default function createBpmnCoordinator(options = {}) {
     cacheRaw: (sid, xml, rev, reason, options) => cacheRaw(sid, xml, rev, reason, options),
     emit: (event, payload) => emit(event, payload),
     requestAutosave: (reason) => scheduleSave(reason),
+    shouldSkipAutosave: typeof options?.shouldSkipAutosave === "function"
+      ? (command) => options.shouldSkipAutosave(command)
+      : null,
     notifyPositionalPending: () => notePositionalChange(),
     getIsDragging,
     asText,

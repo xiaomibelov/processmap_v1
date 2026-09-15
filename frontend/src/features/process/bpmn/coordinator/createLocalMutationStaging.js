@@ -34,6 +34,11 @@ export default function createLocalMutationStaging(options = {}) {
   const cacheRaw = typeof options?.cacheRaw === "function" ? options.cacheRaw : null;
   const emit = typeof options?.emit === "function" ? options.emit : null;
   const requestAutosave = typeof options?.requestAutosave === "function" ? options.requestAutosave : null;
+  // Dedup SaveOutbox (contour feature/async-save-pipeline-step1, UI.md §2):
+  // та же проверка, что у React-очереди (useDiagramMutationLifecycle →
+  // shouldSkipAutosaveSchedule), для координаторного staging-пути — иначе
+  // whitelisted-правка получает параллельный полный PUT поверх ops-flush.
+  const shouldSkipAutosave = typeof options?.shouldSkipAutosave === "function" ? options.shouldSkipAutosave : null;
   // RC7 (коммит 4): сообщить coordinator'у, что positional-изменение staged —
   // он взведёт keep-final autosave-flush (drag-end или standalone-таймер).
   const notifyPositionalPending = typeof options?.notifyPositionalPending === "function"
@@ -188,6 +193,20 @@ export default function createLocalMutationStaging(options = {}) {
       skipReason = "drag_in_progress";
     }
 
+    // SaveOutbox полностью захватил команду как ops — полный autosave для
+    // неё не планируем (persistence владеет pipeline "ops"). Предикат
+    // консультируется ПОСЛЕ onRuntimeChange(ev) — outbox.pushCommand
+    // (wiring) обновляет dedup-ledger раньше этого решения.
+    if (!autosaveSkipped && shouldSkipAutosave) {
+      try {
+        if (shouldSkipAutosave(command) === true) {
+          autosaveSkipped = true;
+          skipReason = "ops_outbox_captured";
+        }
+      } catch {
+        // предикат не должен ломать staging — консервативно НЕ скипаем
+      }
+    }
     // In-frame мы НЕ сериализуем модель ни для одного типа команд: и positional,
     // и structural правки на схемах 250+ элементов оплачиваются полным saveXML
     // (O(n) по элементам) на КАЖДУЮ команду. Вместо этого делаем синхронный
@@ -214,7 +233,12 @@ export default function createLocalMutationStaging(options = {}) {
       reason: "runtime_change",
     });
 
-    if (autosaveSkipped) {
+    // Три исхода: (1) positional — keep-final flush после drag-end/таймера;
+    // (2) команда полностью захвачена SaveOutbox как ops — full-save НЕ
+    // планируем вообще (persistence владеет pipeline "ops"; positional-
+    // таймер здесь недопустим — он дал бы параллельный PUT поверх ops);
+    // (3) обычная structural-команда — автосохранение координатора.
+    if (positional) {
       emit?.("STAGE_POSITIONAL_CHANGE", {
         sid,
         command,
@@ -222,7 +246,7 @@ export default function createLocalMutationStaging(options = {}) {
         autosaveSkipped: true,
       });
       notifyPositionalPending?.();
-    } else {
+    } else if (!autosaveSkipped) {
       requestAutosave?.("autosave");
     }
 

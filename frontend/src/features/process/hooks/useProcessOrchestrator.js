@@ -17,6 +17,7 @@ export default function useProcessOrchestrator({
   rememberDiagramStateVersion,
   onSessionSync,
   onError,
+  shouldSkipAutosaveSchedule,
 }) {
   const flushBeforeSwitchRef = useRef(async () => true);
   const flushDiagramBeforeSwitchRef = useRef(async () => true);
@@ -89,6 +90,7 @@ export default function useProcessOrchestrator({
     rememberDiagramStateVersion,
     onSessionSync,
     onError,
+    shouldSkipAutosaveSchedule,
   });
 
   // Keep the same invocation order and stale-safe hand-off between hooks.

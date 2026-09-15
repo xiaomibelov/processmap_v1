@@ -209,6 +209,16 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       getRuntime: () => refs.modelerRuntimeRef?.current,
       getSessionId: () => String(refs.activeSessionRef?.current || ""),
       debounceMs: AUTOSAVE_CONFIG.coordinator.debounceMs,
+      // Dedup SaveOutbox (UI.md §2): тот же предикат, что у React-очереди
+      // (shouldSkipAutosaveSchedule → outbox.shouldSkipFullSave) — staging
+      // консультирует его ПОСЛЕ pushCommand, lastCapture уже свежий.
+      shouldSkipAutosave: (command) => {
+        try {
+          return refs.opsOutboxRef?.current?.shouldSkipFullSave?.(command) === true;
+        } catch {
+          return false;
+        }
+      },
       getIsDragging: () => isDiagramDragging(),
       getIsDirectEditing: () => {
         try {
@@ -261,6 +271,19 @@ export function createBpmnWiring(ctxBase, deps = {}) {
             reason: "commandStack.changed",
             cycleIndex: Number(refs.ensureVisibleCycleRef?.current || 0),
           });
+        }
+        // SaveOutbox fan-out (contour feature/async-save-pipeline-step1,
+        // UI.md §2): та же существующая commandStack.changed-каскадная
+        // подписка координатора — отдельной подписки на bpmn-js нет.
+        // Дескриптор события сериализуем (command/action/commandContext);
+        // pushCommand сам пропускает replay-команды и маппит whitelist.
+        // Порядок контрактен: pushCommand ДО emitDiagramMutation — dedup
+        // scheduling path (useDiagramMutationLifecycle → shouldSkipFullSave)
+        // консультирует outbox синхронно и обязан видеть текущую команду.
+        try {
+          refs.opsOutboxRef?.current?.pushCommand?.(ev);
+        } catch {
+          // outbox must never break the existing change cascade
         }
         if (!positional) {
           callbacks.emitDiagramMutation?.("diagram.change", {

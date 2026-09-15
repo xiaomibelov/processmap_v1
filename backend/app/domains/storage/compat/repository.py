@@ -1075,6 +1075,21 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
             )
+            # feature/async-save-pipeline-step1: идемпотентность ops-батчей
+            # (API.md §4). Вставка — в транзакции apply; retention TTL 30 дней.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_applied_ops (
+                  session_id TEXT NOT NULL,
+                  op_id TEXT NOT NULL,
+                  applied_version INTEGER NOT NULL,
+                  applied_at INTEGER NOT NULL,
+                  source TEXT NOT NULL DEFAULT 'user',
+                  PRIMARY KEY (session_id, op_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_applied_ops_cleanup ON session_applied_ops(applied_at)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS session_product_action_suggestions (
@@ -1921,6 +1936,21 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_session_state_versions_session_created ON session_state_versions(session_id, org_id, created_at DESC)"
             )
+            # feature/async-save-pipeline-step1: идемпотентность ops-батчей
+            # (API.md §4). Вставка — в транзакции apply; retention TTL 30 дней.
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_applied_ops (
+                  session_id TEXT NOT NULL,
+                  op_id TEXT NOT NULL,
+                  applied_version INTEGER NOT NULL,
+                  applied_at INTEGER NOT NULL,
+                  source TEXT NOT NULL DEFAULT 'user',
+                  PRIMARY KEY (session_id, op_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_applied_ops_cleanup ON session_applied_ops(applied_at)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS session_product_action_suggestions (
@@ -5309,6 +5339,63 @@ def _storage_rename(self, session_id: str, new_title: str, *, user_id: Optional[
     return self.load(session_id, user_id=user_id, is_admin=is_admin, org_id=org_id)
 
 
+def _storage_list_applied_op_ids(
+    self,
+    session_id: str,
+    op_ids: List[str],
+) -> set:
+    """Какие op_id из батча уже применены (идемпотентность, API.md §4)."""
+    _ensure_schema()
+    sid = str(session_id or "").strip()
+    ids = [str(op_id or "").strip() for op_id in (op_ids or []) if str(op_id or "").strip()]
+    if not sid or not ids:
+        return set()
+    unique_ids = list(dict.fromkeys(ids))
+    placeholders = ", ".join(["?"] * len(unique_ids))
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT op_id FROM session_applied_ops WHERE session_id = ? AND op_id IN ({placeholders})",
+            [sid, *unique_ids],
+        ).fetchall()
+    return {str(_row_value(row, "op_id", 0) or "") for row in rows}
+
+
+def _storage_cleanup_applied_ops(
+    self,
+    *,
+    cutoff_ts: int,
+    batch_size: int = 500,
+    max_batches: int = 200,
+) -> int:
+    """Retention cleanup session_applied_ops: batched DELETE по applied_at (API.md §4).
+
+    Идемпотентно; SQLite и Postgres (DELETE по подзапросу той же таблицы
+    разрешён в обоих).
+    """
+    _ensure_schema()
+    deleted_total = 0
+    limit = max(1, int(batch_size or 500))
+    with _connect() as con:
+        for _ in range(max(1, int(max_batches or 200))):
+            result = con.execute(
+                """
+                DELETE FROM session_applied_ops
+                 WHERE op_id IN (
+                   SELECT op_id FROM session_applied_ops
+                    WHERE applied_at < ?
+                    LIMIT ?
+                 )
+                """,
+                [int(cutoff_ts), limit],
+            )
+            deleted = int(getattr(result, "rowcount", 0) or 0)
+            deleted_total += max(0, deleted)
+            if deleted < limit:
+                break
+        con.commit()
+    return deleted_total
+
+
 def _storage_save(
     self,
     s: Session,
@@ -5318,6 +5405,8 @@ def _storage_save(
     org_id: Optional[str] = None,
     expected_diagram_state_version: Optional[int] = None,
     bpmn_snapshot: Optional[Dict[str, Any]] = None,
+    applied_ops: Optional[List[Dict[str, Any]]] = None,
+    state_trace: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Persist a session row.
 
@@ -5330,6 +5419,12 @@ def _storage_save(
     When ``bpmn_snapshot`` is provided, the bpmn_versions row is inserted in
     the SAME transaction as the session row (audit P4); the passed dict is
     updated in place with the inserted row (id/version_number/created_at).
+
+    ``applied_ops`` (feature/async-save-pipeline-step1) — строки
+    session_applied_ops для применённых ops-батчей; ``state_trace`` —
+    обязательная trace-строка session_state_versions для ops-записей
+    (при net XML change штатная trace-ветка ниже не срабатывает). Обе вставки
+    — в ЭТОЙ же транзакции, до commit.
     """
     _ensure_schema()
     owner_scope = _scope_user_id(user_id)
@@ -5625,6 +5720,55 @@ def _storage_save(
                     actor_user_id,
                     actor_label,
                     created_at_ts,
+                ],
+            )
+        if applied_ops:
+            # feature/async-save-pipeline-step1: строки идемпотентности в той же
+            # транзакции, что и apply (API.md §4). Unique PK (session_id, op_id) —
+            # дубликат concurrent-writer → integrity error → 409 у вызывающего.
+            for op_row in applied_ops:
+                op_id = str((op_row or {}).get("op_id") or "").strip()
+                if not op_id:
+                    continue
+                con.execute(
+                    """
+                    INSERT INTO session_applied_ops (
+                      session_id, op_id, applied_version, applied_at, source
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        sid,
+                        op_id,
+                        next_diagram_state_version,
+                        now,
+                        str((op_row or {}).get("source") or "user").strip() or "user",
+                    ],
+                )
+        if state_trace:
+            # Trace для ops-батчей: net XML change, поэтому штатная ветка выше
+            # (только non-XML изменения) не сработала (TESTS.md §2.1).
+            trace_payload_hash = str(state_trace.get("payload_hash") or "").strip()
+            trace_changed_keys = state_trace.get("changed_keys") or ["bpmn_xml"]
+            if not isinstance(trace_changed_keys, list):
+                trace_changed_keys = ["bpmn_xml"]
+            con.execute(
+                """
+                INSERT INTO session_state_versions (
+                  id, session_id, org_id, diagram_state_version, parent_diagram_state_version,
+                  changed_keys_json, payload_hash, actor_user_id, actor_label, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    uuid.uuid4().hex[:12],
+                    sid,
+                    str(values.get("org_id") or _default_org_id()),
+                    next_diagram_state_version,
+                    existing_diagram_state_version,
+                    _json_dumps(trace_changed_keys, ["bpmn_xml"]),
+                    trace_payload_hash,
+                    str(state_trace.get("actor_user_id") or ""),
+                    str(state_trace.get("actor_label") or ""),
+                    now,
                 ],
             )
         con.commit()
