@@ -137,3 +137,14 @@ body: { baseVersion: int, operations: [{ opId: uuid, type, ...payload }] }
 
 - `PLAN.md` (этот файл), `API.md`, `UI.md`, `TESTS.md`, `PR.md` (черновик), `STATE.json`.
 - После approve: код по `TESTS.md` (TDD: RED → GREEN → REFACTOR), `EXEC_REPORT.md`, review, PR. Merge/deploy — только после явного approve.
+
+## 12. Scope step2 (зафиксирован до старта, 2026-09-15)
+
+По условию владельца на merge step1 — остатки из EXEC_REPORT переносятся в step2. Step2 = новая ветка от актуального `origin/main` (контракт §3.2), контур `feature/async-save-pipeline-step2`.
+
+1. **Undo sent-unacked op в окне RTT** (re-review N-new-1): dispatch [A,B,C] → undo B → push D → ack снимает префикс вместе с неотправленной D. Фикс: детач префикса в `pendingAck = buffer.splice(0)` на диспетчеризации; та же правка для `fullSavePreserveFrom`.
+2. **Manual full-save ack wipe**: ручное сохранение (не outbox-initiated) по ack чистит весь ops-буфер → ops, добавленные во время ручного сохранения, теряются. Фикс: version-based reconciliation (server version vs baseVersion+opCount).
+3. **Parent re-embed ordering** (NIT-1): re-embed сейчас до `_save_session_with_cas` (зеркалит PUT /bpmn); transient divergence при SQL-CAS 409. Привести API.md §3 к факту или перенести re-embed после commit — решить с ревьюером.
+4. **Dead keepalive-бюджет код** (NIT-2): `isWithinKeepaliveBudget`, `keepaliveBodyLimitBytes`, `pageHideDrainTimeoutMs` — реализовать проверку бюджета (UI.md §7) или удалить.
+5. **Двойная регистрация роута** (NIT-4, вторая половина): убрать legacy-вариант в `_legacy_main.py` после завершения миграции роутов (живёт `routers/sessions.py`).
+6. **Расширение vocabulary + parity**: `connection.reconnect*` в op-vocabulary (после замера доли coverage), replay create-op вместо fallback (проблема регенерации id), parity-тест на реальном XML ≥300 элементов (ассет появится в репозитории).
