@@ -6,7 +6,6 @@ export default function useProcessStageActionsController({
   setQualityAutoFixOpen,
   setInsertBetweenOpen,
   setVersionsOpen,
-  setDiffOpen,
   setCreateTemplateOpen,
   setTemplatesPickerOpen,
   closeAllDiagramActions,
@@ -51,14 +50,6 @@ export default function useProcessStageActionsController({
     setVersionsOpen(false);
   }, [setVersionsOpen]);
 
-  const openDiffDialog = useCallback(() => {
-    setDiffOpen(true);
-  }, [setDiffOpen]);
-
-  const closeDiffDialog = useCallback(() => {
-    setDiffOpen(false);
-  }, [setDiffOpen]);
-
   const closeCreateTemplateDialog = useCallback(() => {
     setCreateTemplateOpen(false);
   }, [setCreateTemplateOpen]);
@@ -82,8 +73,6 @@ export default function useProcessStageActionsController({
     closeInsertBetweenDialog,
     openVersionsDialog,
     closeVersionsDialog,
-    openDiffDialog,
-    closeDiffDialog,
     closeCreateTemplateDialog,
     closeTemplatesPickerDialog,
     closeDiagramActions,

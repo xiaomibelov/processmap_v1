@@ -272,14 +272,6 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
   );
   const fixture = await createFixture(request, runId, seedXml, auth.headers);
 
-  page.on("dialog", async (dialog) => {
-    if (dialog.type() === "confirm") {
-      await dialog.accept();
-      return;
-    }
-    await dialog.dismiss();
-  });
-
   const putStatuses = [];
   const putPayloads = [];
   const telemetry = {
@@ -460,10 +452,12 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
   const lastMarker = diagramMarkers[2];
   for (let i = 0; i < cardCount; i += 1) {
     const card = cards.nth(i);
-    await card.getByTestId("bpmn-version-preview").click();
+    await card.click();
+    await page.getByTestId("bpmn-version-preview-toggle-xml").click();
     const previewXml = await page.getByTestId("bpmn-version-preview-xml").inputValue();
     if (!previewXml.includes(midMarker) || previewXml.includes(lastMarker)) continue;
-    await card.getByTestId("bpmn-version-restore").click();
+    await page.getByTestId("bpmn-versions-pane-restore").click();
+    await page.getByTestId("bpmn-versions-pane-restore-apply").click();
     restored = true;
     break;
   }

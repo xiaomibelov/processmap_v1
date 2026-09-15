@@ -1,5 +1,5 @@
 import { apiGetFeatureFlags } from "../lib/apiModules/featureFlagsApi";
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, memo } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
@@ -44,8 +44,19 @@ import {
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
 import {
   buildSemanticBpmnDiff,
+  buildBpmnPositionDiff,
   summarizeSemanticDiff,
 } from "../features/process/bpmn/diff/semanticDiff.js";
+import { diffXmlLines } from "../features/process/bpmn/diff/xmlLineDiff.js";
+import {
+  createDebouncedDiff,
+  planMarkerChunks,
+  applyChunks,
+} from "../features/process/stage/ui/bpmnVersionDiffPerf.js";
+import {
+  createInitialState as createVersionSelectionState,
+  reduce as reduceVersionSelection,
+} from "../features/process/stage/ui/bpmnVersionCompareSelection.js";
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { useSaveUploadLifecycle } from "../features/process/bpmn/save/useSaveUploadLifecycle.js";
 import { createCtrlSaveKeydownHandler } from "../features/process/bpmn/save/ctrlSaveShortcut.js";
@@ -242,7 +253,6 @@ import { buildSessionCompanionJazzUiBridgeSnapshot } from "../features/process/s
 import { createSessionCompanionJazzAdapter } from "../features/process/session-companion/sessionCompanionJazzAdapter.js";
 import { createLiveDocumentJazzAdapter } from "../features/process/session-companion/liveDocumentJazzAdapter.js";
 import { appendRevisionToLedger } from "../features/process/session-companion/revisionLedgerModule.js";
-import { buildRevisionDiffView } from "../features/process/session-companion/revisionCompareModule.js";
 import {
   buildSessionCompanionJazzScopeId,
   resolveSessionCompanionLocalFirstActivation,
@@ -702,10 +712,6 @@ function ProcessStage({
   const [mergePanelServerVersion, setMergePanelServerVersion] = useState(0);
   const [mergePanelActorLabel, setMergePanelActorLabel] = useState("");
   const [mergeDiffOpen, setMergeDiffOpen] = useState(false);
-  const [historyDiffOpen, setHistoryDiffOpen] = useState(false);
-  const [historyDiffLocalXml, setHistoryDiffLocalXml] = useState("");
-  const [historyDiffVersionXml, setHistoryDiffVersionXml] = useState("");
-  const [historyDiffVersionLabel, setHistoryDiffVersionLabel] = useState("");
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [bpmnVersionTruthState, setBpmnVersionTruthState] = useState({
@@ -980,12 +986,6 @@ function ProcessStage({
     setPreviewSnapshotId,
     showTechnicalVersions,
     setShowTechnicalVersions,
-    diffOpen,
-    setDiffOpen,
-    diffBaseSnapshotId,
-    setDiffBaseSnapshotId,
-    diffTargetSnapshotId,
-    setDiffTargetSnapshotId,
     commandModeEnabled,
     setCommandModeEnabled,
     diagramMode,
@@ -4541,7 +4541,6 @@ function ProcessStage({
       setQualityAutoFixOpen,
       setInsertBetweenOpen,
       setVersionsOpen,
-      setDiffOpen,
       setCreateTemplateOpen,
       setTemplatesPickerOpen,
     },
@@ -4569,7 +4568,6 @@ function ProcessStage({
       qualityAutoFixOpen
       || insertBetweenOpen
       || versionsOpen
-      || diffOpen
       || createTemplateOpen
       || templatesPickerOpen
     ),
@@ -5298,14 +5296,6 @@ function ProcessStage({
     [showTechnicalVersions, versionsListAll, versionsList],
   );
 
-  const semanticDiffView = useMemo(() => {
-    return buildRevisionDiffView({
-      revisions: asArray(displayVersionsList),
-      baseRevisionId: diffBaseSnapshotId,
-      targetRevisionId: diffTargetSnapshotId,
-    });
-  }, [diffBaseSnapshotId, diffTargetSnapshotId, displayVersionsList]);
-
   const currentBpmnVersionId = useMemo(() => {
     const currentHash = String(bpmnVersionTruthState?.currentSessionPayloadHash || "").trim();
     const matching = currentHash
@@ -5318,15 +5308,6 @@ function ProcessStage({
   const previewSnapshot = useMemo(
     () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
     [displayVersionsList, previewSnapshotId],
-  );
-
-  const diffBaseSnapshot = useMemo(
-    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(diffBaseSnapshotId || "")) || null,
-    [displayVersionsList, diffBaseSnapshotId],
-  );
-  const diffTargetSnapshot = useMemo(
-    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(diffTargetSnapshotId || "")) || null,
-    [displayVersionsList, diffTargetSnapshotId],
   );
 
   const versionsListWithDiffSummaries = useMemo(() => {
@@ -5637,10 +5618,6 @@ function ProcessStage({
       setGenErr("Не удалось определить версию для восстановления.");
       return;
     }
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm("Восстановить выбранную BPMN версию? Текущая BPMN диаграмма будет заменена.");
-      if (!confirmed) return;
-    }
     setVersionsBusy(true);
     setGenErr("");
     setInfoMsg("");
@@ -5817,61 +5794,389 @@ function ProcessStage({
     await ensureBpmnVersionXml(versionId);
   }
 
-  async function openDiffForSnapshot(item) {
-    const targetId = String(item?.id || "").trim();
-    if (!targetId) return;
-    const list = asArray(versionsList);
-    const idx = list.findIndex((candidate) => String(candidate?.id || "") === targetId);
-    const latestId = String(list[0]?.id || "");
-    const previousId = idx >= 0 ? String(list[idx + 1]?.id || "") : "";
-    let baseId = previousId || (latestId !== targetId ? latestId : String(list[1]?.id || ""));
-    if (!baseId || baseId === targetId) {
-      setGenErr("Для diff нужно минимум две разные версии.");
-      return;
-    }
-    setDiffBaseSnapshotId(baseId);
-    setDiffTargetSnapshotId(targetId);
-    setDiffOpen(true);
-    await Promise.all([
-      ensureBpmnVersionXml(baseId),
-      ensureBpmnVersionXml(targetId),
-    ]);
-  }
+  // --- Version compare UI wiring (feature/version-compare-ui) ---
+  const CURRENT_VERSION_SLOT_ID = "current";
+  const [versionSelection, versionSelectionDispatch] = useReducer(
+    reduceVersionSelection,
+    undefined,
+    createVersionSelectionState,
+  );
+  const [versionCompareMode, setVersionCompareMode] = useState("diagram");
+  const [versionCompareShowPositional, setVersionCompareShowPositional] = useState(false);
+  const [versionCompareState, setVersionCompareState] = useState({
+    paneA: {},
+    paneB: {},
+    counts: null,
+    busy: false,
+  });
+  const [versionRestoreBusyId, setVersionRestoreBusyId] = useState("");
+  const [viewersEpoch, setViewersEpoch] = useState(0);
+  const viewerARef = useRef(null);
+  const viewerBRef = useRef(null);
+  const syncApplyingRef = useRef(false);
+  const applyChunksCancelRef = useRef(null);
+  const debouncedDiffRef = useRef(null);
 
-  const closeHistoryDiff = useCallback(() => {
-    setHistoryDiffOpen(false);
-    setHistoryDiffLocalXml("");
-    setHistoryDiffVersionXml("");
-    setHistoryDiffVersionLabel("");
+  const computeVersionPairDiff = useCallback((payload) => {
+    const prevXml = String(payload?.prevXml || "");
+    const nextXml = String(payload?.nextXml || "");
+    const showPositional = !!payload?.showPositional;
+    const diff = buildSemanticBpmnDiff(prevXml, nextXml);
+    if (!diff?.ok) {
+      return { paneA: {}, paneB: {}, counts: null, error: String(diff?.error || "Не удалось вычислить diff.") };
+    }
+    const details = diff.details || {};
+    const collectIds = (kind) => {
+      const out = [];
+      ["tasks", "flows", "lanes", "subprocess"].forEach((key) => {
+        asArray(details?.[key]?.[kind]).forEach((entry) => {
+          const id = String(entry?.id || "").trim();
+          if (id) out.push(id);
+        });
+      });
+      return out;
+    };
+    const paneA = {};
+    const paneB = {};
+    const added = collectIds("added");
+    const removed = collectIds("removed");
+    const changed = collectIds("changed");
+    added.forEach((id) => { paneB[id] = "added"; });
+    removed.forEach((id) => { paneA[id] = "removed"; });
+    changed.forEach((id) => { paneA[id] = "changed"; paneB[id] = "changed"; });
+    const counts = { added: added.length, removed: removed.length, changed: changed.length, moved: 0, resized: 0 };
+    if (showPositional) {
+      const position = buildBpmnPositionDiff(prevXml, nextXml);
+      const movedIds = [];
+      const resizedIds = [];
+      asArray(position?.moved).forEach((entry) => {
+        const id = String(entry?.id || "").trim();
+        if (id) movedIds.push(id);
+      });
+      asArray(position?.resized).forEach((entry) => {
+        const id = String(entry?.id || "").trim();
+        if (id) resizedIds.push(id);
+      });
+      movedIds.forEach((id) => { paneA[id] = "moved"; paneB[id] = "moved"; });
+      resizedIds.forEach((id) => { paneA[id] = "resized"; paneB[id] = "resized"; });
+      counts.moved = movedIds.length;
+      counts.resized = resizedIds.length;
+    }
+    return { paneA, paneB, counts };
   }, []);
 
-  async function handleCompareVersionWithCurrent(item) {
-    const versionId = String(item?.id || "").trim();
-    if (!versionId) return;
-    const localXml = toText(draft?.bpmn_xml || bpmnRef.current?.getXmlDraft?.() || "");
-    if (!localXml) {
-      setGenErr("Текущая диаграмма недоступна для сравнения.");
+  if (debouncedDiffRef.current === null) {
+    debouncedDiffRef.current = createDebouncedDiff(computeVersionPairDiff, { delayMs: 300 });
+  }
+
+  useEffect(() => () => {
+    debouncedDiffRef.current?.cancel?.();
+    if (applyChunksCancelRef.current) {
+      applyChunksCancelRef.current();
+      applyChunksCancelRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    versionSelectionDispatch({ type: "reset" });
+    setVersionCompareMode("diagram");
+    setVersionCompareShowPositional(false);
+    setVersionCompareState({ paneA: {}, paneB: {}, counts: null, busy: false });
+  }, [sid]);
+
+  useEffect(() => {
+    if (!versionsOpen) return;
+    // Ленивая загрузка: XML догружаем только для явно назначенной пары сравнения.
+    // Одиночный предпросмотр грузит XML по клику (onVersionPreview), как раньше.
+    const values = [versionSelection.compareAId, versionSelection.compareBId];
+    values.forEach((value) => {
+      const id = String(value || "").trim();
+      if (!id || id === CURRENT_VERSION_SLOT_ID) return;
+      const item = asArray(versionsList).find((entry) => String(entry?.id || "") === id);
+      if (item && !String(item?.xml || "").trim()) void ensureBpmnVersionXml(id);
+    });
+  }, [versionsOpen, versionSelection, versionsList, ensureBpmnVersionXml]);
+
+  const resolveVersionSlotXml = useCallback((slotValue) => {
+    if (String(slotValue || "") === CURRENT_VERSION_SLOT_ID) {
+      const xml = toText(draft?.bpmn_xml || bpmnRef.current?.getXmlDraft?.() || "");
+      return {
+        item: null,
+        xml,
+        status: xml ? "ready" : "error",
+        error: xml ? "" : "Текущая диаграмма недоступна для сравнения.",
+      };
+    }
+    const item = asArray(versionsList).find((entry) => String(entry?.id || "") === String(slotValue || "")) || null;
+    if (!item) return { item: null, xml: "", status: "idle", error: "" };
+    const xml = String(item?.xml || "");
+    if (xml.trim()) return { item, xml, status: "ready", error: "" };
+    const requestKey = `${normalizeDiagramSessionId(sid)}:${item.id}`;
+    if (bpmnVersionDetailRequestRef.current.has(requestKey)) {
+      return { item, xml: "", status: "loading", error: "" };
+    }
+    const loadError = String(versionsLoadError || "").trim();
+    if (loadError) {
+      const userFacingLoadError = /failed to fetch|networkerror/i.test(loadError)
+        ? "Не удалось загрузить XML версии: сеть недоступна или сервер не ответил. Повторите попытку."
+        : loadError;
+      return { item, xml: "", status: "error", error: userFacingLoadError };
+    }
+    // XML ещё не запрошен: режим «по требованию», как в ленивой загрузке списка.
+    return { item, xml: "", status: "idle", error: "" };
+  }, [draft?.bpmn_xml, versionsList, sid, versionsLoadError]);
+
+  useEffect(() => {
+    if (applyChunksCancelRef.current) {
+      applyChunksCancelRef.current();
+      applyChunksCancelRef.current = null;
+    }
+    debouncedDiffRef.current?.cancel?.();
+    if (!versionsOpen || !versionSelection.compareAId || !versionSelection.compareBId) {
+      setVersionCompareState({ paneA: {}, paneB: {}, counts: null, busy: false });
       return;
     }
-    setHistoryDiffLocalXml(localXml);
-    setHistoryDiffVersionLabel(toText(item?.label || item?.displayLabel || `Версия ${item?.versionNumber || item?.id}`));
-    setHistoryDiffOpen(true);
-    try {
-      const loaded = await apiGetBpmnVersion(sid, versionId);
-      if (!loaded?.ok) {
-        setGenErr(toText(loaded?.error) || "Не удалось загрузить выбранную версию для сравнения.");
-        return;
-      }
-      const versionXml = toText(loaded?.item?.bpmn_xml || loaded?.item?.xml || loaded?.bpmn_xml || loaded?.xml || "");
-      if (!versionXml) {
-        setGenErr("Выбранная версия не содержит XML.");
-        return;
-      }
-      setHistoryDiffVersionXml(versionXml);
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось загрузить выбранную версию для сравнения."));
+    const slotA = resolveVersionSlotXml(versionSelection.compareAId);
+    const slotB = resolveVersionSlotXml(versionSelection.compareBId);
+    if (slotA.status !== "ready" || slotB.status !== "ready") {
+      setVersionCompareState((prev) => ({ ...prev, busy: true }));
+      return;
     }
-  }
+    setVersionCompareState((prev) => ({ ...prev, busy: true }));
+    debouncedDiffRef.current.schedule(
+      { prevXml: slotA.xml, nextXml: slotB.xml, showPositional: versionCompareShowPositional },
+      (err, result) => {
+        if (err) {
+          setVersionCompareState({ paneA: {}, paneB: {}, counts: null, busy: false });
+          return;
+        }
+        const allIds = [...new Set([...Object.keys(result?.paneA || {}), ...Object.keys(result?.paneB || {})])];
+        setVersionCompareState({ paneA: {}, paneB: {}, counts: result?.counts || null, busy: false });
+        if (allIds.length > 100) {
+          const chunks = planMarkerChunks(allIds, { chunkSize: 50, threshold: 100 });
+          applyChunksCancelRef.current = applyChunks(chunks, (chunkIds) => {
+            setVersionCompareState((prev) => {
+              const nextA = { ...prev.paneA };
+              const nextB = { ...prev.paneB };
+              chunkIds.forEach((id) => {
+                if (result?.paneA?.[id]) nextA[id] = result.paneA[id];
+                if (result?.paneB?.[id]) nextB[id] = result.paneB[id];
+              });
+              return { ...prev, paneA: nextA, paneB: nextB };
+            });
+          });
+        } else {
+          setVersionCompareState((prev) => ({
+            ...prev,
+            paneA: result?.paneA || {},
+            paneB: result?.paneB || {},
+          }));
+        }
+      },
+    );
+  }, [versionsOpen, versionSelection.compareAId, versionSelection.compareBId, versionCompareShowPositional, resolveVersionSlotXml]);
+
+  const handlePaneViewerReadyA = useCallback((viewer) => {
+    viewerARef.current = viewer;
+    setViewersEpoch((v) => v + 1);
+  }, []);
+  const handlePaneViewerGoneA = useCallback(() => {
+    viewerARef.current = null;
+    setViewersEpoch((v) => v + 1);
+  }, []);
+  const handlePaneViewerReadyB = useCallback((viewer) => {
+    viewerBRef.current = viewer;
+    setViewersEpoch((v) => v + 1);
+  }, []);
+  const handlePaneViewerGoneB = useCallback(() => {
+    viewerBRef.current = null;
+    setViewersEpoch((v) => v + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!versionSelection.compareAId || !versionSelection.compareBId) return undefined;
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return undefined;
+    }
+    const viewerA = viewerARef.current;
+    const viewerB = viewerBRef.current;
+    if (!viewerA || !viewerB) return undefined;
+    let canvasA = null;
+    let canvasB = null;
+    try {
+      canvasA = viewerA.get("canvas");
+      canvasB = viewerB.get("canvas");
+    } catch {
+      return undefined;
+    }
+    if (!canvasA || !canvasB) return undefined;
+    const handler = (event) => {
+      if (syncApplyingRef.current) return;
+      const viewbox = event?.viewbox;
+      if (!viewbox) return;
+      syncApplyingRef.current = true;
+      try { canvasB.viewbox(viewbox); } catch {}
+      syncApplyingRef.current = false;
+    };
+    try { canvasA.on("canvas.viewbox.changed", handler); } catch { return undefined; }
+    return () => {
+      try { canvasA.off("canvas.viewbox.changed", handler); } catch {}
+    };
+  }, [versionSelection.compareAId, versionSelection.compareBId, viewersEpoch, versionCompareMode]);
+
+  const onVersionPreview = useCallback((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    versionSelectionDispatch({ type: "preview", id });
+    setPreviewSnapshotId(id);
+    void ensureBpmnVersionXml(id);
+  }, [ensureBpmnVersionXml, setPreviewSnapshotId]);
+
+  const onVersionAssign = useCallback((slot, item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    versionSelectionDispatch({ type: "assign", slot, id });
+    void ensureBpmnVersionXml(id);
+  }, [ensureBpmnVersionXml]);
+
+  const handleCompareWithCurrentFromPane = useCallback((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    versionSelectionDispatch({ type: "assign", slot: "A", id: CURRENT_VERSION_SLOT_ID });
+    versionSelectionDispatch({ type: "assign", slot: "B", id });
+    void ensureBpmnVersionXml(id);
+  }, [ensureBpmnVersionXml]);
+
+  const restoreVersionFromPane = useCallback(async (item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    setVersionRestoreBusyId(id);
+    try {
+      await restoreSnapshot(item);
+    } finally {
+      setVersionRestoreBusyId("");
+    }
+  }, [restoreSnapshot]);
+
+  const downloadCurrentVersionXml = useCallback(() => {
+    const xml = toText(draft?.bpmn_xml || bpmnRef.current?.getXmlDraft?.() || "");
+    if (!xml) return;
+    const base = String(draft?.title || sid || "process")
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, "_")
+      .slice(0, 80) || "process";
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = `${base}_current.bpmn`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+  }, [draft?.bpmn_xml, draft?.title, sid]);
+
+  const getVersionDiffSummary = useCallback((item) => {
+    const summary = String(item?.diffSummary || "").trim();
+    return summary || null;
+  }, []);
+
+  const buildVersionPaneModel = useCallback((slotValue, role) => {
+    const isCurrentSlot = String(slotValue || "") === CURRENT_VERSION_SLOT_ID;
+    const slot = resolveVersionSlotXml(slotValue);
+    const item = slot.item;
+    const number = Number(item?.revisionNumber || item?.rev || 0);
+    const baseTitle = isCurrentSlot
+      ? "Текущая (черновик)"
+      : (number > 0 ? `Версия ${number}` : snapshotLabel(item || {}));
+    const rolePrefix = role === "A" ? "A · базовая" : role === "B" ? "B · новая" : "";
+    const title = rolePrefix ? `${rolePrefix}: ${baseTitle}` : baseTitle;
+    const subtitle = isCurrentSlot
+      ? "несохранённый черновик диаграммы"
+      : `${String(item?.authorLabel || "Автор не указан")} · ${formatSnapshotTs(item?.ts)}`;
+    const hash = isCurrentSlot
+      ? String(bpmnVersionTruthState?.currentSessionPayloadHash || "").slice(0, 8)
+      : shortSnapshotHash(String(item?.hash || item?.xml || ""));
+    const model = {
+      key: `${role}_${String(slotValue || "")}`,
+      title,
+      subtitle,
+      hash,
+      isLast: !isCurrentSlot && !!item && String(item?.id || "") === String(currentBpmnVersionId || ""),
+      xml: slot.status === "ready" ? slot.xml : "",
+      status: slot.status,
+      error: slot.error,
+      onRetry: item && !isCurrentSlot ? () => void ensureBpmnVersionXml(item.id) : undefined,
+      highlights: role === "A" ? versionCompareState.paneA : role === "B" ? versionCompareState.paneB : undefined,
+      onViewerReady: role === "A" ? handlePaneViewerReadyA : role === "B" ? handlePaneViewerReadyB : undefined,
+      onViewerGone: role === "A" ? handlePaneViewerGoneA : role === "B" ? handlePaneViewerGoneB : undefined,
+      markerPrefix: "vcc",
+      mode: role === "single" ? "diagram" : versionCompareMode,
+      xmlDiff: null,
+      canRestore: !isCurrentSlot && !!item,
+      isCurrent: isCurrentSlot,
+      restoring: !!item && String(versionRestoreBusyId || "") === String(item.id),
+      onDownload: item && !isCurrentSlot
+        ? () => void downloadSnapshot(item)
+        : (isCurrentSlot ? downloadCurrentVersionXml : undefined),
+      onRestore: item && !isCurrentSlot ? () => void restoreVersionFromPane(item) : undefined,
+      onCompareWithCurrent: item && !isCurrentSlot ? () => handleCompareWithCurrentFromPane(item) : undefined,
+    };
+    if (role !== "single" && versionCompareMode === "xml") {
+      const self = resolveVersionSlotXml(versionSelection.compareAId);
+      const other = resolveVersionSlotXml(versionSelection.compareBId);
+      if (self.status === "ready" && other.status === "ready") {
+        model.xmlDiff = diffXmlLines(self.xml, other.xml);
+      }
+    }
+    return model;
+  }, [
+    resolveVersionSlotXml,
+    versionCompareState,
+    versionCompareMode,
+    versionRestoreBusyId,
+    bpmnVersionTruthState,
+    currentBpmnVersionId,
+    versionSelection.compareAId,
+    versionSelection.compareBId,
+    ensureBpmnVersionXml,
+    downloadSnapshot,
+    restoreVersionFromPane,
+    handleCompareWithCurrentFromPane,
+    handlePaneViewerReadyA,
+    handlePaneViewerGoneA,
+    handlePaneViewerReadyB,
+    handlePaneViewerGoneB,
+    downloadCurrentVersionXml,
+  ]);
+
+  const versionPaneSingle = useMemo(() => {
+    const id = String(previewSnapshotId || "").trim();
+    if (!id) return null;
+    return buildVersionPaneModel(id, "single");
+  }, [previewSnapshotId, buildVersionPaneModel]);
+
+  const versionPaneA = useMemo(() => {
+    if (!versionSelection.compareAId) return null;
+    return buildVersionPaneModel(versionSelection.compareAId, "A");
+  }, [versionSelection.compareAId, buildVersionPaneModel]);
+
+  const versionPaneB = useMemo(() => {
+    if (!versionSelection.compareBId) return null;
+    return buildVersionPaneModel(versionSelection.compareBId, "B");
+  }, [versionSelection.compareBId, buildVersionPaneModel]);
+
+  const versionCompareCounts = versionCompareState.counts;
+  const versionCompareBusy = versionCompareState.busy;
+  const versionCompareNoChanges = !!versionCompareState.counts
+    && !versionCompareState.busy
+    && Number(versionCompareState.counts.added || 0) === 0
+    && Number(versionCompareState.counts.removed || 0) === 0
+    && Number(versionCompareState.counts.changed || 0) === 0
+    && Number(versionCompareState.counts.moved || 0) === 0
+    && Number(versionCompareState.counts.resized || 0) === 0;
 
   function pushCommandHistory(commandText) {
     const text = String(commandText || "").trim();
@@ -6484,25 +6789,6 @@ function ProcessStage({
     setLatestBpmnVersionHeadStatus("loading");
     void refreshLatestBpmnRevisionHead();
   }, [sid, refreshLatestBpmnRevisionHead]);
-
-  useEffect(() => {
-    if (!diffOpen) return;
-    const ids = new Set(asArray(versionsList).map((item) => String(item?.id || "")));
-    if (!ids.has(String(diffTargetSnapshotId || ""))) {
-      setDiffTargetSnapshotId(String(asArray(versionsList)[0]?.id || ""));
-    }
-    if (!ids.has(String(diffBaseSnapshotId || ""))) {
-      setDiffBaseSnapshotId(String(asArray(versionsList)[1]?.id || asArray(versionsList)[0]?.id || ""));
-    }
-  }, [diffOpen, versionsList, diffBaseSnapshotId, diffTargetSnapshotId]);
-
-  useEffect(() => {
-    if (!diffOpen) return;
-    const ids = [diffBaseSnapshotId, diffTargetSnapshotId].map((id) => String(id || "").trim()).filter(Boolean);
-    ids.forEach((id) => {
-      void ensureBpmnVersionXml(id);
-    });
-  }, [diffOpen, diffBaseSnapshotId, diffTargetSnapshotId, ensureBpmnVersionXml]);
 
   useEffect(() => {
     writeCommandMode(commandModeEnabled);
@@ -7726,9 +8012,6 @@ function ProcessStage({
     isAdmin: !!user?.is_admin,
     revisionHistorySnapshot: revisionHistoryUiSnapshot,
     setGenErr,
-    setDiffTargetSnapshotId,
-    setDiffBaseSnapshotId,
-    openDiffDialog: stageActions.openDiffDialog,
     clearSnapshotHistory,
     previewSnapshotId,
     setPreviewSnapshotId,
@@ -7739,24 +8022,24 @@ function ProcessStage({
     downloadSnapshot,
     editSnapshotLabel,
     togglePinSnapshot,
-    openDiffForSnapshot,
-    compareVersionWithCurrent: handleCompareVersionWithCurrent,
     restoreSnapshot,
     canRestoreVersion: true,
     previewSnapshot,
-    diffOpen,
-    closeDiffDialog: stageActions.closeDiffDialog,
-    diffBaseSnapshotId,
-    diffTargetSnapshotId,
-    semanticDiffView,
     currentBpmnVersionId,
-    diffBaseSnapshot,
-    diffTargetSnapshot,
-    historyDiffOpen,
-    historyDiffLocalXml,
-    historyDiffVersionXml,
-    historyDiffVersionLabel,
-    closeHistoryDiff,
+    versionSelection,
+    onVersionPreview,
+    onVersionAssign,
+    versionPaneSingle,
+    versionPaneA,
+    versionPaneB,
+    versionCompareCounts,
+    versionCompareBusy,
+    versionCompareNoChanges,
+    versionCompareMode,
+    onVersionCompareModeChange: setVersionCompareMode,
+    versionCompareShowPositional,
+    onVersionCompareTogglePositional: setVersionCompareShowPositional,
+    getVersionDiffSummary,
   });
   const finalBodyClassName = useMemo(
     () => `${bodyClassName}${tab === "xml" ? " processBody--xml" : ""}`,
