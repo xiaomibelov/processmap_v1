@@ -1,0 +1,38 @@
+{
+  "contour": "audit/tobe-diff-keys-v1",
+  "phase": "execution",
+  "status": "ready_for_review",
+  "updated_at": "2026-09-16",
+  "role": "executor",
+  "branch": "audit/db-plane-measures-20260916",
+  "head": "ae91569b31f0470935ef426a16c7242a1da12dbb",
+  "origin_main": "ae91569b31f0470935ef426a16c7242a1da12dbb",
+  "mode": "read-only",
+  "db_plane": "local snapshot processmap @ processmap_v1-postgres-1 (1789 sessions, data up to 2026-09-15); no direct prod DB access (SSH out of scope)",
+  "evidence_gaps": [
+    "INTERIM_REPORT.md / DIFF_CLASSES_SPEC.md v1 / fixtures soup-asis.bpmn <-> soup-tobe.bpmn not present in workspace",
+    "both to_be sessions have empty bpmn_xml -> element-level XML provenance after save unobservable on snapshot",
+    "direct UI round-trip on stage not executed (readonly mode) -> zeebe survival proven indirectly (code + saved data)",
+    "brief context (0/14 exact match, 94->18 compression, 50/61 orphan tasks) accepted as given, not locally verified"
+  ],
+  "key_findings": {
+    "provenance_persistence": "session-level link survives: sessions.derived_from_session_id, written only at create, untouched by bpmn_save/operations_apply/patch_session; per-element derived_from/trace_map exist only in frontend memory and are NOT persisted to bpmn_xml/bpmn_meta_json/notes_by_element_json",
+    "zeebe_roundtrip": "survives: zeebe+pm moddle descriptors registered in bpmn-js modeler (bpmnWiring.js:92,329), backend stores XML verbatim; 163/890 live sessions contain zeebe:properties, deep-parsed 8 edited sessions show 0 losses",
+    "key_coverage": "15/60 sampled schemes have zeebe:properties (mean 33.3% elements covered among them); keys fully domain-specific (ingredient 616, container_tara 607, equipment 441); no system keys; 72% generated ids; task names 96.1% present",
+    "diff_classes": "real derived_from pairs = 2 (both to_be XML empty -> N/A element diff); proxy pairs: class B (name-match) dominates 10/13 elements; class A unreachable without persistence fix"
+  },
+  "deliverables": [
+    "AUDIT_REPORT.md",
+    "KEY_COVERAGE_MATRIX.md",
+    "matrix_table.md",
+    "matrix.csv",
+    "DIFF_CLASSES_SPEC.md"
+  ],
+  "gates": {
+    "source_runtime_truth_confirmed": true,
+    "bounded_scope_respected": true,
+    "no_product_code_changes": true,
+    "no_db_writes": true,
+    "mirror": "pending"
+  }
+}
