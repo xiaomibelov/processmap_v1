@@ -331,6 +331,136 @@ class OpsApplierParityTests(unittest.TestCase):
                 '<di:waypoint x="360" y="140" />\n        <di:waypoint x="500" y="160" />\n'
                 '        <di:waypoint x="592" y="140" />')))
 
+    # --- connection.reconnect / create с клиентским id (step2) ---------
+
+    def test_golden_connection_reconnect_rewrites_refs_and_relinks(self):
+        result = self._apply(SMALL_BPMN_XML, [
+            {"opId": "r1", "type": "connection.reconnect", "connectionId": "Flow_2",
+             "source": "StartEvent_1", "target": "EndEvent_1"},
+        ])
+        root = ET.fromstring(result)
+        flow = self._find(root, "Flow_2")
+        self.assertEqual((flow.get("sourceRef"), flow.get("targetRef")), ("StartEvent_1", "EndEvent_1"))
+        # incoming/outgoing перелинкованы: старый source больше не ссылается.
+        task_1 = self._find(root, "Task_1")
+        self.assertNotIn("Flow_2", [el.text for el in task_1 if self._local(el.tag) == "outgoing"])
+        start = self._find(root, "StartEvent_1")
+        self.assertIn("Flow_2", [el.text for el in start if self._local(el.tag) == "outgoing"])
+        end = self._find(root, "EndEvent_1")
+        self.assertIn("Flow_2", [el.text for el in end if self._local(el.tag) == "incoming"])
+        self.assertEqual(len([el.text for el in end if self._local(el.tag) == "incoming"]), 1)
+        # DI-edge на месте, waypoints сохранились (DI-only миграция краёв).
+        edge = self._di_edge(root, "Flow_2")
+        self.assertIsNotNone(edge)
+        waypoints = [ch for ch in edge if self._local(ch.tag) == "waypoint"]
+        self.assertEqual([(wp.get("x"), wp.get("y")) for wp in waypoints], [("360", "120"), ("592", "120")])
+
+    def test_reconnect_missing_source_raises_typed_error(self):
+        with self.assertRaises(self.ops_applier.OperationApplyError) as ctx:
+            self._apply(SMALL_BPMN_XML, [
+                {"opId": "r2", "type": "connection.reconnect", "connectionId": "Flow_2",
+                 "source": "Nope", "target": "EndEvent_1"},
+            ])
+        self.assertIn("source_not_found", ctx.exception.reason)
+
+    def test_reconnect_missing_connection_raises_typed_error(self):
+        with self.assertRaises(self.ops_applier.OperationApplyError) as ctx:
+            self._apply(SMALL_BPMN_XML, [
+                {"opId": "r3", "type": "connection.reconnect", "connectionId": "Flow_missing",
+                 "source": "Task_1", "target": "EndEvent_1"},
+            ])
+        self.assertIn("connection_not_found", ctx.exception.reason)
+
+    def test_reconnect_wire_aliases_element_id_and_reconnect_source_target(self):
+        """Wire-формат commandToOps: id connection в elementId, поля source/target."""
+        result = self._apply(SMALL_BPMN_XML, [
+            {"opId": "r4", "type": "connection.reconnect", "elementId": "Flow_2",
+             "source": "StartEvent_1", "target": "Task_1"},
+        ])
+        root = ET.fromstring(result)
+        flow = self._find(root, "Flow_2")
+        self.assertEqual((flow.get("sourceRef"), flow.get("targetRef")), ("StartEvent_1", "Task_1"))
+        start = self._find(root, "StartEvent_1")
+        self.assertIn("Flow_2", [el.text for el in start if self._local(el.tag) == "outgoing"])
+
+    def test_reconnect_parity_on_real_fixture_with_collaboration(self):
+        """Parity golden: reconnect sequenceFlow в документе с participant."""
+        with open(os.path.join(FIXTURES_DIR, "tobe_razogrev_supa_rtk_v03.bpmn"), encoding="utf-8") as fh:
+            xml_text = fh.read()
+        root = ET.fromstring(xml_text)
+        flow = next(
+            el for el in root.iter()
+            if el.tag == f"{{{BPMN_NS}}}sequenceFlow" and el.get("sourceRef") and el.get("targetRef")
+        )
+        flows = [el for el in root.iter() if el.tag == f"{{{BPMN_NS}}}sequenceFlow"]
+        candidates = [
+            el for el in root.iter()
+            if el.tag.startswith(f"{{{BPMN_NS}}}") and el.get("id")
+            and self._local(el.tag) not in (
+                "definitions", "process", "sequenceFlow", "messageFlow", "association",
+                "incoming", "outgoing", "documentation", "extensionElements",
+                "collaboration",
+            )
+            and not ("sourceRef" in el.attrib and "targetRef" in el.attrib)
+        ]
+        old_source, old_target = flow.get("sourceRef"), flow.get("targetRef")
+        new_source = next(c.get("id") for c in candidates if c.get("id") not in (old_source, old_target))
+        new_target = old_target
+        result = self._apply(xml_text, [
+            {"opId": "r5", "type": "connection.reconnect", "connectionId": flow.get("id"),
+             "source": new_source, "target": new_target},
+        ])
+        out = ET.fromstring(result)
+        moved = self._find(out, flow.get("id"))
+        self.assertEqual(moved.get("sourceRef"), new_source)
+        self.assertEqual(moved.get("targetRef"), new_target)
+        old_source_el = self._find(out, old_source)
+        if old_source_el is not None:
+            self.assertNotIn(
+                flow.get("id"),
+                [el.text for el in old_source_el if self._local(el.tag) == "outgoing"],
+            )
+        new_source_el = self._find(out, new_source)
+        self.assertIn(flow.get("id"), [el.text for el in new_source_el if self._local(el.tag) == "outgoing"])
+        # DI-инварианты не пострадали.
+        self._assert_di_invariants(out, required_ids={
+            el.get("bpmnElement")
+            for el in out.iter()
+            if self._local(el.tag) in ("BPMNShape", "BPMNEdge") and el.get("bpmnElement")
+        })
+
+    def test_shape_create_with_client_generated_id(self):
+        result = self._apply(SMALL_BPMN_XML, [
+            {"opId": "c1", "type": "shape.create", "id": "Task_client",
+             "bpmnType": "bpmn:Task", "x": 700, "y": 200, "width": 120, "height": 90,
+             "parentId": "Process_parity", "name": "Client id"},
+        ])
+        root = ET.fromstring(result)
+        task = self._find(root, "Task_client")
+        self.assertIsNotNone(task)
+        self.assertEqual(task.get("name"), "Client id")
+        self.assertIsNotNone(self._di_shape(root, "Task_client"))
+
+    def test_connection_create_with_client_generated_id(self):
+        result = self._apply(SMALL_BPMN_XML, [
+            {"opId": "c2", "type": "connection.create", "id": "Flow_client",
+             "bpmnType": "bpmn:SequenceFlow", "sourceId": "Task_1", "targetId": "EndEvent_1",
+             "waypoints": [[360, 120], [592, 120]]},
+        ])
+        root = ET.fromstring(result)
+        flow = self._find(root, "Flow_client")
+        self.assertIsNotNone(flow)
+        self.assertEqual((flow.get("sourceRef"), flow.get("targetRef")), ("Task_1", "EndEvent_1"))
+
+    def test_create_client_id_collision_raises_typed_error(self):
+        with self.assertRaises(self.ops_applier.OperationApplyError) as ctx:
+            self._apply(SMALL_BPMN_XML, [
+                {"opId": "c3", "type": "shape.create", "id": "Task_1",
+                 "bpmnType": "bpmn:Task", "x": 1, "y": 1, "width": 10, "height": 10,
+                 "parentId": "Process_parity"},
+            ])
+        self.assertIn("already_exists", ctx.exception.reason)
+
     # --- ошибки ---------------------------------------------------------
 
     def test_unsupported_type_raises_typed_error(self):

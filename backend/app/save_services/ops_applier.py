@@ -250,8 +250,12 @@ def _op_bpmn_type(op: Dict[str, Any]) -> str:
 
 
 def _op_connection_id(op: Dict[str, Any]) -> str:
-    """connectionId (API.md) или elementId (wire commandToOps несёт id в elementId)."""
-    return str(op.get("connectionId") or op.get("elementId") or "").strip()
+    """connectionId (API.md) или elementId (wire commandToOps несёт id в elementId).
+
+    Опциональный client-generated `id` (step2, API.md §5.5) принимается наряду
+    с ними — create-op replay при 409-rebase должен воспроизводить тот же id.
+    """
+    return str(op.get("connectionId") or op.get("elementId") or op.get("id") or "").strip()
 
 
 def _as_str(value: Any) -> str:
@@ -376,7 +380,11 @@ def _fmt_num(value: float) -> str:
 
 
 def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
-    element_id = str(_require_field(op, "elementId")).strip()
+    # Client-generated id (API.md §5.5): клиент присылает `id`, элемент создаётся
+    # с ним без регенерации — replay create при 409-rebase безопасен.
+    element_id = str(op.get("elementId") or op.get("id") or "").strip()
+    if not element_id:
+        raise OperationApplyError(_op_id(op), _op_type(op), "missing_elementId")
     bpmn_type = _op_bpmn_type(op)
     if not bpmn_type:
         raise OperationApplyError(_op_id(op), _op_type(op), "missing_bpmnType")
@@ -569,6 +577,64 @@ def _apply_connection_delete(root: ET.Element, op: Dict[str, Any]) -> None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"connection_not_found: {connection_id}")
 
 
+def _remove_incident_ref(root: ET.Element, element_id: str, connection_id: str) -> None:
+    """Убрать incoming/outgoing-ссылку на connection у конкретного элемента."""
+    if not element_id or element_id == connection_id:
+        return
+    element = _find_semantic(root, element_id)
+    if element is None:
+        return
+    for ch in list(element):
+        if _ns(ch.tag) == BPMN_NS and _local(ch.tag) in _INCIDENT_REF_TAGS:
+            if str(ch.text or "").strip() == connection_id:
+                element.remove(ch)
+
+
+def _append_incident_ref(element: ET.Element, tag_local: str, connection_id: str) -> None:
+    for ch in element:
+        if _ns(ch.tag) == BPMN_NS and _local(ch.tag) == tag_local:
+            if str(ch.text or "").strip() == connection_id:
+                return
+    ref = ET.Element(f"{{{BPMN_NS}}}{tag_local}")
+    ref.text = connection_id
+    element.append(ref)
+
+
+def _apply_connection_reconnect(root: ET.Element, op: Dict[str, Any]) -> None:
+    """Rewrite sourceRef/targetRef connection + перелинковка incoming/outgoing.
+
+    DI-edge не трогаем: id connection не меняется, waypoints сохраняются
+    (DI-only миграция краёв, API.md §5.4). Rules-движок bpmn-js не дублируется —
+    валидация минимальная: source/target существуют в XML.
+    """
+    connection_id = _op_connection_id(op)
+    if not connection_id:
+        raise OperationApplyError(_op_id(op), _op_type(op), "missing_connectionId")
+    source_id = str(_require_field(op, "source")).strip()
+    target_id = str(_require_field(op, "target")).strip()
+    connection = _find_semantic(root, connection_id)
+    if connection is None or not _is_connection_element(connection):
+        raise OperationApplyError(_op_id(op), _op_type(op), f"connection_not_found: {connection_id}")
+    if _find_semantic(root, source_id) is None:
+        raise OperationApplyError(_op_id(op), _op_type(op), f"source_not_found: {source_id}")
+    if _find_semantic(root, target_id) is None:
+        raise OperationApplyError(_op_id(op), _op_type(op), f"target_not_found: {target_id}")
+    old_source = str(connection.get("sourceRef") or "").strip()
+    old_target = str(connection.get("targetRef") or "").strip()
+    if old_source == source_id and old_target == target_id:
+        return
+    connection.set("sourceRef", source_id)
+    connection.set("targetRef", target_id)
+    _remove_incident_ref(root, old_source, connection_id)
+    _remove_incident_ref(root, old_target, connection_id)
+    new_source = _find_semantic(root, source_id)
+    new_target = _find_semantic(root, target_id)
+    if new_source is not None:
+        _append_incident_ref(new_source, "outgoing", connection_id)
+    if new_target is not None:
+        _append_incident_ref(new_target, "incoming", connection_id)
+
+
 def _apply_update_di(root: ET.Element, op: Dict[str, Any]) -> None:
     element_id = str(_require_field(op, "elementId")).strip()
     waypoints = op.get("waypoints")
@@ -609,6 +675,7 @@ _APPLIERS = {
     "shape.delete": _apply_shape_delete,
     "connection.create": None,
     "connection.delete": _apply_connection_delete,
+    "connection.reconnect": _apply_connection_reconnect,
     "element.updateDi": _apply_update_di,
 }
 

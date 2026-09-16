@@ -2,9 +2,12 @@
 In-memory session event bus.
 
 Provides publish/subscribe for session-scoped events (session_deleted,
-session_updated, etc.) without Redis or external dependencies.
+session_updated, etc.) without external dependencies.
 
-Single-process only — horizontal scale would require Redis pub/sub.
+Multi-worker fan-in: каждая публикация дополнительно релеится в redis pub/sub
+(канал SESSION_EVENTS_CHANNEL, best-effort) — SSE-подписчики на соседних
+worker'ах получают события через релей в session_events.py. Redis недоступен →
+in-process only (документированная деградация).
 Each SSE subscriber gets an asyncio.Queue; when a session is deleted,
 all queues for that session receive the event and the subscriber map
 is cleaned up.
@@ -17,7 +20,24 @@ import json
 import logging
 from typing import Any
 
+from .. import redis_client
+
 logger = logging.getLogger(__name__)
+
+# Redis pub/sub fan-in канал (multi-worker, API.md §2): сообщение —
+# JSON {"session_id": str, "event": {...}}.
+SESSION_EVENTS_CHANNEL = "pm:session-events"
+
+
+def _relay_event_to_redis(session_id: str, event: dict[str, Any]) -> None:
+    """Лучшее-эффорт релей в redis; ошибки не должны ломать publisher."""
+    try:
+        redis_client.publish_message(
+            SESSION_EVENTS_CHANNEL,
+            json.dumps({"session_id": session_id, "event": event}, ensure_ascii=False, default=str),
+        )
+    except Exception as exc:
+        logger.warning("session_event_bus redis relay failed for %s: %s", session_id, exc)
 
 
 class SessionEventBus:
@@ -66,6 +86,7 @@ class SessionEventBus:
                     session_id,
                     event.get("type"),
                 )
+        _relay_event_to_redis(session_id, event)
         return len(queues)
 
     def publish_nowait(self, session_id: str, event: dict[str, Any]) -> int:
@@ -77,6 +98,7 @@ class SessionEventBus:
         """
         queues = self._subscribers.get(session_id, [])
         if not queues:
+            _relay_event_to_redis(session_id, event)
             return 0
         for q in list(queues):
             try:
@@ -87,6 +109,9 @@ class SessionEventBus:
                     session_id,
                     event.get("type"),
                 )
+        # Redis-релей — после локальных очередей: его сбой не должен блокировать
+        # in-process доставку (degraded-mode, API.md §2).
+        _relay_event_to_redis(session_id, event)
         return len(queues)
 
     def subscriber_count(self, session_id: str) -> int:

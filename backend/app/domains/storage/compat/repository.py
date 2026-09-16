@@ -1015,6 +1015,10 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_active ON session_presence(session_id, org_id, project_id, last_seen_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_stale ON session_presence(last_seen_at)")
+            # Soft-lock (feature/async-save-pipeline-step2, API.md §4):
+            # advisory-only элемент, который пользователь редактирует.
+            if not _column_exists(con, "session_presence", "editing_element_id"):
+                con.execute("ALTER TABLE session_presence ADD COLUMN editing_element_id TEXT NOT NULL DEFAULT ''")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS session_assignees (

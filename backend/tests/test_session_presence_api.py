@@ -119,8 +119,8 @@ class SessionPresenceApiTests(unittest.TestCase):
     def _req(self, user: dict | None, org_id: str | None = None):
         return _DummyRequest(user, active_org_id=org_id or self.org_id)
 
-    def _body(self, client_id: str, surface: str = "process_stage"):
-        return self.SessionPresenceTouchIn(client_id=client_id, surface=surface)
+    def _body(self, client_id: str, surface: str = "process_stage", **extra):
+        return self.SessionPresenceTouchIn(client_id=client_id, surface=surface, **extra)
 
     def test_authenticated_user_can_touch_presence_for_accessible_session(self):
         out = self.touch_session_presence_api(
@@ -350,6 +350,112 @@ class SessionPresenceApiTests(unittest.TestCase):
         self.assertEqual(removed, 0)
         self.assertEqual(len(self.list_session_presence(self.session_id, org_id=self.org_id, project_id=self.project_id, now_ts=600001)), 1)
         self.assertEqual(len(self.list_session_presence(other_session_id, org_id=self.org_id, project_id=self.project_id, now_ts=600001)), 1)
+
+
+    # --- editingElementId (soft-lock, API.md §4 step2) -------------------
+
+    def test_touch_with_editing_element_id_echoed_in_active_users(self):
+        out = self.touch_session_presence_api(
+            self.session_id,
+            self._body("tab_edit", editingElementId="Task_1"),
+            request=self._req(self.user_a),
+        )
+        self.assertEqual(out.get("ok"), True)
+        users = out.get("active_users") or []
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0].get("editingElementId"), "Task_1")
+
+    def test_touch_without_editing_element_id_returns_null(self):
+        out = self.touch_session_presence_api(
+            self.session_id,
+            self._body("tab_plain"),
+            request=self._req(self.user_a),
+        )
+        users = out.get("active_users") or []
+        self.assertEqual(len(users), 1)
+        self.assertIsNone(users[0].get("editingElementId"))
+
+    def test_empty_editing_element_id_clears_soft_lock(self):
+        self.touch_session_presence_api(
+            self.session_id,
+            self._body("tab_clear", editingElementId="Task_1"),
+            request=self._req(self.user_a),
+        )
+        out = self.touch_session_presence_api(
+            self.session_id,
+            self._body("tab_clear", editingElementId=""),
+            request=self._req(self.user_a),
+        )
+        users = out.get("active_users") or []
+        self.assertIsNone(users[0].get("editingElementId"))
+
+    def test_invalid_editing_element_id_format_rejected(self):
+        # Невалидный формат bpmn id — ошибка валидации схемы (→ 422 на HTTP-пути).
+        with self.assertRaises(Exception):
+            self._body("tab_bad", editingElementId="bad id!")
+        with self.assertRaises(Exception):
+            self._body("tab_bad", editingElementId="x" * 65)
+
+    def test_invalid_editing_element_id_returns_422_over_http(self):
+        from fastapi.testclient import TestClient
+        from app.auth import create_access_token
+        from app.main import app
+
+        client = TestClient(app)
+        token = create_access_token(str(self.user_a.get("id") or ""))
+        resp = client.post(
+            f"/api/sessions/{self.session_id}/presence",
+            json={"client_id": "tab_http", "editingElementId": "bad id!"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+
+    def test_storage_touch_and_list_carry_editing_element_id(self):
+        now = 500000
+        user_a_id = str(self.user_a.get("id") or "")
+        self.touch_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_st",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            editing_element_id="Gateway_2",
+            now_ts=now,
+        )
+        users = self.list_session_presence(
+            self.session_id,
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now + 1,
+        )
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0].get("editingElementId"), "Gateway_2")
+
+    def test_leave_presence_removes_editing_element_id_with_row(self):
+        now = 600000
+        user_a_id = str(self.user_a.get("id") or "")
+        self.touch_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_leave",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            editing_element_id="Task_9",
+            now_ts=now,
+        )
+        out = self.leave_session_presence_api(
+            self.session_id,
+            self._body("tab_leave"),
+            request=self._req(self.user_a),
+        )
+        self.assertEqual(out.get("removed"), 1)
+        users = self.list_session_presence(
+            self.session_id,
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now + 1,
+        )
+        self.assertEqual(users, [])
 
 
 if __name__ == "__main__":
