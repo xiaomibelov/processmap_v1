@@ -67,7 +67,7 @@ test("buildProvenanceSidecar: полный снапшот trace_map (покры�
 
 test("embed: пишет pm:derived_from (массив N->1), pm:trace_fate, pm:trace_rule_id", async () => {
   const xml = await embedProvenanceIntoBpmnXml(FIXTURE_XML, TRACE_MAP);
-  assert.match(xml, /<pm:trace/);
+  assert.match(xml, /<pm:Trace/);
   assert.match(xml, /<pm:derived_from>AsIs_1<\/pm:derived_from>/);
   assert.match(xml, /<pm:derived_from>AsIs_2<\/pm:derived_from>/);
   assert.match(xml, /fate="transformed_to"/);
@@ -84,7 +84,7 @@ test("embed: не затирает существующие extensionElements (c
 test("embed: идемпотентен (повторное встраивание не дублирует pm:trace)", async () => {
   const once = await embedProvenanceIntoBpmnXml(FIXTURE_XML, TRACE_MAP);
   const twice = await embedProvenanceIntoBpmnXml(once, TRACE_MAP);
-  const matches = twice.match(/<pm:trace/g) || [];
+  const matches = twice.match(/<pm:Trace/g) || [];
   assert.equal(matches.length, 2); // Task_a + Flow_a_b, без дублей
 });
 
