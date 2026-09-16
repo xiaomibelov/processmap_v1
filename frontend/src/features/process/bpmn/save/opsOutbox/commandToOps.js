@@ -292,7 +292,10 @@ const WHITELIST = Object.freeze({
 });
 
 export function isReplayCommand(descriptor) {
-  return asText(readContext(descriptor)?.__pmOpSource).toLowerCase() === "replay";
+  const source = asText(readContext(descriptor)?.__pmOpSource).toLowerCase();
+  // "replay" — собственный rebase-replay; "remote" — применение чужих ops
+  // (ops_committed consumer). Оба не становятся op и не двигают coverage.
+  return source === "replay" || source === "remote";
 }
 
 // Рантайм-каскад несёт сериализованный контекст в поле commandContext

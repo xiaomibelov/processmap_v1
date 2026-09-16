@@ -263,3 +263,26 @@ test("replayOpsOnModeler: create without elementFactory → fuzzyMiss (no silent
   assert.equal(result.ok, false);
   assert.equal(result.results[0].fuzzyMiss, true);
 });
+
+test("replayOpsOnModeler source option: remote apply flags __pmOpSource:\"remote\"", async () => {
+  const task = { id: "Task_1", businessObject: { $type: "bpmn:Task", name: "A" }, x: 0, y: 0, width: 120, height: 80 };
+  const modeler = makeModeler({ elements: { Task_1: task } });
+  const result = await replayOpsOnModeler(
+    modeler,
+    [{ opId: "r1", type: "element.updateProperties", elementId: "Task_1", properties: { name: "Чужое" } }],
+    { source: "remote" },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(modeler.executed.length, 1);
+  assert.equal(modeler.executed[0].context.__pmOpSource, "remote");
+  assert.equal(modeler.executed[0].context.__pmOpId, "r1");
+});
+
+test("replayOpsOnModeler default source stays \"replay\" (step1 regression)", async () => {
+  const task = { id: "Task_1", businessObject: { $type: "bpmn:Task", name: "A" }, x: 0, y: 0, width: 120, height: 80 };
+  const modeler = makeModeler({ elements: { Task_1: task } });
+  await replayOpsOnModeler(modeler, [
+    { opId: "op-1", type: "element.updateProperties", elementId: "Task_1", properties: { name: "B" } },
+  ]);
+  assert.equal(modeler.executed[0].context.__pmOpSource, "replay");
+});

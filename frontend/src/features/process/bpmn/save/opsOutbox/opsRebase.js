@@ -69,8 +69,8 @@ export function resolveElementFuzzy(registry, ref, { allowConnections = true } =
   return best ? { element: best, fuzzy: true } : null;
 }
 
-function replayFlags(op) {
-  return { __pmOpId: asText(op?.opId), __pmOpSource: "replay" };
+function replayFlags(op, source = "replay") {
+  return { __pmOpId: asText(op?.opId), __pmOpSource: asText(source) || "replay" };
 }
 
 function createShapeDescriptor(op) {
@@ -153,13 +153,13 @@ function safeExecute(commandStack, command, context) {
   }
 }
 
-function replayOne(modeler, op) {
+function replayOne(modeler, op, source) {
   const registry = modeler?.get?.("elementRegistry");
   const commandStack = modeler?.get?.("commandStack");
   if (!registry || !commandStack) {
     return { ok: false, error: "modeler_not_ready", fuzzyMiss: true };
   }
-  const flags = replayFlags(op);
+  const flags = replayFlags(op, source);
   const type = asText(op?.type);
 
   // Create-op replay (step2, наследие п.6): id клиентский и сервер применяет
@@ -253,14 +253,15 @@ function replayOne(modeler, op) {
  * через commandStack.changed с флагами replay — commandToOps её пропускает.
  * @returns {{ok: boolean, applied: number, failed: number, results: Array}}
  */
-export async function replayOpsOnModeler(modeler, ops = []) {
+export async function replayOpsOnModeler(modeler, ops = [], options = {}) {
   const list = Array.isArray(ops) ? ops : [];
+  const source = asText(options?.source) || "replay";
   const results = [];
   let applied = 0;
   let failed = 0;
   for (const op of list) {
     const opId = asText(op?.opId);
-    const outcome = replayOne(modeler, op);
+    const outcome = replayOne(modeler, op, source);
     if (outcome.ok) applied += 1;
     else failed += 1;
     results.push({ opId, ok: outcome.ok === true, error: asText(outcome.error), fuzzyMiss: outcome.fuzzyMiss === true });

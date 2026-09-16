@@ -370,3 +370,62 @@ test("IDB unavailable fallback: outbox without journal works (step1 semantics, n
     t.mock.timers.reset();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Контур feature/async-save-pipeline-step2 (TESTS §1.5): примитивы outbox для
+// multi-user consumer'а — getPendingOps / removePendingOps (LWW-проигравшие
+// уходят в proposed через consumer) / requeueOps («предложенные» возвращаются
+// в буфер НОВЫМ opId → обычный flush).
+// ---------------------------------------------------------------------------
+
+test("getPendingOps returns wire ops of the current buffer", async () => {
+  const journal = makeFakeJournal();
+  const ctx = makeOutbox(null, { journal });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushRename(ctx.outbox, "Task_1", "A");
+  pushRename(ctx.outbox, "Task_2", "B");
+  const pending = ctx.outbox.getPendingOps();
+  assert.deepEqual(pending.map((o) => o.opId), ["op-1", "op-2"]);
+  assert.equal(JSON.stringify(pending).includes("__ts"), false, "no __* service fields");
+  ctx.outbox.destroy();
+});
+
+test("removePendingOps extracts exactly the given opIds from buffer and journal", async () => {
+  const journal = makeFakeJournal();
+  const ctx = makeOutbox(null, { journal });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushRename(ctx.outbox, "Task_1", "A");
+  pushRename(ctx.outbox, "Task_2", "B");
+  pushRename(ctx.outbox, "Task_3", "C");
+  const removed = ctx.outbox.removePendingOps(["op-1", "op-3"]);
+  assert.deepEqual(removed.map((o) => o.elementId), ["Task_1", "Task_3"]);
+  assert.deepEqual(ctx.outbox.getPendingOps().map((o) => o.opId), ["op-2"], "buffer keeps the rest");
+  assert.deepEqual([...journal.stored.keys()], ["op-2"], "journal evicted the extracted opIds");
+  ctx.outbox.destroy();
+});
+
+test("requeueOps re-enters ops as NEW opIds and schedules a flush", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const journal = makeFakeJournal();
+    const api = makeApi();
+    const ctx = makeOutbox(t, { journal, api, configOverrides: { flushDebounceMs: 25 } });
+    setTrackedDiagramStateVersion("s1", 7);
+    const requeued = ctx.outbox.requeueOps([
+      { type: "element.updateProperties", elementId: "Task_1", properties: { name: "Моё" } },
+    ]);
+    assert.equal(requeued, 1);
+    const pending = ctx.outbox.getPendingOps();
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].opId, "op-1", "fresh opId assigned by outbox uuid");
+    assert.equal(pending[0].type, "element.updateProperties");
+    assert.deepEqual([...journal.stored.keys()], ["op-1"], "requeued op appended to journal");
+    t.mock.timers.tick(25);
+    await drain();
+    assert.equal(api.calls.length, 1, "requeued op goes out via the normal flush");
+    assert.equal(api.calls[0].body.operations[0].properties.name, "Моё");
+    ctx.outbox.destroy();
+  } finally {
+    t.mock.timers.reset();
+  }
+});

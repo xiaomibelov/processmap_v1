@@ -41,6 +41,10 @@ const OPS_STAGE_VIEW = Object.freeze({
   "ops-saving": { state: "saving", label: "Сохранение (дельта)…", title: "Сохраняем изменения дельта-операциями." },
   "ops-rebase": { state: "saving", label: "Синхронизация версии…", title: "Конфликт версий разрешается автоматически: правки применяются к серверной версии." },
   "ops-degraded": { state: "failed", label: "Полное сохранение (дельта недоступна)", title: "Дельта-сохранение недоступно до перезагрузки страницы: работает обычное полное сохранение." },
+  // step2 (UI.md §6): локально подтверждено, не ушедшее — буфер durable в IDB;
+  // sublabel «ожидает сеть» при offline подаётся отдельным полем view.
+  "ops-local": { state: "saved", label: "Сохранено локально", title: "Правки подтверждены локально (буфер надёжен даже при закрытии вкладки) и будут доставлены на сервер." },
+  "ops-saved": { state: "saved", label: "Сохранено", title: "Черновик сессии сохранён." },
 });
 
 export function buildSaveStatusSlotView({
@@ -101,6 +105,14 @@ export function buildSaveStatusSlotView({
     && toText(status.subprocessesSync).toLowerCase() === "pending"
   );
 
+  // step2 (UI.md §6): sublabel «ожидает сеть» при offline — буфер durable в
+  // IDB, доставка возобновится сама (прецедент subprocessesSyncLabel).
+  const awaitingNetworkLabel = (
+    status.opsOffline === true
+    && (state === "saved" || state === "saving")
+    && !flashVisible
+  ) ? "ожидает сеть" : "";
+
   return {
     state,
     label: labels[state],
@@ -109,5 +121,6 @@ export function buildSaveStatusSlotView({
     flashVisible,
     flashLabel: flashVisible ? stripSaveStatusSlotPrefix(flashMessage) : "",
     subprocessesSyncLabel: subprocessesSyncPending ? "Подпроцессы синхронизируются…" : "",
+    awaitingNetworkLabel,
   };
 }

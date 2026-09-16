@@ -735,6 +735,54 @@ export function createSaveOutbox(options = {}) {
       return hydrateBufferedOps(ops);
     },
 
+    /** Wire ops текущего буфера — для LWW-детекта consumer'а (UI.md §4). */
+    getPendingOps() {
+      return buffer.map(toWireOp);
+    },
+
+    /**
+     * Вырезать ops из буфера по opId (LWW-проигравшие → «предложенные»).
+     * Eviction из journal — сразу (op больше не pending). Возвращает
+     * вырезанные wire ops.
+     */
+    removePendingOps(opIds = []) {
+      const ids = new Set((Array.isArray(opIds) ? opIds : []).map(asText).filter(Boolean));
+      if (ids.size === 0) return [];
+      const removed = [];
+      const kept = [];
+      for (const op of buffer) {
+        if (ids.has(asText(op?.opId))) removed.push(op);
+        else kept.push(op);
+      }
+      if (removed.length === 0) return [];
+      buffer = kept;
+      journalRemove(removed.map((op) => op.opId));
+      return removed.map(toWireOp);
+    },
+
+    /**
+     * Вернуть ops в буфер как НОВЫЕ ops (свежий opId) — «предложенные
+     * изменения» по действию пользователя. Уходят обычным flush.
+     */
+    requeueOps(ops = []) {
+      const list = (Array.isArray(ops) ? ops : []).filter((op) => op && typeof op === "object");
+      if (list.length === 0) return 0;
+      const requeued = list.map((op) => {
+        const { opId: _ignoredOpId, key: _ignoredKey, ...rest } = op;
+        return {
+          ...rest,
+          opId: uuid(),
+          key: `${asText(op.type)}::${asText(op.elementId)}`,
+          __ts: now(),
+        };
+      });
+      buffer = [...buffer, ...requeued];
+      journalAppend(requeued);
+      bumpLocalVersion();
+      scheduleFlush();
+      return requeued.length;
+    },
+
     /**
      * Ветка fetch+rebase при входе в сессию (PLAN §5.3/§5.4): серверный XML
      * грузим echo-muted путём, pendingOps replay'им на live-модель.
@@ -752,6 +800,17 @@ export function createSaveOutbox(options = {}) {
         options.modeler || null,
       );
       return { ok: replay?.ok !== false, replay };
+    },
+
+    /**
+     * Replay pendingOps на live-модель (source "replay") без загрузки XML —
+     * шаг rebase оставшихся pending после remote-apply (UI.md §4.4).
+     */
+    replayPendingOps(pendingOps = []) {
+      return rebase.replayPendingOps(
+        Array.isArray(pendingOps) ? pendingOps : [],
+        options.modeler || null,
+      );
     },
 
     /** Online/offline переключение (installOpsOutboxNetworkTriggers). */
