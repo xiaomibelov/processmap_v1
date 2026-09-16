@@ -253,6 +253,9 @@ class CreateSessionBody(BaseModel):
     mode: str = "quick_skeleton"
     process_layer: str = "as_is"
     derived_from_session_id: str = ""
+    # fix/tobe-element-provenance-persistence-v1: sidecar provenance при create
+    # (bpmn_meta_json без DDL); мержится поверх meta новой сессии.
+    bpmn_meta: Optional[Dict[str, Any]] = None
 
 
 class CreateWorkspaceBody(BaseModel):
@@ -1332,11 +1335,19 @@ def create_session_in_project(
         user_id=user_id,
         org_id=oid,
     )
-    if process_layer != "as_is" or derived_from:
+    if process_layer != "as_is" or derived_from or (isinstance(body.bpmn_meta, dict) and body.bpmn_meta):
         sess = sess_storage.load(sid, org_id=oid, is_admin=True)
         if sess is not None:
             sess.process_layer = process_layer
             sess.derived_from_session_id = derived_from
+            if isinstance(body.bpmn_meta, dict) and body.bpmn_meta:
+                import json as _json
+
+                try:
+                    _json.dumps(body.bpmn_meta)
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=422, detail="bpmn_meta must be JSON-serializable")
+                sess.bpmn_meta = {**(sess.bpmn_meta or {}), **body.bpmn_meta}
             sess_storage.save(sess, user_id=user_id, org_id=oid, is_admin=True)
 
     # ── invalidation ──────────────────────────────────────────────────────────
