@@ -1205,6 +1205,10 @@ components:
       type: object
     CreateSessionBody:
       properties:
+        bpmn_meta:
+          nullable: true
+          title: Bpmn Meta
+          type: object
         derived_from_session_id:
           default: ''
           title: Derived From Session Id
