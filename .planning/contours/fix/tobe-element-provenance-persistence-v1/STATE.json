@@ -1,0 +1,36 @@
+{
+  "contour": "fix/tobe-element-provenance-persistence-v1",
+  "type": "fix",
+  "role": "executor",
+  "agent": 2,
+  "status": "EXEC_DONE",
+  "ready_for_review": true,
+  "branch": "fix/tobe-element-provenance-persistence-v1",
+  "base": "999f0e37c8138a736373550b9c978108424ac74c",
+  "head": "dc19f039f71138342afa7bedba2a9b9534e2b9b3",
+  "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+  "updated_at": "2026-09-16",
+  "channels": {
+    "xml_pm_trace": "pm:Trace (derived_from isMany, fate, rule_id) в extensionElements; встраивание в App.handleTobePublished до apiPutBpmnXml",
+    "sidecar_meta": "bpmn_meta.provenance (полный trace_map, класс removed) в sessions.bpmn_meta_json при create; чтение через GET /sessions/{id}/meta (provenance) и projection GET /sessions/{id} (bpmn_meta)"
+  },
+  "acceptance": {
+    "unit_pm_derived_from": {"status": "PASS", "detail": "9/9 node --test tobeProvenance.test.mjs"},
+    "round_trip": {"status": "PASS", "limitation": "bpmn-moddle уровень (движок сериализации bpmn-js); браузерный e2e — зона Agent 3"},
+    "api_sidecar": {"status": "PASS", "detail": "6/6 pytest test_tobe_provenance_sidecar.py"},
+    "no_regression": {
+      "op_protocol_snapshot": "PASS (git diff пуст)",
+      "save_suite": "PASS (6f/59p/34s — идентично origin/main)",
+      "persist_suite": "PASS (3f/22p vs 3f/20p на main; +2 новых passed)",
+      "openapi": "PASS (регенерация, redocly 0 errors)"
+    }
+  },
+  "forbidden_touched": false,
+  "backfill": false,
+  "artifacts": ["PLAN.md", "RAG_PREFLIGHT_EXECUTOR.md", "WORKER_REPORT.md", "API.md", "TESTS.md", "PR.md", "STATE.json"],
+  "open_items": [
+    "Браузерный e2e round-trip (bpmn-js modeler + backend) — для Agent 3",
+    "Бэкфилл существующих AS IS↔TO BE пар не выполнялся (trace утрачен)",
+    "Числа брифа 71/15 — эталонное окружение; в изоляции сьюты дают 59+34skip/22 с идентичным на main набором падений"
+  ]
+}
