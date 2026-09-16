@@ -167,7 +167,7 @@ test("pendingAck detach regression: push → flush(hang) → undo sent op → pu
   }
 });
 
-test("manual full-save ack: version >= base+sentCount → buffer drained", async (t) => {
+test("BLOCKER-2 (step1 regression, new mechanism): op pushed during flight survives manual full-save ack and re-flushes", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     let call = 0;
@@ -176,7 +176,7 @@ test("manual full-save ack: version >= base+sentCount → buffer drained", async
     const api = makeApi({
       postSessionOperations: async (sid, body) => {
         call += 1;
-        if (call === 1) return firstAck;
+        if (call === 1) return firstAck; // ops flush висит
         return { ok: true, status: 200, version: 9, applied: body.operations.length, skipped: 0, diagramStateVersion: 9 };
       },
     });
@@ -187,19 +187,32 @@ test("manual full-save ack: version >= base+sentCount → buffer drained", async
       const flushing = ctx.outbox.flushNow({ reason: "test" });
       await drain();
 
-      // Ручной full-save ack: сервер на version 8 = base(7) + sentCount(1) —
-      // сервер видел ops-батч → буфер снимается.
-      ctx.coordinator.emit("success", {
-        pipeline: "xml",
-        sessionId: "s1",
-        response: { ok: true, diagramStateVersion: 8 },
-      });
+      // Manual full-save стартует ВНЕ outbox'а: snapshot пуст (A в полёте,
+      // буфер пуст). D ещё НЕ существует → не покрыт full-save.
+      ctx.coordinator.emit("status", { pipeline: "xml", sessionId: "s1", state: "busy", stage: "build" });
+
+      pushRename(ctx.outbox, "Task_2", "B"); // D — во время полёта обоих flush'ей
+
+      // Manual full-save ack. Старая version-арифметика здесь стирала D
+      // молча (ack-wipe класса step1 BLOCKER-2) — механизм снимка это
+      // исключает: drained = buffer ∩ snapshot = ∅.
+      ctx.coordinator.emit("success", { pipeline: "xml", sessionId: "s1", response: {} });
+      assert.deepEqual(
+        ctx.outbox.getPendingOps().map((o) => o.opId),
+        ["op-2"],
+        "post-flight op NOT drained by manual full-save ack",
+      );
+
       ackResolve({ ok: true, status: 200, version: 8, applied: 1, skipped: 0, diagramStateVersion: 8 });
       await flushing;
       t.mock.timers.tick(60);
       await drain();
-      assert.equal(call, 1, "drained buffer — nothing re-flushed");
-      assert.deepEqual([...ctx.journal.stored.keys()], [], "journal evicted after ack");
+      assert.equal(call, 2, "surviving op re-flushed");
+      assert.deepEqual(
+        ctx.api.calls[1].body.operations.map((o) => o.opId),
+        ["op-2"],
+        "exactly the uncovered op goes out",
+      );
     } finally {
       ackResolve({ ok: true, status: 200, version: 8, applied: 1, skipped: 0, diagramStateVersion: 8 });
       ctx.outbox.destroy();
@@ -209,46 +222,90 @@ test("manual full-save ack: version >= base+sentCount → buffer drained", async
   }
 });
 
-test("manual full-save ack: version < base+sentCount → ops kept and re-flushed with same opId", async (t) => {
+test("BLOCKER-2: manual ack drains exactly the busy-time snapshot (sentCount>=2 has no livelock)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    let call = 0;
-    let ackResolve = null;
-    const firstAck = new Promise((resolve) => { ackResolve = resolve; });
-    const api = makeApi({
-      postSessionOperations: async (sid, body) => {
-        call += 1;
-        if (call === 1) return firstAck;
-        return { ok: true, status: 200, version: 9, applied: body.operations.length, skipped: 0, diagramStateVersion: 9 };
-      },
-    });
-    const ctx = makeOutbox(t, { api, configOverrides: { flushDebounceMs: 25 } });
+    const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
     try {
       setTrackedDiagramStateVersion("s1", 7);
       pushRename(ctx.outbox, "Task_1", "A");
-      const flushing = ctx.outbox.flushNow({ reason: "test" });
+      pushRename(ctx.outbox, "Task_2", "B");
       await drain();
 
-      // Full-save ack НЕ подтверждает, что сервер видел ops-батч (7 < 7+1) —
-      // ops остаются и уходят следующим flush (идемпотентность opId).
-      ctx.coordinator.emit("success", {
-        pipeline: "xml",
-        sessionId: "s1",
-        response: { ok: true, diagramStateVersion: 7 },
-      });
-      await drain();
-      ackResolve({ ok: true, status: 200, version: 7, applied: 0, skipped: 1, diagramStateVersion: 7 });
-      await flushing;
+      // Full-save стартует, ПОКА обе ops ещё в буфере: snapshot = {op-1, op-2}.
+      ctx.coordinator.emit("status", { pipeline: "xml", sessionId: "s1", state: "busy", stage: "build" });
+
+      pushRename(ctx.outbox, "Task_3", "C"); // после снимка — НЕ покрыт
+
+      ctx.coordinator.emit("success", { pipeline: "xml", sessionId: "s1", response: {} });
+      assert.deepEqual(
+        ctx.outbox.getPendingOps().map((o) => o.opId),
+        ["op-3"],
+        "covered snapshot drained exactly; post-snapshot op survives",
+      );
+      assert.deepEqual([...ctx.journal.stored.keys()], ["op-3"], "journal evicted only covered opIds");
+
       t.mock.timers.tick(60);
       await drain();
-      assert.equal(call, 2, "kept ops re-flushed");
+      assert.equal(ctx.api.calls.length, 1, "no livelock re-send of covered ops");
       assert.deepEqual(
-        ctx.api.calls[1].body.operations.map((o) => o.opId),
-        ["op-1"],
-        "same opId on re-flush (server idempotency)",
+        ctx.api.calls[0].body.operations.map((o) => o.opId),
+        ["op-3"],
       );
     } finally {
-      ackResolve({ ok: true, status: 200, version: 7, applied: 0, skipped: 1, diagramStateVersion: 7 });
+      ctx.outbox.destroy();
+    }
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test("BLOCKER-2: full-save error clears the snapshot (no drain on a later success)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+    try {
+      setTrackedDiagramStateVersion("s1", 7);
+      pushRename(ctx.outbox, "Task_1", "A");
+      ctx.coordinator.emit("status", { pipeline: "xml", sessionId: "s1", state: "busy", stage: "build" });
+      // Full-save провалился → снимок недействителен (XML не закоммичен).
+      ctx.coordinator.emit("error", { pipeline: "xml", sessionId: "s1", response: { status: 500 } });
+      ctx.coordinator.emit("success", { pipeline: "rawXml", sessionId: "s1", response: {} });
+      assert.deepEqual(
+        ctx.outbox.getPendingOps().map((o) => o.opId),
+        ["op-1"],
+        "op survives: failed full-save does not cover anything",
+      );
+      t.mock.timers.tick(60);
+      await drain();
+      assert.equal(ctx.api.calls.length, 1, "op re-flushed after failed full-save");
+    } finally {
+      ctx.outbox.destroy();
+    }
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test("BLOCKER-2: outbox-initiated full-save (preserve branch) does not create a manual snapshot", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+    try {
+      setTrackedDiagramStateVersion("s1", 7);
+      pushRename(ctx.outbox, "Task_1", "A");
+      ctx.outbox.pushCommand({ command: "spaceTool", action: "execute", context: {} });
+      await ctx.outbox.flushNow({ reason: "test" }); // делегирование → preserve
+      pushRename(ctx.outbox, "Task_2", "B");
+      // busy-тот же full-save, но preserve-flag активен → snapshot skipped.
+      ctx.coordinator.emit("status", { pipeline: "xml", sessionId: "s1", state: "busy", stage: "build" });
+      ctx.coordinator.emit("success", { pipeline: "xml", sessionId: "s1", response: {} });
+      assert.deepEqual(
+        ctx.outbox.getPendingOps().map((o) => o.opId),
+        ["op-2"],
+        "preserve sentinel semantics intact: op pushed after delegation survives",
+      );
+    } finally {
       ctx.outbox.destroy();
     }
   } finally {

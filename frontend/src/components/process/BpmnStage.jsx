@@ -5679,12 +5679,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       getPendingOps: () => outbox.getPendingOps(),
       removePendingOps: (opIds) => outbox.removePendingOps(opIds),
       applyRemoteOps: (ops) => replayOpsOnModeler(modelerRef.current, ops, { source: "remote" }),
-      replayPendingOps: (ops) => outbox.replayPendingOps(ops),
       fetchServerXml: async () => apiGetBpmnXml(sid, { cacheBust: true }),
       rebaseOnServerXml: (serverXml, pendingOps) => outbox.applyServerReconciliation(serverXml, pendingOps),
       flushNow: (options) => outbox.flushNow(options),
       adoptServerVersion: (version) => adoptOpsServerVersion(sid, version),
       onProposed: (records) => notifyOpsProposed(records),
+      log: (event, payload) => {
+        // Диагностируемость e2e: probe спеки перехватывает console.warn.
+        try {
+          // eslint-disable-next-line no-console
+          console.warn(`[opsRemote] ${String(event || "?")} ${JSON.stringify(payload || {})}`);
+        } catch {
+          // no-op
+        }
+      },
     });
     setOpsRemoteRuntime({
       handleEvent: remoteApply.handleEvent,

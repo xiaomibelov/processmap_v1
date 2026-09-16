@@ -137,6 +137,7 @@ function replayCreate(modeler, op, registry, flags) {
       connection,
       source: source.element,
       target: target.element,
+      hints: {},
       ...flags,
     });
   } catch (error) {
@@ -182,6 +183,7 @@ function replayOne(modeler, op, source) {
       connection: resolvedConn.element,
       source: resolvedSource.element,
       target: resolvedTarget.element,
+      hints: {},
       ...flags,
     });
   }
@@ -209,6 +211,12 @@ function replayOne(modeler, op, source) {
       shape: element,
       delta,
       parent: element?.parent || null,
+      // diagram-js MoveShapeHandler.postExecute читает context.hints.layout
+      // без страховки — без hints падает «reading 'layout' of undefined»
+      // (найдено e2e move-convergence). Wire-op shape.move — чистая delta:
+      // сервер сдвигает только bounds (+label), connection re-layout и
+      // recurse не применяем (parity с ops_applier._apply_shape_move).
+      hints: { layout: false, recurse: false },
       ...flags,
     });
   }

@@ -33,8 +33,9 @@ function normalizeActor(raw = null, fallbackNowMs = 0) {
     userId,
     label: label || "Пользователь",
     lastSeenAt: toPositiveEpochMs(value.lastSeenAt || value.last_seen_at, fallbackNowMs),
-    // step2 soft-lock (UI.md §7): advisory-маркер в presence-панели.
-    editingElementId: toText(value.editingElementId || value.editing_element_id),
+    // step2 soft-lock (UI.md §7): advisory-маркер в presence-панели. Контракт
+    // shape единый с presenceModel: отсутствие = null (MAJOR-2 review).
+    editingElementId: toText(value.editingElementId || value.editing_element_id) || null,
   };
 }
 
