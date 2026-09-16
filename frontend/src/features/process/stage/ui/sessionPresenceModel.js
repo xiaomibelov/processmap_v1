@@ -21,7 +21,11 @@ function toPositiveEpochMs(value, fallback = 0) {
 function normalizeActor(raw = null, fallbackNowMs = 0) {
   const value = raw && typeof raw === "object" ? raw : {};
   const userId = toText(value.userId || value.user_id || value.actorUserId || value.actor_user_id);
-  const label = toText(value.label || value.userLabel || value.actorLabel || value.actor_label || userId);
+  const label = toText(
+    value.label || value.userLabel || value.actorLabel || value.actor_label
+    || value.display_name || value.displayName
+    || userId,
+  );
   const key = normalizePresenceKey(userId, label);
   if (!key) return null;
   return {
@@ -29,6 +33,8 @@ function normalizeActor(raw = null, fallbackNowMs = 0) {
     userId,
     label: label || "Пользователь",
     lastSeenAt: toPositiveEpochMs(value.lastSeenAt || value.last_seen_at, fallbackNowMs),
+    // step2 soft-lock (UI.md §7): advisory-маркер в presence-панели.
+    editingElementId: toText(value.editingElementId || value.editing_element_id),
   };
 }
 
@@ -85,12 +91,17 @@ export function buildSessionPresenceView({
     ? `${names[0]} +${names.length - 1}`
     : (names[0] || "Пользователь");
   const firstInitial = toText(names[0]).slice(0, 1).toUpperCase() || "•";
+  // step2 soft-lock: маркер «редактирует элемент» в presence-панели (advisory).
+  const editingActors = others.filter((actor) => toText(actor.editingElementId));
+  const editingSuffix = editingActors.length > 0
+    ? ` · Редактируют элемент: ${editingActors.map((actor) => `${actor.label} (${actor.editingElementId})`).join(", ")}`
+    : "";
   return {
     visible: true,
     count: names.length,
     label,
     iconLabel: firstInitial,
-    title: `Активны сейчас: ${names.join(", ")}`,
+    title: `Активны сейчас: ${names.join(", ")}${editingSuffix}`,
     users: others,
   };
 }

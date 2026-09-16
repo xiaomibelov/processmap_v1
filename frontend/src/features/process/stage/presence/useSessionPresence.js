@@ -9,63 +9,24 @@ import {
   subscribeSessionNotFound,
 } from "../../../session/sessionLiveness.js";
 import {
+  getSessionPresenceClientId,
+  normalizeSessionPresenceUsers,
+} from "./presenceModel.js";
+import {
   SESSION_PRESENCE_HEARTBEAT_MS,
   SESSION_PRESENCE_TTL_MS,
 } from "./sessionPresenceConstants.js";
 
 export { SESSION_PRESENCE_HEARTBEAT_MS, SESSION_PRESENCE_TTL_MS };
-const SESSION_PRESENCE_CLIENT_ID_KEY = "processmap:session-presence:client-id";
+// Pure-модель (unit-тесты без react — presenceModel.softlock.test.mjs).
+export {
+  getSessionPresenceClientId,
+  normalizeSessionPresenceUsers,
+  presenceEditingBadgeText,
+} from "./presenceModel.js";
 
 function toText(value) {
   return String(value || "").trim();
-}
-
-function randomClientId() {
-  const cryptoObj = typeof window !== "undefined" ? window.crypto : null;
-  if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
-    return cryptoObj.randomUUID();
-  }
-  return `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-export function getSessionPresenceClientId(storage = null) {
-  const store = storage || (typeof window !== "undefined" ? window.sessionStorage : null);
-  try {
-    const existing = toText(store?.getItem?.(SESSION_PRESENCE_CLIENT_ID_KEY));
-    if (existing) return existing;
-    const next = randomClientId();
-    store?.setItem?.(SESSION_PRESENCE_CLIENT_ID_KEY, next);
-    return next;
-  } catch {
-    return randomClientId();
-  }
-}
-
-function normalizeLastSeenMs(value) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return raw < 1000000000000 ? Math.round(raw * 1000) : Math.round(raw);
-}
-
-export function normalizeSessionPresenceUsers(itemsRaw = []) {
-  const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-  return items
-    .map((itemRaw) => {
-      const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
-      const userId = toText(item.user_id || item.userId);
-      const label = toText(item.display_name || item.displayName || item.full_name || item.fullName || item.email || userId);
-      if (!userId && !label) return null;
-      return {
-        userId,
-        label: label || "Пользователь",
-        email: toText(item.email),
-        fullName: toText(item.full_name || item.fullName),
-        jobTitle: toText(item.job_title || item.jobTitle),
-        lastSeenAt: normalizeLastSeenMs(item.last_seen_at || item.lastSeenAt),
-        isCurrentUser: item.is_current_user === true || item.isCurrentUser === true,
-      };
-    })
-    .filter(Boolean);
 }
 
 export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = null, options = {}) {
@@ -77,6 +38,10 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     ? Math.max(10, Number(options.heartbeatMs))
     : Math.max(5000, Number(SESSION_PRESENCE_HEARTBEAT_MS));
   const surface = toText(options.surface) || "process_stage";
+  // step2 soft-lock (UI.md §7): провайдер id выбранного элемента modeler —
+  // читается на каждом heartbeat (изменение выбора не требует переподписки),
+  // пустая строка = снятие editingElementId из touch.
+  const getEditingElementId = typeof options.getEditingElementId === "function" ? options.getEditingElementId : null;
   const touchPresence = typeof options.apiTouch === "function" ? options.apiTouch : apiTouchSessionPresence;
   const leavePresenceApi = typeof options.apiLeave === "function" ? options.apiLeave : apiLeaveSessionPresence;
   const getSessionConfirm = typeof options.apiGetSession === "function" ? options.apiGetSession : apiGetSession;
@@ -126,7 +91,12 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     const clientId = clientIdRef.current || getSessionPresenceClientId();
     clientIdRef.current = clientId;
     try {
-      const out = await touchPresence(sessionId, { clientId, surface });
+      const editingElementId = getEditingElementId ? toText(getEditingElementId()) : "";
+      const out = await touchPresence(sessionId, {
+        clientId,
+        surface,
+        ...(editingElementId ? { editingElementId } : {}),
+      });
       if (!mountedRef.current) return out;
       if (!out?.ok) {
         // P-1: терминальный 404 помечает сессию мёртвой — таймер снимается
@@ -198,7 +168,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
       }
       return { ok: false, reason: "presence_failed" };
     }
-  }, [currentUserId, sessionId, surface, touchPresence]);
+  }, [currentUserId, sessionId, surface, touchPresence, getEditingElementId]);
 
   const leavePresence = useCallback(async (reason = "leave", leaveOptions = {}) => {
     if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };

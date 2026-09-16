@@ -605,3 +605,27 @@ test("coverage: reconnect commands are mapped now (fullSave counter does not gro
   assert.equal(coverage.mapped, 3, "all three reconnect commands are mapped");
   assert.equal(coverage.fullSave, 0, "no fullSave fallback for reconnect vocabulary");
 });
+
+// ---------------------------------------------------------------------------
+// Контур feature/async-save-pipeline-step2 (UI.md §4): remote-apply echo
+// suppression — команды с context.__pmOpSource === "remote" (применение чужих
+// ops к live-модели) не становятся op и не двигают coverage-счётчики.
+// ---------------------------------------------------------------------------
+
+test("remote-source command is suppressed like replay — no ops, no coverage counters", () => {
+  __resetOpsCoverageForTests();
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1" },
+      properties: { name: "Чужое" },
+      __pmOpSource: "remote",
+    },
+  });
+  assert.equal(out.replay, true, "remote command treated as echo-suppressed");
+  assert.equal(out.ops.length, 0);
+  assert.equal(out.needsFullSave, false);
+  const coverage = getOpsCoverage();
+  assert.deepEqual(coverage, { total: 0, mapped: 0, fullSave: 0 }, "coverage counters untouched");
+});
