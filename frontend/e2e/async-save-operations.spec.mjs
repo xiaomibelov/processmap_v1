@@ -44,7 +44,8 @@
 import { expect, test } from "@playwright/test";
 
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import { API_BASE, createFixture } from "./helpers/processFixture.mjs";
+import { API_BASE } from "./helpers/processFixture.mjs";
+import { createOrgSessionFixture, orgHeaders } from "./helpers/nonDefaultOrg.mjs";
 import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 import { makeHeavyEditingDiagramXml } from "./helpers/heavyEditingFixture.mjs";
 import { readServerDiagramStateVersion } from "./helpers/canvasStabilitySteps.mjs";
@@ -194,7 +195,13 @@ async function bootstrapOpsSession(page, request, runId) {
   // lanes 4 × tasksPerLane 32 → 4×(1+32+6+1) nodes + 4×39 flows + 4 lanes +
   // 1 participant = 317 элементов (≥300).
   const xml = makeHeavyEditingDiagramXml({ lanes: 4, tasksPerLane: 32 });
-  const fixture = await createFixture(request, runId, auth.headers, xml);
+  // step2-регрессия: org ≠ default (урок #989) — вместо createFixture
+  // (default org) используем helper контура.
+  const fixture = await createOrgSessionFixture(request, auth, {
+    orgName: `E2E async-save-operations ${runId}`,
+    sessionTitle: `E2E ops session ${runId}`,
+    xml,
+  });
   await page.addInitScript(() => {
     window.__FPC_E2E__ = true;
   });
@@ -225,7 +232,7 @@ async function bootstrapOpsSession(page, request, runId) {
       { timeout: 90_000, message: "diagram must contain 300+ elements in elementRegistry" },
     )
     .toBeGreaterThanOrEqual(MIN_ELEMENTS);
-  return { auth, fixture, xml };
+  return { auth, fixture, xml, headers: orgHeaders(auth, fixture.orgId) };
 }
 
 // ---------------------------------------------------------------------------
@@ -466,8 +473,8 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   const pageErrors = collectPageErrors(page);
   const traffic = collectSaveTraffic(page);
   await installLongtaskProbe(page);
-  const { auth, fixture } = await bootstrapOpsSession(page, request, runId);
-  const versionBefore = await readServerDiagramStateVersion(page, fixture.sessionId, auth.headers);
+  const { auth, fixture, headers } = await bootstrapOpsSession(page, request, runId);
+  const versionBefore = await readServerDiagramStateVersion(page, fixture.sessionId, headers);
 
   // Окно серии: отметка времени страницы + сброс накопленного трафика загрузки.
   traffic.length = 0;
@@ -479,7 +486,7 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   await waitForOpsFlushIncrement(page, 0, FLUSH_WAIT_MS);
   const flushedCount = await readOpsFlushedCount(page);
   const lastRename = markers.filter((m) => m.kind === "rename").slice(-1)[0].marker;
-  await waitForServerXmlSubstring(request, fixture.sessionId, auth.headers, lastRename);
+  await waitForServerXmlSubstring(request, fixture.sessionId, headers, lastRename);
   // Settle: дать ответу последнего flush дойти до коллектора.
   await page.waitForTimeout(500);
 
@@ -521,6 +528,7 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   const ratio = coverage.mapped / coverage.total;
   expect(ratio, `ops coverage mapped/total = ${coverage.mapped}/${coverage.total} must be >= ${COVERAGE_MIN_RATIO}`).toBeGreaterThanOrEqual(COVERAGE_MIN_RATIO);
   expect(flushedCount, "__PM_OPS_FLUSHED__ counter must increment").toBeGreaterThanOrEqual(1);
+  console.log(`ops-metrics: bodies max=${Math.max(...opsPosts.map((r) => r.bytes))}B n=${opsPosts.length}, p95=${p95.toFixed(1)}ms (n=${durations.length}), longtasks>${LONGTASK_BUDGET_MS}ms=${longTasksInSeries.length}, coverage=${coverage.mapped}/${coverage.total}=${ratio.toFixed(2)}, putBpmn=${putBpmn.length}, flushed=${flushedCount}`);
 
   // --- Reload → все правки на месте ---
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -601,7 +609,7 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   }
 
   // Свойства (documentation) persisted — сверка через серверный XML.
-  const serverXml = await fetchServerXml(request, fixture.sessionId, auth.headers);
+  const serverXml = await fetchServerXml(request, fixture.sessionId, headers);
   for (const marker of markers) {
     if (marker.kind === "rename" || marker.kind === "props") {
       expect(serverXml.includes(marker.marker), `server XML contains ${marker.marker}`).toBe(true);
@@ -611,7 +619,7 @@ test("async save: 20 edits on 300+ element diagram go through /operations only a
   expect(serverXml.includes(`id="${deletedShape.id}"`), "deleted shape absent in server XML").toBe(false);
 
   // Версия инкрементирована (как минимум один ops-батч).
-  const versionAfter = await readServerDiagramStateVersion(page, fixture.sessionId, auth.headers);
+  const versionAfter = await readServerDiagramStateVersion(page, fixture.sessionId, headers);
   expect(versionAfter, "diagram_state_version must grow after ops flushes").toBeGreaterThan(versionBefore);
 
   expect(pageErrors, `no page errors: ${JSON.stringify(pageErrors.slice(0, 3))}`).toHaveLength(0);
@@ -628,7 +636,7 @@ test("async save: same-tab 409 race triggers automatic ops rebase without confli
   const pageErrors = collectPageErrors(page);
   const conflicts409 = collectConflictResponses(page);
   const traffic = collectSaveTraffic(page);
-  const { auth, fixture, xml } = await bootstrapOpsSession(page, request, runId);
+  const { auth, fixture, xml, headers } = await bootstrapOpsSession(page, request, runId);
 
   // Правка страницы → op в буфере outbox (debounce 2.5 c до flush).
   const pageMarker = `RACE_PAGE_${runTag}`;
@@ -639,9 +647,9 @@ test("async save: same-tab 409 race triggers automatic ops rebase without confli
   const otherMarker = `RACE_OTHER_${runTag}`;
   const otherXml = xml.replace(/name="Задача 3\.9"/, `name="${otherMarker}"`);
   expect(otherXml).not.toBe(xml);
-  const baseVersion = await readServerDiagramStateVersion(page, fixture.sessionId, auth.headers);
+  const baseVersion = await readServerDiagramStateVersion(page, fixture.sessionId, headers);
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(fixture.sessionId)}/bpmn`, {
-    headers: auth.headers,
+    headers: headers,
     data: {
       xml: otherXml,
       base_diagram_state_version: baseVersion,
@@ -650,12 +658,19 @@ test("async save: same-tab 409 race triggers automatic ops rebase without confli
   });
   expect(putRes.ok(), `other-client PUT status=${putRes.status()}`).toBeTruthy();
 
-  // Ops-flush страницы придёт со stale base → 409 → rebase → повторный flush.
+  // Немедленный flush (синтетический online-триггер) — детерминированный 409:
+  // за ~мс фоновый sync страницы не успевает адоптировать новую серверную
+  // версию в casVersionTracker (при естественном debounce 2.5 c adoption
+  // успевает и 409 не возникает — штатное улучшение step2, гонка тогда
+  // закрывается свежим base). Далее: 409 → rebase → повторный flush.
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("online"));
+  });
   const flushedBefore = await readOpsFlushedCount(page);
   await waitForOpsFlushIncrement(page, flushedBefore, FLUSH_WAIT_MS + 10_000);
-  await waitForServerXmlSubstring(request, fixture.sessionId, auth.headers, pageMarker);
+  await waitForServerXmlSubstring(request, fixture.sessionId, headers, pageMarker);
 
-  const serverXml = await fetchServerXml(request, fixture.sessionId, auth.headers);
+  const serverXml = await fetchServerXml(request, fixture.sessionId, headers);
   expect(serverXml.includes(pageMarker), "page edit survived rebase").toBe(true);
   expect(serverXml.includes(otherMarker), "other-client edit survived rebase").toBe(true);
 
@@ -684,7 +699,7 @@ test("async save: non-whitelisted spaceTool edit falls back to exactly one full 
   const runTag = runId.slice(-6);
   const pageErrors = collectPageErrors(page);
   const traffic = collectSaveTraffic(page);
-  const { auth, fixture } = await bootstrapOpsSession(page, request, runId);
+  const { auth, fixture, headers } = await bootstrapOpsSession(page, request, runId);
   traffic.length = 0;
 
   // Активация space tool (editorActions, тот же вход, что у хоткея) и
@@ -729,7 +744,7 @@ test("async save: non-whitelisted spaceTool edit falls back to exactly one full 
   const flushedBefore = await readOpsFlushedCount(page);
   await renameElement(page, "Task_2_7", `FB_RESUME_${runTag}`);
   await waitForOpsFlushIncrement(page, flushedBefore, FLUSH_WAIT_MS + 10_000);
-  await waitForServerXmlSubstring(request, fixture.sessionId, auth.headers, `FB_RESUME_${runTag}`);
+  await waitForServerXmlSubstring(request, fixture.sessionId, headers, `FB_RESUME_${runTag}`);
 
   expect(pageErrors, `no page errors: ${JSON.stringify(pageErrors.slice(0, 3))}`).toHaveLength(0);
 });
