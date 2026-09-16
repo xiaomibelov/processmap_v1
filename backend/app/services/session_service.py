@@ -567,6 +567,9 @@ def get_session_meta(
     bpmn_meta = projection.get("bpmn_meta") or {}
     auto_pass_v1 = bpmn_meta.get("auto_pass_v1") or {}
     auto_pass_status = str(auto_pass_v1.get("status") or "").strip() or None
+    # fix/tobe-element-provenance-persistence-v1: sidecar provenance TO BE
+    # (снапшот trace_map при create; класс removed покрывается только им).
+    provenance = bpmn_meta.get("provenance") if isinstance(bpmn_meta, dict) else None
 
     version_items = versions_payload.get("items") or []
     latest_version = version_items[0] if version_items else None
@@ -606,6 +609,7 @@ def get_session_meta(
         "latest_user_version_session_payload_hash": versions_payload.get("latest_user_version_session_payload_hash") or "",
         "has_session_changes_since_latest_bpmn_version": versions_payload.get("has_session_changes_since_latest_bpmn_version") or False,
         "latest_version": latest_version,
+        "provenance": provenance or None,
     }
     # Б3 (F1): счётчики subprocess-sync для async-пути — read-model при чтении,
     # а НЕ запись в сессионную строку (post-CAS LWW не усугубляем, F2).
