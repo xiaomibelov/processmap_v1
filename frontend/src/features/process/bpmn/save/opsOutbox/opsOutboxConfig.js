@@ -26,15 +26,13 @@ export const OPS_OUTBOX_CONFIG = Object.freeze({
   retryDelayMs: 1000,
   maxRetryDelayMs: 8000,
   retryJitterRatio: 0.3,
-  // Лимит keepalive-тела (~64 kB по спецификации fetch keepalive); батч ops
-  // ≤ ~10 kB, запас на порядок.
-  keepaliveBodyLimitBytes: 64 * 1024,
   // Keepalive-flush (уход со страницы) обрывается через keepaliveAbortMs:
   // зависший keepalive-запрос не должен держать браузерное соединение
   // неограниченно (connection-pool starvation класса H3).
   keepaliveAbortMs: 5000,
-  // Таймаут drain очереди при выгрузке страницы (см. installOpsOutboxPageFlush).
-  pageHideDrainTimeoutMs: 1500,
+  // Debounce инкремента syncState.lastLocalVersion (PLAN §4): правки идут
+  // пачками, durable-запись счётчика — не чаще раза в секунду.
+  syncStateDebounceMs: 1000,
 });
 
 export function createOpsOutboxConfig(overrides = {}) {

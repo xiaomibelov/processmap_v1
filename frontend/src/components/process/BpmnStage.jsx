@@ -6,7 +6,10 @@ import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
-import { createSaveOutbox } from "../../features/process/bpmn/save/opsOutbox/createSaveOutbox.js";
+import { createSaveOutbox, installOpsOutboxNetworkTriggers } from "../../features/process/bpmn/save/opsOutbox/createSaveOutbox.js";
+import {
+  setOpsReconcileRuntime,
+} from "../../features/process/bpmn/save/opsOutbox/persistence/reconciliation.js";
 import { onDiagramDragEnd } from "../../features/process/bpmn/stage/diagramDragState.js";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
@@ -5634,8 +5637,21 @@ const BpmnStage = forwardRef(function BpmnStage({
     opsOutboxRef.current = outbox;
     // Mouseup drag-commit (UI.md §2): существующий diagramDragState bus.
     const unsubscribeDragEnd = onDiagramDragEnd(() => outbox.commitDrag());
+    // Online-триггер (step2 UI.md §3): window online → немедленный flush;
+    // offline → flush suppressed + ops-local/offline status-событие.
+    const uninstallNetworkTriggers = installOpsOutboxNetworkTriggers(outbox);
+    // Runtime reconciliation (step2 UI.md §8, PLAN §5): useSessionActivation-
+    // Orchestration.resolveOnEntry после apiGetSession берёт hydrate/rebase/
+    // flush отсюда (outbox владеет буфером и echo-muted load-путём).
+    setOpsReconcileRuntime({
+      hydrate: (ops) => outbox.hydrateBufferedOps(ops),
+      rebase: (serverXml, pendingOps) => outbox.applyServerReconciliation(serverXml, pendingOps),
+      flush: () => outbox.flushNow({ reason: "reconcile" }),
+    });
     return () => {
       unsubscribeDragEnd();
+      uninstallNetworkTriggers();
+      setOpsReconcileRuntime(null);
       opsOutboxRef.current = null;
       outbox.destroy();
     };
