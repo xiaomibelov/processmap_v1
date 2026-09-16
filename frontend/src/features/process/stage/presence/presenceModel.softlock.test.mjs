@@ -21,7 +21,7 @@ test("normalizeSessionPresenceUsers carries editingElementId through", () => {
   ]);
   assert.equal(users[0].editingElementId, "Task_1");
   assert.equal(users[1].editingElementId, "Task_2", "camelCase alias accepted");
-  assert.equal(users[2].editingElementId, "");
+  assert.equal(users[2].editingElementId, null, "absence normalizes to null (single wire contract)");
 });
 
 test("presenceEditingBadgeText: «{name} редактирует этот элемент», пусто без editingElementId", () => {

@@ -105,6 +105,7 @@ test("normalizeSessionPresenceUsers maps backend shape to header model shape", (
       jobTitle: "Аналитик",
       lastSeenAt: 123000,
       isCurrentUser: true,
+      editingElementId: null,
     },
   ]);
 });
@@ -270,7 +271,10 @@ test("useSessionPresence touch payload includes editingElementId from getEditing
     await wait(120);
     const lastWithEditing = calls.filter((c) => c.payload.editingElementId === "Task_1").length;
     assert.ok(calls.length > lastWithEditing, "further heartbeats continue");
-    assert.equal(calls[calls.length - 1].payload.editingElementId, "", "editingElementId cleared on deselect");
+    // Контракт wire: отсутствие ключа = снятие (backend трактует "" как
+    // снятие, ключ не шлём). MAJOR-2 review: тест и имплементация к одному
+    // контракту — undefined, не "".
+    assert.ok(!calls[calls.length - 1].payload.editingElementId, "editingElementId cleared on deselect (key omitted)");
   } finally {
     await env.cleanup().catch(() => {});
   }

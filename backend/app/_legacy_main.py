@@ -5608,6 +5608,9 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
         s,
         client_base_version=client_base_diagram_state_version,
         bpmn_snapshot=cleared_snapshot,
+        # NIT-1 review: единственный write-call-site без org_id — при
+        # conflict-reload упал бы в default-org load (#989-паттерн).
+        org_id=getattr(s, "org_id", "") or get_default_org_id(),
     )
     _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
     out = {

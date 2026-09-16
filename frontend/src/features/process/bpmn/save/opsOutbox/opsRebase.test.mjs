@@ -286,3 +286,15 @@ test("replayOpsOnModeler default source stays \"replay\" (step1 regression)", as
   ]);
   assert.equal(modeler.executed[0].context.__pmOpSource, "replay");
 });
+
+test("BLOCKER-1 e2e-followup: shape.move replay context carries hints (real bpmn-js MoveShapeHandler reads context.hints.layout)", async () => {
+  const task = { id: "Task_1", parent: { id: "Lane_1" }, businessObject: { $type: "bpmn:Task" }, x: 0, y: 0, width: 120, height: 80 };
+  const modeler = makeModeler({ elements: { Task_1: task } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-m1", type: "shape.move", elementId: "Task_1", delta: { x: 10, y: 5 } },
+  ]);
+  assert.equal(result.ok, true);
+  const context = modeler.executed[0].context;
+  assert.ok(context.hints && typeof context.hints === "object", "hints object present (diagram-js postExecute reads hints.layout)");
+  assert.equal(context.hints.layout, false, "no connection re-layout: wire op is a pure delta, server applies bounds only");
+});

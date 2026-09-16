@@ -89,12 +89,23 @@ test("own event (actor_client_id === ownClientId) → ignored, no apply/flush", 
   assert.ok(!calls.some((c) => c.startsWith("flush")));
 });
 
-test("all opIds already in journal (own echo without actor match) → ignored", async () => {
+test("MAJOR-1: opIds in the SHARED journal with a different actor are APPLIED (cross-tab same-user)", async () => {
+  // IDB journal общий на origin: pending-ops соседней вкладки того же
+  // пользователя лежат в нашем journal. Фильтр own — ТОЛЬКО по
+  // actor_client_id; членство в journal не делает событие «своим».
   const { deps, calls } = makeDeps({ journalOps: [{ opId: "r1", sessionId: "s1" }] });
   const consumer = createOpsRemoteApply(deps);
-  const result = await consumer.handleEvent(event());
-  assert.equal(result.ignored, "own-op-echo");
-  assert.ok(!calls.some((c) => c.startsWith("apply")));
+  const result = await consumer.handleEvent(event({ actor_client_id: "other-tab" }));
+  assert.equal(result.applied, "remote-ops", "applied, not ignored as own echo");
+  assert.deepEqual(calls.filter((c) => c.startsWith("apply:")), ["apply:1"]);
+});
+
+test("MAJOR-1: empty actor_client_id (API/external client) is applied, not ignored", async () => {
+  const { deps, calls } = makeDeps();
+  const consumer = createOpsRemoteApply(deps);
+  const result = await consumer.handleEvent(event({ actor_client_id: "" }));
+  assert.equal(result.applied, "remote-ops");
+  assert.deepEqual(calls.filter((c) => c.startsWith("apply:")), ["apply:1"]);
 });
 
 test("stale version (<= seenServerVersion) → ignored", async () => {
@@ -112,7 +123,7 @@ test("event for another session → ignored", async () => {
   assert.equal(result.ignored, "foreign-session");
 });
 
-test("remote apply: incoming ops applied, remaining pending replayed, version adopted, flush", async () => {
+test("BLOCKER-1: remote apply does NOT replay remaining pending — live model already contains them", async () => {
   const { deps, calls } = makeDeps({
     pending: [{ opId: "op-1", type: "shape.move", elementId: "Task_2", delta: { x: 1, y: 1 } }],
   });
@@ -122,9 +133,13 @@ test("remote apply: incoming ops applied, remaining pending replayed, version ad
   assert.deepEqual(
     calls.filter((c) => c.startsWith("apply:")),
     ["apply:1"],
-    "incoming ops applied to live model",
+    "incoming ops applied to live model exactly once",
   );
-  assert.deepEqual(calls.filter((c) => c.startsWith("replay:")), ["replay:op-1"], "remaining pending rebased over updated model");
+  assert.ok(
+    !calls.some((c) => c.startsWith("replay:")),
+    "no replay of pending in incremental path (double-applies shape.move delta)",
+  );
+  assert.equal(deps.getPendingOps().length, 1, "pending stays in buffer, goes out with its own flush");
   assert.ok(calls.includes("adopt:9"), "seenServerVersion = event.version");
   assert.ok(calls.includes("flush:remote"), "flushNow after convergence step");
 });
@@ -146,8 +161,16 @@ test("LWW detect: incoming op on pending elementId → loser pending op moves to
   assert.equal(proposed[0].conflictVersion, 9);
   assert.equal(proposed[0].sessionId, "s1");
   assert.ok(calls.includes("notify:1"), "panel/toast notified");
-  // Победившая чужая op применена, проигравшая наша НЕ replay'ится.
-  assert.deepEqual(calls.filter((c) => c.startsWith("replay:")), ["replay:op-2"], "only non-conflicting pending rebased");
+  // BLOCKER-1: оставшиеся pending НЕ replay'ятся (модель уже их содержит).
+  assert.ok(
+    !calls.some((c) => c.startsWith("replay:")),
+    "LWW survivors are not replayed on the model that already contains them",
+  );
+  assert.deepEqual(
+    deps.getPendingOps().map((op) => op.opId),
+    ["op-2"],
+    "surviving pending stays in buffer for its own flush",
+  );
   assert.ok(calls.includes("flush:remote"));
 });
 

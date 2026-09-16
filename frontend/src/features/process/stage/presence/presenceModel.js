@@ -53,8 +53,10 @@ export function normalizeSessionPresenceUsers(itemsRaw = []) {
         lastSeenAt: normalizeLastSeenMs(item.last_seen_at || item.lastSeenAt),
         isCurrentUser: item.is_current_user === true || item.isCurrentUser === true,
         // step2 soft-lock (UI.md §7): элемент, который пользователь сейчас
-        // редактирует (advisory; TTL = presence TTL).
-        editingElementId: toText(item.editing_element_id || item.editingElementId),
+        // редактирует (advisory; TTL = presence TTL). Единый контракт shape:
+        // backend wire использует null — отсутствие = null, не "" (MAJOR-2
+        // review: тест и имплементация к одному контракту).
+        editingElementId: toText(item.editing_element_id || item.editingElementId) || null,
       };
     })
     .filter(Boolean);

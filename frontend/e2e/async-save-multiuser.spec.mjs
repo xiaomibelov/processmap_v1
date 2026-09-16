@@ -188,6 +188,57 @@ async function selectElement(page, elementId) {
   expect(result.ok, `select ${elementId}: ${JSON.stringify(result)}`).toBeTruthy();
 }
 
+// Move-хелперы (MAJOR-3 review): сходимость геометрии — rename идемпотентен и
+// маскировал двойное применение delta (BLOCKER-1). moveShape (singular) даёт
+// commandStack-контекст {shape, delta} — ровно то, что маппит shape.move.
+async function moveElement(page, elementId, delta) {
+  const result = await page.evaluate((arg) => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    if (!modeler) return { ok: false, error: "modeler_missing" };
+    try {
+      const registry = modeler.get("elementRegistry");
+      const modeling = modeler.get("modeling");
+      const el = registry.get(arg.elementId);
+      if (!el) return { ok: false, error: "element_missing:" + arg.elementId };
+      modeling.moveShape(el, arg.delta);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error) };
+    }
+  }, { elementId, delta });
+  expect(result.ok, `move ${elementId}: ${JSON.stringify(result)}`).toBeTruthy();
+}
+
+function readElementPosition(page, elementId) {
+  return page.evaluate((id) => {
+    const modeler = window.__FPC_E2E_MODELER__ || window.__FPC_E2E_RUNTIME__?.getInstance?.();
+    const el = modeler?.get("elementRegistry")?.get(id);
+    if (!el) return null;
+    return { x: Math.round(Number(el.x) || 0), y: Math.round(Number(el.y) || 0) };
+  }, elementId);
+}
+
+async function waitForPosition(page, elementId, expected, timeoutMs = 45_000) {
+  try {
+    await expect
+      .poll(async () => {
+        const pos = await readElementPosition(page, elementId);
+        return pos && pos.x === expected.x && pos.y === expected.y ? 1 : 0;
+      }, {
+        timeout: timeoutMs,
+        message: `${elementId} must be at (${expected.x}, ${expected.y}) at target client (currently ${JSON.stringify(await readElementPosition(page, elementId))})`,
+      })
+      .toBe(1);
+  } catch (error) {
+    const diag = await page.evaluate(() => ({
+      sse: window.__PM_E2E_SSE__ || [],
+      flushed: window.__PM_OPS_FLUSHED__ || null,
+      console: (window.__PM_E2E_CONSOLE__ || []).slice(-10),
+    })).catch(() => null);
+    throw new Error(`${String(error?.message || error)}\ndiagnostics@${elementId}: ${JSON.stringify(diag)}`);
+  }
+}
+
 // Немедленный flush: синтетический window 'online' — штатный триггер
 // координатора (installOpsOutboxNetworkTriggers). Детерминизирует сценарии,
 // где дебounce-окно 2.5 c критично (LWW).
@@ -542,5 +593,87 @@ test("async save multiuser: selecting an element shows editing badge to the othe
   } finally {
     await contextA.close().catch(() => {});
     await contextB.close().catch(() => {});
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Тест 8 — move-convergence (MAJOR-3 review): оба клиента двигают РАЗНЫЕ
+// фигуры → позиции сходятся у обоих ровно к одиночному delta. Имена
+// идемпотентны и маскировали BLOCKER-1 (replay pending на модели, уже
+// содержащей правки → двойное применение shape.move delta).
+// ---------------------------------------------------------------------------
+
+test("async save multiuser: move convergence — both clients move different shapes, positions converge to exactly one delta (no double-apply)", async ({ browser, request }) => {
+  const runTag = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const ctx = await bootstrapTwoClients(browser, request, runTag);
+  try {
+    const initialA = await readElementPosition(ctx.pageA, "Task_1_1");
+    const initialB = await readElementPosition(ctx.pageB, "Task_2_1");
+    expect(initialA, "initial position Task_1_1 readable").toBeTruthy();
+    expect(initialB, "initial position Task_2_1 readable").toBeTruthy();
+
+    const deltaA = { x: 40, y: 0 };
+    const deltaB = { x: -30, y: 20 };
+    const expectedA = { x: initialA.x + deltaA.x, y: initialA.y + deltaA.y };
+    const expectedB = { x: initialB.x + deltaB.x, y: initialB.y + deltaB.y };
+
+    // Оба move'ят: у каждого клиента pending move-op своего элемента.
+    try {
+    await moveElement(ctx.pageA, "Task_1_1", deltaA);
+    await moveElement(ctx.pageB, "Task_2_1", deltaB);
+
+    // Коммит A первым: событие A приходит к B, пока move B ещё pending в
+    // буфере — ровно окно BLOCKER-1 (consumer обязан НЕ replay'ить pending).
+    await triggerFlush(ctx.pageA);
+    await waitForPosition(ctx.pageB, "Task_1_1", expectedA, FLUSH_WAIT_MS + 20_000);
+
+    // B применил чужое событие, своё НЕ применил повторно: своя позиция —
+    // ровно одиночный delta (двойное применение дало бы initial + 2×delta).
+    const bOwnAfterRemote = await readElementPosition(ctx.pageB, "Task_2_1");
+    expect(
+      bOwnAfterRemote,
+      "client B own position after receiving remote event must be single-applied",
+    ).toEqual(expectedB);
+
+    // Коммит B → A получает чужое событие со своим pending move Task_1_1.
+    await triggerFlush(ctx.pageB);
+    await waitForPosition(ctx.pageA, "Task_2_1", expectedB, FLUSH_WAIT_MS + 20_000);
+
+    // Финальная сверка у обоих клиентов: позиции ровно одиночные delta.
+    try {
+      for (const [label, page] of [["A", ctx.pageA], ["B", ctx.pageB]]) {
+        const posA = await readElementPosition(page, "Task_1_1");
+        const posB = await readElementPosition(page, "Task_2_1");
+        expect(posA, `client ${label} Task_1_1 = initial + one delta (not doubled)`).toEqual(expectedA);
+        expect(posB, `client ${label} Task_2_1 = initial + one delta (not doubled)`).toEqual(expectedB);
+      }
+    } catch (error) {
+      const diagB = await ctx.pageB.evaluate(() => ({
+        sse: window.__PM_E2E_SSE__ || [],
+        flushed: window.__PM_OPS_FLUSHED__ || null,
+        console: (window.__PM_E2E_CONSOLE__ || []).slice(-10),
+      })).catch(() => null);
+      throw new Error(`${String(error?.message || error)}\nB diagnostics: ${JSON.stringify(diagB)}\nconflictsA=${JSON.stringify(ctx.conflictsA)} conflictsB=${JSON.stringify(ctx.conflictsB)}`);
+    }
+
+    // Оба коммита на сервере (B видел move A только через ops_committed —
+    // публикация идёт после durable commit, серверность покрыта транзитивно;
+    // здесь — бюджет 409 и отсутствие ошибок).
+    const total409 = ctx.conflictsA.length + ctx.conflictsB.length;
+    expect(total409, `at most one 409 per scenario, got ${JSON.stringify([...ctx.conflictsA, ...ctx.conflictsB])}`).toBeLessThanOrEqual(1);
+
+    expect(ctx.errorsA, `no page errors A: ${JSON.stringify(ctx.errorsA.slice(0, 3))}`).toHaveLength(0);
+    expect(ctx.errorsB, `no page errors B: ${JSON.stringify(ctx.errorsB.slice(0, 3))}`).toHaveLength(0);
+    } catch (error) {
+      const diag = async (page) => page.evaluate(() => ({
+        sse: window.__PM_E2E_SSE__ || [],
+        flushed: window.__PM_OPS_FLUSHED__ || null,
+        console: (window.__PM_E2E_CONSOLE__ || []).slice(-8),
+      })).catch(() => null);
+      const [diagA, diagB] = await Promise.all([diag(ctx.pageA), diag(ctx.pageB)]);
+      throw new Error(`${String(error?.message || error)}\nA=${JSON.stringify(diagA)}\nB=${JSON.stringify(diagB)}\nerrorsA=${JSON.stringify(ctx.errorsA)} errorsB=${JSON.stringify(ctx.errorsB)}\nconflictsA=${JSON.stringify(ctx.conflictsA)} conflictsB=${JSON.stringify(ctx.conflictsB)}`);
+    }
+  } finally {
+    await ctx.close();
   }
 });

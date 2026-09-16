@@ -13,7 +13,9 @@
 //  5. LWW-детект: пересечение по elementId между incoming и своими pendingOps
 //     → проигравшие pending уходят в «предложенные изменения» (proposed store,
 //     панель + toast — зона ProcessStage), победившие incoming уже применены.
-//  6. Оставшиеся pendingOps replay'имся поверх обновлённой модели → flushNow.
+//  6. Оставшиеся pending НЕ replay'ятся: live-модель уже содержит их (BLOCKER-1
+//     review) — replay только после полной перезагрузки модели (ветка 4).
+//     Затем flushNow — выжившие pending уходят своим батчем.
 //  7. seenServerVersion = event.version (casVersionTracker — публикация в
 //     crossTabVersionSync сохраняется через tracker).
 //
@@ -106,7 +108,6 @@ function eventData(raw) {
  * @param {Function} deps.getPendingOps — wire ops текущего буфера outbox
  * @param {Function} deps.removePendingOps — (opIds) => removed wire ops[]
  * @param {Function} deps.applyRemoteOps — (ops) => Promise<{ok,...}> (source:"remote")
- * @param {Function} deps.replayPendingOps — (ops) => Promise<{ok,...}> (source:"replay")
  * @param {Function} deps.fetchServerXml — () => Promise<{ok, xml}>
  * @param {Function} deps.rebaseOnServerXml — (xml, pendingOps) => Promise<{ok}>
  * @param {Function} deps.flushNow — ({reason}) => Promise|void
@@ -123,7 +124,6 @@ export function createOpsRemoteApply(deps = {}) {
   const getPendingOps = typeof deps.getPendingOps === "function" ? deps.getPendingOps : () => [];
   const removePendingOps = typeof deps.removePendingOps === "function" ? deps.removePendingOps : () => [];
   const applyRemoteOps = typeof deps.applyRemoteOps === "function" ? deps.applyRemoteOps : async () => ({ ok: false, error: "no_apply" });
-  const replayPendingOps = typeof deps.replayPendingOps === "function" ? deps.replayPendingOps : async () => ({ ok: true });
   const fetchServerXml = typeof deps.fetchServerXml === "function" ? deps.fetchServerXml : async () => ({ ok: false });
   const rebaseOnServerXml = typeof deps.rebaseOnServerXml === "function" ? deps.rebaseOnServerXml : async () => ({ ok: false });
   const flushNow = typeof deps.flushNow === "function" ? deps.flushNow : noop;
@@ -132,15 +132,6 @@ export function createOpsRemoteApply(deps = {}) {
   const now = typeof deps.now === "function" ? deps.now : () => Date.now();
   const uuid = typeof deps.uuid === "function" ? deps.uuid : () => `pp-${now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const log = typeof deps.log === "function" ? deps.log : noop;
-
-  async function journalPendingOpIds() {
-    try {
-      const records = await journal?.getAllBySession?.(sessionId);
-      return new Set((Array.isArray(records) ? records : []).map((record) => asText(record?.opId)).filter(Boolean));
-    } catch {
-      return new Set();
-    }
-  }
 
   async function conservativeFetchRebase(pendingOps) {
     const fetched = await fetchServerXml();
@@ -162,15 +153,12 @@ export function createOpsRemoteApply(deps = {}) {
     if (!Number.isFinite(evt.version) || evt.version < 0) {
       return { ignored: "invalid-version" };
     }
-    // 1. own event.
+    // 1. own event — СТРОГО по actor_client_id. IDB-journal общий на origin
+    // (два таба одного пользователя — PLAN §6.6 два независимых клиента),
+    // поэтому членство opId в journal НЕ делает событие «своим» (MAJOR-1
+    // review). Пустой actor (API/external) — применяем.
     if (ownClientId && evt.actorClientId && evt.actorClientId === ownClientId) {
       return { ignored: "own" };
-    }
-    if (evt.operations.length > 0) {
-      const pendingIds = await journalPendingOpIds();
-      if (evt.operations.every((op) => pendingIds.has(asText(op?.opId)))) {
-        return { ignored: "own-op-echo" };
-      }
     }
     // 2. stale.
     if (evt.version <= getSeenServerVersion()) {
@@ -201,6 +189,12 @@ export function createOpsRemoteApply(deps = {}) {
     }
     if (!applyResult?.ok) {
       // Fuzzy-fail / неприменимость → консервативный fetch+rebase.
+      log("ops_remote_apply_failed", {
+        sessionId,
+        version: evt.version,
+        results: Array.isArray(applyResult?.results) ? applyResult.results.map((r) => ({ opId: r?.opId, ok: r?.ok, error: r?.error, fuzzyMiss: r?.fuzzyMiss })) : [],
+        error: asText(applyResult?.error),
+      });
       const rebase = await conservativeFetchRebase(getPendingOps());
       if (rebase?.ok) {
         adoptServerVersion(evt.version);
@@ -246,15 +240,13 @@ export function createOpsRemoteApply(deps = {}) {
         }
       }
     }
-    // 7. rebase оставшихся pending поверх обновлённой модели.
-    const remaining = getPendingOps();
-    if (remaining.length > 0) {
-      try {
-        await replayPendingOps(remaining);
-      } catch (error) {
-        log("ops_remote_pending_replay_failed", { sessionId, error: asText(error?.message || error) });
-      }
-    }
+    // 7. Оставшиеся pending НЕ replay'ятся: live-модель уже содержит их
+    //    (правки применялись в момент редактирования; incoming ops тронули
+    //    только свои элементы, конфликтующие pending ушли в proposed).
+    //    Replay здесь двойно применил бы delta-ops (shape.move) — BLOCKER-1
+    //    review. Replay нужен только после ПОЛНОЙ перезагрузки модели из
+    //    серверного XML — ветка fetch+rebase выше (applyServerReconciliation).
+    //    Выжившие pending уходят своим обычным flush (шаг 8).
     // 8. seenServerVersion + flush.
     adoptServerVersion(evt.version);
     await flushNow({ reason: "remote" });
