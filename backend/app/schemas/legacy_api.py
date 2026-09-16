@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class AuthLoginIn(BaseModel):
@@ -151,6 +152,27 @@ class UpdateSessionIn(BaseModel):
 class SessionPresenceTouchIn(BaseModel):
     client_id: str
     surface: Optional[str] = "process_stage"
+    # Soft-lock (feature/async-save-pipeline-step2, API.md §4): advisory-only,
+    # никаких проверок на write-путях. Пустая строка = снятие.
+    editing_element_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("editingElementId", "editing_element_id"),
+    )
+
+    @field_validator("editing_element_id")
+    @classmethod
+    def _validate_editing_element_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if len(text) > 64:
+            raise ValueError("editingElementId must be at most 64 chars")
+        if not re.fullmatch(r"[A-Za-z0-9_:\-.]+", text):
+            raise ValueError("editingElementId must be a valid bpmn element id")
+        return text
+
     model_config = ConfigDict(extra="allow")
 
 

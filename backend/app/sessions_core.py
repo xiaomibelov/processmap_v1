@@ -739,6 +739,7 @@ def touch_session_presence_api(
         org_id=org_id,
         project_id=project_id,
         surface=surface,
+        editing_element_id=str(getattr(inp, "editing_element_id", "") or ""),
         now_ts=now,
     )
     prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS, now_ts=now)

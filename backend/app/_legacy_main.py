@@ -4798,6 +4798,13 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             is_admin=True,
             bpmn_snapshot=bpmn_version_snapshot,
         )
+        _publish_ops_committed(
+            session_id,
+            version=int(getattr(s, "diagram_state_version", 0) or 0),
+            operations=[],
+            actor_client_id=client_id,
+            full=True,
+        )
         try:
             invalidate_overlay(session_id)
         except Exception:
@@ -4872,7 +4879,138 @@ def _conflict_with_current_xml(
 
 
 # feature/async-save-pipeline-step1: инкрементальное (дельта) сохранение диаграммы.
-@app.post("/api/sessions/{session_id}/operations")
+# Live-регистрация роута — routers/sessions.py (наследие step2 API.md §5.1:
+# legacy-дубль @app.post здесь удалён, handler-функция остаётся и используется
+# через session_service.operations_apply).
+
+
+# API.md §1 (inline boundary): ops инлайнятся в событие только до лимита;
+# батч крупнее лимита публикуется как full=true, operations=[] — клиенты
+# догоняют по version+fetch.
+OPS_COMMITTED_INLINE_LIMIT = 50
+
+
+def _publish_ops_committed(
+    session_id: str,
+    *,
+    version: int,
+    operations: List[Dict[str, Any]],
+    actor_client_id: str = "",
+    full: bool = False,
+) -> None:
+    """Событие `ops_committed` шины session events (API.md §1 step2).
+
+    publish_nowait (sync-safe — handler крутится в anyio threadpool); ошибки
+    публикации — лог, не 5xx. Публикуется только после durable commit.
+    """
+    try:
+        from .services.session_event_bus import get_session_event_bus
+
+        wire_ops = [
+            {key: value for key, value in (op or {}).items() if not str(key).startswith("__")}
+            for op in (operations or [])
+        ]
+        published_full = bool(full)
+        if len(wire_ops) > OPS_COMMITTED_INLINE_LIMIT:
+            published_full = True
+            wire_ops = []
+        get_session_event_bus().publish_nowait(
+            str(session_id or ""),
+            {
+                "type": "ops_committed",
+                "data": {
+                    "session_id": str(session_id or ""),
+                    "version": int(version or 0),
+                    "operations": wire_ops,
+                    "actor_client_id": str(actor_client_id or ""),
+                    "full": published_full,
+                    "at": float(time.time()),
+                },
+            },
+        )
+    except Exception as exc:
+        logger.warning("ops_committed publish failed for %s: %s", session_id, exc)
+
+
+_PARENT_REEMBED_MAX_ATTEMPTS = 3
+_PARENT_REEMBED_BACKOFF_BASE_SECONDS = 0.5
+
+
+def _sync_child_into_parent_with_retry(
+    storage,
+    *,
+    session_id: str,
+    parent_session_id: str,
+    element_id_in_parent: str,
+    child_xml: str,
+    user_id: str,
+    org_id: str,
+    client_id: str,
+    actor_label: str = "",
+) -> bool:
+    """Parent subprocess re-embed ПОСЛЕ commit child-строки (наследие step2, API.md §5.3).
+
+    Ошибки re-embed не откатывают child-коммит: изолированный inline-retry
+    (экспоненциальный бэкоф, 3 попытки). Возвращает parent_synced.
+    """
+    from app.services.bpmn_navigation import re_embed_child_xml_into_parent
+
+    for attempt in range(1, _PARENT_REEMBED_MAX_ATTEMPTS + 1):
+        try:
+            parent = storage.load(parent_session_id, user_id=user_id, org_id=org_id, is_admin=True)
+            if parent:
+                parent_xml = str(getattr(parent, "bpmn_xml", "") or "")
+                new_parent_xml = re_embed_child_xml_into_parent(parent_xml, element_id_in_parent, child_xml)
+                if new_parent_xml and new_parent_xml != parent_xml:
+                    previous_parent_xml = parent_xml
+                    parent.bpmn_xml = new_parent_xml
+                    parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
+                    parent.activity_count = _count_bpmn_activities(new_parent_xml)
+                    parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
+                    _mark_diagram_truth_write(
+                        parent,
+                        changed_keys=["bpmn_xml"],
+                        actor_user_id=user_id,
+                        actor_label=actor_label,
+                        client_id=client_id,
+                    )
+                    storage.save(parent, user_id=user_id, org_id=org_id, is_admin=True)
+                    _invalidate_session_caches(
+                        parent,
+                        session_id=parent.id,
+                        org_id=getattr(parent, "org_id", "") or get_default_org_id(),
+                    )
+                    logger.info(
+                        "subprocess_parent_synced: child=%s parent=%s element=%s bytes_before=%d bytes_after=%d",
+                        session_id,
+                        parent_session_id,
+                        element_id_in_parent,
+                        len(previous_parent_xml),
+                        len(new_parent_xml),
+                    )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "subprocess_parent_sync_failed: child=%s parent=%s element=%s attempt=%d/%d error=%s",
+                session_id,
+                parent_session_id,
+                element_id_in_parent,
+                attempt,
+                _PARENT_REEMBED_MAX_ATTEMPTS,
+                exc,
+                exc_info=True,
+            )
+            if attempt < _PARENT_REEMBED_MAX_ATTEMPTS:
+                time.sleep(_PARENT_REEMBED_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
+    logger.warning(
+        "subprocess_parent_sync_giving_up: child=%s parent=%s element=%s",
+        session_id,
+        parent_session_id,
+        element_id_in_parent,
+    )
+    return False
+
+
 def session_operations_apply(session_id: str, inp: SessionOperationsIn, request: Request = None) -> Dict[str, Any]:
     sid = str(session_id or "").strip()
     if not sid or sid.lower() == "none":
@@ -5014,48 +5152,6 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
             diagram_state_version=current_diagram_state_version + 1,
         )
 
-        # Sync child BPMN back into the parent subprocess XML (best-effort,
-        # как в session_bpmn_save).
-        parent_session_id = str(getattr(s, "parent_session_id", "") or "").strip()
-        element_id_in_parent = str(getattr(s, "element_id_in_parent", "") or "").strip()
-        parent_synced = False
-        if parent_session_id and element_id_in_parent:
-            try:
-                from app.services.bpmn_navigation import re_embed_child_xml_into_parent
-
-                parent = st.load(parent_session_id, user_id=user_id, org_id=oid_locked, is_admin=True)
-                if parent:
-                    parent_xml = str(getattr(parent, "bpmn_xml", "") or "")
-                    new_parent_xml = re_embed_child_xml_into_parent(parent_xml, element_id_in_parent, new_xml)
-                    if new_parent_xml and new_parent_xml != parent_xml:
-                        parent.bpmn_xml = new_parent_xml
-                        parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
-                        parent.activity_count = _count_bpmn_activities(new_parent_xml)
-                        parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
-                        _mark_diagram_truth_write(
-                            parent,
-                            changed_keys=["bpmn_xml"],
-                            actor_user_id=user_id,
-                            actor_label=_resolve_actor_label_from_user(user, user_id),
-                            client_id=client_id,
-                        )
-                        st.save(parent, user_id=user_id, org_id=oid_locked, is_admin=True)
-                        _invalidate_session_caches(
-                            parent,
-                            session_id=parent.id,
-                            org_id=getattr(parent, "org_id", "") or get_default_org_id(),
-                        )
-                        parent_synced = True
-            except Exception as exc:
-                logger.warning(
-                    "subprocess_parent_sync_failed: child=%s parent=%s element=%s error=%s",
-                    session_id,
-                    parent_session_id,
-                    element_id_in_parent,
-                    exc,
-                    exc_info=True,
-                )
-
         batch_payload = json.dumps(
             [{"opId": str(op.get("opId") or ""), "type": str(op.get("type") or "")} for op in pending],
             sort_keys=True,
@@ -5087,6 +5183,31 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
             )
         except HTTPException as exc:
             _conflict_with_current_xml(exc, st, session_id, sess=s, org_id=oid_locked)
+        # Parent subprocess re-embed — ПОСЛЕ durable commit child-строки
+        # (наследие step2 API.md §5.3: transient divergence при CAS-409,
+        # re-embed не откатывает child; ошибки — изолированный retry).
+        parent_session_id = str(getattr(s, "parent_session_id", "") or "").strip()
+        element_id_in_parent = str(getattr(s, "element_id_in_parent", "") or "").strip()
+        parent_synced = False
+        if parent_session_id and element_id_in_parent:
+            parent_synced = _sync_child_into_parent_with_retry(
+                st,
+                session_id=session_id,
+                parent_session_id=parent_session_id,
+                element_id_in_parent=element_id_in_parent,
+                child_xml=new_xml,
+                user_id=user_id,
+                org_id=oid_locked,
+                client_id=client_id,
+                actor_label=_resolve_actor_label_from_user(user, user_id),
+            )
+        _publish_ops_committed(
+            session_id,
+            version=int(getattr(s, "diagram_state_version", 0) or 0),
+            operations=pending,
+            actor_client_id=client_id,
+            full=False,
+        )
         try:
             invalidate_overlay(session_id)
         except Exception:

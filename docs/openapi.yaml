@@ -3051,6 +3051,10 @@ components:
         client_id:
           title: Client Id
           type: string
+        editingElementId:
+          nullable: true
+          title: Editingelementid
+          type: string
         surface:
           default: process_stage
           nullable: true

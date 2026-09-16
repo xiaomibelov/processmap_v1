@@ -1116,6 +1116,7 @@ def list_session_presence(
             SELECT sp.user_id,
                    MAX(sp.last_seen_at) AS last_seen_at,
                    MAX(sp.updated_at) AS updated_at,
+                   MAX(sp.editing_element_id) AS editing_element_id,
                    MAX(u.email) AS email,
                    MAX(u.full_name) AS full_name,
                    MAX(u.job_title) AS job_title
@@ -1133,6 +1134,7 @@ def list_session_presence(
         email = str(row["email"] or "").strip().lower()
         full_name = str(row["full_name"] or "").strip()
         job_title = str(row["job_title"] or "").strip()
+        editing_element_id = str(row["editing_element_id"] or "").strip() or None
         out.append(
             {
                 "user_id": uid,
@@ -1142,6 +1144,8 @@ def list_session_presence(
                 "job_title": job_title,
                 "last_seen_at": int(row["last_seen_at"] or 0),
                 "is_current_user": bool(current_uid and uid == current_uid),
+                # API.md §4 step2: soft-lock элемент (advisory), null если нет.
+                "editingElementId": editing_element_id,
             }
         )
     return out
@@ -1221,6 +1225,7 @@ def touch_session_presence(
     org_id: str = "",
     project_id: str = "",
     surface: str = "process_stage",
+    editing_element_id: str = "",
     now_ts: Optional[int] = None,
 ) -> Dict[str, Any]:
     sid = str(session_id or "").strip()
@@ -1231,6 +1236,8 @@ def touch_session_presence(
     oid = str(org_id or "").strip() or _default_org_id()
     pid = str(project_id or "").strip()
     surf = str(surface or "process_stage").strip()[:64] or "process_stage"
+    # Пустая строка = снятие soft-lock (API.md §4 step2).
+    editing = str(editing_element_id or "").strip()[:64]
     now = int(now_ts or 0) or _now_ts()
     _ensure_schema()
     with _connect() as con:
@@ -1238,16 +1245,17 @@ def touch_session_presence(
             """
             INSERT INTO session_presence (
               session_id, user_id, client_id, org_id, project_id, surface,
-              last_seen_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              editing_element_id, last_seen_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, user_id, client_id) DO UPDATE SET
               org_id = excluded.org_id,
               project_id = excluded.project_id,
               surface = excluded.surface,
+              editing_element_id = excluded.editing_element_id,
               last_seen_at = excluded.last_seen_at,
               updated_at = excluded.updated_at
             """,
-            [sid, uid, cid, oid, pid, surf, now, now, now],
+            [sid, uid, cid, oid, pid, surf, editing, now, now, now],
         )
         con.commit()
     return {
@@ -1257,6 +1265,7 @@ def touch_session_presence(
         "org_id": oid,
         "project_id": pid,
         "surface": surf,
+        "editing_element_id": editing or None,
         "last_seen_at": now,
         "created_at": now,
         "updated_at": now,
