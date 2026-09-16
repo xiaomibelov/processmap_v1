@@ -19,6 +19,7 @@ data: {
 ```
 
 - **Publisher**: `session_operations_apply` — после успешного commit (после `_save_session_with_cas`), payload = применённые wire-ops (без служебных `__*`), actor = `actor_client_id` из payload сессии если есть, иначе "". Full-save: `session_bpmn_save` — после успешного commit, `operations=[]`, `full=true`.
+- **Граница инлайна (нит владельца)**: ops инлайнятся в событие только до лимита `OPS_COMMITTED_INLINE_LIMIT = 50` операций. Батч сверх лимита (серия правок без промежуточных ack) публикуется как `full=true`, `operations=[]` — клиенты догоняют через version+fetch (`GET /bpmn` + rebase), тот же путь, что у full-save. Лимит — константа рядом с publisher'ом + тест обеих веток (49/51 op).
 - **Публикация НЕ блокирует ответ**: `publish_nowait` (sync-safe). Ошибки публикации — лог, не 5xx.
 - Порядок: событие публикуется только после durable commit; при rollback батча — не публикуется.
 

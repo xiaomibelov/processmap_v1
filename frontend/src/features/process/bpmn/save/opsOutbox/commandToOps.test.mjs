@@ -208,11 +208,8 @@ test("shape.delete / connection.delete → delete ops", () => {
   );
 });
 
-test("non-whitelisted commands → needsFullSave, no ops (reconnect, spaceTool, lane.resize, canvas.updateRoot)", () => {
+test("non-whitelisted commands → needsFullSave, no ops (spaceTool, lane.resize, canvas.updateRoot)", () => {
   for (const command of [
-    "connection.reconnect",
-    "connection.reconnectStart",
-    "connection.reconnectEnd",
     "spaceTool",
     "lane.resize",
     "canvas.updateRoot",
@@ -472,4 +469,139 @@ test("wire form: connection.delete with element ref maps to op (пара к crea
     out.ops.map((o) => [o.type, o.elementId]),
     [["connection.delete", "Flow_1480jvh"]],
   );
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/async-save-pipeline-step2 (TESTS §1.3, наследие п.6):
+//  - connection.reconnect / reconnectStart / reconnectEnd нормализуются в
+//    одну op connection.reconnect {connectionId, source, target};
+//  - undo reconnect → compensating op со старыми source/target (не needsFullSave);
+//  - create-ops несут клиентский id в payload (сервер применяет с сохранением
+//    id — replay create при 409-rebase безопасен);
+//  - undo create → compensating delete-op (не needsFullSave);
+//  - coverage: reconnect теперь mapped.
+// ---------------------------------------------------------------------------
+
+test("connection.reconnect / reconnectStart / reconnectEnd → single normalized op {connectionId, source, target}", () => {
+  const baseContext = {
+    connection: { id: "Flow_1", type: "bpmn:SequenceFlow", source: { id: "Task_1" }, target: { id: "Task_2" } },
+  };
+  for (const command of ["connection.reconnect", "connection.reconnectStart", "connection.reconnectEnd"]) {
+    const out = mapCommandToOps({ command, action: "execute", context: baseContext });
+    assert.equal(out.needsFullSave, false, `${command} is whitelisted in step2`);
+    assert.equal(out.ops.length, 1);
+    assert.equal(out.ops[0].type, "connection.reconnect", `${command} normalizes to connection.reconnect`);
+    assert.equal(out.ops[0].elementId, "Flow_1");
+    assert.equal(out.ops[0].connectionId, "Flow_1");
+    assert.equal(out.ops[0].source, "Task_1");
+    assert.equal(out.ops[0].target, "Task_2");
+  }
+
+  // Явные source/target в контексте (wire-форма) побеждают дефолтные из connection.
+  const explicit = mapCommandToOps({
+    command: "connection.reconnectEnd",
+    action: "execute",
+    context: {
+      element: { id: "Flow_9", type: "bpmn:SequenceFlow" },
+      source: { id: "Task_A" },
+      target: { id: "Task_B" },
+    },
+  });
+  assert.equal(explicit.needsFullSave, false);
+  assert.equal(explicit.ops[0].connectionId, "Flow_9");
+  assert.equal(explicit.ops[0].source, "Task_A");
+  assert.equal(explicit.ops[0].target, "Task_B");
+});
+
+test("connection.reconnect without connection id → needsFullSave (honest fallback)", () => {
+  const out = mapCommandToOps({ command: "connection.reconnect", action: "execute", context: {} });
+  assert.equal(out.ops.length, 0);
+  assert.equal(out.needsFullSave, true);
+});
+
+test("undo of connection.reconnect → compensating op with oldSource/oldTarget (не needsFullSave)", () => {
+  const out = mapCommandToOps({
+    command: "connection.reconnect",
+    action: "undo",
+    context: {
+      connection: { id: "Flow_1", type: "bpmn:SequenceFlow" },
+      source: { id: "Task_3" },
+      target: { id: "Task_4" },
+      oldSource: { id: "Task_1" },
+      oldTarget: { id: "Task_2" },
+    },
+  });
+  assert.equal(out.needsFullSave, false, "undo reconnect is a compensating op now");
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "connection.reconnect");
+  assert.equal(out.ops[0].connectionId, "Flow_1");
+  assert.equal(out.ops[0].source, "Task_1", "oldSource restored");
+  assert.equal(out.ops[0].target, "Task_2", "oldTarget restored");
+});
+
+test("create ops carry the client-generated element id in payload (server preserves id)", () => {
+  const created = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: { shape: el("Activity_clientid_1", { businessType: "bpmn:Task" }), parent: { id: "Process_1" } },
+  });
+  assert.equal(created.needsFullSave, false);
+  assert.equal(created.ops[0].elementId, "Activity_clientid_1", "client-generated id is the op elementId");
+
+  const connected = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    context: {
+      connection: el("Flow_clientid_2", { type: "bpmn:SequenceFlow" }),
+      source: { id: "Task_1" },
+      target: { id: "Task_2" },
+    },
+  });
+  assert.equal(connected.needsFullSave, false);
+  assert.equal(connected.ops[0].elementId, "Flow_clientid_2");
+  assert.equal(connected.ops[0].sourceId, "Task_1");
+  assert.equal(connected.ops[0].targetId, "Task_2");
+});
+
+test("undo of shape.create / connection.create → compensating delete op (не needsFullSave)", () => {
+  const undoShape = mapCommandToOps({
+    command: "shape.create",
+    action: "undo",
+    context: { shape: el("Task_9", { businessType: "bpmn:Task" }), parent: { id: "Process_1" } },
+  });
+  assert.equal(undoShape.needsFullSave, false, "undo create is compensating delete-op now");
+  assert.deepEqual(
+    undoShape.ops.map((o) => [o.type, o.elementId]),
+    [["shape.delete", "Task_9"]],
+  );
+
+  const undoConn = mapCommandToOps({
+    command: "connection.create",
+    action: "undo",
+    context: {
+      connection: el("Flow_2", { type: "bpmn:SequenceFlow" }),
+      source: { id: "Task_1" },
+      target: { id: "Task_2" },
+    },
+  });
+  assert.equal(undoConn.needsFullSave, false);
+  assert.deepEqual(
+    undoConn.ops.map((o) => [o.type, o.elementId]),
+    [["connection.delete", "Flow_2"]],
+  );
+});
+
+test("coverage: reconnect commands are mapped now (fullSave counter does not grow)", () => {
+  __resetOpsCoverageForTests();
+  for (const command of ["connection.reconnect", "connection.reconnectStart", "connection.reconnectEnd"]) {
+    mapCommandToOps({
+      command,
+      action: "execute",
+      context: { connection: { id: "Flow_1", source: { id: "A" }, target: { id: "B" } } },
+    });
+  }
+  const coverage = getOpsCoverage();
+  assert.equal(coverage.total, 3);
+  assert.equal(coverage.mapped, 3, "all three reconnect commands are mapped");
+  assert.equal(coverage.fullSave, 0, "no fullSave fallback for reconnect vocabulary");
 });

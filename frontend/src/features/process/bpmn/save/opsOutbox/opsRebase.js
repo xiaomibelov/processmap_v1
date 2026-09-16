@@ -73,6 +73,77 @@ function replayFlags(op) {
   return { __pmOpId: asText(op?.opId), __pmOpSource: "replay" };
 }
 
+function createShapeDescriptor(op) {
+  const b = op?.bounds;
+  return {
+    id: asText(op?.elementId),
+    type: asText(op?.elementType) || "bpmn:Task",
+    x: Number(b?.x) || 0,
+    y: Number(b?.y) || 0,
+    width: Number(b?.width) || 0,
+    height: Number(b?.height) || 0,
+  };
+}
+
+/**
+ * Replay create-op. Сервер сохраняет клиентский id (PLAN §3.6) → после
+ * loadServerXml элемент либо уже на канвасе (no-op), либо его нужно создать
+ * через elementFactory + commandStack.execute с replay-флагами. Без
+ * elementFactory — консервативный fuzzyMiss (full-save fallback).
+ */
+function replayCreate(modeler, op, registry, flags) {
+  const elementId = asText(op?.elementId);
+  if (!elementId) return { ok: false, error: "missing_element_id", fuzzyMiss: true };
+  if (registry.get(elementId)) {
+    // Идемпотентность: серверный XML уже содержит элемент с этим id.
+    return { ok: true };
+  }
+  const elementFactory = modeler?.get?.("elementFactory");
+  const commandStack = modeler?.get?.("commandStack");
+  if (!elementFactory || !commandStack) {
+    return { ok: false, error: "create_replay_not_supported", fuzzyMiss: true };
+  }
+  try {
+    if (op?.type === "shape.create") {
+      const shape = typeof elementFactory.createShape === "function"
+        ? elementFactory.createShape(createShapeDescriptor(op))
+        : elementFactory.create("shape", createShapeDescriptor(op));
+      return safeExecute(commandStack, "shape.create", {
+        shape,
+        parent: registry.get(asText(op?.parentId)) || null,
+        ...flags,
+      });
+    }
+    const source = resolveElementFuzzy(registry, op?.sourceId, { allowConnections: true });
+    if (!source) return { ok: false, error: "create_source_not_found", fuzzyMiss: true };
+    const target = resolveElementFuzzy(registry, op?.targetId, { allowConnections: true });
+    if (!target) return { ok: false, error: "create_target_not_found", fuzzyMiss: true };
+    const connection = typeof elementFactory.createConnection === "function"
+      ? elementFactory.createConnection({
+        id: elementId,
+        type: asText(op?.elementType) || "bpmn:SequenceFlow",
+        source: source.element,
+        target: target.element,
+        waypoints: Array.isArray(op?.waypoints) ? op.waypoints : [],
+      })
+      : elementFactory.create("connection", {
+        id: elementId,
+        type: asText(op?.elementType) || "bpmn:SequenceFlow",
+        source: source.element,
+        target: target.element,
+        waypoints: Array.isArray(op?.waypoints) ? op.waypoints : [],
+      });
+    return safeExecute(commandStack, "connection.create", {
+      connection,
+      source: source.element,
+      target: target.element,
+      ...flags,
+    });
+  } catch (error) {
+    return { ok: false, error: asText(error?.message || error || "create_replay_failed"), fuzzyMiss: true };
+  }
+}
+
 function safeExecute(commandStack, command, context) {
   try {
     commandStack.execute(command, context);
@@ -91,10 +162,28 @@ function replayOne(modeler, op) {
   const flags = replayFlags(op);
   const type = asText(op?.type);
 
-  // create-op'ы в step1 не replay'ятся: серверный элемент мог получить другой
-  // id/инцидентность — безопасный fallback на полный save (PLAN §6.4 research).
+  // Create-op replay (step2, наследие п.6): id клиентский и сервер применяет
+  // create с сохранением id → после loadServerXml элемента с таким id либо
+  // уже нет (создаём через elementFactory + commandStack.execute), либо он
+  // есть (идемпотентный no-op). Флаги __pmOpSource:"replay" глушат эхо.
   if (type === "shape.create" || type === "connection.create") {
-    return { ok: false, error: "create_replay_not_supported", fuzzyMiss: true };
+    return replayCreate(modeler, op, registry, flags);
+  }
+
+  // connection.reconnect: rewrite source/target через нативную команду.
+  if (type === "connection.reconnect") {
+    const resolvedConn = resolveElementFuzzy(registry, op?.connectionId || op?.elementId, { allowConnections: true });
+    if (!resolvedConn) return { ok: false, error: "connection_not_found", fuzzyMiss: true };
+    const resolvedSource = resolveElementFuzzy(registry, op?.source, { allowConnections: true });
+    if (!resolvedSource) return { ok: false, error: "reconnect_source_not_found", fuzzyMiss: true };
+    const resolvedTarget = resolveElementFuzzy(registry, op?.target, { allowConnections: true });
+    if (!resolvedTarget) return { ok: false, error: "reconnect_target_not_found", fuzzyMiss: true };
+    return safeExecute(commandStack, "connection.reconnect", {
+      connection: resolvedConn.element,
+      source: resolvedSource.element,
+      target: resolvedTarget.element,
+      ...flags,
+    });
   }
 
   const needConnection = type === "element.updateDi" && Array.isArray(op?.waypoints);
@@ -212,6 +301,15 @@ function readServerCurrentVersion(response) {
 
 export function createOpsRebase({ applyOpsFn = replayOpsOnModeler } = {}) {
   return {
+    /**
+     * Replay pendingOps на live-модель без 409-контекста — ветка fetch+rebase
+     * reconciliation при входе в сессию (PLAN §5.3/§5.4, UI.md §8).
+     * @returns {Promise<{ok: boolean, applied: number, failed: number, results: Array}>}
+     */
+    replayPendingOps(pendingOps, modeler) {
+      return applyOpsFn(modeler, Array.isArray(pendingOps) ? pendingOps : []);
+    },
+
     /**
      * @returns {Promise<{ok: boolean, needsFullSave: boolean, serverVersion?: number|null, replay?: Object}>}
      */
