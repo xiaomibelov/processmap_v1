@@ -433,6 +433,9 @@ export default function Workspace({
             templateId,
             version: String(data.version || ""),
             templateName,
+            // provenance: sidecar в meta сессии + pm:Trace в BPMN XML
+            // (fix/tobe-element-provenance-persistence-v1)
+            traceMap: asArray(traceMap),
           });
         }
       } else {
