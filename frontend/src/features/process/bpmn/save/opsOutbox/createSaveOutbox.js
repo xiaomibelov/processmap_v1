@@ -228,11 +228,16 @@ export function createSaveOutbox(options = {}) {
 
   // Гидрация durable-буфера из journal (PLAN §5): новый экземпляр outbox на
   // той же сессии восстанавливает неотправленные ops (F5 / kill вкладки).
+  // Сразу после гидрации планируем flush — иначе при гонке с entry-
+  // reconcile (runtime ещё не зарегистрирован, ветка flush пропущена)
+  // догон не происходил никогда: e2e kill-before-flush (TESTS.md §4.1.1)
+  // показал буфер, восстановленный из IDB, но не ушедший в сеть.
   const hydratePromise = Promise.resolve()
     .then(() => journal.hydrateBuffer(sessionId))
     .then((ops) => {
       if (destroyed || !Array.isArray(ops) || ops.length === 0) return;
       hydrateBufferedOps(ops);
+      scheduleFlush();
     })
     .catch(() => undefined);
 
