@@ -156,6 +156,76 @@ test("insertBpmnFragmentFromPlacement: propagates explicit persist failure outco
   assert.equal(result?.error, "persist_failed");
 });
 
+test("insertBpmnFragmentFromPlacement: notifies warning for legacy annotation text after apply", async () => {
+  const warnings = [];
+  const result = await insertBpmnFragmentFromPlacement({
+    currentPlacement: { template: { id: "tpl_legacy" } },
+    clientX: 100,
+    clientY: 80,
+    insertBpmnFragmentTemplateAtPoint: async () => ({
+      ok: true,
+      createdNodes: 1,
+      createdEdges: 0,
+      diagnostics: {
+        legacyAnnotationIds: ["Ann_1"],
+        skippedNodeTypes: [],
+        skippedEdges: [],
+      },
+    }),
+    notifyWarning: (message) => warnings.push(String(message || "")),
+  });
+  assert.equal(result?.ok, true);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /старой версии/i);
+  assert.match(warnings[0], /пересоздайте/i);
+});
+
+test("insertBpmnFragmentFromPlacement: notifies warning for skipped nodes and edges after apply", async () => {
+  const warnings = [];
+  const result = await insertBpmnFragmentFromPlacement({
+    currentPlacement: { template: { id: "tpl_skipped" } },
+    clientX: 100,
+    clientY: 80,
+    insertBpmnFragmentTemplateAtPoint: async () => ({
+      ok: true,
+      createdNodes: 1,
+      createdEdges: 0,
+      diagnostics: {
+        legacyAnnotationIds: [],
+        skippedNodeTypes: ["bpmn:Group"],
+        skippedEdges: ["E_orphan"],
+      },
+    }),
+    notifyWarning: (message) => warnings.push(String(message || "")),
+  });
+  assert.equal(result?.ok, true);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /вставлено не полностью/i);
+  assert.match(warnings[0], /bpmn:Group/);
+});
+
+test("insertBpmnFragmentFromPlacement: no warning when diagnostics are clean", async () => {
+  const warnings = [];
+  const result = await insertBpmnFragmentFromPlacement({
+    currentPlacement: { template: { id: "tpl_clean" } },
+    clientX: 100,
+    clientY: 80,
+    insertBpmnFragmentTemplateAtPoint: async () => ({
+      ok: true,
+      createdNodes: 2,
+      createdEdges: 1,
+      diagnostics: {
+        legacyAnnotationIds: [],
+        skippedNodeTypes: [],
+        skippedEdges: [],
+      },
+    }),
+    notifyWarning: (message) => warnings.push(String(message || "")),
+  });
+  assert.equal(result?.ok, true);
+  assert.deepEqual(warnings, []);
+});
+
 test("shouldCancelBpmnFragmentPlacementByKey: returns true only for Escape", () => {
   assert.equal(shouldCancelBpmnFragmentPlacementByKey({ key: "Escape" }), true);
   assert.equal(shouldCancelBpmnFragmentPlacementByKey({ key: "escape" }), true);

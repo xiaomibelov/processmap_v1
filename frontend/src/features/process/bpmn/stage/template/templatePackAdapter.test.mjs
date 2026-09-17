@@ -56,6 +56,38 @@ function createMessageFlow(id, source, target, name = "", boOverrides = {}) {
   };
 }
 
+function createTextAnnotation(id, x, y, text = "", boOverrides = {}) {
+  return {
+    id,
+    type: "bpmn:TextAnnotation",
+    x,
+    y,
+    width: 100,
+    height: 60,
+    businessObject: {
+      id,
+      $type: "bpmn:TextAnnotation",
+      text,
+      ...boOverrides,
+    },
+    outgoing: [],
+  };
+}
+
+function createAssociation(id, source, target) {
+  return {
+    id,
+    type: "bpmn:Association",
+    waypoints: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+    source,
+    target,
+    businessObject: {
+      id,
+      $type: "bpmn:Association",
+    },
+  };
+}
+
 function createDataStoreReference(id, x, y, name = "Store", boOverrides = {}) {
   return {
     id,
@@ -414,6 +446,53 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
   assert.equal(edgePayload.semanticPayload?.custom?.auditClass, "critical");
 });
 
+test("captureTemplatePackOnModeler captures association between task and textAnnotation", () => {
+  const task = createShape("Task_A", 120, 80, "Inspect");
+  const annotation = createTextAnnotation("Annotation_1", 340, 60, "проверить партию");
+  const association = createAssociation("Assoc_1", task, annotation);
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [task, annotation],
+    registryItems: [task, annotation, association],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Annotation pack" });
+  assert.equal(result?.ok, true);
+  assert.deepEqual(result?.pack?.fragment?.annotations, []);
+  assert.equal(result?.pack?.fragment?.nodes?.length, 2);
+  assert.deepEqual(
+    result?.pack?.fragment?.nodes?.map((node) => node.id).sort(),
+    ["Annotation_1", "Task_A"],
+  );
+  assert.equal(result?.pack?.fragment?.edges?.length, 1);
+  const edge = result?.pack?.fragment?.edges?.[0] || {};
+  assert.equal(edge.id, "Assoc_1");
+  assert.equal(edge.edgeType, "bpmn:Association");
+  assert.equal(edge.sourceId, "Task_A");
+  assert.equal(edge.targetId, "Annotation_1");
+  assert.equal(edge.semanticPayload?.custom?.text, undefined);
+});
+
+test("captureTemplatePackOnModeler does not capture dataInputAssociation as template edge", () => {
+  const task = createShape("Task_A", 120, 80, "Inspect");
+  const dataObject = createShape("DataObject_1", 340, 90, "Input");
+  const dataInputAssociation = {
+    id: "DataInputAssociation_1",
+    type: "bpmn:DataInputAssociation",
+    waypoints: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+    source: dataObject,
+    target: task,
+    businessObject: { id: "DataInputAssociation_1", $type: "bpmn:DataInputAssociation" },
+  };
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [task, dataObject, dataInputAssociation],
+    registryItems: [task, dataObject, dataInputAssociation],
+  });
+
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Data assoc pack" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.fragment?.edges?.length, 0);
+});
+
 test("captureTemplatePackOnModeler captures messageFlow with datastore endpoint", () => {
   const task = createShape("Task_A", 120, 80, "Inspect");
   const dataStore = createDataStoreReference("DataStore_1", 340, 90, "Closure source");
@@ -445,6 +524,30 @@ test("captureTemplatePackOnModeler ignores messageFlow without datastore endpoin
   const result = adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported messageFlow pack" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.fragment?.edges?.length, 0);
+});
+
+test("captureTemplatePackOnModeler marks selected shapes dropped from pack in unsupportedSelectionTypes", () => {
+  const task = createShape("Task_A", 120, 80, "A");
+  const ghostGroup = {
+    id: "",
+    type: "bpmn:Group",
+    x: 10,
+    y: 10,
+    width: 400,
+    height: 300,
+    businessObject: {
+      $type: "bpmn:Group",
+    },
+    outgoing: [],
+  };
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [task, ghostGroup],
+    registryItems: [task, ghostGroup],
+  });
+  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Dropped shape pack" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.fragment?.nodes?.length, 1);
+  assert.deepEqual(result?.diagnostics?.unsupportedSelectionTypes, ["bpmn:Group"]);
 });
 
 test("captureTemplatePackOnModeler captures selected subprocess subtree as serializable template pack", () => {
@@ -820,6 +923,125 @@ test("insertTemplatePackOnModeler reapplies sequenceFlow semantic payload to cre
   assert.equal(bo.conditionExpression?.["pm:exprKind"], "approval");
   assert.equal(bo.$attrs?.["pm:edgeCode"], "E-42");
   assert.equal(bo.auditClass, "critical");
+});
+
+test("insertTemplatePackOnModeler reports legacy textAnnotation nodes without semantic text in diagnostics", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_legacy_annotations",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "Task", di: { x: 10, y: 20, w: 120, h: 80 } },
+          { id: "Ann_legacy", type: "bpmn:TextAnnotation", name: "", di: { x: 220, y: 20, w: 100, h: 60 } },
+          {
+            id: "Ann_empty",
+            type: "bpmn:TextAnnotation",
+            name: "",
+            di: { x: 340, y: 20, w: 100, h: 60 },
+            semanticPayload: { custom: { text: "   " } },
+          },
+          {
+            id: "Ann_ok",
+            type: "bpmn:TextAnnotation",
+            name: "",
+            di: { x: 460, y: 20, w: 100, h: 60 },
+            semanticPayload: { custom: { text: "проверить партию" } },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.deepEqual(result?.diagnostics?.legacyAnnotationIds, ["Ann_legacy", "Ann_empty"]);
+});
+
+test("insertTemplatePackOnModeler reports skipped node types and unresolved edges in diagnostics", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_skipped",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "Task", di: { x: 10, y: 20, w: 120, h: 80 } },
+          { id: "Lane_1", type: "bpmn:Lane", name: "lane 1", di: { x: 0, y: 0, w: 900, h: 400 } },
+        ],
+        edges: [
+          { id: "E_ok", sourceId: "N1", targetId: "N1" },
+          { id: "E_orphan", sourceId: "N1", targetId: "Ghost_9" },
+        ],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdNodes, 1);
+  assert.equal(result?.createdEdges, 1);
+  assert.deepEqual(result?.diagnostics?.skippedNodeTypes, ["bpmn:Lane"]);
+  assert.deepEqual(result?.diagnostics?.skippedEdges, ["E_orphan"]);
+});
+
+test("insertTemplatePackOnModeler creates association between task and textAnnotation with its di", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, connectCalls, createShapeCalls } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_association",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "Task", di: { x: 10, y: 20, w: 120, h: 80 } },
+          {
+            id: "Ann_1",
+            type: "bpmn:TextAnnotation",
+            name: "",
+            di: { x: 220, y: 20, w: 100, h: 60 },
+            semanticPayload: { custom: { text: "проверить партию" } },
+          },
+        ],
+        edges: [
+          { id: "Assoc_1", edgeType: "bpmn:Association", sourceId: "N1", targetId: "Ann_1" },
+        ],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdEdges, 1);
+  const assocCall = connectCalls.find((call) => call?.attrs?.type === "bpmn:Association");
+  assert.ok(assocCall, "modeling.connect called with bpmn:Association attrs");
+  assert.ok(String(result?.remap?.Assoc_1 || "").trim(), "remap carries association id mapping");
+  const annotationCall = createShapeCalls.find((call) => call?.shapeDef?.type === "bpmn:TextAnnotation");
+  assert.ok(annotationCall, "textAnnotation node inserted with its own di");
+  assert.equal(annotationCall?.shapeDef?.width, 100);
+  assert.equal(annotationCall?.shapeDef?.height, 60);
 });
 
 test("insertTemplatePackOnModeler creates messageFlow for datastore endpoint edge", async () => {

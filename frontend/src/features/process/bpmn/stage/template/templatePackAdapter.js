@@ -35,7 +35,7 @@ function isTemplateConnectionType(typeRaw) {
 function isTemplateCaptureConnectionType(typeRaw) {
   const type = String(typeRaw || "").trim().toLowerCase();
   if (!type) return false;
-  return type.includes("sequenceflow") || type.includes("messageflow");
+  return type.includes("sequenceflow") || type.includes("messageflow") || type === "bpmn:association";
 }
 
 function isDataStoreType(typeRaw) {
@@ -75,6 +75,7 @@ function normalizeTemplateEdgeType(elementRaw, fallbackRaw = {}) {
     || fallback?.type,
   );
   const normalized = rawType.toLowerCase();
+  if (normalized === "bpmn:association") return "bpmn:Association";
   if (normalized.includes("messageflow")) return "bpmn:MessageFlow";
   return "bpmn:SequenceFlow";
 }
@@ -157,14 +158,33 @@ function readElementType(el) {
   return String(el?.businessObject?.$type || el?.type || "").trim();
 }
 
-function readSelectionSnapshot(itemsRaw) {
+function readSelectionSnapshot(itemsRaw, deps = {}) {
   const items = asArray(itemsRaw);
+  const isShapeElement = typeof deps.isShapeElement === "function" ? deps.isShapeElement : () => true;
   return items.map((el) => ({
     id: String(el?.id || "").trim(),
     type: readElementType(el),
+    isShape: !!isShapeElement(el),
     supportedNode: isTemplateNodeType(readElementType(el)),
     unsupportedFragmentNode: isUnsupportedFragmentNodeType(readElementType(el)),
   }));
+}
+
+// Shape в selection с поддерживаемым типом, не попавший в pack (пустой id,
+// пропуск на insert) — молчаливая потеря: маркируем тип как unsupported.
+function readUnsupportedSelectionTypes(selectionSnapshot, capturedNodeIdsRaw) {
+  const capturedNodeIds = capturedNodeIdsRaw instanceof Set ? capturedNodeIdsRaw : new Set();
+  const types = [];
+  asArray(selectionSnapshot).forEach((row) => {
+    if (!row?.isShape || !row?.supportedNode) return;
+    if (capturedNodeIds.has(String(row?.id || "").trim())) return;
+    const type = toText(row?.type);
+    if (type) types.push(type);
+  });
+  asArray(selectionSnapshot).forEach((row) => {
+    if (row?.unsupportedFragmentNode && toText(row?.type)) types.push(toText(row.type));
+  });
+  return Array.from(new Set(types));
 }
 
 function createElementIndex(allElementsRaw) {
@@ -523,7 +543,7 @@ export function createTemplatePackAdapter(deps = {}) {
       rawSelection = [];
     }
 
-    const selectionSnapshot = readSelectionSnapshot(rawSelection);
+    const selectionSnapshot = readSelectionSnapshot(rawSelection, { isShapeElement });
     const selectedNodes = selectTemplateNodes(inst, { isShapeElement });
     if (!selectedNodes.length) {
       return {
@@ -532,10 +552,7 @@ export function createTemplatePackAdapter(deps = {}) {
         diagnostics: {
           rawSelection: selectionSnapshot,
           normalizedSelection: [],
-          unsupportedSelectionTypes: selectionSnapshot
-            .filter((row) => row.unsupportedFragmentNode)
-            .map((row) => row.type)
-            .filter(Boolean),
+          unsupportedSelectionTypes: readUnsupportedSelectionTypes(selectionSnapshot, new Set()),
         },
       };
     }
@@ -563,10 +580,10 @@ export function createTemplatePackAdapter(deps = {}) {
               type: toText(node.type),
               laneHint: toText(node.laneHint),
             })),
-            unsupportedSelectionTypes: selectionSnapshot
-              .filter((row) => row.unsupportedFragmentNode)
-              .map((row) => row.type)
-              .filter(Boolean),
+            unsupportedSelectionTypes: readUnsupportedSelectionTypes(
+              selectionSnapshot,
+              new Set(subprocessPack.fragment.nodes.map((node) => toText(node.id))),
+            ),
           },
         };
       }
@@ -672,10 +689,10 @@ export function createTemplatePackAdapter(deps = {}) {
           type: String(node.type || "").trim(),
           laneHint: String(node.laneHint || "").trim(),
         })),
-        unsupportedSelectionTypes: selectionSnapshot
-          .filter((row) => row.unsupportedFragmentNode)
-          .map((row) => row.type)
-          .filter(Boolean),
+        unsupportedSelectionTypes: readUnsupportedSelectionTypes(
+          selectionSnapshot,
+          new Set(nodeItems.map((node) => String(node.id || "").trim())),
+        ),
       },
     };
   }
@@ -751,6 +768,17 @@ export function createTemplatePackAdapter(deps = {}) {
     const nodes = sortTemplateNodes(asArray(pack?.fragment?.nodes).filter((node) => String(node?.id || "").trim()));
     const edges = asArray(pack?.fragment?.edges).filter((edge) => String(edge?.sourceId || "").trim() && String(edge?.targetId || "").trim());
     if (!nodes.length) return { ok: false, error: "empty_pack" };
+    const legacyAnnotationIds = [];
+    nodes.forEach((node) => {
+      const nodeType = String(node?.type || "").trim().toLowerCase();
+      if (!nodeType.includes("textannotation")) return;
+      const payload = readTemplateNodeSemanticPayload(node);
+      if (toText(payload?.custom?.text)) return;
+      const nodeId = toText(node?.id);
+      if (nodeId) legacyAnnotationIds.push(nodeId);
+    });
+    const skippedNodeTypes = new Set();
+    const skippedEdges = [];
     const minX = Math.min(...nodes.map((node) => Number(node?.di?.x || 0)));
     const minY = Math.min(...nodes.map((node) => Number(node?.di?.y || 0)));
     const offsetX = anchor
@@ -766,7 +794,10 @@ export function createTemplatePackAdapter(deps = {}) {
 
     for (const node of nodes) {
       const type = String(node?.type || "bpmn:Task").trim() || "bpmn:Task";
-      if (!isTemplateNodeType(type)) continue;
+      if (!isTemplateNodeType(type)) {
+        skippedNodeTypes.add(type);
+        continue;
+      }
       const laneHint = String(node?.laneHint || "").trim().toLowerCase();
       const parentNodeId = toText(node?.parentNodeId);
       const nestedParent = parentNodeId ? createdNodeMap[parentNodeId] : null;
@@ -809,9 +840,16 @@ export function createTemplatePackAdapter(deps = {}) {
     for (const edge of edges) {
       const source = createdNodeMap[String(edge?.sourceId || "")];
       const target = createdNodeMap[String(edge?.targetId || "")];
-      if (!source || !target) continue;
+      const edgeId = toText(edge?.id);
+      if (!source || !target) {
+        if (edgeId) skippedEdges.push(edgeId);
+        continue;
+      }
       const conn = connectTemplateEdge(modeling, source, target, edge, { edge, moddle });
-      if (!conn) continue;
+      if (!conn) {
+        if (edgeId) skippedEdges.push(edgeId);
+        continue;
+      }
       const oldId = String(edge?.id || "");
       remap[oldId] = String(conn?.id || "");
       createdEdges.push(conn);
@@ -878,6 +916,11 @@ export function createTemplatePackAdapter(deps = {}) {
       anchorByPoint: !anchor,
       laneParentResolved,
       parentFallbackUsed,
+      diagnostics: {
+        legacyAnnotationIds,
+        skippedNodeTypes: Array.from(skippedNodeTypes),
+        skippedEdges,
+      },
     };
   }
 
