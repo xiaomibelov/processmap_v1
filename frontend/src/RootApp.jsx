@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import App from "./App";
 import AdminApp from "./features/admin/AdminApp";
@@ -19,6 +19,11 @@ import TechnologistAudit from "./features/technologist/audit/AuditPage";
 import TechnologistPilots from "./features/technologist/pilots/Pilots";
 import TechnologistHome from "./features/technologist/home/Home";
 import { canAccessAdminConsole, canOpenOrgSettings } from "./features/admin/adminUtils";
+import {
+  parseDeeplinkProjectId,
+  resolveDeeplinkOrgChoice,
+} from "./features/navigation/deeplinkOrgChoice.js";
+import { apiGetProject } from "./lib/api";
 import {
   buildAnalyticsPath,
   readLegacyAnalyticsRedirect,
@@ -169,6 +174,45 @@ function AppRoutes() {
       setOrgChoiceDone(false);
     }
   }, [orgChoiceKey]);
+
+  // fix/session-deeplink-404: диплинк с ?project= не должен упираться в
+  // org-picker («Выберите организацию»). Org резолвим из проекта ссылки;
+  // при успехе повторяем семантику handleOrgSelect (sessionStorage-флаг +
+  // switchOrg). Одна попытка на project-id — при неудаче picker как раньше.
+  const deeplinkAttemptRef = useRef("");
+  useEffect(() => {
+    if (!shouldSelectOrg) return;
+    const pid = parseDeeplinkProjectId(search);
+    if (!pid || deeplinkAttemptRef.current === pid) return;
+    deeplinkAttemptRef.current = pid;
+    let cancelled = false;
+    void (async () => {
+      const result = await resolveDeeplinkOrgChoice({ projectId: pid, orgItems, apiGetProject });
+      if (cancelled || result?.status !== "picked") return;
+      const next = String(result.orgId || "").trim();
+      if (!next) return;
+      setOrgSwitchBusy(true);
+      try {
+        await switchOrg(next, { refreshMe: false });
+      } catch {
+        return;
+      } finally {
+        if (!cancelled) setOrgSwitchBusy(false);
+      }
+      if (cancelled) return;
+      setOrgChoiceDone(true);
+      if (typeof window !== "undefined" && orgChoiceKey) {
+        try {
+          window.sessionStorage?.setItem(orgChoiceKey, "1");
+        } catch {
+          // ignore storage errors
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldSelectOrg, search, orgItems, orgChoiceKey, switchOrg]);
 
   useEffect(() => {
     if (loading || !isAuthed) return;
