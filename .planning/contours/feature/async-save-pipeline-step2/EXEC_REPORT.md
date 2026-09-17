@@ -86,3 +86,13 @@
 - Решение владельца по canvas-editing-stability 7a/7b/5 (обновление премис в контуре-владельце).
 - Stage post-deploy верификация ключевых спеков после merge (deferred до approve).
 - PR (на русском) — после review и approve. Merge/deploy — только после явного approve владельца.
+
+## Post-merge stage-верификация (2026-09-17, условие владельца)
+
+- Deploy to Stage run `35206275037` success; serving: `stage.processmap.ru/version` = `4b4c7693` (merge-commit).
+- Спеки против https://stage.processmap.ru (org ≠ default, user d.belov@automacon.ru), логи `e2e-runs/stage-*.log`:
+  - async-save-operations (step1-регрессия): **3/3** — тело 4042 B, p95 244.6 мс, coverage 20/20=1.00, putBpmn 0.
+  - async-save-persistence: **3/3** — kill-before-flush / offline / reload-mid-series; IDB sync p95 0.10 мс.
+  - async-save-multiuser: **5/5** — convergence, LWW+proposed, offline-catch-up, soft-lock, **test 8 move-convergence** (точные bounds, без double-apply).
+- Флаки c2TreeExpansion: follow-up в `server-backup/srv/obsidian/project-atlas/ProcessMap/Backlog/explorer-c2-tree-expansion-flaky-test-backlog.md`.
+- Prod: без автоматики — отдельное решение владельца после наблюдения stage.
