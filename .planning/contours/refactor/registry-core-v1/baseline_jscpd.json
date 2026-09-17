@@ -1,0 +1,9 @@
+{
+  "tool": "jscpd --min-lines 5",
+  "date": "2026-09-14",
+  "baseline_commit": "2843f4d0145c019d64f8b74730efdac63ee9ba8f",
+  "pair_ppr_par": {"duplicated_lines": 471, "pct": 25.60},
+  "orgs_vs_org_service": {"duplicated_lines": 273, "pct": 16.10},
+  "analytics_self": {"duplicated_lines": 194, "pct": 10.74},
+  "aggregate_5_files": {"duplicated_lines": 938, "pct": 17.56, "clones": 63}
+}

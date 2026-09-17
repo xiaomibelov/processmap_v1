@@ -22,7 +22,7 @@ from .._legacy_main import (
     _can_edit_workspace,
     _request_auth_user,
 )
-from ..orgs import _require_org_active_for_writes
+from .org_service import _require_org_active_for_writes
 from ..services.org_workspace import org_role_for_request
 from ..sessions_core import _legacy_load_session_scoped
 from ..services.bpmn_navigation import (
@@ -1122,7 +1122,7 @@ def create_project_session(project_id: str, inp, mode: str = "quick_skeleton", r
     proj, oid, _ = _lm._legacy_load_project_scoped(project_id, request)
     if proj is None:
         raise HTTPException(status_code=404, detail="project not found")
-    _lm._require_org_active_for_writes(request, oid)
+    _require_org_active_for_writes(request, oid)
     return _lm.create_project_session(project_id, inp, mode, request)
 
 

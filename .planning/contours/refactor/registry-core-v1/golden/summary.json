@@ -1,0 +1,14 @@
+{
+  "ppr": {
+    "columns": 17,
+    "csv_sha256": "e8b69f2280a04563511f05fc5e1fbe13125e751f6ad9b43a431c9a5c271ff3a8",
+    "xlsx_sha256": "46fd67f845a04925d32e32d53da0d8dd90c80ff984cdbd5e2da798234b8b61c8",
+    "filename_workspace_csv": "process-properties-workspace-20260914-1801.csv"
+  },
+  "par": {
+    "columns": 22,
+    "csv_sha256": "55fcd157b8ba43fac7f1d0b35f056583bf0525c04769ea82c658a5df8a8d7782",
+    "xlsx_sha256": "0b1cdf7c6802aba8bc08278947860852c1e29c58191001c4654f9282dc739144",
+    "filename_workspace_csv": "product-actions-workspace-20260914-1801.csv"
+  }
+}
