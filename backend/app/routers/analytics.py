@@ -607,6 +607,10 @@ def _properties_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[s
         sources = storage.list_process_properties_registry_sources(
             org_id=org_id, project_ids=[scope_id], is_admin=True
         )
+    elif scope_type == "folder":
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, folder_ids=[scope_id], is_admin=True
+        )
     else:
         sources = storage.list_process_properties_registry_sources(
             org_id=org_id, workspace_id=scope_id, is_admin=True
@@ -682,6 +686,32 @@ def _apply_filters(
         if role_filter and str(r.get("role", "")) not in role_filter:
             return False
         return True
+
+    return [r for r in rows if match(r)]
+
+
+_EXPORT_SEARCH_FIELDS = (
+    "bpmn_id",
+    "bpmn_name",
+    "name",
+    "value",
+    "type",
+    "category",
+    "source",
+    "project_title",
+    "session_title",
+)
+
+
+def _apply_row_search(rows: List[Dict[str, Any]], search: str) -> List[Dict[str, Any]]:
+    """Case-insensitive substring filter over the exported visible fields."""
+    query = str(search or "").strip().lower()
+    if not query:
+        return rows
+
+    def match(r: Dict[str, Any]) -> bool:
+        haystack = " ".join(str(r.get(field, "") or "") for field in _EXPORT_SEARCH_FIELDS).lower()
+        return query in haystack
 
     return [r for r in rows if match(r)]
 
@@ -815,7 +845,7 @@ def _actions_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 @router.get("/properties")
 def get_properties(
     request: Request,
-    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope: str = Query(..., pattern="^(workspace|project|session|folder)$"),
     scope_id: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
@@ -952,21 +982,23 @@ def _csv_response(rows: List[Dict[str, Any]], filename: str, fieldnames: List[st
 @router.get("/properties/export.csv")
 def export_properties_csv(
     request: Request,
-    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope: str = Query(..., pattern="^(workspace|project|session|folder)$"),
     scope_id: str = Query(..., min_length=1),
     type_filter: List[str] = Query(default_factory=list),
     category_filter: List[str] = Query(default_factory=list),
     source_filter: List[str] = Query(default_factory=list),
+    search: str = Query(""),
     org_id: str | None = Query(None),
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
     rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+    rows = _apply_row_search(rows, search)
     return _csv_response(
         rows,
         f"properties-{scope}-{scope_id}.csv",
-        ["bpmn_id", "bpmn_name", "name", "value", "type", "category", "source", "element_type", "session_count", "usage_count"],
+        ["bpmn_id", "bpmn_name", "name", "value", "type", "category", "source", "element_type", "session_count", "usage_count", "project_title", "session_title"],
     )
 
 
@@ -1463,17 +1495,19 @@ def get_properties_recalculation(
 @router.get("/properties/export.xlsx")
 def export_properties_xlsx(
     request: Request,
-    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope: str = Query(..., pattern="^(workspace|project|session|folder)$"),
     scope_id: str = Query(..., min_length=1),
     type_filter: List[str] = Query(default_factory=list),
     category_filter: List[str] = Query(default_factory=list),
     source_filter: List[str] = Query(default_factory=list),
+    search: str = Query(""),
     org_id: str | None = Query(None),
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
     rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+    rows = _apply_row_search(rows, search)
     columns = [
         ("bpmn_id", "BPMN ID"),
         ("bpmn_name", "BPMN Name"),
@@ -1485,6 +1519,8 @@ def export_properties_xlsx(
         ("element_type", "Тип элемента"),
         ("session_count", "Использовано в сессиях"),
         ("usage_count", "Использований"),
+        ("project_title", "Проект"),
+        ("session_title", "Сессия"),
     ]
     formats = {
         "bpmn_name": {"bold": True},

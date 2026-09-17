@@ -5,6 +5,13 @@ function encode(value) {
 function withQuery(path, params = {}) {
   const search = new URLSearchParams();
   Object.entries(params || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        const itemText = String(item ?? "").trim();
+        if (itemText) search.append(String(key), itemText);
+      });
+      return;
+    }
     const text = String(value ?? "").trim();
     if (!text) return;
     search.set(String(key), text);
@@ -406,17 +413,25 @@ export const apiRoutes = {
       role_filter: (params.role_filter || []).join(","),
       type_filter: (params.type_filter || []).join(","),
     }),
-    exportPropertiesCsv: (scope, scopeId) => withQuery("/api/analytics/properties/export.csv", {
+    exportPropertiesCsv: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties/export.csv", {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
+      type_filter: params.type_filter || [],
+      category_filter: params.category_filter || [],
+      source_filter: params.source_filter || [],
+      search: params.search || "",
     }),
     exportActionsCsv: (scope, scopeId) => withQuery("/api/analytics/actions/export.csv", {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
     }),
-    exportPropertiesXlsx: (scope, scopeId) => withQuery("/api/analytics/properties/export.xlsx", {
+    exportPropertiesXlsx: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties/export.xlsx", {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
+      type_filter: params.type_filter || [],
+      category_filter: params.category_filter || [],
+      source_filter: params.source_filter || [],
+      search: params.search || "",
     }),
     exportPropertiesRecalculatedXlsx: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties/export-recalculated.xlsx", {
       scope: String(scope || "").trim(),

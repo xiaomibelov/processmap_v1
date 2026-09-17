@@ -455,7 +455,7 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
   );
 }
 
-export default function AnalyticsPage({ scope: initialScope, scopeId: initialScopeId, module: initialModule, orgId, embedded = false }) {
+export default function AnalyticsPage({ scope: initialScope, scopeId: initialScopeId, module: initialModule, orgId, embedded = false, folderId = "", folderTitle = "" }) {
   const [pageScope, setPageScope] = useState(initialScope);
   const [pageScopeId, setPageScopeId] = useState(initialScopeId);
   const [pageModule, setPageModule] = useState(initialModule || ANALYTICS_MODULE_OVERVIEW);
@@ -610,7 +610,7 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
           )}
           {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
           {module === ANALYTICS_MODULE_PROPERTIES && (
-            <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} gaps={gaps} />
+            <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} gaps={gaps} folderId={folderId} folderTitle={folderTitle} />
           )}
         </AnalyticsErrorBoundary>
       </section>

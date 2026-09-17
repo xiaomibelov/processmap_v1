@@ -7,7 +7,7 @@ from ..legacy.request_context import request_auth_user
 from ..storage import _connect
 
 
-ScopeType = Literal["workspace", "project", "session"]
+ScopeType = Literal["workspace", "project", "session", "folder"]
 
 
 def _request_user(request: Request) -> Dict[str, Any]:
@@ -114,6 +114,17 @@ def _check_session_role(user: Dict[str, Any], session_id: str, org_id: str) -> b
     return False
 
 
+def _find_workspace_for_folder(folder_id: str, org_id: str) -> str:
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT workspace_id FROM workspace_folders WHERE id=? AND org_id=?",
+            (folder_id, org_id),
+        ).fetchall()
+    if rows:
+        return rows[0][0]
+    return ""
+
+
 def _scope_exists(scope_type: str, scope_id: str, org_id: str) -> bool:
     with _connect() as con:
         if scope_type == "workspace":
@@ -122,6 +133,8 @@ def _scope_exists(scope_type: str, scope_id: str, org_id: str) -> bool:
             rows = con.execute("SELECT id FROM projects WHERE id=? AND org_id=?", (scope_id, org_id)).fetchall()
         elif scope_type == "session":
             rows = con.execute("SELECT id FROM sessions WHERE id=? AND org_id=?", (scope_id, org_id)).fetchall()
+        elif scope_type == "folder":
+            rows = con.execute("SELECT id FROM workspace_folders WHERE id=? AND org_id=?", (scope_id, org_id)).fetchall()
         else:
             return False
     return bool(rows)
@@ -147,6 +160,10 @@ def require_analytics_scope(
         allowed = _check_project_role(user, scope_id, org_id)
     elif scope_type == "session":
         allowed = _check_session_role(user, scope_id, org_id)
+    elif scope_type == "folder":
+        workspace_id = _find_workspace_for_folder(scope_id, org_id)
+        if workspace_id:
+            allowed = _check_workspace_role(user, workspace_id)
 
     if not allowed:
         raise HTTPException(status_code=403, detail="forbidden")
