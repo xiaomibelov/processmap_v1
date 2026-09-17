@@ -1,0 +1,21 @@
+{"ts":"2026-08-26T13:00:00.000Z","event":"contour.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","type":"feature","name":"contour-flow-visual","branch":"feature/contour-flow-visual"}
+{"ts":"2026-08-26T13:00:01.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight","description":"Search institutional knowledge index"}
+{"ts":"2026-08-26T13:00:02.000Z","event":"tool.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight","tool":"rag_search"}
+{"ts":"2026-08-26T13:00:02.500Z","event":"tool.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight","tool":"rag_search","result":"ok"}
+{"ts":"2026-08-26T13:00:03.000Z","event":"tokens.used","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight","tokens":220}
+{"ts":"2026-08-26T13:00:04.000Z","event":"step.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"rag_preflight","result":"ok"}
+{"ts":"2026-08-26T13:00:05.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"plan","description":"Draft implementation plan for visualizer"}
+{"ts":"2026-08-26T13:00:06.000Z","event":"artifact.written","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","kind":"PLAN","path":".planning/contours/feature/contour-flow-visual/PLAN.md","step":"plan"}
+{"ts":"2026-08-26T13:00:07.000Z","event":"tokens.used","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"plan","tokens":840}
+{"ts":"2026-08-26T13:00:08.000Z","event":"step.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"plan","result":"ok"}
+{"ts":"2026-08-26T13:00:09.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","description":"Implement core layout and types"}
+{"ts":"2026-08-26T13:00:10.000Z","event":"tool.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","tool":"Read"}
+{"ts":"2026-08-26T13:00:11.000Z","event":"tool.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","tool":"Read","result":"ok"}
+{"ts":"2026-08-26T13:00:12.000Z","event":"tool.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","tool":"Edit"}
+{"ts":"2026-08-26T13:00:13.000Z","event":"tokens.used","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","tokens":440}
+{"ts":"2026-08-26T13:00:14.000Z","event":"step.finished","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"api","result":"ok"}
+{"ts":"2026-08-26T13:00:15.000Z","event":"step.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"ui","description":"Zoetrope-style canvas renderer"}
+{"ts":"2026-08-26T13:00:16.000Z","event":"tool.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"ui","tool":"Write"}
+{"ts":"2026-08-26T13:00:17.000Z","event":"tool.started","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"ui","tool":"Bash"}
+{"ts":"2026-08-26T13:00:18.000Z","event":"tokens.used","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","step":"ui","tokens":680}
+{"ts":"2026-08-26T13:00:19.000Z","event":"approval.required","contour_id":"feature/contour-flow-visual","run_id":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","action":"merge","reason":"PR reviewed and ready"}
