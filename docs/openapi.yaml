@@ -8100,7 +8100,7 @@ paths:
         name: scope
         required: true
         schema:
-          pattern: ^(workspace|project|session)$
+          pattern: ^(workspace|project|session|folder)$
           title: Scope
           type: string
       - in: query
@@ -8244,7 +8244,7 @@ paths:
         name: scope
         required: true
         schema:
-          pattern: ^(workspace|project|session)$
+          pattern: ^(workspace|project|session|folder)$
           title: Scope
           type: string
       - in: query
@@ -8278,6 +8278,13 @@ paths:
             type: string
           title: Source Filter
           type: array
+      - in: query
+        name: search
+        required: false
+        schema:
+          default: ''
+          title: Search
+          type: string
       - in: query
         name: org_id
         required: false
@@ -8316,7 +8323,7 @@ paths:
         name: scope
         required: true
         schema:
-          pattern: ^(workspace|project|session)$
+          pattern: ^(workspace|project|session|folder)$
           title: Scope
           type: string
       - in: query
@@ -8350,6 +8357,13 @@ paths:
             type: string
           title: Source Filter
           type: array
+      - in: query
+        name: search
+        required: false
+        schema:
+          default: ''
+          title: Search
+          type: string
       - in: query
         name: org_id
         required: false

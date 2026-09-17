@@ -14301,6 +14301,12 @@
   transform: translateY(1px);
 }
 
+.analyticsExportHint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
 .analyticsSortIndicator {
   font-size: 10px;
   margin-left: 4px;

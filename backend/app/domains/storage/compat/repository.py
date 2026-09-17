@@ -4651,6 +4651,7 @@ def _registry_source_scope_where(
     wid: str,
     pids: List[str],
     sids: List[str],
+    fids: List[str] | None = None,
 ) -> Tuple[str, List[Any]]:
     """Shared WHERE fragment for the registry-source session scans."""
     filters = ["s.org_id = ?"]
@@ -4665,6 +4666,10 @@ def _registry_source_scope_where(
         placeholders = ", ".join("?" for _ in pids)
         filters.append(f"COALESCE(s.project_id, '') IN ({placeholders})")
         params.extend(pids)
+    if fids:
+        placeholders = ", ".join("?" for _ in fids)
+        filters.append(f"COALESCE(p.folder_id, '') IN ({placeholders})")
+        params.extend(fids)
     if sids:
         placeholders = ", ".join("?" for _ in sids)
         filters.append(f"s.id IN ({placeholders})")
@@ -4710,6 +4715,7 @@ def _storage_list_process_properties_registry_sources(
     workspace_id: Optional[str] = None,
     project_ids: Optional[List[str]] = None,
     session_ids: Optional[List[str]] = None,
+    folder_ids: Optional[List[str]] = None,
     limit_sessions: int = 5000,
     user_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
@@ -4727,13 +4733,14 @@ def _storage_list_process_properties_registry_sources(
     wid = str(workspace_id or "").strip()
     pids = [str(item or "").strip() for item in (project_ids or []) if str(item or "").strip()]
     sids = [str(item or "").strip() for item in (session_ids or []) if str(item or "").strip()]
+    fids = [str(item or "").strip() for item in (folder_ids or []) if str(item or "").strip()]
     try:
         lim = int(limit_sessions)
     except Exception:
         lim = 5000
     lim = min(max(lim, 1), 10000)
 
-    where, params = _registry_source_scope_where(owner, admin, org, wid, pids, sids)
+    where, params = _registry_source_scope_where(owner, admin, org, wid, pids, sids, fids)
     _ensure_schema()
     with _connect() as con:
         rows = con.execute(
