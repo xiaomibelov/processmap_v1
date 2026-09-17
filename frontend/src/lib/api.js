@@ -442,6 +442,12 @@ export async function apiTouchSessionPresence(sessionId, options = {}) {
     client_id: clientId,
     surface: String(options?.surface || "process_stage").trim() || "process_stage",
   };
+  // step2 soft-lock (UI.md §7): advisory — элемент, который этот клиент
+  // сейчас редактирует (валидация ≤64 символов, bpmn-id — на backend).
+  const editingElementId = String(options?.editingElementId || options?.editing_element_id || "").trim();
+  if (editingElementId) {
+    body.editing_element_id = editingElementId.slice(0, 64);
+  }
   const r = okOrError(await request(apiRoutes.sessions.presence(id), { method: "POST", body }));
   if (!r.ok) return r;
   const payload = r.data && typeof r.data === "object" ? r.data : {};

@@ -364,6 +364,9 @@ test("full-save success (xml pipeline ack) clears pending ops buffer", async (t)
     const ctx = makeOutbox(t);
     pushRename(ctx.outbox, "Task_1", "A");
     pushRename(ctx.outbox, "Task_2", "B");
+    // Реальная последовательность координатора: busy (stage "build") →
+    // success. Снимок на busy покрывает обе ops — ack снимает их (B2-механизм).
+    ctx.coordinator.emit("status", { pipeline: "xml", sessionId: "s1", state: "busy", stage: "build" });
     ctx.coordinator.emit("success", { pipeline: "xml", sessionId: "s1", response: {} });
     await ctx.outbox.flushNow({ reason: "test" });
     assert.equal(ctx.api.calls.length, 0, "server state after full save covers local ops");

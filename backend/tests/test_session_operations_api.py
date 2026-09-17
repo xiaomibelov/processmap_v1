@@ -600,6 +600,353 @@ if __name__ == "__main__":
     unittest.main()
 
 
+PARENT_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_parent" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_parent" isExecutable="false">
+    <bpmn:subProcess id="Sub_1" name="Child fragment">
+      <bpmn:task id="ChildTask_old" name="Stale child task" />
+    </bpmn:subProcess>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_parent">
+    <bpmndi:BPMNPlane id="BPMNPlane_parent" bpmnElement="Process_parent">
+      <bpmndi:BPMNShape id="Sub_1_di" bpmnElement="Sub_1">
+        <dc:Bounds x="200" y="80" width="400" height="250" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
+class SessionOperationsStep2InheritanceTests(unittest.TestCase):
+    """Наследие step1 (API.md §5): один live-route, parent re-embed ordering,
+    org-explicit conflict reload в _save_session_with_cas, client-generated id
+    для create-ops."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_storage_dir = os.environ.get("PROCESS_STORAGE_DIR")
+        self.old_redis_url = os.environ.get("REDIS_URL")
+        self.old_cas_bypass = os.environ.get("FPC_E2E_CAS_BYPASS")
+        os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
+        os.environ.pop("REDIS_URL", None)
+        os.environ.pop("FPC_E2E_CAS_BYPASS", None)
+        os.environ.setdefault("JWT_SECRET", "test-secret")
+
+        from app.auth import create_access_token, create_user
+        from app.main import app
+        from app.storage import get_storage
+
+        self.client = TestClient(app)
+        self.st = get_storage()
+        enqueue_patch = patch.object(
+            type(self.st), "_enqueue_rag_index_after_version", lambda *args, **kwargs: None
+        )
+        enqueue_patch.start()
+        self.addCleanup(enqueue_patch.stop)
+        suffix = uuid.uuid4().hex
+        self.owner = create_user(f"owner_s2_{suffix}@local", "password", is_admin=True)
+        self.token = create_access_token(str(self.owner["id"]))
+        self.sid = self.st.create(title=f"ops-s2-{suffix}", user_id=str(self.owner["id"]))
+        sess = self.st.load(self.sid, is_admin=True)
+        sess.bpmn_xml = SAMPLE_BPMN_XML
+        sess.diagram_state_version = 7
+        self.st.save(sess)
+        self.base_version = 7
+
+    def tearDown(self):
+        if self.old_storage_dir is None:
+            os.environ.pop("PROCESS_STORAGE_DIR", None)
+        else:
+            os.environ["PROCESS_STORAGE_DIR"] = self.old_storage_dir
+        if self.old_redis_url is None:
+            os.environ.pop("REDIS_URL", None)
+        else:
+            os.environ["REDIS_URL"] = self.old_redis_url
+        if self.old_cas_bypass is not None:
+            os.environ["FPC_E2E_CAS_BYPASS"] = self.old_cas_bypass
+        self.tmp.cleanup()
+
+    def _post(self, session_id, body):
+        return self.client.post(
+            f"/api/sessions/{session_id}/operations",
+            json=body,
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+
+    def _parent_xml(self, parent_id: str) -> str:
+        return str(getattr(self.st.load(parent_id, is_admin=True), "bpmn_xml", "") or "")
+
+    def _make_child_with_parent(self):
+        """Родитель с subProcess Sub_1 + дочерняя сессия, привязанная к нему."""
+        suffix = uuid.uuid4().hex[:8]
+        parent_id = self.st.create(title=f"ops-parent-{suffix}", user_id=str(self.owner["id"]))
+        parent = self.st.load(parent_id, is_admin=True)
+        parent.bpmn_xml = PARENT_BPMN_XML
+        parent.diagram_state_version = 3
+        self.st.save(parent)
+
+        child_id = self.st.create(title=f"ops-child-{suffix}", user_id=str(self.owner["id"]))
+        child = self.st.load(child_id, is_admin=True)
+        child.bpmn_xml = SAMPLE_BPMN_XML
+        child.diagram_state_version = 7
+        child.parent_session_id = parent_id
+        child.element_id_in_parent = "Sub_1"
+        self.st.save(child)
+        return parent_id, child_id
+
+    # --- route introspection (наследие п.4) ----------------------------
+
+    def test_exactly_one_live_operations_route_registration(self):
+        import app._legacy_main as legacy
+
+        def operations_post_routes(app_obj):
+            return [
+                route
+                for route in app_obj.routes
+                if "POST" in (getattr(route, "methods", None) or set())
+                and getattr(route, "path", "") == "/api/sessions/{session_id}/operations"
+            ]
+
+        live_matches = operations_post_routes(__import__("app.main", fromlist=["app"]).app)
+        self.assertEqual(len(live_matches), 1, "live app must have exactly one POST /operations route")
+        self.assertEqual(
+            live_matches[0].endpoint.__module__,
+            "app.routers.sessions",
+            "live route must be served by routers/sessions.py",
+        )
+        legacy_matches = operations_post_routes(legacy.app)
+        self.assertEqual(
+            len(legacy_matches),
+            0,
+            "legacy @app.post duplicate must be removed (handler function stays for session_service)",
+        )
+
+    # --- parent re-embed ordering (наследие п.2) -----------------------
+
+    def test_parent_reembed_happy_path_syncs_after_child_commit(self):
+        parent_id, child_id = self._make_child_with_parent()
+        resp = self._post(child_id, {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "p-happy-1", "type": "element.updateProperties",
+                 "elementId": "Task_1", "properties": {"name": "Parent synced"}},
+            ],
+        })
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json().get("parent_synced"), True)
+        parent_xml = self._parent_xml(parent_id)
+        self.assertIn('name="Parent synced"', parent_xml)
+        self.assertIn('id="Task_1"', parent_xml)
+
+    def test_parent_not_touched_when_child_commit_conflicts(self):
+        """Transient divergence: CAS-409 child → parent XML НЕ перезаписан
+        (re-embed обязан идти ПОСЛЕ SQL-CAS commit)."""
+        import app._legacy_main as legacy
+
+        parent_id, child_id = self._make_child_with_parent()
+        parent_xml_before = self._parent_xml(parent_id)
+        with patch.object(legacy, "_require_diagram_cas_or_409", lambda **kwargs: None):
+            resp = self._post(child_id, {
+                "baseVersion": 6,  # stale — pre-check замьючен, падает только SQL-CAS
+                "operations": [
+                    {"opId": "p-conflict-1", "type": "element.updateProperties",
+                     "elementId": "Task_1", "properties": {"name": "Must not reach parent"}},
+                ],
+            })
+        self.assertEqual(resp.status_code, 409, resp.text)
+        self.assertEqual(
+            self._parent_xml(parent_id),
+            parent_xml_before,
+            "parent XML must stay untouched when child commit rolls back (409)",
+        )
+
+    def test_parent_reembed_failure_keeps_child_commit_and_reports_parent_synced_false(self):
+        from app.services import bpmn_navigation
+
+        parent_id, child_id = self._make_child_with_parent()
+        real_reembed = bpmn_navigation.re_embed_child_xml_into_parent
+        with patch.object(
+            bpmn_navigation, "re_embed_child_xml_into_parent", side_effect=RuntimeError("parent storage down")
+        ) as mock_reembed:
+            resp = self._post(child_id, {
+                "baseVersion": 7,
+                "operations": [
+                    {"opId": "p-fail-1", "type": "element.updateProperties",
+                     "elementId": "Task_1", "properties": {"name": "Child committed anyway"}},
+                ],
+            })
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json().get("parent_synced"), False)
+        # Child-коммит не откатился: правка в durable storage.
+        child_xml = str(getattr(self.st.load(child_id, is_admin=True), "bpmn_xml", "") or "")
+        self.assertIn('name="Child committed anyway"', child_xml)
+        # Retry-семантика: изолированные попытки не долетели до родителя.
+        self.assertGreaterEqual(mock_reembed.call_count, 1)
+        self.assertIn("Stale child task", self._parent_xml(parent_id))
+
+    def test_parent_reembed_retries_then_succeeds(self):
+        from app.services import bpmn_navigation
+
+        parent_id, child_id = self._make_child_with_parent()
+        real_reembed = bpmn_navigation.re_embed_child_xml_into_parent
+        attempts = []
+
+        def flaky_reembed(*args, **kwargs):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise RuntimeError(f"attempt {len(attempts)}")
+            return real_reembed(*args, **kwargs)
+
+        with patch.object(
+            bpmn_navigation,
+            "re_embed_child_xml_into_parent",
+            side_effect=flaky_reembed,
+        ) as mock_reembed, patch("app._legacy_main.time.sleep", lambda *args, **kwargs: None):
+            resp = self._post(child_id, {
+                "baseVersion": 7,
+                "operations": [
+                    {"opId": "p-retry-1", "type": "element.updateProperties",
+                     "elementId": "Task_1", "properties": {"name": "Retry won"}},
+                ],
+            })
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(mock_reembed.call_count, 3, "re-embed must be retried up to 3 attempts")
+        self.assertEqual(resp.json().get("parent_synced"), True)
+        self.assertIn('name="Retry won"', self._parent_xml(parent_id))
+
+    # --- org-explicit conflict reload в _save_session_with_cas (#989) ---
+
+    def test_save_session_with_cas_conflict_reload_uses_explicit_org(self):
+        """Паттерн #989: reload в helper'е без org_id молча падал в default org,
+        сессия в другой org не находилась и 409 payload строился по клиентскому
+        (неподтверждённому) объекту — server_last_write показывал автора-лузера."""
+        from fastapi import HTTPException
+
+        from app.auth import create_user
+        from app.utils.session_helpers import _mark_diagram_truth_write, _save_session_with_cas
+
+        other_org = f"org_cas_{uuid.uuid4().hex}"
+        writer_a = create_user(f"writer_a_{uuid.uuid4().hex}@local", "password", is_admin=True)
+        sid2 = self.st.create(
+            title=f"ops-cas-{uuid.uuid4().hex}", user_id=str(writer_a["id"]), org_id=other_org
+        )
+        # Серверный коммит актора A (версия 7 → 8 после truth-write+save).
+        server_sess = self.st.load(sid2, is_admin=True, org_id=other_org)
+        server_sess.bpmn_xml = SAMPLE_BPMN_XML
+        server_sess.diagram_state_version = 7
+        _mark_diagram_truth_write(
+            server_sess,
+            changed_keys=["bpmn_xml"],
+            actor_user_id=str(writer_a["id"]),
+            actor_label="Writer A",
+            client_id="client-A",
+        )
+        self.st.save(server_sess, user_id=str(writer_a["id"]), org_id=other_org, is_admin=True)
+
+        # Клиент B: свежая загрузка, in-memory мутация (как handler до CAS), stale base.
+        client_sess = self.st.load(sid2, is_admin=True, org_id=other_org)
+        client_sess.bpmn_xml = SAMPLE_BPMN_XML.replace('name="Old name"', 'name="Client B edit"')
+        _mark_diagram_truth_write(
+            client_sess,
+            changed_keys=["bpmn_xml"],
+            actor_user_id="user-b",
+            actor_label="Writer B",
+            client_id="client-B",
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            _save_session_with_cas(
+                self.st,
+                client_sess,
+                client_base_version=6,
+                user_id="user-b",
+                org_id=other_org,
+                is_admin=True,
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        detail = ctx.exception.detail
+        self.assertEqual(detail.get("code"), "DIAGRAM_STATE_CONFLICT")
+        self.assertEqual(detail.get("server_current_version"), 8)
+        last_write = detail.get("server_last_write") or {}
+        self.assertEqual(
+            last_write.get("actor_user_id"),
+            str(writer_a["id"]),
+            "409 server_last_write must describe the actual last server writer, not the losing client",
+        )
+        self.assertEqual(last_write.get("client_id"), "client-A")
+        # Клиентский неподтверждённый коммит не должен был уйти в storage.
+        reloaded = self.st.load(sid2, is_admin=True, org_id=other_org)
+        self.assertEqual(int(getattr(reloaded, "diagram_state_version", 0) or 0), 8)
+        self.assertIn('name="Old name"', str(getattr(reloaded, "bpmn_xml", "") or ""))
+
+    # --- create-op с клиентским id (наследие п.6) -----------------------
+
+    def test_shape_create_with_client_generated_id_replay_safe(self):
+        body = {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "op-cid-1", "type": "shape.create", "id": "Task_client",
+                 "bpmnType": "bpmn:Task", "x": 700, "y": 200, "width": 100, "height": 80,
+                 "parentId": "Process_ops"},
+            ],
+        }
+        resp = self._post(self.sid, body)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        xml_after = str(getattr(self.st.load(self.sid, is_admin=True), "bpmn_xml", "") or "")
+        self.assertEqual(xml_after.count('id="Task_client"'), 1)
+
+        # Replay того же батча (те же opId) — идемпотентно, без коллизии id.
+        replay = self._post(self.sid, body)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json().get("applied"), 0)
+        self.assertEqual(replay.json().get("skipped"), 1)
+        xml_replay = str(getattr(self.st.load(self.sid, is_admin=True), "bpmn_xml", "") or "")
+        self.assertEqual(xml_replay.count('id="Task_client"'), 1)
+
+    def test_shape_create_client_id_collision_422(self):
+        first = self._post(self.sid, {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "op-col-1", "type": "shape.create", "id": "Task_dup",
+                 "bpmnType": "bpmn:Task", "x": 700, "y": 200, "width": 100, "height": 80,
+                 "parentId": "Process_ops"},
+            ],
+        })
+        self.assertEqual(first.status_code, 200, first.text)
+        second = self._post(self.sid, {
+            "baseVersion": 8,
+            "operations": [
+                {"opId": "op-col-2", "type": "shape.create", "id": "Task_dup",
+                 "bpmnType": "bpmn:Task", "x": 900, "y": 300, "width": 100, "height": 80,
+                 "parentId": "Process_ops"},
+            ],
+        })
+        self.assertEqual(second.status_code, 422, second.text)
+        self.assertIn("already_exists", str(second.json().get("detail", {}).get("reason", "")))
+        xml_after = str(getattr(self.st.load(self.sid, is_admin=True), "bpmn_xml", "") or "")
+        self.assertEqual(xml_after.count('id="Task_dup"'), 1)
+
+    def test_connection_create_with_client_generated_id(self):
+        resp = self._post(self.sid, {
+            "baseVersion": 7,
+            "operations": [
+                {"opId": "op-ccid-1", "type": "connection.create", "id": "Flow_client",
+                 "bpmnType": "bpmn:SequenceFlow", "sourceId": "Task_1", "targetId": "EndEvent_1",
+                 "waypoints": [[360, 120], [592, 120]]},
+            ],
+        })
+        self.assertEqual(resp.status_code, 200, resp.text)
+        root = ET.fromstring(str(getattr(self.st.load(self.sid, is_admin=True), "bpmn_xml", "") or ""))
+        flow = _find_by_id(root, "Flow_client")
+        self.assertIsNotNone(flow)
+        self.assertEqual(flow.get("sourceRef"), "Task_1")
+        self.assertEqual(flow.get("targetRef"), "EndEvent_1")
+
+
 class SessionOperationsApiNegativePathTests(unittest.TestCase):
     """Отрицательные пути route (REVIEW MAJOR-3 / NIT-3 / NIT-4)."""
 

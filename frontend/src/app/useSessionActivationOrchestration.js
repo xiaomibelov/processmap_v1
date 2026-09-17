@@ -13,6 +13,10 @@ import {
   shouldAutoRestoreFromSnapshot,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots.js";
 import {
+  getOpsReconcileRuntime,
+  resolveOnEntry,
+} from "../features/process/bpmn/save/opsOutbox/persistence/reconciliation.js";
+import {
   readSelectionFromUrl,
   shouldSkipDuplicateUrlRestore,
 } from "./useSessionRouteOrchestration.js";
@@ -286,6 +290,30 @@ export default function useSessionActivationOrchestration({
       }
       if (sessionCacheRef?.current) {
         sessionCacheRef.current.set(sid, nextRaw);
+      }
+      // Контур feature/async-save-pipeline-step2 (UI.md §8, PLAN §5): политика
+      // «кто новее» — после apiGetSession, до snapshot-reconcile. Гидрация
+      // durable-буфера из journal и ветки clean / catch-up-deltas /
+      // fetch-rebase / conservative; runtime (hydrate/rebase/flush)
+      // регистрирует BpmnStage при создании outbox — до монтирования stage
+      // ветки с flush/rebase пропускаются, outbox догонит сам после гидрации.
+      try {
+        if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
+          const opsRuntime = getOpsReconcileRuntime?.() || null;
+          await resolveOnEntry({
+            sessionId: sid,
+            serverVersion: Math.round(serverDiagramStateVersion),
+            hydrate: opsRuntime?.hydrate,
+            rebase: opsRuntime?.rebase,
+            flush: opsRuntime?.flush,
+            fetchServerXml: async () => String(nextRaw?.bpmn_xml || ""),
+          });
+        }
+      } catch (reconcileError) {
+        recordSaveDiagnostic("ops_reconcile_entry_error", {
+          sid,
+          error: String(reconcileError?.message || reconcileError || "reconcile_failed"),
+        });
       }
     }
     const sidProject = String(nextRaw?.project_id || projectId || "").trim();

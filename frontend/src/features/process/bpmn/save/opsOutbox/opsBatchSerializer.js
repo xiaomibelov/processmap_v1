@@ -43,7 +43,7 @@ export function tryCoalesceIntoBuffer(buffer, incoming, { coalesceMs, now }) {
 
 /**
  * Сборка тела запроса. Бюджет тела ≤ ~10 kB (TESTS §6); размер считаем в
- * байтах UTF-8 — тот же счётчик используется для keepalive-лимита (~64 kB).
+ * байтах UTF-8.
  */
 export function buildBatchBody({ baseVersion, operations }) {
   const body = {
@@ -55,10 +55,6 @@ export function buildBatchBody({ baseVersion, operations }) {
     ? new TextEncoder().encode(json).length
     : json.length;
   return { body, json, bytes };
-}
-
-export function isWithinKeepaliveBudget(bytes, limitBytes) {
-  return Number(bytes) <= Number(limitBytes);
 }
 
 /**

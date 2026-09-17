@@ -6,7 +6,27 @@ import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
-import { createSaveOutbox } from "../../features/process/bpmn/save/opsOutbox/createSaveOutbox.js";
+import { createSaveOutbox, installOpsOutboxNetworkTriggers } from "../../features/process/bpmn/save/opsOutbox/createSaveOutbox.js";
+import {
+  setOpsReconcileRuntime,
+} from "../../features/process/bpmn/save/opsOutbox/persistence/reconciliation.js";
+import {
+  createOpsRemoteApply,
+  setOpsRemoteRuntime,
+  notifyOpsProposed,
+} from "../../features/process/bpmn/save/opsOutbox/opsRemoteApply.js";
+import { createOpsJournal } from "../../features/process/bpmn/save/opsOutbox/persistence/opsJournal.js";
+import {
+  adoptServerVersion as adoptOpsServerVersion,
+  replayOpsOnModeler,
+} from "../../features/process/bpmn/save/opsOutbox/opsRebase.js";
+import { getOrCreateClientId } from "../../lib/clientId.js";
+import {
+  setPresenceEditingElementGetter,
+  subscribeSoftLockTargets,
+  getSoftLockTargets,
+} from "../../features/process/stage/presence/softLockBus.js";
+import { getVersion as getTrackedDiagramStateVersion } from "../../lib/casVersionTracker.js";
 import { onDiagramDragEnd } from "../../features/process/bpmn/stage/diagramDragState.js";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
@@ -5634,10 +5654,127 @@ const BpmnStage = forwardRef(function BpmnStage({
     opsOutboxRef.current = outbox;
     // Mouseup drag-commit (UI.md §2): существующий diagramDragState bus.
     const unsubscribeDragEnd = onDiagramDragEnd(() => outbox.commitDrag());
+    // Online-триггер (step2 UI.md §3): window online → немедленный flush;
+    // offline → flush suppressed + ops-local/offline status-событие.
+    const uninstallNetworkTriggers = installOpsOutboxNetworkTriggers(outbox);
+    // Runtime reconciliation (step2 UI.md §8, PLAN §5): useSessionActivation-
+    // Orchestration.resolveOnEntry после apiGetSession берёт hydrate/rebase/
+    // flush отсюда (outbox владеет буфером и echo-muted load-путём).
+    setOpsReconcileRuntime({
+      hydrate: (ops) => outbox.hydrateBufferedOps(ops),
+      rebase: (serverXml, pendingOps) => outbox.applyServerReconciliation(serverXml, pendingOps),
+      flush: () => outbox.flushNow({ reason: "reconcile" }),
+    });
+    // ops_committed-consumer (step2 UI.md §4): ownClientId — тот же per-tab
+    // id, что уходит в X-PM-Client-Id (иначе own-event filter ломается).
+    // Runtime забирают App.jsx (SSE onOpsCommitted → handleEvent) и
+    // ProcessStage (панель «предложенные изменения»: list/apply/reject).
+    const opsJournal = createOpsJournal();
+    const remoteApply = createOpsRemoteApply({
+      sessionId: sid,
+      ownClientId: getOrCreateClientId(),
+      journal: opsJournal,
+      getSeenServerVersion: () => getTrackedDiagramStateVersion(sid),
+      getModeler: () => modelerRef.current,
+      getPendingOps: () => outbox.getPendingOps(),
+      removePendingOps: (opIds) => outbox.removePendingOps(opIds),
+      applyRemoteOps: (ops) => replayOpsOnModeler(modelerRef.current, ops, { source: "remote" }),
+      fetchServerXml: async () => apiGetBpmnXml(sid, { cacheBust: true }),
+      rebaseOnServerXml: (serverXml, pendingOps) => outbox.applyServerReconciliation(serverXml, pendingOps),
+      flushNow: (options) => outbox.flushNow(options),
+      adoptServerVersion: (version) => adoptOpsServerVersion(sid, version),
+      onProposed: (records) => notifyOpsProposed(records),
+      log: (event, payload) => {
+        // Диагностируемость e2e: probe спеки перехватывает console.warn.
+        try {
+          // eslint-disable-next-line no-console
+          console.warn(`[opsRemote] ${String(event || "?")} ${JSON.stringify(payload || {})}`);
+        } catch {
+          // no-op
+        }
+      },
+    });
+    setOpsRemoteRuntime({
+      handleEvent: remoteApply.handleEvent,
+      listProposed: () => opsJournal.listProposed(sid),
+      applyProposed: async (proposedId) => {
+        const records = await opsJournal.listProposed(sid);
+        const record = records.find((item) => item.proposedId === proposedId);
+        if (!record) return { ok: false, reason: "not_found" };
+        await opsJournal.resolveProposed(proposedId);
+        if (record.payload && typeof record.payload === "object") {
+          outbox.requeueOps([record.payload]);
+          await outbox.flushNow({ reason: "proposed" });
+        }
+        return { ok: true };
+      },
+      rejectProposed: async (proposedId) => {
+        await opsJournal.resolveProposed(proposedId);
+        return { ok: true };
+      },
+    });
     return () => {
       unsubscribeDragEnd();
+      uninstallNetworkTriggers();
+      setOpsReconcileRuntime(null);
+      setOpsRemoteRuntime(null);
       opsOutboxRef.current = null;
       outbox.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // Soft-lock (step2 UI.md §7): провайдер выбранного элемента для presence-
+  // heartbeat (useSessionPresence читает на каждом touch; advisory — ничего
+  // не блокирует) + overlay-бейджи «{name} редактирует этот элемент» на
+  // элементах, которые редактируют другие акторы (softLockBus).
+  useEffect(() => {
+    const sid = String(sessionId || "");
+    if (!sid) return undefined;
+    setPresenceEditingElementGetter(() => {
+      const inst = modelerRef.current;
+      const selection = asArray(inst?.get?.("selection")?.get?.());
+      return toText(selection[0]?.id) || "";
+    });
+    const activeOverlays = new Map(); // elementId -> overlayId
+    const renderBadges = (targets) => {
+      const inst = modelerRef.current;
+      const overlays = inst?.get?.("overlays");
+      if (!overlays) return;
+      const nextIds = new Set((Array.isArray(targets) ? targets : []).map((t) => t.elementId));
+      for (const [elementId, overlayId] of activeOverlays) {
+        if (!nextIds.has(elementId)) {
+          try { overlays.remove(overlayId); } catch { /* no-op */ }
+          activeOverlays.delete(elementId);
+        }
+      }
+      for (const target of Array.isArray(targets) ? targets : []) {
+        if (activeOverlays.has(target.elementId)) continue;
+        if (!inst?.get?.("elementRegistry")?.get?.(target.elementId)) continue;
+        const tag = document.createElement("div");
+        tag.textContent = target.badge || `${target.label} редактирует этот элемент`;
+        tag.title = tag.textContent;
+        tag.setAttribute("data-testid", "pm-softlock-badge");
+        tag.style.cssText = "max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          + "border:1px solid rgba(217,119,6,.5);border-radius:6px;background:rgba(217,119,6,.12);"
+          + "color:#b45309;font-size:10px;font-weight:600;line-height:1.2;padding:2px 6px;pointer-events:none;";
+        try {
+          const overlayId = overlays.add(target.elementId, { position: { top: -12, left: 0 }, html: tag });
+          activeOverlays.set(target.elementId, overlayId);
+        } catch {
+          // advisory: overlay-фреймворк недоступен — бейдж пропускаем
+        }
+      }
+    };
+    renderBadges(getSoftLockTargets());
+    const unsubscribe = subscribeSoftLockTargets(renderBadges);
+    return () => {
+      unsubscribe();
+      setPresenceEditingElementGetter(null);
+      for (const overlayId of activeOverlays.values()) {
+        try { modelerRef.current?.get?.("overlays")?.remove?.(overlayId); } catch { /* no-op */ }
+      }
+      activeOverlays.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);

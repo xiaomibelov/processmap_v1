@@ -60,6 +60,17 @@ import {
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { useSaveUploadLifecycle } from "../features/process/bpmn/save/useSaveUploadLifecycle.js";
 import { createCtrlSaveKeydownHandler } from "../features/process/bpmn/save/ctrlSaveShortcut.js";
+import {
+  getOpsRemoteRuntime,
+  subscribeOpsProposed,
+  subscribeOpsRemoteRuntime,
+} from "../features/process/bpmn/save/opsOutbox/opsRemoteApply.js";
+import OpsProposedPanel from "../features/process/stage/ui/OpsProposedPanel.jsx";
+import {
+  computeSoftLockTargets,
+  setSoftLockTargets,
+  getPresenceEditingElement,
+} from "../features/process/stage/presence/softLockBus.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import { detectCamundaNamespaceDivergence } from "../features/process/camunda/camundaExtensions.js";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
@@ -1289,10 +1300,18 @@ function ProcessStage({
     message: "",
   });
   // SaveOutbox (contour feature/async-save-pipeline-step1): текущая
-  // outbox-стадия (ops-saving/ops-rebase/ops-degraded/ops-saved) из
+  // outbox-стадия (ops-saving/ops-rebase/ops-degraded/ops-saved/ops-local) из
   // BpmnStage; публикуется в saveUploadStatus.opsStage (словарь
-  // OPS_STAGE_VIEW в saveStatusSlotModel).
+  // OPS_STAGE_VIEW в saveStatusSlotModel). step2: + opsOffline (sublabel
+  // «ожидает сеть»). BpmnStage шлёт event-объект {stage, offline, ...} —
+  // нормализуем в строку здесь (иначе toText(object) = "[object Object]" и
+  // словарь стадий не применялся).
   const [opsSaveStage, setOpsSaveStage] = useState("");
+  const [opsOffline, setOpsOffline] = useState(false);
+  const handleOpsSaveStatus = useCallback((event) => {
+    setOpsSaveStage(toText(event?.stage || event));
+    setOpsOffline(event?.offline === true);
+  }, []);
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
     tone: "success",
@@ -1416,6 +1435,11 @@ function ProcessStage({
   const sessionPresence = useSessionPresence(hasSession ? sid : "", user, {
     surface: "process_stage",
     skipMountHeartbeat: true,
+    // step2 soft-lock (UI.md §7): heartbeat ~15 c (TTL presence 60 c снимает
+    // мёртвые бейджи); editingElementId — выбранный элемент modeler (getter
+    // регистрирует BpmnStage), пусто при деселекте.
+    heartbeatMs: 15000,
+    getEditingElementId: getPresenceEditingElement,
   });
   const [sessionMeta, setSessionMeta] = useState(null);
 
@@ -1429,11 +1453,17 @@ function ProcessStage({
   const saveUploadStatus = useMemo(() => {
     const badge = buildSaveUploadStatusBadge(saveUploadLifecycleEvent);
     // Outbox-стадия дельта-сохранения: view-модель слота читает
-    // status.opsStage (saveStatusSlotModel OPS_STAGE_VIEW, UI.md §2).
-    return opsSaveStage ? { ...badge, opsStage: opsSaveStage } : badge;
-  }, [saveUploadLifecycleEvent, opsSaveStage]);
+    // status.opsStage (saveStatusSlotModel OPS_STAGE_VIEW, UI.md §2/§6).
+    if (!opsSaveStage) return badge;
+    return {
+      ...badge,
+      opsStage: opsSaveStage,
+      ...(opsOffline ? { opsOffline: true } : {}),
+    };
+  }, [saveUploadLifecycleEvent, opsSaveStage, opsOffline]);
   useEffect(() => {
     setOpsSaveStage("");
+    setOpsOffline(false);
   }, [sid]);
   useEffect(() => {
     if (isManualSaveBusy === true) return;
@@ -1494,6 +1524,59 @@ function ProcessStage({
     nowMs: sessionPresence.nowMs,
     ttlMs: sessionPresence.ttlMs,
   }), [currentUserId, sessionPresence.activeUsers, sessionPresence.nowMs, sessionPresence.ttlMs]);
+
+  // step2 soft-lock (UI.md §7): публикуем цели overlay-бейджей для BpmnStage
+  // (акторы с editingElementId, себя пропускаем). Advisory-only.
+  useEffect(() => {
+    setSoftLockTargets(computeSoftLockTargets(sessionPresence.activeUsers));
+    return () => setSoftLockTargets([]);
+  }, [sessionPresence.activeUsers]);
+
+  // step2 «предложенные изменения» (UI.md §5): LWW-проигравшие ops из
+  // proposed store (consumer пишет, runtime регистрирует BpmnStage).
+  const [opsProposedRecords, setOpsProposedRecords] = useState([]);
+  const refreshOpsProposed = useCallback(async () => {
+    const runtime = getOpsRemoteRuntime?.();
+    if (!runtime || typeof runtime.listProposed !== "function") return;
+    try {
+      setOpsProposedRecords(await runtime.listProposed());
+    } catch {
+      // панель best-effort
+    }
+  }, []);
+  useEffect(() => {
+    void refreshOpsProposed();
+    const unsubscribeRuntime = subscribeOpsRemoteRuntime(() => { void refreshOpsProposed(); });
+    const unsubscribeProposed = subscribeOpsProposed((records) => {
+      // LWW-конфликт: чужая правка победила, наша — в «предложенных».
+      if (Array.isArray(records) && records.length > 0) {
+        showSaveAckToast(
+          "Элемент изменён другим пользователем — ваши правки в «предложенных изменениях»",
+          "info",
+          "ops_proposed",
+        );
+      }
+      void refreshOpsProposed();
+    });
+    return () => {
+      unsubscribeRuntime();
+      unsubscribeProposed();
+    };
+  }, [refreshOpsProposed, showSaveAckToast]);
+  const handleOpsProposedApply = useCallback(async (proposedId) => {
+    const runtime = getOpsRemoteRuntime?.();
+    if (runtime && typeof runtime.applyProposed === "function") {
+      await runtime.applyProposed(proposedId);
+    }
+    await refreshOpsProposed();
+  }, [refreshOpsProposed]);
+  const handleOpsProposedReject = useCallback(async (proposedId) => {
+    const runtime = getOpsRemoteRuntime?.();
+    if (runtime && typeof runtime.rejectProposed === "function") {
+      await runtime.rejectProposed(proposedId);
+    }
+    await refreshOpsProposed();
+  }, [refreshOpsProposed]);
   const leaveNavigationRisk = useMemo(
     () => deriveLeaveNavigationRisk({
       hasSession,
@@ -7835,7 +7918,7 @@ function ProcessStage({
     hybridViewportMatrixRef,
     isInterviewMode,
     onBpmnSaveLifecycleEvent,
-    onOpsSaveStatus: setOpsSaveStage,
+    onOpsSaveStatus: handleOpsSaveStatus,
     onDiagramContextMenuDismiss: onBpmnContextMenuDismiss,
     onDiagramContextMenuRequest: onBpmnContextMenuRequest,
     onElementNotesRemap,
@@ -8423,6 +8506,17 @@ function ProcessStage({
       {/* Часть А: в explorer-режиме (без сессии) тулбар-хедер с табами сессии
           скрыт — навигационная зона живёт в общем слоте workspaceMain. */}
       {hasSession ? <ProcessStageHeader view={headerView} /> : null}
+      {/* step2 «предложенные изменения» (UI.md §5): LWW-проигравшие ops —
+          панель у правого края над канвасом, скрыта при пустом списке. */}
+      {hasSession && opsProposedRecords.length > 0 ? (
+        <div className="pointer-events-none fixed right-3 top-14 z-30">
+          <OpsProposedPanel
+            records={opsProposedRecords}
+            onApply={handleOpsProposedApply}
+            onReject={handleOpsProposedReject}
+          />
+        </div>
+      ) : null}
       {/* P1 (fix/canvas-editing-stability): предупреждение о чужом save в
           другой вкладке при нашей несохранённой правке (честный 409 возможен). */}
       {hasSession && crossTabVersionWarning ? (

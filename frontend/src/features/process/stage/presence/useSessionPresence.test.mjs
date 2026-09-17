@@ -105,6 +105,7 @@ test("normalizeSessionPresenceUsers maps backend shape to header model shape", (
       jobTitle: "Аналитик",
       lastSeenAt: 123000,
       isCurrentUser: true,
+      editingElementId: null,
     },
   ]);
 });
@@ -228,5 +229,53 @@ test("useSessionPresence keeps presence failure low-noise", async () => {
     assert.equal(latest.lastError, "offline");
   } finally {
     await env.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/async-save-pipeline-step2 (TESTS §1.6, UI.md §7): soft-lock —
+// editingElementId выбранного элемента уходит в presence-touch (heartbeat)
+// и снимается при отсутствии выбора. Pure-хелперы (normalize/badge) покрыты
+// dep-free в presenceModel.softlock.test.mjs (react в этом окружении нет).
+// ---------------------------------------------------------------------------
+
+test("useSessionPresence touch payload includes editingElementId from getEditingElementId (cleared on deselect)", async () => {
+  const env = setupDom();
+  const calls = [];
+  let selectedId = "Task_1";
+  const apiTouch = async (sessionId, payload) => {
+    calls.push({ sessionId, payload });
+    return { ok: true, ttl_seconds: 60, active_users: [] };
+  };
+  try {
+    await act(async () => {
+      env.root.render(React.createElement(Harness, {
+        expose: () => {},
+        hookProps: [
+          "sess_1",
+          { id: "user_me", email: "me@example.test" },
+          {
+            apiTouch,
+            apiLeave: async () => ({ ok: true }),
+            heartbeatMs: 50,
+            getEditingElementId: () => selectedId,
+          },
+        ],
+      }));
+    });
+    await wait(30);
+    assert.ok(calls.length >= 1, "mount heartbeat fired");
+    assert.equal(calls[0].payload.editingElementId, "Task_1", "selected element id in touch payload");
+
+    selectedId = ""; // deselect
+    await wait(120);
+    const lastWithEditing = calls.filter((c) => c.payload.editingElementId === "Task_1").length;
+    assert.ok(calls.length > lastWithEditing, "further heartbeats continue");
+    // Контракт wire: отсутствие ключа = снятие (backend трактует "" как
+    // снятие, ключ не шлём). MAJOR-2 review: тест и имплементация к одному
+    // контракту — undefined, не "".
+    assert.ok(!calls[calls.length - 1].payload.editingElementId, "editingElementId cleared on deselect (key omitted)");
+  } finally {
+    await env.cleanup().catch(() => {});
   }
 });

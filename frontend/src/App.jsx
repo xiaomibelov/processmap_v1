@@ -152,6 +152,7 @@ import {
 } from "./app/projectSessionSelectors";
 import { useChildSessionNoteAggregatesByElementId } from "./lib/sessionNoteAggregates";
 import useSessionEvents from "./hooks/useSessionEvents";
+import { getOpsRemoteRuntime } from "./features/process/bpmn/save/opsOutbox/opsRemoteApply.js";
 import {
   emptyBpmnMeta,
   mergeHybridV2Doc,
@@ -1419,6 +1420,15 @@ export default function App() {
           skipLeaveGuard: true,
         });
       }, [draftSessionId, projectId, setSessionNavNotice, returnToSessionList]),
+      // step2 (async-save-pipeline-step2, UI.md §4): чужие ops зафиксированы
+      // на сервере — делегируем в consumer (outbox/modeler живут в BpmnStage,
+      // runtime регистрируется там; до монтирования stage — игнор).
+      onOpsCommitted: useCallback((data) => {
+        const runtime = getOpsRemoteRuntime?.();
+        if (runtime && typeof runtime.handleEvent === "function") {
+          void runtime.handleEvent(data);
+        }
+      }, []),
     },
   );
 

@@ -11,6 +11,7 @@
  * Usage:
  *   useSessionEvents(sessionId, {
  *     onDeleted: (sessionId) => { ... },
+ *     onOpsCommitted: (data) => { ... },   // step2: чужие дельта-ops committed
  *     onConnectionError: (error) => { ... },
  *   });
  */
@@ -48,6 +49,9 @@ export function eventsUrl(sessionId) {
  * @param {string} sessionId
  * @param {Object} handlers
  * @param {(sessionId: string) => void} [handlers.onDeleted]  — called when session_deleted received
+ * @param {(data: Object) => void} [handlers.onOpsCommitted] — step2 (async-save-pipeline-step2):
+ *   data {session_id, version, operations[], actor_client_id, full, at} — чужие
+ *   ops зафиксированы на сервере; wiring делегирует в opsRemoteApply consumer.
  * @param {(error: Event) => void} [handlers.onConnectionError] — optional SSE error handler
  * @param {Object} [options]
  * @param {boolean} [options.forcePolling=false] — skip SSE, use polling only
@@ -55,13 +59,16 @@ export function eventsUrl(sessionId) {
 export default function useSessionEvents(sessionIdRaw, handlers = {}, options = {}) {
   const sessionId = asText(sessionIdRaw);
   const onDeleted = typeof handlers?.onDeleted === "function" ? handlers.onDeleted : null;
+  const onOpsCommitted = typeof handlers?.onOpsCommitted === "function" ? handlers.onOpsCommitted : null;
   const onConnectionError = typeof handlers?.onConnectionError === "function" ? handlers.onConnectionError : null;
   const forcePolling = options?.forcePolling === true;
 
   // Keep callbacks in refs so the effect doesn't re-subscribe on callback change.
   const onDeletedRef = useRef(onDeleted);
+  const onOpsCommittedRef = useRef(onOpsCommitted);
   const onConnectionErrorRef = useRef(onConnectionError);
   onDeletedRef.current = onDeleted;
+  onOpsCommittedRef.current = onOpsCommitted;
   onConnectionErrorRef.current = onConnectionError;
 
   const isActiveSession = !!sessionId && !isLocalSessionId(sessionId);
@@ -106,6 +113,20 @@ export default function useSessionEvents(sessionIdRaw, handlers = {}, options = 
           eventSource = null;
         }
         stopped = true;
+      });
+
+      eventSource.addEventListener("ops_committed", (event) => {
+        // step2 (async-save-pipeline-step2): чужие ops зафиксированы на
+        // сервере. Стрим НЕ закрываем — события потоковые. Ошибки парсинга
+        // игнорим (consumer получит следующее событие).
+        try {
+          const data = JSON.parse(event.data || "{}");
+          if (!stopped && onOpsCommittedRef.current) {
+            onOpsCommittedRef.current(data);
+          }
+        } catch {
+          // ignore parse errors
+        }
       });
 
       eventSource.addEventListener("closed", () => {

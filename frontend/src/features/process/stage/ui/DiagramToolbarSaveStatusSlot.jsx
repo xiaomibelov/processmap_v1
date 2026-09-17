@@ -86,6 +86,15 @@ export default function DiagramToolbarSaveStatusSlot({
           {view.subprocessesSyncLabel}
         </span>
       ) : null}
+      {view.awaitingNetworkLabel ? (
+        <span
+          className="min-w-0 max-w-[160px] truncate opacity-80"
+          data-testid="diagram-toolbar-save-status-awaiting-network"
+          title="Сеть недоступна: правки надёжно хранятся локально и будут доставлены автоматически."
+        >
+          {view.awaitingNetworkLabel}
+        </span>
+      ) : null}
     </span>
   );
 }

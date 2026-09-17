@@ -142,6 +142,43 @@ def reset_client_cache() -> None:
         _CLIENT_URL = ""
 
 
+# --- pub/sub thin wrappers (session-events fan-in, feature/async-save-pipeline-step2)
+#
+# Бест-эффорт: Redis недоступен → пропуск без исключения (degraded-доставка,
+# in-process шина продолжает работать). Никаких новых клиентов/зависимостей.
+
+
+def publish_message(channel: str, message: str) -> bool:
+    """Опубликовать строковое сообщение в pub/sub-канал. True при успехе."""
+    conn = get_client()
+    if conn is None:
+        return False
+    try:
+        conn.publish(str(channel or ""), str(message or ""))
+        return True
+    except Exception as exc:
+        logger.warning("redis_client: publish to %s failed: %s", channel, exc)
+        return False
+
+
+def subscribe_channel(channel: str):
+    """Подписаться на канал; вернуть pubsub-объект или None (redis down)."""
+    conn = get_client()
+    if conn is None:
+        return None
+    try:
+        pubsub = conn.pubsub(ignore_subscribe_messages=True)
+        pubsub.subscribe(str(channel or ""))
+        return pubsub
+    except Exception as exc:
+        logger.warning("redis_client: subscribe to %s failed: %s", channel, exc)
+        try:
+            pubsub.close()
+        except Exception:
+            pass
+        return None
+
+
 def runtime_status(force_ping: bool = True) -> dict:
     redis_url = _read_redis_url()
     required = _redis_required()
