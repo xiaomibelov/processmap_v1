@@ -210,6 +210,9 @@ function mapShapeCreate(context, inverse) {
   const elementType = elementTypeOf(ref);
   const b = bounds(ref?.bounds || ref);
   if (!elementId || !elementType || !b) return { needsFullSave: true };
+  // Артефакты (TextAnnotation и т.п.) вне ops-payload step1: консервативно
+  // уходим в полное сохранение — иначе серверная apply-op потеряет artifactRef.
+  if (elementType.toLowerCase().includes("textannotation")) return { needsFullSave: true };
   return {
     op: makeOp("shape.create", elementId, {
       elementType,
@@ -232,6 +235,10 @@ function mapConnectionCreate(context, inverse) {
   const sourceId = elementIdOf(context?.source || connection?.source);
   const targetId = elementIdOf(context?.target || connection?.target);
   if (!elementId || !sourceId || !targetId) return { needsFullSave: true };
+  // Association — артефактная связь вне ops-payload step1: полное сохранение.
+  if ((elementTypeOf(connection) || "").toLowerCase().includes("association")) {
+    return { needsFullSave: true };
+  }
   const wp = waypoints(connection?.waypoints);
   return {
     op: makeOp("connection.create", elementId, {

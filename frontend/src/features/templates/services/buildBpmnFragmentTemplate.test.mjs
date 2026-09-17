@@ -55,6 +55,18 @@ test("buildBpmnFragmentTemplate keeps node semantic payload for later insert hyd
   assert.equal(captured.custom.propertyDictionaryBinding.operationKey, "op.template");
 });
 
+test("buildBpmnFragmentTemplate surfaces unsupported selection types as warning on successful capture", async () => {
+  const result = await buildBpmnFragmentTemplate(async () => ({
+    ok: true,
+    pack: createPack(),
+    diagnostics: { unsupportedSelectionTypes: ["bpmn:Group"] },
+  }), {
+    title: "Fragment warn",
+  });
+  assert.equal(result.ok, true);
+  assert.match(String(result.warning || ""), /bpmn:Group/);
+});
+
 test("buildBpmnFragmentTemplate returns capture error", async () => {
   const result = await buildBpmnFragmentTemplate(async () => ({ ok: false, error: "no_selection" }), {
     title: "Fragment B",

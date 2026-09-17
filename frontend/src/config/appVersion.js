@@ -1,8 +1,16 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.146",
+  currentVersion: "v1.0.147",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.147",
+      changes: [
+        "Применение шаблона переносит связи «ассоциация» к аннотациям: вставка 1:1, включая association и тексты аннотаций.",
+        "Неподдержанные BPMN-типы в шаблонах больше не пропадают молча — показывается явное предупреждение при создании и применении шаблона.",
+        "Устаревшие шаблоны без текста аннотаций помечаются предупреждением «пересоздайте шаблон из выделения».",
+      ],
+    },
     {
       version: "v1.0.146",
       changes: [
