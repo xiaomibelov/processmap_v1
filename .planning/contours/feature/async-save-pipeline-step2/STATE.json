@@ -4,7 +4,7 @@
   "role": "planner",
   "agent": "Agent 1",
   "date": "2026-09-16",
-  "phase": "PR_OPEN_AWAITING_MERGE_DECISION",
+  "phase": "MERGED_STAGE_VERIFIED_AWAITING_PROD_DECISION",
   "branch": "feature/async-save-pipeline-step2",
   "baseline": "origin/main @ 999f0e37 (#989)",
   "workspace": "p0-work-worktrees/feature-async-save-pipeline-step2",
@@ -60,5 +60,13 @@
     "put_outside_fallback": 0
   },
   "review_verdict": "APPROVE (re-review 4fa6bfee)",
-  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/992"
+  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/992",
+  "merged": "PR #992 -> main @ 4b4c7693 (squash, 2026-09-17)",
+  "stage": {
+    "deploy_run": "35206275037 success",
+    "serving": "stage.processmap.ru/version = 4b4c7693",
+    "specs": "operations 3/3, persistence 3/3, multiuser 5/5 (test 8 move-convergence PASS) — org != default, user d.belov@automacon.ru",
+    "budgets_stage": "body 4042B, p95 244.6ms, coverage 1.00, putBpmn 0, IDB sync p95 0.10ms"
+  },
+  "prod": "AWAITING_OWNER_DECISION (no automation)"
 }
