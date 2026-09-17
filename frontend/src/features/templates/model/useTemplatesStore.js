@@ -69,16 +69,44 @@ export function shouldCancelBpmnFragmentPlacementByKey(event) {
   return String(event?.key || "").toLowerCase() === "escape";
 }
 
+export function buildBpmnFragmentInsertWarning(insertedRaw) {
+  const diagnostics = insertedRaw?.diagnostics && typeof insertedRaw.diagnostics === "object"
+    ? insertedRaw.diagnostics
+    : {};
+  const legacyIds = Array.isArray(diagnostics.legacyAnnotationIds)
+    ? diagnostics.legacyAnnotationIds.filter(Boolean)
+    : [];
+  const skippedNodeTypes = Array.isArray(diagnostics.skippedNodeTypes)
+    ? diagnostics.skippedNodeTypes.filter(Boolean)
+    : [];
+  const skippedEdgeIds = Array.isArray(diagnostics.skippedEdges)
+    ? diagnostics.skippedEdges.filter(Boolean)
+    : [];
+  const messages = [];
+  if (legacyIds.length) {
+    messages.push("Шаблон создан в старой версии: текст аннотаций не переносится. Пересоздайте шаблон из выделения.");
+  }
+  const skippedParts = [
+    ...skippedNodeTypes,
+    ...skippedEdgeIds.map((id) => `связь ${id}`),
+  ];
+  if (skippedParts.length) {
+    messages.push(`Вставлено не полностью: пропущены элементы ${skippedParts.join(", ")}.`);
+  }
+  return messages.join(" ");
+}
+
 export async function insertBpmnFragmentFromPlacement({
   currentPlacement,
   clientX,
   clientY,
   insertBpmnFragmentTemplateAtPoint,
+  notifyWarning,
 }) {
   if (typeof insertBpmnFragmentTemplateAtPoint !== "function") {
     return { ok: false, error: "BPMN insert API недоступен." };
   }
-  return await Promise.resolve(
+  const inserted = await Promise.resolve(
     insertBpmnFragmentTemplateAtPoint(currentPlacement, {
       clientX,
       clientY,
@@ -87,6 +115,11 @@ export async function insertBpmnFragmentFromPlacement({
       source: "template_apply",
     }),
   );
+  if (inserted?.ok) {
+    const warning = buildBpmnFragmentInsertWarning(inserted);
+    if (warning && typeof notifyWarning === "function") notifyWarning(warning);
+  }
+  return inserted;
 }
 
 function readTemplatesEnabled() {
@@ -142,6 +175,7 @@ export default function useTemplatesStore({
   selectionContext = {},
   setError,
   setInfo,
+  notifyWarning,
 }) {
   const [templatesEnabled, setTemplatesEnabled] = useState(() => readTemplatesEnabled());
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -354,6 +388,7 @@ export default function useTemplatesStore({
         : "Не удалось собрать шаблон из текущего выделения.");
       return;
     }
+    if (built.warning && typeof notifyWarning === "function") notifyWarning(built.warning);
     setBusy(true);
     setLastError("");
     try {
@@ -398,6 +433,7 @@ export default function useTemplatesStore({
     captureBpmnFragmentTemplatePack,
     setError,
     setInfo,
+    notifyWarning,
     userId,
   ]);
 
@@ -571,6 +607,7 @@ export default function useTemplatesStore({
         clientX,
         clientY,
         insertBpmnFragmentTemplateAtPoint,
+        notifyWarning,
       });
       if (typeof window !== "undefined" && window.__FPC_E2E__) {
         window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__ = {
@@ -611,6 +648,7 @@ export default function useTemplatesStore({
     insertBpmnFragmentTemplateAtPoint,
     setError,
     setInfo,
+    notifyWarning,
   ]);
 
   return {

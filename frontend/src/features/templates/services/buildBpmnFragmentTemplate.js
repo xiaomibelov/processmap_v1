@@ -109,7 +109,7 @@ export async function buildBpmnFragmentTemplate(captureTemplatePack, meta = {}) 
   return {
     ok: true,
     error: "",
-    warning: "",
+    warning: buildCaptureWarning(captureResult),
     diagnostics: captureResult?.diagnostics && typeof captureResult.diagnostics === "object"
       ? captureResult.diagnostics
       : {},

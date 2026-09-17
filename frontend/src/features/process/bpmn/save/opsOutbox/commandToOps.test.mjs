@@ -563,6 +563,51 @@ test("create ops carry the client-generated element id in payload (server preser
   assert.equal(connected.ops[0].targetId, "Task_2");
 });
 
+test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Association) → needsFullSave", () => {
+  const annotation = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      shape: el("Annotation_1", { type: "bpmn:TextAnnotation" }),
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(annotation.needsFullSave, true, "TextAnnotation is an artifact outside ops payload (step1)");
+  assert.equal(annotation.ops.length, 0);
+
+  const association = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    context: {
+      connection: el("Assoc_1", { type: "bpmn:Association" }),
+      source: { id: "Task_1" },
+      target: { id: "Annotation_1" },
+    },
+  });
+  assert.equal(association.needsFullSave, true, "Association is an artifact outside ops payload (step1)");
+  assert.equal(association.ops.length, 0);
+
+  const task = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      shape: el("Task_1", { type: "bpmn:Task" }),
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(task.needsFullSave, false, "Task create still maps to op");
+  const flow = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    context: {
+      connection: el("Flow_1", { type: "bpmn:SequenceFlow" }),
+      source: { id: "Task_1" },
+      target: { id: "Task_2" },
+    },
+  });
+  assert.equal(flow.needsFullSave, false, "SequenceFlow create still maps to op");
+});
+
 test("undo of shape.create / connection.create → compensating delete op (не needsFullSave)", () => {
   const undoShape = mapCommandToOps({
     command: "shape.create",
