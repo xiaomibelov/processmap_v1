@@ -65,6 +65,10 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
       // Fallback: look for the session label pill in the topbar center
       const sessionLabel = page.getByText("СЕССИЯ").first();
       if (await sessionLabel.isVisible().catch(() => false)) return true;
+      // Fallback: workspace session view header (deeplink flow) — кнопка
+      // «Назад к проекту» рендерится только при открытой сессии.
+      const backToProject = page.getByRole("button", { name: /Назад к проекту/i }).first();
+      if (await backToProject.isVisible().catch(() => false)) return true;
       return false;
     } catch {
       return false;
@@ -117,6 +121,19 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
   // before React commits draft state to window.__FPC_E2E_DRAFT__.
   let e2eOpenTriggered = false;
 
+  // Fast path: дать URL-driven open закоммитить draft hook. Раньше helper
+  // с первой итерации дёргал __FPC_E2E_OPEN_SESSION__ прямо посреди гидратации
+  // приложения — повторный openSession в этом окне замораживал renderer
+  // (страница переставала отвечать на evaluate, helper вис до test-timeout).
+  const settleMs = Math.min(Number(timeout || 45000), 15000);
+  const settleDeadline = Date.now() + settleMs;
+  while (Date.now() < settleDeadline) {
+    const settledSid = String(await readDraftSessionId() || "").trim();
+    if (settledSid && (!desiredSessionId || settledSid === desiredSessionId)) break;
+    if (desiredSessionId && (await isSessionVisiblyLoaded())) break;
+    await page.waitForTimeout(500);
+  }
+
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeout) {
     const orgChoice = page.getByText("Выберите организацию");
@@ -134,7 +151,10 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
     if (desiredSessionId) {
       // Check draft state first; only trigger open if not yet loaded
       const sid = String(await readDraftSessionId() || "").trim();
-      const selected = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+      const selected = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
       if ((sid && sid === desiredSessionId) || selected === desiredSessionId) break;
       // Visual fallback: session canvas is rendered even if draft hook not set yet
       if (await isSessionVisiblyLoaded()) break;
@@ -150,7 +170,10 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
       }
       await selectSession(desiredSessionId);
     } else {
-      const selected = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+      const selected = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
       const sid = String(await readDraftSessionId() || "").trim();
       if (selected || sid || (await isSessionVisiblyLoaded())) break;
     }
@@ -158,7 +181,10 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
     await page.waitForTimeout(250);
   }
 
-  const selectedAfterLoop = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+  const selectedAfterLoop = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
   const draftAfterLoop = String(await readDraftSessionId() || "").trim();
   const sessionVisuallyLoaded = await isSessionVisiblyLoaded();
   const hasDesiredSession = desiredSessionId
@@ -176,10 +202,16 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
       if (desiredSessionId) {
         await selectSession(desiredSessionId);
         const currentSid = String(await readDraftSessionId() || "").trim();
-        const selectedValue = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+        const selectedValue = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
         if (currentSid === desiredSessionId || selectedValue === desiredSessionId) break;
       } else {
-        const selectedValue = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+        const selectedValue = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
         const currentSid = String(await readDraftSessionId() || "").trim();
         if (selectedValue || currentSid) break;
       }
@@ -190,7 +222,10 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
       await expect
         .poll(async () => {
           const sid = String(await readDraftSessionId() || "").trim();
-          const selected = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+          const selected = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
           return sid === desiredSessionId || selected === desiredSessionId;
         }, { timeout: 15000 })
         .toBeTruthy();
@@ -198,7 +233,10 @@ export async function openSessionInTopbar(page, fixture, options = {}) {
       await expect
         .poll(async () => {
           const sid = String(await readDraftSessionId() || "").trim();
-          const selected = String(await sessionSelect.inputValue().catch(() => "") || "").trim();
+          const selected = String(await Promise.race([
+        sessionSelect.inputValue().catch(() => ""),
+        new Promise((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]) || "").trim();
           return sid || selected;
         }, { timeout: 15000 })
         .not.toBe("");

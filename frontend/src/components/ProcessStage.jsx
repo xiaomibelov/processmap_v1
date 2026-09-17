@@ -4563,6 +4563,7 @@ function ProcessStage({
     selectionContext: templatesBridge.selectionContext,
     setError: setGenErr,
     setInfo: setInfoMsg,
+    notifyWarning: (message) => showSaveAckToast(message, "warning"),
   });
   const {
     templatesEnabled,

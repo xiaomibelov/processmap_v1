@@ -86,7 +86,7 @@ test("analysis step block is structured as primary workspace plus secondary scen
 
 test("app version changelog records the analysis tabs UX overhaul", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1.0.146"/);
+  assert.match(source, /currentVersion: "v1.0.147"/);
   assert.match(source, /Перерисованы сабтабы анализа: границы процесса, действия, исключения и AI-анализ\./);
   assert.match(source, /Добавлен единый компонент AnalysisSection для заголовков и тел разделов анализа\./);
   assert.match(source, /Улучшены фильтры, empty-states и скелетоны в интерфейсе анализа процессов\./);
