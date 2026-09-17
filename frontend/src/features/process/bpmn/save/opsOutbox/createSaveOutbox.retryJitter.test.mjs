@@ -358,3 +358,50 @@ function getOpsAbortedTraceCount() {
   const traces = globalThis.window?.__PM_OPS_FLUSHED__?.traces || [];
   return traces.filter((e) => e.event === "ops_flush_keepalive_aborted").length;
 }
+
+// ---------------------------------------------------------------------------
+// Контур feature/async-save-pipeline-step2 (TESTS §1.2, UI.md §3):
+// параметризация backoff координатора не меняет поведение pipeline "xml"/"meta" —
+// регрессия: дефолты 1s→2s→4s cap 4s БЕЗ джиттера, retryCount 3.
+// ---------------------------------------------------------------------------
+
+test("regression: xml pipeline backoff defaults unchanged (exact 1s→2s→4s→cap4s, no jitter)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const coordinator = createSaveCoordinator();
+    let attempt = 0;
+    coordinator.registerPipeline("xml", {
+      debounceMs: 0,
+      // только defaults: retryDelayMs 1000 / maxRetryDelayMs 4000 /
+      // retryJitterRatio 0 / retryCount 3 — как у xml/meta до контура.
+      transport: async () => {
+        attempt += 1;
+        return { ok: false, status: 500, error: "boom" };
+      },
+      getBaseVersion: () => 7,
+    });
+    const run = coordinator.execute("xml", { sessionId: "xml-s1" });
+    await drain();
+    assert.equal(attempt, 1);
+
+    // Джиттер отсутствует: попытки строго на 1000 / 2000 / 4000.
+    const exactDelays = [1000, 2000, 4000];
+    for (let k = 0; k < exactDelays.length; k += 1) {
+      t.mock.timers.tick(exactDelays[k] - 1);
+      await drain();
+      assert.equal(attempt, k + 1, `retry ${k + 1} not before exact ${exactDelays[k]}ms (no jitter)`);
+      t.mock.timers.tick(1);
+      await drain();
+      assert.equal(attempt, k + 2, `retry ${k + 1} fired at exact ${exactDelays[k]}ms`);
+    }
+    await run;
+    assert.equal(attempt, 4, "bounded: 1 + retryCount(3)");
+
+    // Кап 4s: дальнейший ход времени не порождает новых попыток.
+    t.mock.timers.tick(120_000);
+    await drain();
+    assert.equal(attempt, 4, "no unbounded retry on xml pipeline");
+  } finally {
+    t.mock.timers.reset();
+  }
+});

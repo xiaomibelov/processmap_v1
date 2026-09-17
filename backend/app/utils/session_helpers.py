@@ -48,7 +48,7 @@ def _resolve_client_id_from_request(request: Request = None) -> str:
     if request is None:
         return ""
     headers = request.headers or {}
-    for key in (_CLIENT_ID_HEADER, "x-pm-client-id"):
+    for key in (_CLIENT_ID_HEADER, "x-client-id", "x-pm-client-id"):
         value = headers.get(key)
         if value:
             return _normalize_client_id(value)
@@ -278,7 +278,15 @@ def _save_session_with_cas(
         current_version = exc.current
         server_sess = sess
         try:
-            reloaded = storage.load(exc.session_id, is_admin=True)
+            # Паттерн #989: org передаём явно — load без org_id опирается на
+            # request-scope ContextVar, который пуст в threadpool-контексте
+            # sync-endpoint'а (uvicorn def-handlers) и молча падал в default
+            # org. sess (in-memory, загружена под session lock) — fallback.
+            reloaded = storage.load(
+                exc.session_id,
+                is_admin=True,
+                org_id=str(org_id or "").strip() or None,
+            )
             if reloaded is not None:
                 server_sess = reloaded
                 current_version = int(getattr(reloaded, "diagram_state_version", 0) or 0)

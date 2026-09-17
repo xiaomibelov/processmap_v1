@@ -20,7 +20,7 @@ import {
 // (echo suppression). Fuzzy miss (element не найден) → needsFullSave.
 // ---------------------------------------------------------------------------
 
-function makeModeler({ elements = {}, executeImpl } = {}) {
+function makeModeler({ elements = {}, executeImpl, elementFactory } = {}) {
   const executed = [];
   const registry = {
     get: (id) => elements[id] || null,
@@ -39,6 +39,7 @@ function makeModeler({ elements = {}, executeImpl } = {}) {
     get(name) {
       if (name === "elementRegistry") return registry;
       if (name === "commandStack") return commandStack;
+      if (name === "elementFactory") return elementFactory || null;
       return null;
     },
   };
@@ -158,11 +159,142 @@ test("replayOpsOnModeler: updateDi op with waypoints → connection.updateWaypoi
   assert.deepEqual(modeler.executed[0].context.newWaypoints, [[0, 0], [10, 10]]);
 });
 
-test("replayOpsOnModeler: create ops are not replayable in step1 → fuzzyMiss/needsFullSave path", async () => {
+test("replayOpsOnModeler: create op replayed through commandStack.execute path with replay flags (step2)", async () => {
+  const created = { id: "Task_New", type: "bpmn:Task", x: 100, y: 200, width: 120, height: 80 };
+  const modeler = makeModeler({
+    elements: {},
+    elementFactory: {
+      createShape: (props) => ({ ...props }),
+      createConnection: (props) => ({ ...props, waypoints: props.waypoints || [] }),
+    },
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-6",
+      type: "shape.create",
+      elementId: "Task_New",
+      elementType: "bpmn:Task",
+      bounds: { x: 100, y: 200, width: 120, height: 80 },
+      parentId: "Process_1",
+    },
+  ]);
+  assert.equal(result.ok, true, "create replay is supported in step2 (client id preserved by server)");
+  assert.equal(modeler.executed.length, 1);
+  assert.equal(modeler.executed[0].command, "shape.create");
+  assert.equal(modeler.executed[0].context.__pmOpSource, "replay");
+  assert.equal(modeler.executed[0].context.__pmOpId, "op-6");
+  assert.equal(modeler.executed[0].context.shape.id, created.id, "client-generated id flows into replay");
+});
+
+test("replayOpsOnModeler: create op on element that already exists (idempotent) → ok without execute", async () => {
+  const existing = { id: "Task_New", businessObject: { $type: "bpmn:Task" } };
+  const modeler = makeModeler({ elements: { Task_New: existing } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-7", type: "shape.create", elementId: "Task_New", elementType: "bpmn:Task", bounds: { x: 0, y: 0, width: 120, height: 80 } },
+  ]);
+  assert.equal(result.ok, true, "element already on canvas (server preserved client id) — replay is a no-op");
+  assert.equal(modeler.executed.length, 0, "no duplicate create executed");
+});
+
+test("replayOpsOnModeler: connection.create replay resolves source/target and executes with replay flags", async () => {
+  const source = { id: "Task_1" };
+  const target = { id: "Task_2" };
+  const modeler = makeModeler({
+    elements: { Task_1: source, Task_2: target },
+    elementFactory: {
+      createShape: (props) => ({ ...props }),
+      createConnection: (props) => ({ ...props, waypoints: props.waypoints || [] }),
+    },
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-8",
+      type: "connection.create",
+      elementId: "Flow_New",
+      elementType: "bpmn:SequenceFlow",
+      sourceId: "Task_1",
+      targetId: "Task_2",
+      waypoints: [[0, 0], [10, 10]],
+      parentId: "Process_1",
+    },
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(modeler.executed.length, 1);
+  assert.equal(modeler.executed[0].command, "connection.create");
+  assert.equal(modeler.executed[0].context.__pmOpSource, "replay");
+  assert.equal(modeler.executed[0].context.connection.id, "Flow_New");
+  assert.equal(modeler.executed[0].context.source.id, "Task_1");
+  assert.equal(modeler.executed[0].context.target.id, "Task_2");
+});
+
+test("replayOpsOnModeler: connection.reconnect replay rewrites source/target via commandStack.execute", async () => {
+  const conn = { id: "Flow_1", businessObject: { $type: "bpmn:SequenceFlow" }, waypoints: [] };
+  const source = { id: "Task_3" };
+  const target = { id: "Task_4" };
+  const modeler = makeModeler({ elements: { Flow_1: conn, Task_3: source, Task_4: target } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-10", type: "connection.reconnect", elementId: "Flow_1", connectionId: "Flow_1", source: "Task_3", target: "Task_4" },
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(modeler.executed.length, 1);
+  assert.equal(modeler.executed[0].command, "connection.reconnect");
+  assert.equal(modeler.executed[0].context.connection.id, "Flow_1");
+  assert.equal(modeler.executed[0].context.source.id, "Task_3");
+  assert.equal(modeler.executed[0].context.target.id, "Task_4");
+  assert.equal(modeler.executed[0].context.__pmOpSource, "replay");
+});
+
+test("replayOpsOnModeler: connection.reconnect with missing endpoint → fuzzyMiss (conservative fetch+rebase)", async () => {
+  const conn = { id: "Flow_1", businessObject: { $type: "bpmn:SequenceFlow" }, waypoints: [] };
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-11", type: "connection.reconnect", elementId: "Flow_1", connectionId: "Flow_1", source: "Ghost_1", target: "Task_4" },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+});
+
+test("replayOpsOnModeler: create without elementFactory → fuzzyMiss (no silent skip)", async () => {
   const modeler = makeModeler({ elements: {} });
   const result = await replayOpsOnModeler(modeler, [
-    { opId: "op-6", type: "shape.create", elementId: "Task_New", elementType: "bpmn:Task" },
+    { opId: "op-12", type: "shape.create", elementId: "Task_X", elementType: "bpmn:Task", bounds: { x: 0, y: 0, width: 1, height: 1 } },
   ]);
   assert.equal(result.ok, false);
   assert.equal(result.results[0].fuzzyMiss, true);
+});
+
+test("replayOpsOnModeler source option: remote apply flags __pmOpSource:\"remote\"", async () => {
+  const task = { id: "Task_1", businessObject: { $type: "bpmn:Task", name: "A" }, x: 0, y: 0, width: 120, height: 80 };
+  const modeler = makeModeler({ elements: { Task_1: task } });
+  const result = await replayOpsOnModeler(
+    modeler,
+    [{ opId: "r1", type: "element.updateProperties", elementId: "Task_1", properties: { name: "Чужое" } }],
+    { source: "remote" },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(modeler.executed.length, 1);
+  assert.equal(modeler.executed[0].context.__pmOpSource, "remote");
+  assert.equal(modeler.executed[0].context.__pmOpId, "r1");
+});
+
+test("replayOpsOnModeler default source stays \"replay\" (step1 regression)", async () => {
+  const task = { id: "Task_1", businessObject: { $type: "bpmn:Task", name: "A" }, x: 0, y: 0, width: 120, height: 80 };
+  const modeler = makeModeler({ elements: { Task_1: task } });
+  await replayOpsOnModeler(modeler, [
+    { opId: "op-1", type: "element.updateProperties", elementId: "Task_1", properties: { name: "B" } },
+  ]);
+  assert.equal(modeler.executed[0].context.__pmOpSource, "replay");
+});
+
+test("BLOCKER-1 e2e-followup: shape.move replay context carries hints (real bpmn-js MoveShapeHandler reads context.hints.layout)", async () => {
+  const task = { id: "Task_1", parent: { id: "Lane_1" }, businessObject: { $type: "bpmn:Task" }, x: 0, y: 0, width: 120, height: 80 };
+  const modeler = makeModeler({ elements: { Task_1: task } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-m1", type: "shape.move", elementId: "Task_1", delta: { x: 10, y: 5 } },
+  ]);
+  assert.equal(result.ok, true);
+  const context = modeler.executed[0].context;
+  assert.ok(context.hints && typeof context.hints === "object", "hints object present (diagram-js postExecute reads hints.layout)");
+  assert.equal(context.hints.layout, false, "no connection re-layout: wire op is a pure delta, server applies bounds only");
 });

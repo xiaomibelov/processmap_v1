@@ -11,8 +11,10 @@
 //  - replay-эхо: context.__pmOpSource === "replay" → команда пропускается
 //    полностью (ни одна replay-команда не становится op; счётчики не растут);
 //  - вне whitelist → needsFullSave (существующий полный путь сохранения);
-//  - undo → inverse-payload (compensating-op); undo create/delete в step1 —
-//    needsFullSave (безопасный fallback, см. UI.md §5);
+//  - undo → inverse-payload (compensating-op); step2 (наследие п.6): undo
+//    create → compensating delete-op, undo reconnect → старые source/target;
+//  - connection.reconnect/reconnectStart/reconnectEnd → одна нормализованная
+//    op connection.reconnect {connectionId, source, target};
 //  - coverage: window.__PM_OPS_COVERAGE__ = {total, mapped, fullSave}
 //    инкрементится на каждую немuted команду (фундамент метрики ≥95%).
 
@@ -190,10 +192,19 @@ function elementTypeOf(ref) {
 }
 
 function mapShapeCreate(context, inverse) {
-  if (inverse) return { needsFullSave: true };
+  if (inverse) {
+    // Undo create — compensating delete-op (наследие п.6 §3 PLAN step2): id
+    // клиентский, сервер сохраняет его применение с сохранением id → delete
+    // корректен независимо от того, ушёл ли create на сервер.
+    const ref = context?.shape || context?.element;
+    const elementId = elementIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    return { op: makeOp("shape.delete", elementId, {}) };
+  }
   // Рантайм-снапшот нормализует ref элемента в context.element (wire-форма:
   // bounds вложены в ref.bounds); нативная форма commandStack — context.shape
-  // с плоскими x/y/width/height на самом элементе.
+  // с плоскими x/y/width/height на самом элементе. elementId — клиентский id
+  // bpmn-js: уходит в payload и сервер применяет create с сохранением id.
   const ref = context?.shape || context?.element;
   const elementId = elementIdOf(ref);
   const elementType = elementTypeOf(ref);
@@ -209,7 +220,12 @@ function mapShapeCreate(context, inverse) {
 }
 
 function mapConnectionCreate(context, inverse) {
-  if (inverse) return { needsFullSave: true };
+  if (inverse) {
+    const connection = context?.connection || context?.element;
+    const elementId = elementIdOf(connection);
+    if (!elementId) return { needsFullSave: true };
+    return { op: makeOp("connection.delete", elementId, {}) };
+  }
   // Wire-форма несёт соединение в context.element (нативная — context.connection).
   const connection = context?.connection || context?.element;
   const elementId = elementIdOf(connection);
@@ -225,6 +241,27 @@ function mapConnectionCreate(context, inverse) {
       ...(wp ? { waypoints: wp } : {}),
       parentId: elementIdOf(context?.parent) || "",
     }),
+  };
+}
+
+// reconnectStart/reconnectEnd — нормализация в одну op connection.reconnect
+// (наследие п.6 §3 PLAN step2): rewrite source/target на сервере, ребро
+// перелинковывается. Undo — compensating-op со старыми source/target.
+function mapConnectionReconnect(context, inverse) {
+  const connection = context?.connection || context?.element;
+  const connectionId = elementIdOf(connection);
+  if (!connectionId) return { needsFullSave: true };
+  const sourceRef = inverse
+    ? (context?.oldSource ?? context?.old_source ?? connection?.source)
+    : (context?.source ?? connection?.source);
+  const targetRef = inverse
+    ? (context?.oldTarget ?? context?.old_target ?? connection?.target)
+    : (context?.target ?? connection?.target);
+  const source = elementIdOf(sourceRef);
+  const target = elementIdOf(targetRef);
+  if (!source || !target) return { needsFullSave: true };
+  return {
+    op: makeOp("connection.reconnect", connectionId, { connectionId, source, target }),
   };
 }
 
@@ -249,10 +286,16 @@ const WHITELIST = Object.freeze({
   "connection.create": mapConnectionCreate,
   "shape.delete": mapDelete("shape.delete"),
   "connection.delete": mapDelete("connection.delete"),
+  "connection.reconnect": mapConnectionReconnect,
+  "connection.reconnectStart": mapConnectionReconnect,
+  "connection.reconnectEnd": mapConnectionReconnect,
 });
 
 export function isReplayCommand(descriptor) {
-  return asText(readContext(descriptor)?.__pmOpSource).toLowerCase() === "replay";
+  const source = asText(readContext(descriptor)?.__pmOpSource).toLowerCase();
+  // "replay" — собственный rebase-replay; "remote" — применение чужих ops
+  // (ops_committed consumer). Оба не становятся op и не двигают coverage.
+  return source === "replay" || source === "remote";
 }
 
 // Рантайм-каскад несёт сериализованный контекст в поле commandContext
@@ -292,9 +335,12 @@ export function mapCommandToOps(descriptor) {
     return { ops: [], needsFullSave: true, replay: false, action, command };
   }
 
+  // Порядок spread: payload маппера побеждает — connection.reconnect несёт
+  // endpoint-ids в source/target (wire-контракт applier'а), provenance
+  // (user|agent|e2e) остаётся дефолтом для остальных op-типов.
   const op = {
-    ...mapped.op,
     source: asText(descriptor?.source) || "user",
+    ...mapped.op,
   };
   recordCoverage(true, false);
   return { ops: [op], needsFullSave: false, replay: false, action, command };

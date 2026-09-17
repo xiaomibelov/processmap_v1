@@ -1,0 +1,64 @@
+{
+  "contour": "feature/async-save-pipeline-step2",
+  "type": "feature",
+  "role": "planner",
+  "agent": "Agent 1",
+  "date": "2026-09-16",
+  "phase": "PR_OPEN_AWAITING_MERGE_DECISION",
+  "branch": "feature/async-save-pipeline-step2",
+  "baseline": "origin/main @ 999f0e37 (#989)",
+  "workspace": "p0-work-worktrees/feature-async-save-pipeline-step2",
+  "predecessors": [
+    "feature/async-save-pipeline-step1 (#982)",
+    "F1 (#983)",
+    "D1",
+    "fix/async-save-409-rebase (#989)"
+  ],
+  "scope_legacy_step1": [
+    "undo-sent-unacked residual (N-new-1): detach pendingAck",
+    "parent re-embed ordering (NIT-1)",
+    "dead keepalive code removal (NIT-2)",
+    "legacy route duplicate removal (NIT-4)",
+    "manual full-save ack wipe -> version-based reconciliation",
+    "reconnect*/create-op replay in op vocabulary"
+  ],
+  "deliverables_planned": [
+    "PLAN.md",
+    "API.md",
+    "UI.md",
+    "TESTS.md",
+    "PR.md",
+    "EXEC_REPORT.md",
+    "REVIEW_REPORT.md"
+  ],
+  "gates": {
+    "code_before_approve": "FORBIDDEN",
+    "merge": "ONLY_AFTER_USER_APPROVAL",
+    "deploy": "ONLY_AFTER_USER_APPROVAL"
+  },
+  "lesson_989": "acceptance/e2e on org != default; TestClient masks threadpool ContextVar; explicit org_id in conflict reloads",
+  "approved": "2026-09-16 (user)",
+  "specs": [
+    "PLAN.md",
+    "API.md",
+    "UI.md",
+    "TESTS.md"
+  ],
+  "head": "4fa6bfee",
+  "e2e": {
+    "persistence": "3/3",
+    "multiuser": "4/4",
+    "ops_regression": "3/3 (org != default)",
+    "backend_live_acceptance": "13/13"
+  },
+  "budgets": {
+    "losses": 0,
+    "idb_sync_p95_ms": 0.2,
+    "ops_body_max_B": 3722,
+    "ops_p95_ms": "138.8-204.3",
+    "coverage": "20/20=1.00",
+    "put_outside_fallback": 0
+  },
+  "review_verdict": "APPROVE (re-review 4fa6bfee)",
+  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/992"
+}

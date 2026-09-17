@@ -77,3 +77,32 @@ test("session presence view compresses many active users", () => {
   assert.equal(view.label, "Иван +2");
   assert.equal(view.iconLabel, "И");
 });
+
+// ---------------------------------------------------------------------------
+// Контур feature/async-save-pipeline-step2 (TESTS §1.6, UI.md §7): soft-lock
+// маркер в presence-панели — актор с editingElementId отмечается в title.
+// ---------------------------------------------------------------------------
+
+test("presence view title marks actors editing an element (soft-lock marker)", () => {
+  const view = buildSessionPresenceView({
+    actorsRaw: [
+      { user_id: "user_me", display_name: "Я", last_seen_at: Date.now(), editing_element_id: "Task_1" },
+      { user_id: "user_a", display_name: "Анна", last_seen_at: Date.now(), editing_element_id: "Task_2" },
+      { user_id: "user_b", display_name: "Борис", last_seen_at: Date.now() },
+    ],
+    currentUserIdRaw: "user_me",
+    nowMs: Date.now(),
+  });
+  assert.equal(view.visible, true);
+  assert.match(view.title, /Анна \(Task_2\)/, "foreign editing actor marked in panel title");
+  assert.ok(!view.title.includes("Task_1"), "own editing element not marked (self skipped)");
+});
+
+test("presence view title without editing actors stays legacy", () => {
+  const view = buildSessionPresenceView({
+    actorsRaw: [{ user_id: "user_a", display_name: "Анна", last_seen_at: Date.now() }],
+    currentUserIdRaw: "user_me",
+    nowMs: Date.now(),
+  });
+  assert.equal(view.title, "Активны сейчас: Анна");
+});

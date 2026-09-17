@@ -1,4 +1,5 @@
-// createSaveOutbox — накопитель дельта-ops (contour feature/async-save-pipeline-step1).
+// createSaveOutbox — накопитель дельта-ops (contour feature/async-save-pipeline-step1,
+// персистентность — feature/async-save-pipeline-step2).
 //
 // Четвёртый pipeline "ops" в существующем saveCoordinator (UI.md §2): тот же
 // контракт регистрации, что "xml"/"meta" (getBaseVersion/applyBaseVersion/
@@ -6,11 +7,31 @@
 // очередь/ретраи — только buffer + тайминги flush'а; вся надёжность отправки —
 // координатор.
 //
+// Step2 (UI.md §2, PLAN §4):
+//  - pushCommand → op в buffer И opsJournal.appendOps (~1ms, микро-очередь) →
+//    UI-событие «сохранено локально»; lastLocalVersion инкремент в syncState
+//    (debounced); ack 200 → removeOps(acked) + patch lastServerVersion
+//    (eviction только после ack);
+//  - pendingAck-детач: на диспетчеризации sent = buffer.splice(0) — отправленный
+//    список живёт отдельно; undo/push во время полёта мутаируют только буфер;
+//    ack снимает sent целиком; 409/nack возвращает sent в голову буфера с
+//    сохранением opId; fullSavePreserveFrom — sentinel по opId (хвост буфера
+//    на момент делегирования полного сохранения), не по индексу;
+//  - manual full-save ack (не outbox-initiated) не чистит буфер слепо и не
+//    через version-арифметику (сервер +1/батч): снимок opId буфера на
+//    старт ручного full-save (coordinator status busy/stage "build") —
+//    ack снимает ТОЛЬКО пересечение со снимком; post-snapshot ops остаются
+//    и уходят следующим flush (идемпотентность opId);
+//  - гидрация буфера из journal при создании (ветки PLAN §5);
+//  - online-триггер: window online → flushNow({reason:"online"}); offline /
+//    navigator.onLine === false → flush suppressed + status-событие
+//    ops-local/offline (рендеринг индикатора — следующий слайс).
+//
 // Взаимное исключение с full-save: очереди координатора per-pipeline
 // (queueKey = pipeline::session), поэтому single-writer обеспечиваем явным
 // poll'ом busy-статуса pipelines xml/rawXml перед ops-flush (full-save в
-// полёте → отложить; ack full-save → буфер сбрасывается, серверное состояние
-// покрывает все локальные ops).
+// полёте → отложить; ack full-save → версионная reconciliation/срез по
+// sentinel, серверное состояние покрывает подтверждённые локальные ops).
 //
 // Интеграционные точки (проводка в BpmnStage/ProcessStage — отдельный шаг
 // владельца, god-компоненты здесь не трогаем):
@@ -29,6 +50,8 @@
 
 import { saveCoordinator } from "../../../../session/saveCoordinator.js";
 import { getVersion as getTrackedDiagramStateVersion } from "../../../../../lib/casVersionTracker.js";
+import { readAckDiagramStateVersion } from "../../../../../features/session/casResponse.js";
+import { recordSaveDiagnostic } from "../../../../../features/session/saveDiagnosticsTrail.js";
 import { apiPostSessionOperations } from "../../../../../lib/api.js";
 import { OPS_OUTBOX_CONFIG, createOpsOutboxConfig } from "./opsOutboxConfig.js";
 import { mapCommandToOps, isReplayCommand } from "./commandToOps.js";
@@ -39,6 +62,8 @@ import {
   isCoalescibleOp,
 } from "./opsBatchSerializer.js";
 import { createOpsRebase } from "./opsRebase.js";
+import { createOpsJournal } from "./persistence/opsJournal.js";
+import { createSyncStateStore } from "./persistence/syncStateStore.js";
 
 function asText(value) {
   return String(value || "").trim();
@@ -140,6 +165,9 @@ function registerOpsPipeline(coordinator, config, factoryOptions = {}) {
  * @param {Object} [options.modeler] - live modeler для rebase-replay
  * @param {Function} [options.loadServerXml] - reload currentXml в modeler (409)
  * @param {Function} [options.applyOpsFn] - replay pendingOps (тесты)
+ * @param {Object} [options.journal] - opsJournal (default createOpsJournal())
+ * @param {Object} [options.syncStateStore] - syncState store (default createSyncStateStore())
+ * @param {Object} [options.navigator] - navigator-like {onLine} (тесты)
  */
 export function createSaveOutbox(options = {}) {
   const sessionId = asText(options?.sessionId);
@@ -157,6 +185,15 @@ export function createSaveOutbox(options = {}) {
   const loadServerXml = typeof options.loadServerXml === "function"
     ? options.loadServerXml
     : async () => ({ ok: true });
+  const journal = options.journal && typeof options.journal === "object"
+    ? options.journal
+    : createOpsJournal();
+  const syncStateStore = options.syncStateStore && typeof options.syncStateStore === "object"
+    ? options.syncStateStore
+    : createSyncStateStore();
+  const navigatorRef = options.navigator && typeof options.navigator === "object"
+    ? options.navigator
+    : (typeof navigator !== "undefined" ? navigator : null);
 
   const rebase = createOpsRebase({ applyOpsFn: options.applyOpsFn });
 
@@ -171,12 +208,47 @@ export function createSaveOutbox(options = {}) {
   let inFlight = false;
   let flushTimer = null;
   let busyPollTimer = null;
+  let syncStateTimer = null;
   let consecutiveConflicts = 0;
-  // Ack-wipe защита (review BLOCKER-2): срез буфера, реально ушедший в полёте
-  // ops-flush'а, и марка полного сохранения, инициированного outbox'ом —
-  // ops, дописанные во время полёта, ack'ом не стираются.
-  let inFlightSentCount = 0;
-  let fullSavePreserveFrom = 0;
+  // pendingAck-детач (наследие п.1): срез буфера, реально ушедший в полёт
+  // ops-flush'а. Буфер продолжает жить независимо — undo/push во время полёта
+  // мутаируют только его; ack снимает pendingAck целиком; 409/nack возвращает
+  // его в голову буфера с сохранением opId.
+  let pendingAck = null;
+  // Снимок буфера на момент старта РУЧНОГО full-save (наследие п.5, review
+  // BLOCKER-2): первый busy (stage "build") прогона xml/rawXml без активного
+  // fullSavePreserve → ops в буфере на тот момент покрываются сериализованным
+  // XML. Ack full-save снимает ТОЛЬКО их (пересечение с текущим буфером);
+  // ops, дописанные после снимка, ack'ом не покрыты — остаются и уходят
+  // следующим flush. Version-арифметика (ack.version >= base+sentCount)
+  // удалена: сервер даёт +1 на батч, не на op — порог был несостоятелен
+  // (drain терял post-flight ops, sentCount>=2 — livelock).
+  let manualSaveCoveredOpIds = null;
+  // Sentinel full-save пути, инициированного outbox'ом: opId хвоста буфера на
+  // момент делегирования (null — буфер был пуст). Ack full-save сохраняет всё,
+  // дописанное ПОСЛЕ делегирования (review BLOCKER-2, ack-wipe).
+  let fullSavePreserveActive = false;
+  let fullSavePreserveFromOpId = null;
+  // Online/offline: offline подавляет flush (не штатная ошибка) и эмитит
+  // ops-local/offline status-событие (рендеринг индикатора — следующий слайс).
+  let online = true;
+  let localVersionCounter = 0;
+  let destroyed = false;
+
+  // Гидрация durable-буфера из journal (PLAN §5): новый экземпляр outbox на
+  // той же сессии восстанавливает неотправленные ops (F5 / kill вкладки).
+  // Сразу после гидрации планируем flush — иначе при гонке с entry-
+  // reconcile (runtime ещё не зарегистрирован, ветка flush пропущена)
+  // догон не происходил никогда: e2e kill-before-flush (TESTS.md §4.1.1)
+  // показал буфер, восстановленный из IDB, но не ушедший в сеть.
+  const hydratePromise = Promise.resolve()
+    .then(() => journal.hydrateBuffer(sessionId))
+    .then((ops) => {
+      if (destroyed || !Array.isArray(ops) || ops.length === 0) return;
+      hydrateBufferedOps(ops);
+      scheduleFlush();
+    })
+    .catch(() => undefined);
 
   const emitStatus = (detail) => {
     try {
@@ -206,6 +278,10 @@ export function createSaveOutbox(options = {}) {
       clearTimeout(busyPollTimer);
       busyPollTimer = null;
     }
+    if (syncStateTimer) {
+      clearTimeout(syncStateTimer);
+      syncStateTimer = null;
+    }
   };
 
   const scheduleFlush = () => {
@@ -219,6 +295,97 @@ export function createSaveOutbox(options = {}) {
 
   const clearBuffer = () => {
     buffer = [];
+  };
+
+  // NIT-2 review: транзиентный сбой durable-записи молча понижал durability
+  // (при kill вкладки терялся хвост после последней успешной записи).
+  // Полная недоступность IDB — задокументированный fallback (UI.md §1);
+  // частичный отказ — телеметрия (server state не страдает).
+  let journalFailureLogged = false;
+  const journalLogFailure = (kind, error) => {
+    if (journalFailureLogged) return;
+    journalFailureLogged = true;
+    try {
+      recordSaveDiagnostic("ops_journal_write_failed", {
+        sid: sessionId,
+        kind,
+        error: String(error?.message || error || "unknown"),
+      });
+    } catch {
+      // telemetry must never break the save path
+    }
+  };
+
+  const journalRemove = (opIds) => {
+    try {
+      const run = Promise.resolve(journal.removeOps(opIds));
+      run.catch((error) => journalLogFailure("remove", error));
+    } catch (error) {
+      journalLogFailure("remove", error);
+    }
+  };
+
+  const journalAppend = (ops) => {
+    try {
+      const run = Promise.resolve(journal.appendOps(sessionId, ops));
+      run.catch((error) => journalLogFailure("append", error));
+    } catch (error) {
+      journalLogFailure("append", error);
+    }
+  };
+
+  // Добавляет ops в буфер без дубликатов по opId (гидрация / reconcile).
+  function hydrateBufferedOps(ops) {
+    const known = new Set(buffer.map((item) => item.opId));
+    if (pendingAck) {
+      for (const item of pendingAck) known.add(item.opId);
+    }
+    const fresh = (Array.isArray(ops) ? ops : []).filter(
+      (item) => item && typeof item === "object" && item.opId && !known.has(item.opId),
+    );
+    if (fresh.length > 0) {
+      buffer = [...buffer, ...fresh.map((item) => ({ ...item, __ts: Number(item.__ts) || now() }))];
+    }
+    return fresh.length;
+  }
+
+  // lastLocalVersion — монотонный локальный счётчик правок (debounced patch).
+  const scheduleSyncStatePatch = () => {
+    if (syncStateTimer) return;
+    syncStateTimer = setTimeout(() => {
+      syncStateTimer = null;
+      try {
+        const run = Promise.resolve(
+          syncStateStore.patchSyncState(sessionId, { lastLocalVersion: localVersionCounter }),
+        );
+        run.catch(() => undefined);
+      } catch {
+        // no-op
+      }
+    }, config.syncStateDebounceMs);
+    if (typeof syncStateTimer.unref === "function") syncStateTimer.unref();
+  };
+
+  const bumpLocalVersion = () => {
+    localVersionCounter += 1;
+    scheduleSyncStatePatch();
+  };
+
+  // Возврат детачнутого pendingAck в голову буфера (409/nack/reconcile-keep).
+  const restorePendingAck = () => {
+    if (pendingAck && pendingAck.length > 0) {
+      buffer = [...pendingAck, ...buffer];
+    }
+    pendingAck = null;
+  };
+
+  const isOffline = () => {
+    if (online === false) return true;
+    try {
+      return !!navigatorRef && navigatorRef.onLine === false;
+    } catch {
+      return false;
+    }
   };
 
   const degrade = (reason) => {
@@ -241,14 +408,23 @@ export function createSaveOutbox(options = {}) {
   async function flushNow({ reason = "manual", keepalive = false } = {}) {
     if (stage === "degraded") return null;
 
+    // Offline подавляет flush (не штатная ошибка): состояние уходит наружу
+    // status-событием — индикатор (следующий слайс) его отрендерит.
+    if (isOffline()) {
+      emitStatus({ stage: "ops-local", reason, offline: true });
+      return null;
+    }
+
     if (keepalive) {
       // Flush при уходе со страницы: fire-and-forget keepalive-fetch с
       // Authorization (UI.md §7 — НЕ sendBeacon). Буфер не чистим: доставка
       // неподтверждена, идемпотентность по opId закрывает двойную отправку
-      // (unload-flush + восстановленная страница). Запрос обрывается через
-      // keepaliveAbortMs: зависший keepalive не должен держать браузерное
-      // соединение неограниченно (connection-pool starvation класса H3);
-      // abort — best-effort, без retry (страница умирает).
+      // (unload-flush + восстановленная страница). Гидрация journal здесь не
+      // ждётся: страница умирает, новый инстанс сам гидрирует буфер.
+      // Запрос обрывается через keepaliveAbortMs: зависший keepalive не должен
+      // держать браузерное соединение неограниченно (connection-pool
+      // starvation класса H3); abort — best-effort, без retry (страница
+      // умирает).
       if (buffer.length === 0 && !needsFullSave) return null;
       const { body } = buildBatchBody({
         baseVersion: getTrackedDiagramStateVersion(sessionId),
@@ -290,16 +466,21 @@ export function createSaveOutbox(options = {}) {
       return null;
     }
 
+    // Обычный flush ждёт гидрацию durable-буфера из journal (PLAN §5): новый
+    // инстанс outbox на той же сессии обязан дослать восстановленные ops.
+    await hydratePromise;
+
     if (inFlight) return null;
 
     if (needsFullSave) {
       // Не-whitelisted команда: текущий flush уходит существующим полным путём.
       // Буфер НЕ чистим здесь: после ack full-save придёт coordinator
-      // "success" (xml/rawXml) и сбросит буфер (серверное состояние покрывает
-      // все применённые локально ops). Ops, дописанные в буфер ПОСЛЕ этого
-      // момента, ack'ом полного сохранения не покрыты — сохраняем срез.
+      // "success" (xml/rawXml) и снимет подтверждённый префикс (срез от
+      // sentinel-opId хвоста на этот момент). Ops, дописанные ПОСЛЕ этого
+      // момента, ack'ом полного сохранения не покрыты — sentinel их сохранит.
       needsFullSave = false;
-      fullSavePreserveFrom = buffer.length;
+      fullSavePreserveActive = true;
+      fullSavePreserveFromOpId = buffer.length > 0 ? buffer[buffer.length - 1].opId : null;
       requestFullSave();
       scheduleFlush();
       return null;
@@ -321,8 +502,10 @@ export function createSaveOutbox(options = {}) {
     }
 
     inFlight = true;
-    const wireOps = buffer.map(toWireOp);
-    inFlightSentCount = buffer.length;
+    // pendingAck-детач: отправленный список живёт отдельно от буфера.
+    const sent = buffer.splice(0);
+    pendingAck = sent;
+    const wireOps = sent.map(toWireOp);
     emitStatus({ stage: "ops-saving", opCount: wireOps.length, reason });
     traceOpsFlush({ ts: now(), reason, opCount: wireOps.length, keepalive: false });
     try {
@@ -333,7 +516,7 @@ export function createSaveOutbox(options = {}) {
       });
     } catch {
       inFlight = false;
-      inFlightSentCount = 0;
+      restorePendingAck();
       return null;
     }
   }
@@ -382,12 +565,16 @@ export function createSaveOutbox(options = {}) {
         const index = buffer.map((op) => op.key).lastIndexOf(incoming.key);
         if (index >= 0) {
           const coalesceCount = Number(buffer[index].__coalesceCount) || 1;
-          buffer.splice(index, 1);
+          const removed = buffer.splice(index, 1)[0];
+          journalRemove([removed.opId]);
           if (coalesceCount > 1) {
             needsFullSave = true;
           }
         } else {
-          buffer.push({ ...incoming, opId: uuid(), __ts: now() });
+          const compensating = { ...incoming, opId: uuid(), __ts: now() };
+          buffer.push(compensating);
+          journalAppend([compensating]);
+          bumpLocalVersion();
         }
         scheduleFlush();
         return mapped;
@@ -396,8 +583,17 @@ export function createSaveOutbox(options = {}) {
       const op = { ...incoming, opId: uuid(), __ts: now() };
       lastCapture = { command: mapped.command, captured: true };
       const coalesced = tryCoalesceIntoBuffer(buffer, op, { coalesceMs: config.coalesceMs, now: now() });
-      if (!coalesced) {
+      if (coalesced) {
+        // keep-last payload изменился — journal перезаписываем по opId
+        // якорной op (coalesce сливает incoming в существующую, opId якоря
+        // первой команды burst'а сохраняется).
+        const target = [...buffer].reverse().find((item) => item.key === op.key);
+        if (target) journalAppend([target]);
+        bumpLocalVersion();
+      } else {
         buffer.push(op);
+        journalAppend([op]);
+        bumpLocalVersion();
         if (buffer.length >= config.maxOpsPerFlush) {
           void flushNow({ reason: "threshold" });
           return mapped;
@@ -464,16 +660,27 @@ export function createSaveOutbox(options = {}) {
       });
     },
 
-    /** onSuccess pipeline "ops": ack — снимаются только отправленные ops. */
-    _onAck() {
+    /** onSuccess pipeline "ops": ack снимает ТОЛЬКО детачнутый pendingAck. */
+    _onAck(response) {
       inFlight = false;
       consecutiveConflicts = 0;
       // Ack-wipe защита: ack покрывает ТОЛЬКО ops ушедшего батча; дописанные
       // во время полёта остаются в буфере и уходят следующим flush (иначе
       // правки пользователя во время запроса теряются молча — review BLOCKER-2).
-      if (inFlightSentCount > 0) {
-        buffer.splice(0, Math.min(inFlightSentCount, buffer.length));
-        inFlightSentCount = 0;
+      if (pendingAck) {
+        journalRemove(pendingAck.map((op) => op.opId));
+        const ackVersion = readAckDiagramStateVersion(response);
+        if (ackVersion !== null) {
+          try {
+            const run = Promise.resolve(
+              syncStateStore.patchSyncState(sessionId, { lastServerVersion: ackVersion }),
+            );
+            run.catch(() => undefined);
+          } catch {
+            // no-op
+          }
+        }
+        pendingAck = null;
       }
       // needsFullSave, выставленный во время полёта, ack'ом не гасится —
       // full-save fallback обязан отработать.
@@ -486,7 +693,7 @@ export function createSaveOutbox(options = {}) {
     /** on409 pipeline "ops": same-tab race → opsRebase (UI.md §5). */
     async _onConflict(response) {
       inFlight = false;
-      inFlightSentCount = 0;
+      restorePendingAck();
       consecutiveConflicts += 1;
       if (consecutiveConflicts >= 2) {
         // Двойной 409 подряд — auto-rebase не сходится, честная деградация.
@@ -544,12 +751,95 @@ export function createSaveOutbox(options = {}) {
     /** onError pipeline "ops" (retry-исчерпан / 422 / transport fail). */
     _onError(result) {
       inFlight = false;
-      inFlightSentCount = 0;
+      restorePendingAck();
       if (stage === "degraded") return;
       degrade(result?.status === 422 ? "operation-unsupported" : "transport-failed");
     },
 
+    /** Гидрация буфера извне (reconciliation entry / тесты). */
+    hydrateBufferedOps(ops) {
+      return hydrateBufferedOps(ops);
+    },
+
+    /** Wire ops текущего буфера — для LWW-детекта consumer'а (UI.md §4). */
+    getPendingOps() {
+      return buffer.map(toWireOp);
+    },
+
+    /**
+     * Вырезать ops из буфера по opId (LWW-проигравшие → «предложенные»).
+     * Eviction из journal — сразу (op больше не pending). Возвращает
+     * вырезанные wire ops.
+     */
+    removePendingOps(opIds = []) {
+      const ids = new Set((Array.isArray(opIds) ? opIds : []).map(asText).filter(Boolean));
+      if (ids.size === 0) return [];
+      const removed = [];
+      const kept = [];
+      for (const op of buffer) {
+        if (ids.has(asText(op?.opId))) removed.push(op);
+        else kept.push(op);
+      }
+      if (removed.length === 0) return [];
+      buffer = kept;
+      journalRemove(removed.map((op) => op.opId));
+      return removed.map(toWireOp);
+    },
+
+    /**
+     * Вернуть ops в буфер как НОВЫЕ ops (свежий opId) — «предложенные
+     * изменения» по действию пользователя. Уходят обычным flush.
+     */
+    requeueOps(ops = []) {
+      const list = (Array.isArray(ops) ? ops : []).filter((op) => op && typeof op === "object");
+      if (list.length === 0) return 0;
+      const requeued = list.map((op) => {
+        const { opId: _ignoredOpId, key: _ignoredKey, ...rest } = op;
+        return {
+          ...rest,
+          opId: uuid(),
+          key: `${asText(op.type)}::${asText(op.elementId)}`,
+          __ts: now(),
+        };
+      });
+      buffer = [...buffer, ...requeued];
+      journalAppend(requeued);
+      bumpLocalVersion();
+      scheduleFlush();
+      return requeued.length;
+    },
+
+    /**
+     * Ветка fetch+rebase при входе в сессию (PLAN §5.3/§5.4): серверный XML
+     * грузим echo-muted путём, pendingOps replay'им на live-модель.
+     */
+    async applyServerReconciliation(serverXml, pendingOps = []) {
+      const xml = String(serverXml || "");
+      if (!xml.trim()) return { ok: false, error: "missing_server_xml" };
+      try {
+        await loadServerXml(xml);
+      } catch (error) {
+        return { ok: false, error: `reload-failed:${String(error?.message || error)}` };
+      }
+      const replay = await rebase.replayPendingOps(
+        Array.isArray(pendingOps) ? pendingOps : [],
+        options.modeler || null,
+      );
+      return { ok: replay?.ok !== false, replay };
+    },
+
+    /** Online/offline переключение (installOpsOutboxNetworkTriggers). */
+    setOnline(value) {
+      const next = value !== false;
+      if (next === online) return;
+      online = next;
+      if (!online) {
+        emitStatus({ stage: "ops-local", reason: "offline", offline: true });
+      }
+    },
+
     destroy() {
+      destroyed = true;
       clearTimers();
       entry.bySession.delete(sessionId);
       unsubscribeCoordinator();
@@ -560,25 +850,68 @@ export function createSaveOutbox(options = {}) {
   const entry = dispatchRegistry.get(coordinator);
   entry.bySession.set(sessionId, outbox);
 
-  // Full save ack (manual, tab-switch, beforeunload fallback) покрывает все
-  // локальные ops — сбрасываем буфер (PLAN §7). Ops, дописанные после того,
-  // как outbox инициировал полное сохранение (fullSavePreserveFrom), ack'ом
-  // НЕ покрыты — сохраняем хвост буфера (review BLOCKER-2, ack-wipe).
+  // Full-save lifecycle (review BLOCKER-2): ручной ack покрывает локальные
+  // ops — но НЕ слепо и НЕ через version-арифметику (сервер +1/батч, не /op):
+  //  - status busy/stage:"build" xml/rawXml БЕЗ активного preserve → снимок
+  //    текущих opId буфера (manualSaveCoveredOpIds): XML будет сериализован
+  //    из модели, уже содержащей эти правки;
+  //  - error xml/rawXml → снимок недействителен (XML не закоммичен);
+  //  - success: preserve-ветка (outbox-initiated) — sentinel-opId хвоста на
+  //    момент делегирования (без изменений); manual-ветка — drain ТОЛЬКО
+  //    пересечения буфера со снимком. Ops, дописанные после снимка, ack'ом
+  //    не покрыты — остаются и уходят следующим flush (opId-идемпотентность
+  //    делает возможный пересыл безопасным).
   const unsubscribeCoordinator = coordinator.subscribe?.((event, data) => {
-    if (event !== "success") return;
     if (data?.sessionId !== sessionId) return;
-    if (data?.pipeline === "xml" || data?.pipeline === "rawXml") {
-      if (fullSavePreserveFrom > 0) {
-        buffer = buffer.slice(fullSavePreserveFrom);
-        fullSavePreserveFrom = 0;
-      } else {
-        clearBuffer();
+    const pipeline = asText(data?.pipeline);
+    const isFullSavePipeline = pipeline === "xml" || pipeline === "rawXml";
+    if (!isFullSavePipeline) return;
+
+    if (event === "status") {
+      if (data?.state === "busy" && data?.stage === "build" && !fullSavePreserveActive) {
+        manualSaveCoveredOpIds = new Set(
+          buffer.map((op) => asText(op.opId)).filter(Boolean),
+        );
       }
-      needsFullSave = false;
-      // Full-save ack покрывает все локальные правки — dedup-ledger больше
-      // не валиден: consult без свежего pushCommand обязан отвечать false.
-      lastCapture = { command: "", captured: false };
+      return;
     }
+
+    if (event === "error") {
+      // Full-save провален — покрытия не было, снимок недействителен.
+      manualSaveCoveredOpIds = null;
+      return;
+    }
+
+    if (event !== "success") return;
+    if (fullSavePreserveActive) {
+      fullSavePreserveActive = false;
+      const sentinel = fullSavePreserveFromOpId;
+      fullSavePreserveFromOpId = null;
+      if (sentinel !== null) {
+        const idx = buffer.findIndex((op) => op.opId === sentinel);
+        if (idx >= 0) {
+          const dropped = buffer.slice(0, idx + 1);
+          buffer = buffer.slice(idx + 1);
+          journalRemove(dropped.map((op) => op.opId));
+        }
+        // idx === -1: sentinel вырезан undo → всё оставшееся моложе
+        // делегирования либо неразличимо — сохраняем буфер целиком.
+      }
+    } else {
+      const covered = manualSaveCoveredOpIds;
+      manualSaveCoveredOpIds = null;
+      if (covered && covered.size > 0) {
+        const dropped = buffer.filter((op) => covered.has(asText(op.opId)));
+        if (dropped.length > 0) {
+          buffer = buffer.filter((op) => !covered.has(asText(op.opId)));
+          journalRemove(dropped.map((op) => op.opId));
+        }
+      }
+    }
+    needsFullSave = false;
+    // Full-save ack покрывает все локальные правки — dedup-ledger больше
+    // не валиден: consult без свежего pushCommand обязан отвечать false.
+    lastCapture = { command: "", captured: false };
   }) || (() => {});
 
   return outbox;
@@ -610,5 +943,30 @@ export function installOpsOutboxPageFlush(outbox, { win, doc } = {}) {
     targetDoc.removeEventListener("visibilitychange", onVisibility);
     targetWin.removeEventListener("beforeunload", onPageHide);
     targetWin.removeEventListener("pagehide", onPageHide);
+  };
+}
+
+/**
+ * Проводка online/offline-триггеров (UI.md §3): window `online` → немедленный
+ * flushNow({reason:"online"}); window `offline` → setOnline(false) — flush'и
+ * подавляются (не штатные ошибки), состояние уходит наружу status-событием
+ * ops-local/offline (рендеринг индикатора — следующий слайс). Самодостаточная
+ * граница интеграции: uninstall возвращает снятие слушателей.
+ */
+export function installOpsOutboxNetworkTriggers(outbox, { win } = {}) {
+  const targetWin = win || (typeof window !== "undefined" ? window : null);
+  if (!targetWin || typeof targetWin.addEventListener !== "function") return () => {};
+  const onOnline = () => {
+    outbox.setOnline?.(true);
+    void outbox.flushNow?.({ reason: "online" });
+  };
+  const onOffline = () => {
+    outbox.setOnline?.(false);
+  };
+  targetWin.addEventListener("online", onOnline);
+  targetWin.addEventListener("offline", onOffline);
+  return () => {
+    targetWin.removeEventListener("online", onOnline);
+    targetWin.removeEventListener("offline", onOffline);
   };
 }

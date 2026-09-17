@@ -1,0 +1,32 @@
+# docker-compose.async-save-step2.yml — repoint overlay for contour
+# feature/async-save-pipeline-step2 (по образцу step1, untracked-артефакт
+# прогонов). Базовый compose — deploy-main-v1 (текущее состояние стека),
+# overlay подменяет build context на ЭТОТ worktree.
+#
+# ВАЖНО (compose spec): относительные пути резолвятся от директории ПЕРВОГО
+# compose-файла, поэтому здесь АБСОЛЮТНЫЕ пути.
+#
+# Запуск (env-lock обязателен):
+#   cd /Users/mac/agents_place/kimi_PM/server-backup/root/processmap_v1_worktrees/deploy-main-v1
+#   docker compose -p processmap_v1 \
+#     -f docker-compose.yml \
+#     -f /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2/docker-compose.async-save-step2.yml \
+#     up -d --build api frontend celery-worker
+
+services:
+  api:
+    build:
+      context: /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2
+    volumes:
+      - /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2/workspace:/app/workspace
+      - /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2/backend:/app/backend
+      - /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2/graphify-out:/app/graphify-out
+
+  celery-worker:
+    build:
+      context: /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2
+
+  frontend:
+    build:
+      context: /Users/mac/agents_place/kimi_PM/p0-work-worktrees/feature-async-save-pipeline-step2/frontend
+      dockerfile: Dockerfile
