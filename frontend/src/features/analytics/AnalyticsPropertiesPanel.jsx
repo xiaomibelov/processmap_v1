@@ -177,7 +177,9 @@ function CompareDrawer({ rows, onClose }) {
   );
 }
 
-export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) {
+export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [], folderId = "", folderTitle = "" }) {
+  const rowsScope = folderId ? "folder" : scope;
+  const rowsScopeId = folderId || scopeId;
   const [rawRows, setRawRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -218,7 +220,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) 
   useEffect(() => {
     setSelectedRows(new Set());
     setPage(1);
-  }, [scope, scopeId, backendFilters, debouncedSearch, valueTypeFilter, familyFilter, nameFilter, usageRange, pageSize]);
+  }, [rowsScope, rowsScopeId, backendFilters, debouncedSearch, valueTypeFilter, familyFilter, nameFilter, usageRange, pageSize]);
 
   const loadData = useCallback(async ({ signal } = {}) => {
     setLoading(true);
@@ -228,7 +230,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) 
     if (backendFilters.category?.length) params.category_filter = backendFilters.category;
     if (backendFilters.source?.length) params.source_filter = backendFilters.source;
     try {
-      const result = await apiGetAnalyticsProperties(scope, scopeId, params, { signal });
+      const result = await apiGetAnalyticsProperties(rowsScope, rowsScopeId, params, { signal });
       if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
@@ -243,7 +245,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) 
       setLoading(false);
       setError(String(e?.message || e || t.errorGeneric));
     }
-  }, [scope, scopeId, backendFilters]);
+  }, [rowsScope, rowsScopeId, backendFilters]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -365,12 +367,30 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) 
     [filteredRows, selectedRows]
   );
 
+  const exportParams = useMemo(
+    () => ({
+      type_filter: backendFilters.type || [],
+      category_filter: backendFilters.category || [],
+      source_filter: backendFilters.source || [],
+      search: debouncedSearch || "",
+    }),
+    [backendFilters, debouncedSearch]
+  );
+
+  const exportAreaLabel = folderId
+    ? `Раздел «${folderTitle || "без названия"}»`
+    : scope === "project"
+      ? "Проект"
+      : scope === "session"
+        ? "Сессия"
+        : "Workspace";
+
   async function handleServerExportCsv() {
     if (exporting) return;
     setExporting(true);
-    const result = await apiExportAnalyticsPropertiesCsv(scope, scopeId);
+    const result = await apiExportAnalyticsPropertiesCsv(rowsScope, rowsScopeId, exportParams);
     if (result?.ok && result.blob) {
-      downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.csv`);
+      downloadBlob(result.blob, result.filename || `properties-${rowsScope}-${rowsScopeId}.csv`);
     }
     setExporting(false);
   }
@@ -378,9 +398,9 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) 
   async function handleServerExportXlsx() {
     if (exporting) return;
     setExporting(true);
-    const result = await apiExportAnalyticsPropertiesXlsx(scope, scopeId);
+    const result = await apiExportAnalyticsPropertiesXlsx(rowsScope, rowsScopeId, exportParams);
     if (result?.ok && result.blob) {
-      downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.xlsx`);
+      downloadBlob(result.blob, result.filename || `properties-${rowsScope}-${rowsScopeId}.xlsx`);
     }
     setExporting(false);
   }
@@ -622,6 +642,9 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId, gaps = [] }) 
               {exporting ? t.exportLoading : t.exportExcelAll}
             </button>
           </div>
+          <p className="analyticsExportHint" data-testid="analytics-export-hint">
+            Экспорт «всех» с учётом фильтров и поиска · область: {exportAreaLabel}
+          </p>
         </div>
         {propertyNameOptions.length > 0 ? (
           <div className="analyticsPropertyChips">

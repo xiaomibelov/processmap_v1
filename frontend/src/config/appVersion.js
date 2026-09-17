@@ -1,8 +1,16 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.145",
+  currentVersion: "v1.0.146",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.146",
+      changes: [
+        "Экспорт «Excel/CSV всех» в Аналитике уважает активные фильтры и поиск и показывает область выгрузки.",
+        "Внутри раздела экспорт и таблица свойств работают по данным раздела (scope=folder).",
+        "В выгрузки свойств добавлены колонки «Проект» и «Сессия».",
+      ],
+    },
     {
       version: "v1.0.145",
       changes: [
