@@ -2948,6 +2948,13 @@ function ExplorerPane({
   const [explorerNavRef, explorerNavWidth] = useElementWidth();
   const explorerNavLayout = getNavSingleLineLayout(explorerNavWidth);
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
+  const currentFolderTitle = useMemo(() => {
+    const crumbs = Array.isArray(page?.breadcrumbs) ? page.breadcrumbs : [];
+    for (let i = crumbs.length - 1; i >= 0; i -= 1) {
+      if (crumbs[i]?.type === "folder") return String(crumbs[i]?.name || "").trim();
+    }
+    return "";
+  }, [page]);
   const contextHeaderTitle = folderId
     ? "Для папок: количество проектов"
     : "Для разделов: количество проектов";
@@ -3827,7 +3834,7 @@ function ExplorerPane({
 
       {activeTab === "analytics" ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <AnalyticsPage scope="workspace" scopeId={workspaceId} module="overview" orgId={activeOrgId} embedded />
+          <AnalyticsPage scope="workspace" scopeId={workspaceId} module="overview" orgId={activeOrgId} embedded folderId={folderId || ""} folderTitle={currentFolderTitle} />
         </div>
       ) : visibleSearchModel.active ? (
         <>
