@@ -860,17 +860,20 @@ export function createTemplatePackAdapter(deps = {}) {
         Object.entries(nativeRemap).forEach(([sourceId, targetId]) => {
           nativeNodeMap[sourceId] = registry?.get?.(targetId) || null;
         });
-        const entryShape = nativeNodeMap[String(pack?.entryNodeId || "")]
-          || pasteResult.createdElement
-          || null;
-        const exitShape = nativeNodeMap[String(pack?.exitNodeId || "")]
-          || pasteResult.createdElement
-          || null;
+        const entrySourceId = String(pack?.entryNodeId || "");
+        const exitSourceId = String(pack?.exitNodeId || "");
+        const entryMapped = nativeNodeMap[entrySourceId] || null;
+        const exitMapped = nativeNodeMap[exitSourceId] || null;
+        const entryShape = entryMapped || pasteResult.createdElement || null;
+        const exitShape = exitMapped || pasteResult.createdElement || null;
         const changedIds = asArray(pasteResult.changedIds);
+        // Any reliance on the createdElement fallback means entry/exit wiring
+        // may target a different shape than intended — surface a partial warning.
+        const partial = !entryShape || !exitShape || !entryMapped || !exitMapped;
+        if (partial) applyWarnings.push("template_native_tree_partial");
         if (!entryShape || !exitShape) {
           // Native paste already mutated the canvas; do not re-run pack path.
           // Report partial apply instead of duplicating shapes.
-          applyWarnings.push("template_native_tree_partial");
           logPackDebug("insert", {
             sid: String(getSessionId() || "-"),
             mode,
@@ -890,7 +893,7 @@ export function createTemplatePackAdapter(deps = {}) {
             mode,
             applyMode: "native_tree",
             remap: nativeRemap,
-            createdNodes: changedIds,
+            createdNodes: changedIds.length,
             createdEdges: 0,
             entryNodeId: "",
             exitNodeId: "",
@@ -899,7 +902,7 @@ export function createTemplatePackAdapter(deps = {}) {
             laneParentResolved,
             parentFallbackUsed,
             warnings: applyWarnings,
-            diagnostics: { legacyAnnotationIds, skippedNodeTypes: [], skippedEdges: [], applyWarnings },
+            diagnostics: { legacyAnnotationIds, skippedNodeTypes: [], skippedEdges: [], applyWarnings, createdIds: changedIds },
           };
         }
         const wiring = wireEntryExit({ modeling, anchor, entryShape, exitShape, mode });
@@ -907,9 +910,10 @@ export function createTemplatePackAdapter(deps = {}) {
           sid: String(getSessionId() || "-"),
           mode,
           packId: String(pack?.packId || "-"),
-          anchorId: String(anchor?.id || "-"),
+          anchorId: String(anchor?.id || ""),
           anchorByPoint: anchor ? 0 : 1,
           applyMode: "native_tree",
+          partial: partial ? 1 : 0,
           laneParentResolved: laneParentResolved ? 1 : 0,
           parentFallbackUsed: parentFallbackUsed ? 1 : 0,
           createdNodes: changedIds.length,
@@ -927,7 +931,7 @@ export function createTemplatePackAdapter(deps = {}) {
           mode,
           applyMode: "native_tree",
           remap: nativeRemap,
-          createdNodes: changedIds,
+          createdNodes: changedIds.length,
           createdEdges: 0,
           entryNodeId: String(entryShape?.id || ""),
           exitNodeId: String(exitShape?.id || ""),
@@ -936,7 +940,7 @@ export function createTemplatePackAdapter(deps = {}) {
           laneParentResolved,
           parentFallbackUsed,
           warnings: applyWarnings,
-          diagnostics: { legacyAnnotationIds, skippedNodeTypes: [], skippedEdges: [], applyWarnings },
+          diagnostics: { legacyAnnotationIds, skippedNodeTypes: [], skippedEdges: [], applyWarnings, createdIds: changedIds },
         };
       }
       applyWarnings.push("template_native_tree_fallback");

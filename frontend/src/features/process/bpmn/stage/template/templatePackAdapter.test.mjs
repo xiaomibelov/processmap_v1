@@ -1940,7 +1940,7 @@ function createTransferPack(overrides = {}) {
   };
 }
 
-function createNativePasteMock({ fail = null } = {}) {
+function createNativePasteMock({ fail = null, skipRemapFor = [] } = {}) {
   const calls = [];
   const createdElements = [];
   const listeners = new Set();
@@ -1968,6 +1968,7 @@ function createNativePasteMock({ fail = null } = {}) {
       const cache = {};
       const batch = [];
       for (const sourceId of collectIds(tree)) {
+        if (skipRemapFor.includes(sourceId)) continue;
         const nextId = `Pasted_${seq}_${sourceId}`;
         const created = {
           id: nextId,
@@ -2033,6 +2034,9 @@ test("insertTemplatePackOnModeler applies via native tree transfer with regenera
   assert.equal(result.entryNodeId, result.remap.Task_A);
   assert.equal(result.exitNodeId, result.remap.Task_B);
   assert.deepEqual(result.warnings, []);
+  assert.equal(typeof result.createdNodes, "number", "createdNodes must be a stable number");
+  assert.equal(result.createdNodes, 2);
+  assert.deepEqual(result.diagnostics.createdIds.sort(), [result.remap.Task_A, result.remap.Task_B].sort());
   assert.equal(paste.calls.length, 1);
   assert.equal(registryItems.length, 4, "pasted shapes must be registered for anchor wiring");
 });
@@ -2142,4 +2146,26 @@ test("insertTemplatePackOnModeler double apply regenerates unique businessObject
   assert.equal(new Set(boIds).size, boIds.length, "duplicate businessObject ids across applies");
   assert.equal(new Set(diIds).size, diIds.length, "duplicate DI ids across applies");
   assert.ok(!boIds.includes("Task_A") && !boIds.includes("Task_B"), "source ids must not be reused as final ids");
+});
+
+test("insertTemplatePackOnModeler warns partial when entry or exit remap is missing", async () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 520, 80, "B");
+  const paste = createNativePasteMock({ skipRemapFor: ["Task_B"] });
+  const { adapter, inst, registryItems } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [a, b],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+  paste.bindRegistry(registryItems);
+
+  const result = await adapter.insertTemplatePackOnModeler({
+    pack: createTransferPack(),
+    point: { x: 200, y: 200 },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applyMode, "native_tree");
+  assert.ok(result.warnings.includes("template_native_tree_partial"), "missing exit remap must surface partial warning");
+  assert.equal(result.entryNodeId, result.remap.Task_A);
 });
