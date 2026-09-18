@@ -890,3 +890,24 @@ test("restore never returns descriptor-less plain object", async (t) => {
   assert.equal(restored?.value, null);
   assert.equal(restored?.unsupported?.[0]?.$type, "foo:Bar");
 });
+
+test("restoreTemplateModdleValue with null moddle never throws on safe-typed unresolvable value", () => {
+  assert.doesNotThrow(() => {
+    const restored = restoreTemplateModdleValue({ $type: "camunda:Typo", x: 1 }, null);
+    assert.ok(restored && typeof restored === "object");
+    assert.ok(!Array.isArray(restored.unsupported) || restored.unsupported.length === 0);
+  });
+});
+
+test("restoreTemplateModdleValue with throwing moddle.create returns null value instead of raising", () => {
+  const moddle = {
+    create() {
+      throw new Error("unresolvable type");
+    },
+    createAny() {
+      throw new Error("unresolvable any");
+    },
+  };
+  const restored = restoreTemplateModdleValue({ $type: "camunda:Typo", x: 1 }, moddle);
+  assert.equal(restored?.value, null);
+});
