@@ -40,7 +40,7 @@ export function stripSaveStatusSlotPrefix(messageRaw = "") {
 const OPS_STAGE_VIEW = Object.freeze({
   "ops-saving": { state: "saving", label: "Сохранение (дельта)…", title: "Сохраняем изменения дельта-операциями." },
   "ops-rebase": { state: "saving", label: "Синхронизация версии…", title: "Конфликт версий разрешается автоматически: правки применяются к серверной версии." },
-  "ops-degraded": { state: "failed", label: "Полное сохранение (дельта недоступна)", title: "Дельта-сохранение недоступно до перезагрузки страницы: работает обычное полное сохранение." },
+  "ops-degraded": { state: "failed", label: "Сохраняем полностью: быстрое сохранение недоступно для этих изменений.", title: "Данные не потеряны; используем полное сохранение для этих изменений." },
   // step2 (UI.md §6): локально подтверждено, не ушедшее — буфер durable в IDB;
   // sublabel «ожидает сеть» при offline подаётся отдельным полем view.
   "ops-local": { state: "saved", label: "Сохранено локально", title: "Правки подтверждены локально (буфер надёжен даже при закрытии вкладки) и будут доставлены на сервер." },
@@ -118,6 +118,9 @@ export function buildSaveStatusSlotView({
     label: labels[state],
     title: titles[state],
     opsStage,
+    // Причина деградации — только телеметрия для JSX/логов; видимый copy
+    // зафиксирован фиксированной формулировкой OPS_STAGE_VIEW (PLAN §4).
+    opsReason: toText(status.opsReason),
     flashVisible,
     flashLabel: flashVisible ? stripSaveStatusSlotPrefix(flashMessage) : "",
     subprocessesSyncLabel: subprocessesSyncPending ? "Подпроцессы синхронизируются…" : "",

@@ -1313,9 +1313,13 @@ function ProcessStage({
   // словарь стадий не применялся).
   const [opsSaveStage, setOpsSaveStage] = useState("");
   const [opsOffline, setOpsOffline] = useState(false);
+  // Причина деградации — только телеметрия (view.opsReason), в видимый
+  // copy не попадает (PLAN §4: фиксированные формулировки full-save fallback).
+  const [opsSaveReason, setOpsSaveReason] = useState("");
   const handleOpsSaveStatus = useCallback((event) => {
     setOpsSaveStage(toText(event?.stage || event));
     setOpsOffline(event?.offline === true);
+    setOpsSaveReason(toText(event?.reason));
   }, []);
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
@@ -1463,12 +1467,14 @@ function ProcessStage({
     return {
       ...badge,
       opsStage: opsSaveStage,
+      ...(opsSaveReason ? { opsReason: opsSaveReason } : {}),
       ...(opsOffline ? { opsOffline: true } : {}),
     };
-  }, [saveUploadLifecycleEvent, opsSaveStage, opsOffline]);
+  }, [saveUploadLifecycleEvent, opsSaveStage, opsSaveReason, opsOffline]);
   useEffect(() => {
     setOpsSaveStage("");
     setOpsOffline(false);
+    setOpsSaveReason("");
   }, [sid]);
   useEffect(() => {
     if (isManualSaveBusy === true) return;
