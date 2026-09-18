@@ -47,6 +47,20 @@ _XMLNS_DEFAULT_RE = re.compile(r'xmlns="([^"]+)"')
 # bpmn-js delete semantics: при удалении shape удаляются инцидентные connection.
 _INCIDENT_REF_TAGS = ("incoming", "outgoing")
 
+# Типы-артефакты, которые ops-pipeline не умеет создавать безопасно (template
+# round-trip): op с таким типом → явный код ошибки full_save_required_for_bpmn_type,
+# клиент обязан уйти в full-save fallback (потеря правок запрещена).
+_UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES = {
+    f"{{{BPMN_NS}}}participant",
+    f"{{{BPMN_NS}}}lane",
+    f"{{{BPMN_NS}}}dataStoreReference",
+    f"{{{BPMN_NS}}}dataObjectReference",
+    f"{{{BPMN_NS}}}dataInputAssociation",
+    f"{{{BPMN_NS}}}dataOutputAssociation",
+    f"{{{BPMN_NS}}}association",
+    f"{{{BPMN_NS}}}textAnnotation",
+}
+
 
 class OperationApplyError(Exception):
     """Типизированная ошибка применения одной op — route маппит в 422."""
@@ -379,7 +393,15 @@ def _fmt_num(value: float) -> str:
     return repr(number)
 
 
+def _validate_shape_create_op(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+    """Fail-safe: unsafe artifact types → full_save_required_for_bpmn_type до любой мутации."""
+    tag = _resolve_bpmn_type(xml_text, _op_bpmn_type(op), op)
+    if tag in _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES:
+        raise OperationApplyError(_op_id(op), _op_type(op), "full_save_required_for_bpmn_type")
+
+
 def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+    _validate_shape_create_op(root, xml_text, op)
     # Client-generated id (API.md §5.5): клиент присылает `id`, элемент создаётся
     # с ним без регенерации — replay create при 409-rebase безопасен.
     element_id = str(op.get("elementId") or op.get("id") or "").strip()
