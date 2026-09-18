@@ -17,6 +17,54 @@ export const EXPLORER_TREE_EXPANDED_KEY = "explorer.tree.expanded";
 export const EXPLORER_TOBE_BANNER_DISMISSED_KEY = "explorer.tobe_banner.dismissed_at";
 export const TREE_SAVE_DEBOUNCE_MS = 500;
 
+// F2 (audit H1): единый version-tracker preferences-документа. Раньше версия
+// жила в двух несинхронизированных трекерах (treeSaver.version и
+// prefsQuery.data.version) — успех одного писателя обновлял только «свой»,
+// и каждая следующая запись шла со stale base_version → гарантированный 409.
+// Трекер держит самую свежую известную версию: его обновляют ЛЮБОЙ успешный
+// PATCH, 409-снапшот и attach GET-снапшота, и он же синхронизирует оба
+// трекера обратно (treeSaver через registeredSaver, query cache через bridge).
+let latestKnownVersion = null; // null — версия неизвестна (гость / GET не удался)
+let queryCacheBridge = null; // (doc) => void — setQueryData(["user-preferences"], doc)
+let registeredSaver = null; // createExplorerTreeSaver — синхронизация его version
+
+export function setPreferencesQueryCacheBridge(fn) {
+  queryCacheBridge = typeof fn === "function" ? fn : null;
+}
+
+export function registerPreferencesVersionSaver(saver) {
+  registeredSaver = saver && typeof saver.syncVersion === "function" ? saver : null;
+}
+
+/** Принять серверный снапшот (успех 200 или тело 409): версия + оба трекера. */
+export function adoptPreferencesSnapshot(doc) {
+  if (!doc || typeof doc !== "object") return;
+  const version = Number(doc.version);
+  if (!Number.isFinite(version)) return;
+  latestKnownVersion = version;
+  registeredSaver?.syncVersion(version);
+  queryCacheBridge?.(doc);
+}
+
+/** Принять только версию (attach GET-снапшота — документ уже в query cache). */
+export function adoptPreferencesVersion(version) {
+  const v = Number(version);
+  if (!Number.isFinite(v)) return;
+  latestKnownVersion = v;
+  registeredSaver?.syncVersion(v);
+}
+
+/** Самая свежая известная версия документа (null — неизвестна). */
+export function getLatestKnownPreferencesVersion() {
+  return latestKnownVersion;
+}
+
+export function __resetPreferencesVersionTrackerForTests() {
+  latestKnownVersion = null;
+  queryCacheBridge = null;
+  registeredSaver = null;
+}
+
 export async function fetchUserPreferences() {
   const resp = await apiRequest("/api/users/me/preferences");
   if (!resp?.ok) return null; // 401/сеть — гость остаётся на in-memory
@@ -24,10 +72,62 @@ export async function fetchUserPreferences() {
 }
 
 export async function patchUserPreferences({ baseVersion, set, unset }) {
-  return apiRequest("/api/users/me/preferences", {
+  const resp = await apiRequest("/api/users/me/preferences", {
     method: "PATCH",
     body: { base_version: baseVersion, set, unset },
+    // F2 (audit H1): auth-retry в apiCore шлёт прежнее тело со stale
+    // base_version → гарантированный 409, если версия ушла вперёд за время
+    // refresh. Hook opt-in: перед replay подставляем самую свежую известную
+    // версию из единого трекера. Дефолт apiCore без hook не меняется.
+    onBeforeAuthRetry: () => {
+      const latest = getLatestKnownPreferencesVersion();
+      if (latest === null) return null;
+      return { body: { base_version: latest, set, unset } };
+    },
   });
+  // Успех и 409-снапшот сразу adopt'ятся в единый трекер (оба трекера в
+  // синхроне независимо от того, какой писатель инициировал запрос).
+  if (resp?.ok) adoptPreferencesSnapshot(resp.data);
+  else if (Number(resp?.status) === 409 && resp?.data) adoptPreferencesSnapshot(resp.data);
+  return resp;
+}
+
+/**
+ * PATCH с единой LWW-обработкой 409 (статус-фильтры, TO BE-баннер).
+ * base_version — из единого трекера (самый свежий снапшот); при 409 снапшот
+ * adopt'ится в оба трекера и попытка повторяется. Не-CAS ошибки (сеть/5xx)
+ * не ретраятся — возвращается {ok:false, ...} для inline-состояния в UI.
+ */
+export async function patchUserPreferencesWithLww({
+  baseVersion,
+  set,
+  unset,
+  maxAttempts = 3,
+  patchFn = patchUserPreferences,
+} = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const tracked = getLatestKnownPreferencesVersion();
+    const resp = await patchFn({
+      baseVersion: Number.isFinite(tracked) ? tracked : Number(baseVersion || 0),
+      set,
+      unset,
+    });
+    if (resp?.ok) {
+      adoptPreferencesSnapshot(resp.data);
+      return { ok: true, data: resp.data, attempts: attempt };
+    }
+    if (Number(resp?.status) === 409 && resp?.data) {
+      adoptPreferencesSnapshot(resp.data);
+      continue;
+    }
+    return {
+      ok: false,
+      status: Number(resp?.status || 0),
+      error: resp?.error || "request_failed",
+      attempts: attempt,
+    };
+  }
+  return { ok: false, status: 409, error: "preferences_conflict", attempts: maxAttempts };
 }
 
 export function treeScopeKey(orgId, workspaceId) {
@@ -107,10 +207,17 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
   function attach(doc) {
     if (!doc) return;
     version = Number(doc.version || 0);
+    adoptPreferencesVersion(version);
     const stored = doc.preferences?.[EXPLORER_TREE_EXPANDED_KEY]
       || doc.preferences?.[EXPLORER_TREE_COLLAPSED_KEY];
-    desiredValue = stored && typeof stored === "object" ? { ...stored } : {};
-    dirty = false;
+    // F2: не затираем ожидающие flush локальные правки. Собственный успешный
+    // flush adopt'ится в query cache → attach с отстающим серверным снапшотом;
+    // сброс dirty/desiredValue здесь терял бы последние toggle'ы. Версию
+    // синхронизируем всегда; desiredValue оставляем нашим (LWW: наша запись
+    // перезапишет ключ целиком при следующем flush).
+    if (!dirty) {
+      desiredValue = stored && typeof stored === "object" ? { ...stored } : {};
+    }
     onSnapshot?.(doc);
   }
 
@@ -127,6 +234,9 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
       });
       if (resp?.ok) {
         version = Number(resp.data?.version ?? sendVersion + 1);
+        // F2: успех treeSaver тоже обновляет query cache и трекер (иначе
+        // другие писатели продолжали ходить со stale версией → системные 409).
+        adoptPreferencesSnapshot(resp.data);
         if (dirty) scheduleFlush(); // за время полёта накопились новые правки
         return;
       }
@@ -135,6 +245,7 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
         // последнее значение — последняя запись (эта вкладка) побеждает.
         const snapshot = resp.data;
         version = Number(snapshot.version || 0);
+        adoptPreferencesSnapshot(snapshot);
         onSnapshot?.(snapshot);
         dirty = true;
         scheduleFlush();
@@ -165,5 +276,10 @@ export function createExplorerTreeSaver({ patchFn = patchUserPreferences, deboun
     // для тестов/диагностики
     getVersion: () => version,
     getCurrentValue: () => desiredValue,
+    // F2: единый трекер синхронизирует версию saver'а после чужих успехов/409
+    syncVersion: (v) => {
+      const n = Number(v);
+      if (Number.isFinite(n)) version = n;
+    },
   };
 }
