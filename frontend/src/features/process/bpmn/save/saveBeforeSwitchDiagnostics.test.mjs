@@ -244,3 +244,36 @@ test("saveXmlSafely rejects invalid XML after strip recovery", async () => {
   assert.equal(out.ok, false);
   assert.equal(out.errorCode, "bpmn_serialize_failed");
 });
+
+test("saveXmlSafely surfaces recovered warning on later success after failed retry (no silent strip)", async () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => { warnings.push(args.join(" ")); };
+  try {
+    const bo = { $type: "bpmn:Task", bad: { $type: "pm:TemplateValue" } };
+    const inst = {
+      saveCalls: 0,
+      async saveXML() {
+        this.saveCalls += 1;
+        if (this.saveCalls <= 2) throw new Error(`boom ${this.saveCalls}`);
+        return { xml: "<xml ok=\"1\"/>" };
+      },
+      get(name) {
+        if (name === "elementRegistry") return { getAll: () => [{ businessObject: bo }] };
+        return null;
+      },
+    };
+    const first = await saveXmlSafely(inst, { format: true });
+    assert.equal(first.ok, false);
+    assert.equal(first.errorCode, "bpmn_serialize_failed");
+    assert.equal(bo.bad, null, "strip must have mutated the model");
+    const second = await saveXmlSafely(inst, { format: true });
+    assert.equal(second.ok, true);
+    assert.equal(second.recovered, true, "later success must surface stripped-data warning exactly once");
+    const third = await saveXmlSafely(inst, { format: true });
+    assert.equal(third.ok, true);
+    assert.notEqual(third.recovered, true, "warning must fire only once");
+  } finally {
+    console.warn = originalWarn;
+  }
+});
