@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { JSDOM } from "jsdom";
+
+const dom = new JSDOM("<!doctype html><html><body></body></html>");
+globalThis.DOMParser = dom.window.DOMParser;
+globalThis.XMLSerializer = dom.window.XMLSerializer;
+
 import { createTemplatePackAdapter, resolveGraphicalInsertParent } from "./templatePackAdapter.js";
 
 function createShape(id, x, y, name = "", boOverrides = {}) {
@@ -132,6 +138,7 @@ function createModelerWithServices({
   rootElement = null,
   copyPaste = null,
   eventBus = null,
+  saveXML = null,
 } = {}) {
   const connectCalls = [];
   const createShapeCalls = [];
@@ -332,6 +339,9 @@ function createModelerWithServices({
       if (name === "eventBus") return eventBus;
       return null;
     },
+    saveXML: typeof saveXML === "function"
+      ? saveXML
+      : async () => ({ xml: "<bpmn:definitions xmlns:bpmn=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" xmlns:bpmndi=\"http://www.omg.org/spec/BPMN/20100524/DI\" id=\"Definitions_1\"><bpmn:process id=\"Process_1\" /></bpmn:definitions>" }),
   };
 
   const adapter = createTemplatePackAdapter({
@@ -361,7 +371,7 @@ function createModelerWithServices({
   };
 }
 
-test("captureTemplatePackOnModeler returns pack with selected nodes and edges", () => {
+test("captureTemplatePackOnModeler returns pack with selected nodes and edges", async () => {
   const a = createShape("Task_A", 120, 80, "A");
   const b = createShape("Task_B", 320, 120, "B");
   const ab = createSequence("Flow_AB", a, b, "when ok");
@@ -370,7 +380,7 @@ test("captureTemplatePackOnModeler returns pack with selected nodes and edges", 
     registryItems: [a, b, ab],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Pack A-B" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Pack A-B" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.title, "Pack A-B");
   assert.equal(Array.isArray(result?.pack?.fragment?.nodes), true);
@@ -380,7 +390,7 @@ test("captureTemplatePackOnModeler returns pack with selected nodes and edges", 
   assert.equal(result.pack.fragment.edges[0].targetId, "Task_B");
 });
 
-test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond thin edge fields", () => {
+test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond thin edge fields", async () => {
   const a = createShape("Task_A", 120, 80, "A");
   const b = createShape("Task_B", 320, 120, "B");
   const ab = createSequence("Flow_With_Props", a, b, "approved", {
@@ -423,7 +433,7 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
     registryItems: [a, b, ab],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Pack A-B" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Pack A-B" });
   assert.equal(result?.ok, true);
   const edgePayload = result?.pack?.fragment?.edges?.[0] || {};
   assert.deepEqual(
@@ -446,7 +456,7 @@ test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond
   assert.equal(edgePayload.semanticPayload?.custom?.auditClass, "critical");
 });
 
-test("captureTemplatePackOnModeler captures association between task and textAnnotation", () => {
+test("captureTemplatePackOnModeler captures association between task and textAnnotation", async () => {
   const task = createShape("Task_A", 120, 80, "Inspect");
   const annotation = createTextAnnotation("Annotation_1", 340, 60, "проверить партию");
   const association = createAssociation("Assoc_1", task, annotation);
@@ -455,7 +465,7 @@ test("captureTemplatePackOnModeler captures association between task and textAnn
     registryItems: [task, annotation, association],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Annotation pack" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Annotation pack" });
   assert.equal(result?.ok, true);
   assert.deepEqual(result?.pack?.fragment?.annotations, []);
   assert.equal(result?.pack?.fragment?.nodes?.length, 2);
@@ -472,7 +482,7 @@ test("captureTemplatePackOnModeler captures association between task and textAnn
   assert.equal(edge.semanticPayload?.custom?.text, undefined);
 });
 
-test("captureTemplatePackOnModeler does not capture dataInputAssociation as template edge", () => {
+test("captureTemplatePackOnModeler does not capture dataInputAssociation as template edge", async () => {
   const task = createShape("Task_A", 120, 80, "Inspect");
   const dataObject = createShape("DataObject_1", 340, 90, "Input");
   const dataInputAssociation = {
@@ -488,12 +498,77 @@ test("captureTemplatePackOnModeler does not capture dataInputAssociation as temp
     registryItems: [task, dataObject, dataInputAssociation],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Data assoc pack" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Data assoc pack" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.fragment?.edges?.length, 0);
 });
 
-test("captureTemplatePackOnModeler captures messageFlow with datastore endpoint", () => {
+const TRANSFER_FULL_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" id="Definitions_1" targetNamespace="http://processmap.ai">
+  <bpmn:process id="Process_1">
+    <bpmn:task id="Task_A" name="Inspect" />
+    <bpmn:textAnnotation id="Annotation_1"><bpmn:text>проверить партию</bpmn:text></bpmn:textAnnotation>
+    <bpmn:association id="Assoc_1" sourceRef="Task_A" targetRef="Annotation_1" />
+    <bpmn:dataStoreReference id="DataStore_1" name="Main DB" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_1">
+      <bpmndi:BPMNShape id="Task_A_di" bpmnElement="Task_A" />
+      <bpmndi:BPMNShape id="Annotation_1_di" bpmnElement="Annotation_1" />
+      <bpmndi:BPMNEdge id="Assoc_1_di" bpmnElement="Assoc_1" />
+      <bpmndi:BPMNShape id="DataStore_1_di" bpmnElement="DataStore_1" />
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
+test("captureTemplatePackOnModeler adds native tree transfer for annotation association datastore selection", async () => {
+  const task = createShape("Task_A", 120, 80, "Inspect");
+  const annotation = createTextAnnotation("Annotation_1", 340, 60, "проверить партию");
+  const association = createAssociation("Assoc_1", task, annotation);
+  const dataStore = createDataStoreReference("DataStore_1", 560, 90, "Main DB");
+  const copyPaste = {
+    createTree(selected) {
+      return { id: "tree_root", elements: selected.map((el) => ({ id: el.id })) };
+    },
+  };
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [task, annotation, association, dataStore],
+    registryItems: [task, annotation, association, dataStore],
+    copyPaste,
+    saveXML: async () => ({ xml: TRANSFER_FULL_XML }),
+  });
+
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Transfer pack" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.transfer?.schema, "fpc.bpmn.template.xml.v1");
+  assert.equal(result?.pack?.transfer?.captureMode, "bpmn_xml_native_tree");
+  assert.ok(result?.pack?.transfer?.sourceDescriptorIds?.includes("Task_A"));
+  assert.ok(result?.pack?.transfer?.sourceDescriptorIds?.includes("DataStore_1"));
+  assert.ok(result?.pack?.transfer?.bpmnXml?.includes("dataStoreReference"));
+  assert.ok(result?.pack?.transfer?.bpmnXml?.includes("textAnnotation"));
+  assert.ok(result?.pack?.transfer?.nativeTree);
+  assert.equal(result?.pack?.transferWarnings, undefined);
+  // pack fields stay canonical
+  assert.equal(result?.pack?.fragment?.nodes?.length, 3);
+  assert.equal(result?.pack?.fragment?.edges?.length, 1);
+});
+
+test("captureTemplatePackOnModeler falls back to pack only when copyPaste unavailable", async () => {
+  const task = createShape("Task_A", 120, 80, "Inspect");
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [task],
+    registryItems: [task],
+    copyPaste: null,
+  });
+
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Pack only" });
+  assert.equal(result?.ok, true);
+  assert.equal(result?.pack?.transfer, undefined);
+  assert.deepEqual(result?.pack?.transferWarnings, ["copy_paste_unavailable"]);
+  assert.ok(result?.pack?.fragment?.nodes?.length > 0);
+});
+
+test("captureTemplatePackOnModeler captures messageFlow with datastore endpoint", async () => {
   const task = createShape("Task_A", 120, 80, "Inspect");
   const dataStore = createDataStoreReference("DataStore_1", 340, 90, "Closure source");
   const flow = createMessageFlow("MessageFlow_1", task, dataStore, "snapshot");
@@ -502,7 +577,7 @@ test("captureTemplatePackOnModeler captures messageFlow with datastore endpoint"
     registryItems: [task, dataStore, flow],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "MessageFlow pack" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "MessageFlow pack" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.fragment?.edges?.length, 1);
   const edge = result?.pack?.fragment?.edges?.[0] || {};
@@ -512,7 +587,7 @@ test("captureTemplatePackOnModeler captures messageFlow with datastore endpoint"
   assert.equal(edge.targetId, "DataStore_1");
 });
 
-test("captureTemplatePackOnModeler ignores messageFlow without datastore endpoint", () => {
+test("captureTemplatePackOnModeler ignores messageFlow without datastore endpoint", async () => {
   const a = createShape("Task_A", 120, 80, "A");
   const b = createShape("Task_B", 340, 90, "B");
   const flow = createMessageFlow("MessageFlow_1", a, b, "unsupported");
@@ -521,12 +596,12 @@ test("captureTemplatePackOnModeler ignores messageFlow without datastore endpoin
     registryItems: [a, b, flow],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported messageFlow pack" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported messageFlow pack" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.fragment?.edges?.length, 0);
 });
 
-test("captureTemplatePackOnModeler marks selected shapes dropped from pack in unsupportedSelectionTypes", () => {
+test("captureTemplatePackOnModeler marks selected shapes dropped from pack in unsupportedSelectionTypes", async () => {
   const task = createShape("Task_A", 120, 80, "A");
   const ghostGroup = {
     id: "",
@@ -544,13 +619,13 @@ test("captureTemplatePackOnModeler marks selected shapes dropped from pack in un
     selectionItems: [task, ghostGroup],
     registryItems: [task, ghostGroup],
   });
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Dropped shape pack" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Dropped shape pack" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.fragment?.nodes?.length, 1);
   assert.deepEqual(result?.diagnostics?.unsupportedSelectionTypes, ["bpmn:Group"]);
 });
 
-test("captureTemplatePackOnModeler captures selected subprocess subtree as serializable template pack", () => {
+test("captureTemplatePackOnModeler captures selected subprocess subtree as serializable template pack", async () => {
   const innerStart = {
     id: "StartEvent_1",
     type: "bpmn:StartEvent",
@@ -620,7 +695,7 @@ test("captureTemplatePackOnModeler captures selected subprocess subtree as seria
     registryItems: [subprocess, innerStart, innerTask, innerEnd, flowA, flowB],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess template" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess template" });
   assert.equal(result?.ok, true);
   assert.equal(result?.pack?.captureMode, "subprocess_subtree");
   assert.equal(result?.pack?.sourceRootId, "SubProcess_1");
@@ -657,7 +732,7 @@ test("captureTemplatePackOnModeler captures selected subprocess subtree as seria
   assert.equal(result?.pack?.exitNodeId, "SubProcess_1");
 });
 
-test("captureTemplatePackOnModeler preserves Zeebe properties on subprocess internal sequenceFlow", () => {
+test("captureTemplatePackOnModeler preserves Zeebe properties on subprocess internal sequenceFlow", async () => {
   const innerStart = {
     id: "Event_0fxe2x2",
     type: "bpmn:StartEvent",
@@ -739,7 +814,7 @@ test("captureTemplatePackOnModeler preserves Zeebe properties on subprocess inte
     registryItems: [subprocess, innerStart, gateway, throwEvent, startFlow, flow],
   });
 
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess Zeebe edge" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess Zeebe edge" });
   assert.equal(result?.ok, true);
   const edgePayload = result?.pack?.fragment?.edges?.find((edge) => edge.id === "Flow_0u28r14");
   assert.equal(edgePayload?.when, "Да");
@@ -750,7 +825,7 @@ test("captureTemplatePackOnModeler preserves Zeebe properties on subprocess inte
   assert.equal(edgePayload?.semanticPayload?.extensionElements?.values?.[0]?.values?.[0]?.value, "Закрыта");
 });
 
-test("captureTemplatePackOnModeler preserves documentation, camunda io/properties, and custom bo payload in semanticPayload", () => {
+test("captureTemplatePackOnModeler preserves documentation, camunda io/properties, and custom bo payload in semanticPayload", async () => {
   const source = createShape("Task_With_Props", 120, 80, "Task with props", {
     documentation: [
       { $type: "bpmn:Documentation", text: "doc text" },
@@ -797,7 +872,7 @@ test("captureTemplatePackOnModeler preserves documentation, camunda io/propertie
     selectionItems: [source],
     registryItems: [source],
   });
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Pack with props" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Pack with props" });
   assert.equal(result?.ok, true);
   const captured = result?.pack?.fragment?.nodes?.[0]?.semanticPayload || {};
   assert.equal(captured.documentation?.[0]?.text, "doc text");
@@ -1461,7 +1536,7 @@ test("semantic payload survives capture -> JSON storage -> insert -> reread roun
     anchorShape: anchor,
   });
 
-  const captured = adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip payload" });
+  const captured = await adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip payload" });
   assert.equal(captured?.ok, true);
   const storedPack = JSON.parse(JSON.stringify(captured.pack));
   const sourcePayload = storedPack?.fragment?.nodes?.[0]?.semanticPayload || {};
@@ -1480,7 +1555,7 @@ test("semantic payload survives capture -> JSON storage -> insert -> reread roun
   const insertedNode = registryItems.find((row) => String(row?.id || "") === insertedId);
   assert.ok(insertedNode);
   setSelection([insertedNode]);
-  const recaptured = adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip recapture" });
+  const recaptured = await adapter.captureTemplatePackOnModeler(inst, { title: "Roundtrip recapture" });
   assert.equal(recaptured?.ok, true);
   const targetPayload = recaptured?.pack?.fragment?.nodes?.[0]?.semanticPayload || {};
   assert.deepEqual(targetPayload, sourcePayload);
@@ -1526,7 +1601,7 @@ test("sequenceFlow semantic payload survives capture -> JSON storage -> insert -
     anchorShape: anchor,
   });
 
-  const captured = adapter.captureTemplatePackOnModeler(inst, { title: "Edge roundtrip payload" });
+  const captured = await adapter.captureTemplatePackOnModeler(inst, { title: "Edge roundtrip payload" });
   assert.equal(captured?.ok, true);
   const storedPack = JSON.parse(JSON.stringify(captured.pack));
   const sourcePayload = storedPack?.fragment?.edges?.[0]?.semanticPayload || {};
@@ -1553,7 +1628,7 @@ test("sequenceFlow semantic payload survives capture -> JSON storage -> insert -
   registryItems.push(...createdConnections);
   setSelection(insertedNodes);
 
-  const recaptured = adapter.captureTemplatePackOnModeler(inst, { title: "Edge roundtrip recapture" });
+  const recaptured = await adapter.captureTemplatePackOnModeler(inst, { title: "Edge roundtrip recapture" });
   assert.equal(recaptured?.ok, true);
   const targetPayload = recaptured?.pack?.fragment?.edges?.[0]?.semanticPayload || {};
   assert.deepEqual(targetPayload, sourcePayload);
@@ -1728,7 +1803,7 @@ test("insertTemplatePackOnModeler falls back from collaboration root to particip
   assert.equal(String(createShapeCalls[0]?.parent?.id || ""), "Participant_1");
 });
 
-test("captureTemplatePackOnModeler returns raw-selection diagnostics when selection has no supported nodes", () => {
+test("captureTemplatePackOnModeler returns raw-selection diagnostics when selection has no supported nodes", async () => {
   const lane = {
     id: "Lane_1",
     type: "bpmn:Lane",
@@ -1742,7 +1817,7 @@ test("captureTemplatePackOnModeler returns raw-selection diagnostics when select
     selectionItems: [lane],
     registryItems: [lane],
   });
-  const result = adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported selection" });
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Unsupported selection" });
   assert.equal(result?.ok, false);
   assert.equal(result?.error, "no_selection");
   assert.deepEqual(result?.diagnostics?.rawSelection?.map((row) => row.type), ["bpmn:Lane"]);
