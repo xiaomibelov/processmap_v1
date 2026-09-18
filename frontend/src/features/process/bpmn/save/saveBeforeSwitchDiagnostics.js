@@ -176,18 +176,31 @@ function looksLikeValidXml(xml) {
   }
 }
 
+const TEMPLATE_STRIPPED_FLAG = "__pmTemplateDataStripped";
+
 export async function saveXmlSafely(inst, options = {}) {
   try {
     const result = await inst.saveXML(options);
-    return { ok: true, xml: result?.xml || "" };
+    const xml = result?.xml || "";
+    if (inst?.[TEMPLATE_STRIPPED_FLAG]) {
+      // Strip already mutated the model earlier; surface the explicit warning
+      // exactly once on the first subsequent successful save (no silent strip).
+      delete inst[TEMPLATE_STRIPPED_FLAG];
+      return { ok: true, xml, recovered: true };
+    }
+    return { ok: true, xml };
   } catch (firstError) {
     try {
-      await stripUnsupportedTemplateValues(inst);
+      const removed = await stripUnsupportedTemplateValues(inst);
+      if (removed > 0 && inst && typeof inst === "object") {
+        inst[TEMPLATE_STRIPPED_FLAG] = true;
+      }
       const result = await inst.saveXML(options);
       const xml = result?.xml || "";
       if (!looksLikeValidXml(xml)) {
         throw new Error("serialization produced invalid XML after strip");
       }
+      delete inst?.[TEMPLATE_STRIPPED_FLAG];
       return { ok: true, xml, recovered: true };
     } catch (secondError) {
       return {
