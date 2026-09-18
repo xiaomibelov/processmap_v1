@@ -99,7 +99,83 @@ test("buildTemplateBpmnTransfer falls back when selection is empty", async () =>
   const copyPaste = { createTree: () => ({}) };
   const result = await buildTemplateBpmnTransfer({ modeler: createTransferModeler({ copyPaste }), elements: [] });
   assert.equal(result.ok, false);
-  assert.equal(result.error, "copy_paste_unavailable");
+  assert.equal(result.error, "empty_selection");
+
+  const onlyNulls = await buildTemplateBpmnTransfer({
+    modeler: createTransferModeler({ copyPaste }),
+    elements: [null, undefined],
+  });
+  assert.equal(onlyNulls.ok, false);
+  assert.equal(onlyNulls.error, "empty_selection");
+});
+
+test("buildTemplateBpmnTransfer binds source namespace prefixes used by selected elements", async () => {
+  const namespacedXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://processmap.ai/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1" targetNamespace="http://processmap.ai">
+  <bpmn:process id="Process_1">
+    <bpmn:serviceTask id="Task_1" name="Ship" pm:stage="qc" camunda:asyncBefore="true">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="ship" retries="3" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:dataObject id="DataObject_1" xsi:type="bpmn:DataObject" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_1">
+      <bpmndi:BPMNShape id="Task_1_di" bpmnElement="Task_1" />
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+  const elements = [{ id: "Task_1" }];
+  const copyPaste = { createTree: (selected) => ({ elements: selected.map((el) => ({ id: el.id })) }) };
+  const modeler = {
+    get(name) {
+      if (name === "copyPaste") return copyPaste;
+      return null;
+    },
+    saveXML: async () => ({ xml: namespacedXml }),
+  };
+  const result = await buildTemplateBpmnTransfer({ modeler, elements });
+  assert.equal(result.ok, true);
+  const xml = result.transfer.bpmnXml;
+  for (const prefix of ["zeebe", "camunda", "pm", "xsi"]) {
+    assert.ok(xml.includes(`xmlns:${prefix}=`), `expected bound prefix ${prefix} in fragment xml`);
+  }
+  assert.ok(xml.includes("zeebe:taskDefinition"));
+  assert.ok(xml.includes("pm:stage"));
+  // fragment must be parseable XML
+  const reparsed = new DOMParser().parseFromString(xml, "application/xml");
+  assert.equal(reparsed.getElementsByTagName("parsererror").length, 0, "fragment xml must reparse without errors");
+});
+
+test("buildTemplateBpmnTransfer falls back when saveXML returns unparseable xml", async () => {
+  const copyPaste = { createTree: (selected) => ({ elements: selected.map((el) => ({ id: el.id })) }) };
+  const modeler = {
+    get(name) {
+      if (name === "copyPaste") return copyPaste;
+      return null;
+    },
+    saveXML: async () => ({ xml: "this is not xml <<<" }),
+  };
+  const result = await buildTemplateBpmnTransfer({ modeler, elements: [{ id: "Task_1" }] });
+  assert.equal(result.ok, false);
+  assert.ok(result.error);
+});
+
+test("buildTemplateBpmnTransfer falls back when selection matches no semantic elements", async () => {
+  const copyPaste = { createTree: (selected) => ({ elements: selected.map((el) => ({ id: el.id })) }) };
+  const modeler = createTransferModeler({ copyPaste });
+  const result = await buildTemplateBpmnTransfer({ modeler, elements: [{ id: "Ghost_1" }] });
+  assert.equal(result.ok, false);
+  assert.ok(result.error);
+});
+
+test("buildFragmentXmlFromFullXml rejects invalid source xml", async () => {
+  await assert.rejects(() => buildFragmentXmlFromFullXml("not xml <<<", ["Task_1"]));
+});
+
+test("buildFragmentXmlFromFullXml rejects selection matching no semantic elements", async () => {
+  await assert.rejects(() => buildFragmentXmlFromFullXml(FULL_XML, ["Ghost_1"]));
 });
 
 test("collectDescriptorIds collects nested ids and dedupes", () => {
