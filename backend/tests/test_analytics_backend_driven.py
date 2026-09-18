@@ -1346,3 +1346,93 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         cron = schedule["schedule"]
         self.assertIn(4, cron.hour)
         self.assertIn(30, cron.minute)
+
+
+CAMUNDA_EXPORT_REGRESSION_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Defs_export_reg" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_reg" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_1" name="Нарезка">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ee_time" value="0.33" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_2" name="Варка">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ee_temp" value="4" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_1">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Task_2" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_2" targetRef="End_1" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+class AnalyticsCamundaOrphanExportRegressionTests(AnalyticsBackendDrivenTests):
+    """Regression: after an element delete (ops), the properties registry export
+    must not contain camunda rows whose element is absent from the session XML
+    (empty element_type / element_title)."""
+
+    def test_registry_export_csv_has_no_orphan_rows_after_element_delete(self):
+        save_resp = self.client.put(
+            f"/api/sessions/{self.session_id}/bpmn",
+            json={"xml": CAMUNDA_EXPORT_REGRESSION_XML, "source_action": "import_bpmn", "base_diagram_state_version": 0},
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(save_resp.status_code, 200, save_resp.text)
+        save_body = save_resp.json()
+        self.assertTrue(save_body.get("ok"), save_body)
+        base_version = int(save_body.get("diagram_state_version") or 0)
+
+        ops_resp = self.client.post(
+            f"/api/sessions/{self.session_id}/operations",
+            json={
+                "baseVersion": base_version,
+                "operations": [{"opId": "op-del-export-1", "type": "shape.delete", "elementId": "Task_2"}],
+            },
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(ops_resp.status_code, 200, ops_resp.text)
+        self.assertTrue(ops_resp.json().get("ok"), ops_resp.text)
+
+        export_resp = self.client.post(
+            "/api/analysis/properties/registry/export.csv",
+            json={"scope": "session", "session_id": self.session_id, "limit": 1000},
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(export_resp.status_code, 200, export_resp.text)
+
+        import csv as csv_module
+        import io
+
+        text = export_resp.content.decode("utf-8-sig")
+        reader = csv_module.reader(io.StringIO(text), delimiter=";")
+        rows = list(reader)
+        self.assertGreater(len(rows), 1, "export must contain a header and at least one camunda row")
+        header = rows[0]
+        element_type_idx = header.index("element_type")
+        element_id_idx = header.index("element_id")
+        source_kind_idx = header.index("source_kind")
+
+        camunda_rows = [r for r in rows[1:] if len(r) > source_kind_idx and r[source_kind_idx] == "bpmn_meta.camunda_extensions_by_element_id"]
+        self.assertGreater(len(camunda_rows), 0, "expected camunda property rows in export")
+        orphan_rows = [
+            r for r in camunda_rows
+            if not str(r[element_type_idx] or "").strip() or r[element_id_idx] == "Task_2"
+        ]
+        self.assertEqual(orphan_rows, [], f"export contains rows for elements absent from XML: {orphan_rows}")
