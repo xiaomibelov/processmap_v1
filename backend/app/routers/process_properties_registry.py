@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 import xml.etree.ElementTree as ET
@@ -31,6 +32,8 @@ from ..storage import (
 )
 
 router = APIRouter(tags=["process-properties-registry"])
+
+logger = logging.getLogger(__name__)
 
 _ALLOWED_SCOPES = {"workspace", "project", "session"}
 _EXPORT_COLUMNS = [
@@ -226,7 +229,11 @@ def _extract_camunda_rows(source: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "title": _text(elem.get("name")),
                 }
         except Exception:
-            pass
+            logger.warning(
+                "process_properties_registry: bpmn_xml parse failed for session %s element lookup",
+                session_id,
+                exc_info=True,
+            )
 
     for element_id_raw, element_state_raw in camunda_map.items():
         element_id = _text(element_id_raw)
