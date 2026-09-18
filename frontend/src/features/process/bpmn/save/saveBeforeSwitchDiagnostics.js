@@ -55,6 +55,9 @@ export function classifyBpmnSaveFailure(raw = {}) {
   if (statusClass) return statusClass;
 
   const code = toText(raw?.errorCode || raw?.code).toLowerCase();
+  if (code === "bpmn_serialize_failed") return "payload_invalid";
+  if (code === "http_409" || code === "http_412") return "conflict_detected";
+  if (code === "http_422" || code === "http_400") return "payload_invalid";
   if (code.includes("permission") || code.includes("forbidden") || code === "http_403") return "permission_denied";
   if (code.includes("conflict") || code.includes("revision") || code === "http_409" || code === "http_412") return "conflict_detected";
   if (code.includes("payload") || code.includes("validation")) return "payload_invalid";
@@ -95,22 +98,121 @@ export function classifyBpmnSaveFailure(raw = {}) {
   return "unknown_save_failure";
 }
 
+const USER_SAFE_SAVE_MESSAGES = {
+  permission_denied: "Нет прав на сохранение этой сессии. Попросите доступ у владельца.",
+  conflict_detected: "Версия сессии изменилась. Мы синхронизируем изменения автоматически; если синхронизация не поможет — сохраним полностью.",
+  payload_invalid: "Схема диаграммы не прошла проверку. Попробуйте отменить последнее действие или перезагрузите страницу.",
+  source_state_invalid: "Состояние диаграммы устарело. Попробуйте сохранить ещё раз.",
+  activation_unsupported: "Текущий режим редактора не поддерживает сохранение. Перезагрузите страницу.",
+  backend_error: "Сервер не смог сохранить изменения. Попробуйте ещё раз через несколько секунд.",
+  unknown_save_failure: "Не удалось сохранить изменения. Попробуйте ещё раз; если не поможет — перезагрузите страницу.",
+};
+
 export function buildBpmnSaveFailureMessage(errorClass, fallbackText = "") {
   const normalized = normalizeErrorClass(errorClass) || "unknown_save_failure";
-  const defaultMessage = (() => {
-    if (normalized === "permission_denied") return "Нет прав на сохранение BPMN для этой сессии.";
-    if (normalized === "conflict_detected") return "Конфликт версии BPMN. Обновите сессию и повторите сохранение.";
-    if (normalized === "payload_invalid") return "Некорректный BPMN/XML payload: сохранение не выполнено.";
-    if (normalized === "source_state_invalid") return "Состояние BPMN устарело или недействительно для сохранения.";
-    if (normalized === "activation_unsupported") return "Текущий режим клиента не поддерживает сохранение BPMN перед переключением.";
-    if (normalized === "backend_error") return "Backend вернул ошибку при сохранении BPMN.";
-    return "Не удалось сохранить BPMN перед переключением вкладки.";
-  })();
-  const fallback = toText(fallbackText);
-  if (!fallback) return defaultMessage;
-  if (fallback === defaultMessage) return defaultMessage;
-  if (fallback.toLowerCase().includes(defaultMessage.toLowerCase())) return fallback;
-  return `${defaultMessage} (${fallback})`;
+  return USER_SAFE_SAVE_MESSAGES[normalized] || USER_SAFE_SAVE_MESSAGES.unknown_save_failure;
+}
+
+const USER_VISIBLE_ERROR_CODES = new Set([
+  "bpmn_serialize_failed",
+  "save_failed",
+  "http_409",
+  "http_422",
+]);
+
+export function sanitizeUserErrorText(raw) {
+  const text = toText(raw);
+  return USER_VISIBLE_ERROR_CODES.has(text) ? text : "";
+}
+
+function hasSerializableModdleDescriptor(value) {
+  return !!value && typeof value === "object" && !!value.$descriptor;
+}
+
+export function stripUnsupportedTemplateValues(inst) {
+  const registry = inst?.get?.("elementRegistry");
+  const elements = typeof registry?.getAll === "function" ? registry.getAll() : [];
+  let removed = 0;
+  for (const element of elements) {
+    const bo = element?.businessObject;
+    if (!bo || typeof bo !== "object") continue;
+    for (const key of Object.keys(bo)) {
+      if (key.startsWith("$")) continue;
+      const value = bo[key];
+      const isArrayOfModdle = Array.isArray(value) && value.some((item) => item && typeof item === "object" && "$type" in item);
+      const isSingleModdle = value && typeof value === "object" && !Array.isArray(value) && "$type" in value;
+      if (!isArrayOfModdle && !isSingleModdle) continue;
+      const invalidSingle = isSingleModdle && !hasSerializableModdleDescriptor(value);
+      const invalidArray = isArrayOfModdle && value.some((item) => item && typeof item === "object" && "$type" in item && !hasSerializableModdleDescriptor(item));
+      if (!invalidSingle && !invalidArray) continue;
+      try {
+        if (typeof bo.set === "function") bo.set(key, Array.isArray(value) ? value.filter((item) => hasSerializableModdleDescriptor(item)) : null);
+        else bo[key] = Array.isArray(value) ? value.filter((item) => hasSerializableModdleDescriptor(item)) : null;
+        removed += 1;
+      } catch {
+        // Keep element usable; save wrapper will report failure if serialization still breaks.
+      }
+    }
+  }
+  if (removed > 0) {
+    try {
+      console.warn(`[bpmn-save] stripped ${removed} unsupported template value(s) before serialization`);
+    } catch {
+      // logging must never break the save path
+    }
+  }
+  return Promise.resolve(removed);
+}
+
+function looksLikeValidXml(xml) {
+  const text = toText(xml).trim();
+  if (!text) return false;
+  if (typeof DOMParser === "undefined") return true;
+  try {
+    const doc = new DOMParser().parseFromString(text, "application/xml");
+    return !doc?.getElementsByTagName?.("parsererror")?.length;
+  } catch {
+    return false;
+  }
+}
+
+const TEMPLATE_STRIPPED_FLAG = "__pmTemplateDataStripped";
+
+export async function saveXmlSafely(inst, options = {}) {
+  try {
+    const result = await inst.saveXML(options);
+    const xml = result?.xml || "";
+    if (inst?.[TEMPLATE_STRIPPED_FLAG]) {
+      // Strip already mutated the model earlier; surface the explicit warning
+      // exactly once on the first subsequent successful save (no silent strip).
+      delete inst[TEMPLATE_STRIPPED_FLAG];
+      return { ok: true, xml, recovered: true };
+    }
+    return { ok: true, xml };
+  } catch (firstError) {
+    try {
+      const removed = await stripUnsupportedTemplateValues(inst);
+      if (removed > 0 && inst && typeof inst === "object") {
+        inst[TEMPLATE_STRIPPED_FLAG] = true;
+      }
+      const result = await inst.saveXML(options);
+      const xml = result?.xml || "";
+      if (!looksLikeValidXml(xml)) {
+        throw new Error("serialization produced invalid XML after strip");
+      }
+      delete inst?.[TEMPLATE_STRIPPED_FLAG];
+      return { ok: true, xml, recovered: true };
+    } catch (secondError) {
+      return {
+        ok: false,
+        errorCode: "bpmn_serialize_failed",
+        diagnostics: {
+          firstError: String(firstError?.message || firstError),
+          secondError: String(secondError?.message || secondError),
+        },
+      };
+    }
+  }
 }
 
 function diagnosticsSeverityByClass(errorClass) {

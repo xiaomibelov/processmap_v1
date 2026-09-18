@@ -190,6 +190,11 @@ import ProcessToastViewport from "../features/process/stage/ui/ProcessToastViewp
 import HybridPersistToast from "../features/process/hybrid/ui/HybridPersistToast";
 import { resolveProcessToastView } from "../features/process/stage/ui/processToastMessage";
 import {
+  buildBpmnSaveFailureMessage,
+  classifyBpmnSaveFailure,
+  sanitizeUserErrorText,
+} from "../features/process/bpmn/save/saveBeforeSwitchDiagnostics.js";
+import {
   buildRemoteUpdateToastKey,
   buildRemoteUpdateToastMessage,
   deriveRemoteVersionActor,
@@ -1308,9 +1313,13 @@ function ProcessStage({
   // словарь стадий не применялся).
   const [opsSaveStage, setOpsSaveStage] = useState("");
   const [opsOffline, setOpsOffline] = useState(false);
+  // Причина деградации — только телеметрия (view.opsReason), в видимый
+  // copy не попадает (PLAN §4: фиксированные формулировки full-save fallback).
+  const [opsSaveReason, setOpsSaveReason] = useState("");
   const handleOpsSaveStatus = useCallback((event) => {
     setOpsSaveStage(toText(event?.stage || event));
     setOpsOffline(event?.offline === true);
+    setOpsSaveReason(toText(event?.reason));
   }, []);
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
@@ -1458,12 +1467,14 @@ function ProcessStage({
     return {
       ...badge,
       opsStage: opsSaveStage,
+      ...(opsSaveReason ? { opsReason: opsSaveReason } : {}),
       ...(opsOffline ? { opsOffline: true } : {}),
     };
-  }, [saveUploadLifecycleEvent, opsSaveStage, opsOffline]);
+  }, [saveUploadLifecycleEvent, opsSaveStage, opsSaveReason, opsOffline]);
   useEffect(() => {
     setOpsSaveStage("");
     setOpsOffline(false);
+    setOpsSaveReason("");
   }, [sid]);
   useEffect(() => {
     if (isManualSaveBusy === true) return;
@@ -1509,15 +1520,37 @@ function ProcessStage({
       if (type === "conflict") {
         showSaveAckToast("Конфликт версий", "warning", "conflict");
         setPropertySaveConflictOpen(true);
-        setPropertySaveConflictFallback(toText(event?.error) || "Конфликт версий");
+        setPropertySaveConflictFallback(sanitizeUserErrorText(event?.error) || "Конфликт версий");
         return;
       }
       if (type === "error") {
-        const errorText = toText(event?.error);
-        showSaveAckToast(errorText ? `Ошибка сохранения: ${errorText}` : "Ошибка сохранения", "error", "save");
+        const safeCode = sanitizeUserErrorText(event?.error);
+        if (safeCode) {
+          const errorClass = classifyBpmnSaveFailure({ errorCode: safeCode });
+          showSaveAckToast(buildBpmnSaveFailureMessage(errorClass), "error", "save");
+        } else {
+          showSaveAckToast("Ошибка сохранения", "error", "save");
+        }
       }
     });
   }, [sid, showSaveAckToast, toText]);
+  // Предупреждение о восстановлении save: strip-fallback удалил неподдерживаемые
+  // template-значения из BO перед сериализацией (amendment Task 4): явный
+  // user-facing warning, без backend detail.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return undefined;
+    const onStripped = () => {
+      showSaveAckToast(
+        "Диаграмма сохранена, но неподдерживаемые данные шаблона были удалены. Проверьте элементы процесса.",
+        "warning",
+        "save",
+      );
+    };
+    window.addEventListener("pm:bpmn-save-template-stripped", onStripped);
+    return () => {
+      window.removeEventListener("pm:bpmn-save-template-stripped", onStripped);
+    };
+  }, [showSaveAckToast]);
   const sessionPresenceView = useMemo(() => buildSessionPresenceView({
     actorsRaw: sessionPresence.activeUsers,
     currentUserIdRaw: currentUserId,

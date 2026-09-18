@@ -5,6 +5,7 @@ import {
   readTemplateEdgeSemanticPayload,
   readTemplateNodeSemanticPayload,
   rehydrateSupportedBusinessObjectPayload,
+  restoreTemplateModdleValue,
   serializeSupportedBusinessObjectPayload,
   TEMPLATE_EXCLUDED_DEEP_KEYS,
   TEMPLATE_EXCLUDED_ROOT_KEYS,
@@ -857,4 +858,56 @@ test("camunda properties on service task survive template semantic payload round
   assert.equal(/camunda:properties/i.test(out.xml), true);
   assert.equal(/name=["']robot\.code["'][^>]*value=["']R-42["']/i.test(out.xml), true);
   assert.equal(/name=["']risk["'][^>]*value=["']high["']/i.test(out.xml), true);
+});
+
+test("unknown semantic namespace is captured as unsupported diagnostics, not restored moddle value", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const target = moddle.create("bpmn:Task", { id: "Task_Unknown_Ns" });
+  const restored = rehydrateSupportedBusinessObjectPayload(target, {
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [{ $type: "foo:ArtifactProbe", value: "probe" }],
+    },
+  }, { moddle });
+  assert.equal(restored?.unsupportedSemanticPayload?.length, 1);
+  assert.equal(restored?.businessObject, target);
+  assert.ok(restored?.businessObject?.extensionElements?.values?.[0]?.$descriptor);
+});
+
+test("restore never returns descriptor-less plain object", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const restored = restoreTemplateModdleValue({ $type: "foo:Bar", x: 1 }, moddle);
+  assert.equal(restored?.value, null);
+  assert.equal(restored?.unsupported?.[0]?.$type, "foo:Bar");
+});
+
+test("restoreTemplateModdleValue with null moddle never throws on safe-typed unresolvable value", () => {
+  assert.doesNotThrow(() => {
+    const restored = restoreTemplateModdleValue({ $type: "camunda:Typo", x: 1 }, null);
+    assert.ok(restored && typeof restored === "object");
+    assert.ok(!Array.isArray(restored.unsupported) || restored.unsupported.length === 0);
+  });
+});
+
+test("restoreTemplateModdleValue with throwing moddle.create returns null value instead of raising", () => {
+  const moddle = {
+    create() {
+      throw new Error("unresolvable type");
+    },
+    createAny() {
+      throw new Error("unresolvable any");
+    },
+  };
+  const restored = restoreTemplateModdleValue({ $type: "camunda:Typo", x: 1 }, moddle);
+  assert.equal(restored?.value, null);
 });

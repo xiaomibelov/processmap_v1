@@ -4,6 +4,8 @@ import {
   rehydrateSupportedBusinessObjectPayload,
   serializeSupportedBusinessObjectPayload,
 } from "./templateSemanticPayload.js";
+import { buildTemplateBpmnTransfer, isParseableBpmnXml } from "./templateBpmnXmlTransfer.js";
+import { pasteCopiedBpmnTreeFromClipboard } from "../../copy-paste/bpmnElementClipboard.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -534,7 +536,17 @@ export function createTemplatePackAdapter(deps = {}) {
     ? deps.isConnectionElement
     : () => false;
 
-  function captureTemplatePackOnModeler(inst, options = {}) {
+  async function attachBpmnTransfer(inst, pack, selected) {
+    const transferResult = await buildTemplateBpmnTransfer({ modeler: inst, elements: selected });
+    if (transferResult.ok) {
+      pack.transfer = transferResult.transfer;
+    } else {
+      pack.transferWarnings = [transferResult.error || "template_transfer_capture_failed"];
+    }
+    return pack;
+  }
+
+  async function captureTemplatePackOnModeler(inst, options = {}) {
     if (!inst) return { ok: false, error: "modeler_not_ready" };
     let rawSelection = [];
     try {
@@ -572,7 +584,7 @@ export function createTemplatePackAdapter(deps = {}) {
         });
         return {
           ok: true,
-          pack: subprocessPack,
+          pack: await attachBpmnTransfer(inst, subprocessPack, selectedNodes),
           diagnostics: {
             rawSelection: selectionSnapshot,
             normalizedSelection: subprocessPack.fragment.nodes.map((node) => ({
@@ -681,7 +693,7 @@ export function createTemplatePackAdapter(deps = {}) {
     });
     return {
       ok: true,
-      pack,
+      pack: await attachBpmnTransfer(inst, pack, selectedNodes),
       diagnostics: {
         rawSelection: selectionSnapshot,
         normalizedSelection: nodeItems.map((node) => ({
@@ -695,6 +707,33 @@ export function createTemplatePackAdapter(deps = {}) {
         ),
       },
     };
+  }
+
+  function wireEntryExit({ modeling, anchor, entryShape, exitShape, mode }) {
+    let nextTarget = null;
+    if (mode === "between") {
+      const outgoing = asArray(anchor?.outgoing).find((conn) => {
+        if (!isConnectionElement(conn)) return false;
+        const type = String(conn?.businessObject?.$type || conn?.type || "");
+        if (!isTemplateConnectionType(type)) return false;
+        return !!conn?.target && String(conn?.target?.id || "") !== String(entryShape?.id || "");
+      });
+      if (outgoing?.target) {
+        nextTarget = outgoing.target;
+        try {
+          modeling.removeConnection(outgoing);
+        } catch {
+        }
+      }
+    }
+
+    if (anchor) {
+      connectSequenceFlow(modeling, anchor, entryShape);
+    }
+    if (mode === "between" && nextTarget) {
+      connectSequenceFlow(modeling, exitShape, nextTarget);
+    }
+    return { rewiredNext: !!nextTarget };
   }
 
   async function insertTemplatePackOnModeler(payload = {}) {
@@ -791,6 +830,121 @@ export function createTemplatePackAdapter(deps = {}) {
     const createdNodeMap = {};
     const remap = {};
     const createdNodes = [];
+    const applyWarnings = [];
+
+    const transfer = pack?.transfer && typeof pack.transfer === "object" ? pack.transfer : null;
+    const copyPaste = inst.get?.("copyPaste");
+    if (transfer?.nativeTree && copyPaste && typeof copyPaste.paste === "function") {
+      const xmlValid = isParseableBpmnXml(transfer.bpmnXml);
+      let pasteResult = null;
+      if (xmlValid) {
+        try {
+          pasteResult = pasteCopiedBpmnTreeFromClipboard({
+            snapshot: {
+              nativeTree: transfer.nativeTree,
+              sourceDescriptorIds: transfer.sourceDescriptorIds,
+              sourceElementId: pack.entryNodeId,
+            },
+            copyPaste,
+            eventBus: inst.get?.("eventBus"),
+            parent: safeAnchorParent,
+            point: { x: offsetX, y: offsetY },
+          });
+        } catch {
+          pasteResult = null;
+        }
+      }
+      if (pasteResult?.ok) {
+        const nativeRemap = pasteResult.remap && typeof pasteResult.remap === "object" ? pasteResult.remap : {};
+        const nativeNodeMap = {};
+        Object.entries(nativeRemap).forEach(([sourceId, targetId]) => {
+          nativeNodeMap[sourceId] = registry?.get?.(targetId) || null;
+        });
+        const entrySourceId = String(pack?.entryNodeId || "");
+        const exitSourceId = String(pack?.exitNodeId || "");
+        const entryMapped = nativeNodeMap[entrySourceId] || null;
+        const exitMapped = nativeNodeMap[exitSourceId] || null;
+        const entryShape = entryMapped || pasteResult.createdElement || null;
+        const exitShape = exitMapped || pasteResult.createdElement || null;
+        const changedIds = asArray(pasteResult.changedIds);
+        // Any reliance on the createdElement fallback means entry/exit wiring
+        // may target a different shape than intended — surface a partial warning.
+        const partial = !entryShape || !exitShape || !entryMapped || !exitMapped;
+        if (partial) applyWarnings.push("template_native_tree_partial");
+        if (!entryShape || !exitShape) {
+          // Native paste already mutated the canvas; do not re-run pack path.
+          // Report partial apply instead of duplicating shapes.
+          logPackDebug("insert", {
+            sid: String(getSessionId() || "-"),
+            mode,
+            packId: String(pack?.packId || "-"),
+            applyMode: "native_tree",
+            partial: 1,
+            createdNodes: changedIds.length,
+          });
+          emitDiagramMutation("diagram.template_insert", {
+            mode,
+            pack_id: String(pack?.packId || ""),
+            created_nodes: changedIds.length,
+            created_edges: 0,
+          });
+          return {
+            ok: true,
+            mode,
+            applyMode: "native_tree",
+            remap: nativeRemap,
+            createdNodes: changedIds.length,
+            createdEdges: 0,
+            entryNodeId: "",
+            exitNodeId: "",
+            anchorId: String(anchor?.id || ""),
+            anchorByPoint: !anchor,
+            laneParentResolved,
+            parentFallbackUsed,
+            warnings: applyWarnings,
+            diagnostics: { legacyAnnotationIds, skippedNodeTypes: [], skippedEdges: [], applyWarnings, createdIds: changedIds },
+          };
+        }
+        const wiring = wireEntryExit({ modeling, anchor, entryShape, exitShape, mode });
+        logPackDebug("insert", {
+          sid: String(getSessionId() || "-"),
+          mode,
+          packId: String(pack?.packId || "-"),
+          anchorId: String(anchor?.id || ""),
+          anchorByPoint: anchor ? 0 : 1,
+          applyMode: "native_tree",
+          partial: partial ? 1 : 0,
+          laneParentResolved: laneParentResolved ? 1 : 0,
+          parentFallbackUsed: parentFallbackUsed ? 1 : 0,
+          createdNodes: changedIds.length,
+          createdEdges: 0,
+          rewiredNext: wiring.rewiredNext ? 1 : 0,
+        });
+        emitDiagramMutation("diagram.template_insert", {
+          mode,
+          pack_id: String(pack?.packId || ""),
+          created_nodes: changedIds.length,
+          created_edges: 0,
+        });
+        return {
+          ok: true,
+          mode,
+          applyMode: "native_tree",
+          remap: nativeRemap,
+          createdNodes: changedIds.length,
+          createdEdges: 0,
+          entryNodeId: String(entryShape?.id || ""),
+          exitNodeId: String(exitShape?.id || ""),
+          anchorId: String(anchor?.id || ""),
+          anchorByPoint: !anchor,
+          laneParentResolved,
+          parentFallbackUsed,
+          warnings: applyWarnings,
+          diagnostics: { legacyAnnotationIds, skippedNodeTypes: [], skippedEdges: [], applyWarnings, createdIds: changedIds },
+        };
+      }
+      applyWarnings.push("template_native_tree_fallback");
+    }
 
     for (const node of nodes) {
       const type = String(node?.type || "bpmn:Task").trim() || "bpmn:Task";
@@ -861,29 +1015,7 @@ export function createTemplatePackAdapter(deps = {}) {
     const exitShape = createdNodeMap[String(pack?.exitNodeId || "")] || lastNode;
     if (!entryShape || !exitShape) return { ok: false, error: "entry_or_exit_missing" };
 
-    let nextTarget = null;
-    if (mode === "between") {
-      const outgoing = asArray(anchor?.outgoing).find((conn) => {
-        if (!isConnectionElement(conn)) return false;
-        const type = String(conn?.businessObject?.$type || conn?.type || "");
-        if (!isTemplateConnectionType(type)) return false;
-        return !!conn?.target && String(conn?.target?.id || "") !== String(entryShape?.id || "");
-      });
-      if (outgoing?.target) {
-        nextTarget = outgoing.target;
-        try {
-          modeling.removeConnection(outgoing);
-        } catch {
-        }
-      }
-    }
-
-    if (anchor) {
-      connectSequenceFlow(modeling, anchor, entryShape);
-    }
-    if (mode === "between" && nextTarget) {
-      connectSequenceFlow(modeling, exitShape, nextTarget);
-    }
+    const wiring = wireEntryExit({ modeling, anchor, entryShape, exitShape, mode });
 
     logPackDebug("insert", {
       sid: String(getSessionId() || "-"),
@@ -895,7 +1027,7 @@ export function createTemplatePackAdapter(deps = {}) {
       parentFallbackUsed: parentFallbackUsed ? 1 : 0,
       createdNodes: createdNodes.length,
       createdEdges: createdEdges.length,
-      rewiredNext: nextTarget ? 1 : 0,
+      rewiredNext: wiring.rewiredNext ? 1 : 0,
     });
     emitDiagramMutation("diagram.template_insert", {
       mode,
@@ -907,6 +1039,7 @@ export function createTemplatePackAdapter(deps = {}) {
     return {
       ok: true,
       mode,
+      applyMode: "pack",
       remap,
       createdNodes: createdNodes.length,
       createdEdges: createdEdges.length,
@@ -916,10 +1049,12 @@ export function createTemplatePackAdapter(deps = {}) {
       anchorByPoint: !anchor,
       laneParentResolved,
       parentFallbackUsed,
+      warnings: applyWarnings,
       diagnostics: {
         legacyAnnotationIds,
         skippedNodeTypes: Array.from(skippedNodeTypes),
         skippedEdges,
+        applyWarnings,
       },
     };
   }

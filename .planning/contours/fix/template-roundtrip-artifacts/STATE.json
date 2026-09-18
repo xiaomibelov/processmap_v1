@@ -1,0 +1,22 @@
+{
+  "contour": "fix/template-roundtrip-artifacts",
+  "phase": "review",
+  "status": "READY_FOR_PR",
+  "blockers": [
+    "runtime e2e: local docker stack down, playwright specs not executed (Task 10)",
+    "H1 stage verdict BLOCKED: owner stage credentials unavailable (Task 11)"
+  ],
+  "ready_for_execution": false,
+  "next_action": "Open Russian PR with blockers listed; run e2e matrix on live stack; obtain H1 stage verdict; await user approval before merge/deploy. No prod deploy until H1 resolved.",
+  "branch": "fix/template-roundtrip-artifacts",
+  "base": "origin/main @ 771c3703",
+  "ahead_commits": 18,
+  "diffstat": "21 files, +2333/-86",
+  "test_evidence": {
+    "frontend_core_after_rebase": "134/134 pass",
+    "backend_ops_applier_after_rebase": "13 passed",
+    "vite_build_after_rebase": "ok (12.71s)"
+  },
+  "related_contours": [],
+  "related_prs": []
+}
