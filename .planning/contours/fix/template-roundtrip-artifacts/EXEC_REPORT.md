@@ -9,27 +9,22 @@ Plus UX copy hardening (§4) and H1 verification (stage org template pack round-
 
 ## Implemented scope
 
-- **Native BPMN XML transfer capture** (`0b2ad2e0`): template transfer captures full `bpmnXml`
-  native tree alongside legacy copyPaste tree; ns prefixes bound at capture.
-- **Native tree apply with pack fallback** (`dc534ffb`): apply prefers `bpmnXml` native tree;
-  falls back to pack with explicit `native_entry_exit_fallback` warning; createdNodes shape stabilized.
-- **Transfer fragment hardening** (`008549b5`): JSON-serializability validated before save;
-  capture failure returns `template_transfer_capture_failed` and falls back to pack.
-- **Full-save fallback status copy** (`f5fd3dfb`): clarified copy, no raw error strings surfaced.
-- **E2E matrix** (`adef77d7`, `9fc8c789`): template artifact roundtrip matrix on real XML
-  workbench tab (scenario 1 switched from mock to real tab).
-- **Backend guard** (earlier commits): unsafe BPMN types refused; 422 on plain `shape.create`
-  of unsupported types; frontend guard deployed together, 422 handled as full-save.
-- **H1 verdict doc** (`965e0d9e`): BLOCKED, awaiting owner stage credentials.
+- **E1 semantic sanitizer**: unknown semantic namespaces no longer restore as descriptor-less moddle objects; safe `bpmn/camunda/zeebe/pm` behavior preserved.
+- **Safe saveXML + UX**: one bounded strip/recovery attempt, explicit warning on stripped template data, stripped XML validated before return, no raw JS errors in user copy.
+- **Native BPMN transfer capture**: `pack.transfer` stores `bpmnXml` + copyPaste `nativeTree`; source namespace prefixes are bound; capture failure falls back to pack-only with `transferWarnings`.
+- **Native-tree apply with pack fallback**: apply reuses bpmn-js paste id regeneration and remap; validates transfer XML; falls back to pack with `template_native_tree_fallback`; partial entry/exit remap is loudly warned.
+- **E3 full-save guards**: unsafe BPMN artifact types require full-save for create and update paths; backend refuses unsafe shape/connection ops with explicit `full_save_required_for_bpmn_type`.
+- **Full-save fallback status copy**: clarified copy, no raw error strings surfaced.
+- **E2E matrix**: template artifact roundtrip matrix written and statically checked; runtime execution blocked by local stack.
+- **H1 verdict doc**: BLOCKED, awaiting owner stage credentials; credential-free runbook committed.
 
 ## Tests / evidence
 
 | Suite | Result |
 |---|---|
-| `node --test` templateSemanticPayload + templateBpmnXmlTransfer + templatePackAdapter + commandToOps + saveBeforeSwitchDiagnostics + saveStatusSlotModel.ops-stages | **124/124 pass** |
-| Extended save suite: `opsOutbox/*.test.mjs` + `save/*.test.mjs` | **192/192 pass** |
-| Backend `pytest tests/test_ops_applier.py -q` (.venv) | **13 passed** (1 pre-existing DeprecationWarning) |
-| `npx vite build` | **✓ built in 11.17s** (only chunk-size warnings) |
+| `node --test` templateSemanticPayload + templateBpmnXmlTransfer + templatePackAdapter + commandToOps + saveBeforeSwitchDiagnostics + saveStatusSlotModel.ops-stages | **134/134 pass** after rebase |
+| Backend `pytest tests/test_ops_applier.py -q` (.venv) | **13 passed** (1 pre-existing DeprecationWarning) after rebase |
+| `npm run build` | **✓ built in 12.71s** after rebase (existing chunk-size/Browserslist warnings only) |
 | E2E specs `template-roundtrip-artifacts.spec.mjs`, `template-apply-artifacts.spec.mjs` | written; **runtime execution blocked — local stack down** |
 
 ## Known blockers
@@ -44,10 +39,10 @@ Plus UX copy hardening (§4) and H1 verification (stage org template pack round-
 
 ## Git proof
 
-- Branch: `fix/template-roundtrip-artifacts` (ahead of `origin/main` by 16 commits)
-- Diff vs `origin/main...HEAD`: 19 files, **+2186 / −84**
+- Branch: `fix/template-roundtrip-artifacts` (rebased on `origin/main @ 771c3703`; ahead 18)
+- Diff vs `origin/main...HEAD`: 21 files, **+2333 / −86**
 - Tree clean except untracked `.vite/` (build cache, ignored from commit)
-- HEAD at report time: `965e0d9e` docs(templates): H1 verdict BLOCKED awaiting owner stage credentials
+- HEAD at report time: `a0abd298` fix(save): require full save for unsafe BPMN types in updateProperties/updateLabel
 
 ## Risks / rollback
 
@@ -61,5 +56,5 @@ Plus UX copy hardening (§4) and H1 verification (stage org template pack round-
 
 ## Handoff
 
-Status: **ready-for-final-review** (code-level). Reviewer: fill `REVIEW_REPORT.md`.
-Before merge/release: run e2e matrix on a live stack, obtain H1 stage verdict.
+Status: **ready-for-PR** (code-level). Final whole-branch review: PASS_FOR_PR; final Important fix re-reviewed clean.
+Before merge/release: run e2e matrix on a live stack and obtain H1 stage verdict. PR may be opened as draft/ready for review with these blockers explicitly listed; merge/deploy remain blocked until blockers and user approve are resolved.
