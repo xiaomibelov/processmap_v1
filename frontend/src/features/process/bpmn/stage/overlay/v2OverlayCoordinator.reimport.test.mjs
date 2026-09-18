@@ -72,6 +72,7 @@ function fakeEventBus() {
     emit: (event, payload) => {
       (handlers[event] || []).forEach((fn) => fn(payload));
     },
+    count: (event) => (handlers[event] || []).length,
   };
 }
 
@@ -180,4 +181,21 @@ test("mount re-attaches overlay whose host left the DOM (idempotent replace by k
   assert.equal(inst._overlays.store.length, 1, "exactly one overlay after replace");
   assert.notEqual(inst._overlays.store[0].html, host, "fresh host must replace detached one");
   assert.equal(inst._overlays.store[0].html.isConnected, true);
+});
+
+test("uninstall removes diagram.clear listener: no invalidation after uninstall (review minor#1)", () => {
+  setupMockDom();
+  const inst = fakeInst({ elements: [fakeElement("T1")] });
+  let calls = 0;
+  const coordinator = makeCoordinator(previewFor(["T1"]), {
+    onDiagramClear: () => { calls += 1; },
+  });
+  coordinator.mount(inst, "editor");
+  simulateImportClear(inst);
+  assert.equal(calls, 1);
+
+  coordinator.uninstall(inst);
+  simulateImportClear(inst);
+  assert.equal(calls, 1, "onDiagramClear must not fire after uninstall");
+  assert.equal(inst._eventBus.count("diagram.clear"), 0, "diagram.clear listener must be removed from the bus");
 });
