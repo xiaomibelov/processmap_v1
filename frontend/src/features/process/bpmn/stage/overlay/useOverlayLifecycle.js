@@ -17,6 +17,7 @@ export function useOverlayLifecycle({
   propertyPreviewMapRef,
   hiddenFieldsRef,
   draftIndicatorRef,
+  onDiagramClear,
 }) {
   const useExtensionOverlaysRef = useRef(useExtensionOverlays);
   useExtensionOverlaysRef.current = useExtensionOverlays;
@@ -31,6 +32,7 @@ export function useOverlayLifecycle({
       propertyPreviewMapRef,
       hiddenFieldsRef,
       draftIndicatorRef,
+      onDiagramClear,
     });
   }
 

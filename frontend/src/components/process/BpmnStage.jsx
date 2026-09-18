@@ -1398,6 +1398,55 @@ const BpmnStage = forwardRef(function BpmnStage({
   const v2DraftIndicatorRef = useRef("");
   v2DraftIndicatorRef.current = typeof propertiesOverlayDraftElementId === "string" ? propertiesOverlayDraftElementId : "";
 
+  // F1 (audit H3): сброс signature-state декора на diagram.clear. Вызывается
+  // из overlay-координатора (единая подписка на diagram.clear инстанса).
+  function handleDiagramClearDecor(inst) {
+    if (!inst) return;
+    try {
+      decorManager.invalidateDecorSignatureState(createDecorCtx(inst, "editor"));
+    } catch {
+      // Декоративный сброс не должен ломать импорт.
+    }
+  }
+
+  // F1 (audit H3): явный restore overlay-слоя после re-import на прямых
+  // путях (409-rebase, SSE full/fuzzy-fail, reconcile-on-entry, recover2/3).
+  // Инвалидация кэшей уже произошла по diagram.clear; здесь — re-mount V2
+  // карточек и полный decor-set. Idempotent: mount replace'ит по ключу.
+  function restoreOverlaysAfterReimport(inst, kind) {
+    if (!inst) return;
+    try {
+      decorManager.invalidateDecorSignatureState(createDecorCtx(inst, kind));
+    } catch {
+      // no-op
+    }
+    if (useExtensionOverlays) {
+      try {
+        overlayLifecycle.mountFromBpmn(inst, kind);
+      } catch {
+        // Overlay restore failures are non-critical.
+      }
+    }
+    try {
+      applyFullBpmnDecorSet({
+        inst,
+        kind,
+        applyTaskTypeDecor,
+        applyLinkEventDecor,
+        applyHappyFlowDecor,
+        applyRobotMetaDecor,
+        applyBottleneckDecor,
+        applyInterviewDecor,
+        applyUserNotesDecor,
+        applyStepTimeDecor,
+        applySubprocessDiscussionDecor,
+        applyPropertiesOverlayDecor,
+      });
+    } catch {
+      // Decor restore failures are non-critical.
+    }
+  }
+
   const overlayLifecycle = useOverlayLifecycle({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
@@ -1405,6 +1454,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     propertyPreviewMapRef: v2PropertyPreviewMapRef,
     hiddenFieldsRef: v2HiddenFieldsRef,
     draftIndicatorRef: v2DraftIndicatorRef,
+    // F1 (audit H3): importXML → diagram.clear уничтожает overlay-ноды, но
+    // signature-state декора остаётся → apply-* функции reuse'ят мёртвые
+    // overlayId. Сбрасываем state на diagram.clear (одна точка инвалидации).
+    onDiagramClear: handleDiagramClearDecor,
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
@@ -4812,6 +4865,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       applyUserNotesDecor,
       applySubprocessDiscussionDecor,
       applyStepTimeDecor,
+      applyPropertiesOverlayDecor,
       modelerImportInFlightRef,
       modelerInstanceMetaRef,
       ensureModelerRuntime,
@@ -4982,6 +5036,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         applyInterviewDecor,
         applyUserNotesDecor,
         applyStepTimeDecor,
+        // F1 (audit H3): recover2/recover3 делают re-import без restore —
+        // оверлеи терялись на canvas-recovery путях.
+        restoreOverlaysAfterReimport,
       },
     };
   }
@@ -5642,13 +5699,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       // 409-rebase (UI.md §5): серверный currentXml грузим в live modeler
       // существованным echo-muted путём runtime.load (import под
       // muteChangeDepth — replay-команды не становятся op-дубликатами).
+      // Единая точка входа ВСЕХ rebase-путей (409-rebase, SSE full/fuzzy-fail,
+      // reconcile-on-entry): после успешного load — restore overlay-слоя
+      // (audit H3, F1) — иначе оверлеи теряются безвозвратно.
       loadServerXml: async (serverXml) => {
         const xml = String(serverXml || "");
         const runtime = modelerRuntimeRef.current;
         if (!xml.trim() || !runtime || typeof runtime.load !== "function") {
           return { ok: false, reason: "runtime_not_ready" };
         }
-        return runtime.load(xml, { source: "ops_rebase" });
+        const result = await runtime.load(xml, { source: "ops_rebase" });
+        if (result?.ok) {
+          restoreOverlaysAfterReimport(modelerRef.current, "editor");
+        }
+        return result;
       },
     });
     opsOutboxRef.current = outbox;
