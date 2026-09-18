@@ -16,7 +16,13 @@ from ..redis_cache import explorer_invalidate_sessions
 from ..camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
 from ..models import Session
 from ..repositories import session_repo
-from ..storage import get_storage, list_session_presence, _count_bpmn_activities
+from ..storage import (
+    get_default_org_id,
+    get_storage,
+    list_session_presence,
+    list_user_org_memberships,
+    _count_bpmn_activities,
+)
 from ..utils.authz import session_access_from_request
 from .._legacy_main import (
     _can_edit_workspace,
@@ -250,6 +256,38 @@ def _build_session_projection(row: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def _session_visible_org_candidates(
+    *,
+    user_id: Optional[str],
+    is_admin: Optional[bool],
+    preferred_org_id: Optional[str],
+) -> List[str]:
+    """Org, в которых контексту разрешено видеть сессии.
+
+    Паритет `orgs._request_org_candidates`: preferred (active org) + memberships;
+    для admin `list_user_org_memberships` синтезирует записи по всем org.
+    """
+    out: List[str] = []
+    seen: set = set()
+
+    def _push(value: Any) -> None:
+        org_id = str(value or "").strip()
+        if not org_id or org_id in seen:
+            return
+        seen.add(org_id)
+        out.append(org_id)
+
+    _push(preferred_org_id)
+    uid = str(user_id or "").strip()
+    if uid:
+        for row in list_user_org_memberships(uid, is_admin=bool(is_admin)):
+            if isinstance(row, dict):
+                _push(row.get("org_id"))
+    if not out:
+        _push(get_default_org_id())
+    return out
+
+
 def get_session(
     session_id: str,
     *,
@@ -268,10 +306,21 @@ def get_session(
     if not sid:
         raise_session_not_found(session_id)
 
-    # Try cached projection first.
+    visible_orgs = _session_visible_org_candidates(
+        user_id=ctx_user_id,
+        is_admin=ctx_is_admin,
+        preferred_org_id=ctx_org_id,
+    )
+
+    # Try cached projection first. Ключ кэша орг-агностичен, поэтому хит
+    # валиден только если org сессии виден из текущего контекста — иначе
+    # 200/404-флап при смене org и authz-утечка для non-member
+    # (fix/session-flap-foreign-org).
     cached = session_cache.get_projection(sid)
     if isinstance(cached, dict) and str(cached.get("id") or "").strip() == sid:
-        return cached
+        cached_org = str(cached.get("org_id") or "").strip()
+        if cached_org and cached_org in visible_orgs:
+            return cached
 
     st = get_storage()
     row = st.load_session_projection(
@@ -280,6 +329,20 @@ def get_session(
         org_id=ctx_org_id,
         is_admin=ctx_is_admin,
     )
+    if not row:
+        # Candidate-fallback по видимым org (паритет _legacy_load_session_scoped):
+        # member/admin получают детерминированный 200 при любом active org.
+        for candidate in visible_orgs:
+            if candidate == ctx_org_id:
+                continue
+            row = st.load_session_projection(
+                sid,
+                user_id=ctx_user_id,
+                org_id=candidate,
+                is_admin=ctx_is_admin,
+            )
+            if row:
+                break
     if not row:
         if not ctx_is_admin and ctx_user_id and ctx_org_id:
             candidate = st.load(sid, org_id=ctx_org_id, is_admin=True)
