@@ -5,13 +5,13 @@ import {
   readTemplateEdgeSemanticPayload,
   readTemplateNodeSemanticPayload,
   rehydrateSupportedBusinessObjectPayload,
+  restoreTemplateModdleValue,
   serializeSupportedBusinessObjectPayload,
   TEMPLATE_EXCLUDED_DEEP_KEYS,
   TEMPLATE_EXCLUDED_ROOT_KEYS,
   TEMPLATE_PERSISTENT_FIELD_GROUPS,
   TEMPLATE_TRANSIENT_FIELD_GROUPS,
 } from "./templateSemanticPayload.js";
-import * as templateSemanticPayloadModule from "./templateSemanticPayload.js";
 import camundaModdleDescriptor from "../../../camunda/camundaModdleDescriptor.js";
 import pmModdleDescriptor from "../../../robotmeta/pmModdleDescriptor.js";
 
@@ -886,8 +886,6 @@ test("restore never returns descriptor-less plain object", async (t) => {
     camunda: camundaModdleDescriptor,
     pm: pmModdleDescriptor,
   });
-  const restoreTemplateModdleValue = templateSemanticPayloadModule.restoreTemplateModdleValue;
-  assert.equal(typeof restoreTemplateModdleValue, "function");
   const restored = restoreTemplateModdleValue({ $type: "foo:Bar", x: 1 }, moddle);
   assert.equal(restored?.value, null);
   assert.equal(restored?.unsupported?.[0]?.$type, "foo:Bar");

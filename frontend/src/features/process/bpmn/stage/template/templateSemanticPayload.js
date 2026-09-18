@@ -88,6 +88,62 @@ const GENERIC_NAMESPACE_URI_BY_PREFIX = Object.freeze({
 
 const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
 
+export const TEMPLATE_SAFE_NAMESPACE_PREFIXES = new Set(["bpmn", "camunda", "zeebe", "pm"]);
+
+const UNKNOWN_SEMANTIC_NAMESPACE_URI = "https://processmap.ru/schema/unsupported";
+
+export function isSafeTemplateModdleType(typeRaw) {
+  const type = String(typeRaw || "").trim();
+  if (!type.includes(":")) return true;
+  return TEMPLATE_SAFE_NAMESPACE_PREFIXES.has(type.split(":")[0].toLowerCase());
+}
+
+function collectUnsupportedSemanticTypes(valueRaw, unsupported, path = []) {
+  if (Array.isArray(valueRaw)) {
+    valueRaw.forEach((item, index) => {
+      collectUnsupportedSemanticTypes(item, unsupported, [...path, String(index)]);
+    });
+    return;
+  }
+  if (!valueRaw || typeof valueRaw !== "object") return;
+  const type = String(valueRaw.$type || "").trim();
+  if (type && !isSafeTemplateModdleType(type)) {
+    unsupported.push({ $type: type, path });
+    return;
+  }
+  Object.keys(valueRaw).forEach((key) => {
+    if (!key || key.startsWith("$")) return;
+    collectUnsupportedSemanticTypes(valueRaw[key], unsupported, [...path, key]);
+  });
+}
+
+export function sanitizeTemplateSemanticPayload(payloadRaw) {
+  const payload = normalizeTemplateSemanticPayload(payloadRaw);
+  const unsupportedSemanticPayload = [];
+  collectUnsupportedSemanticTypes(payload, unsupportedSemanticPayload);
+  return { payload, warnings: [], unsupportedSemanticPayload };
+}
+
+export function restoreTemplateModdleValue(valueRaw, moddle = null, unsupported = []) {
+  if (valueRaw === null || valueRaw === undefined) return { value: valueRaw, unsupported };
+  if (typeof valueRaw !== "object") return { value: valueRaw, unsupported };
+  if (Array.isArray(valueRaw)) {
+    const values = [];
+    for (const item of valueRaw) {
+      const restored = restoreTemplateModdleValue(item, moddle, unsupported);
+      if (restored.value !== null && restored.value !== undefined) values.push(restored.value);
+    }
+    return { value: values, unsupported };
+  }
+  const raw = { ...valueRaw };
+  const type = String(raw.$type || "").trim();
+  if (type && !isSafeTemplateModdleType(type)) {
+    unsupported.push({ $type: type, path: [] });
+    return { value: null, unsupported };
+  }
+  return { value: restoreModdleValue(raw, moddle), unsupported };
+}
+
 export const TEMPLATE_PERSISTENT_FIELD_GROUPS = Object.freeze([
   "businessObject.documentation",
   "businessObject.extensionElements",
@@ -566,7 +622,14 @@ function restoreModdleValue(value, moddle = null) {
     } catch {
       const genericValue = createGenericModdleValue(type, payload, moddle);
       if (genericValue) return genericValue;
-      return { $type: type, ...payload };
+      if (typeof moddle.createAny === "function") {
+        try {
+          return moddle.createAny(type, UNKNOWN_SEMANTIC_NAMESPACE_URI, payload);
+        } catch {
+          return null;
+        }
+      }
+      return null;
     }
   }
   const out = {};
@@ -654,8 +717,10 @@ export function serializeSupportedBusinessObjectPayload(boRaw) {
 
 export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { moddle = null } = {}) {
   const bo = targetBo && typeof targetBo === "object" ? targetBo : null;
-  if (!bo) return;
+  const unsupportedSemanticPayload = [];
+  if (!bo) return { businessObject: null, unsupportedSemanticPayload };
   const payload = normalizeTemplateSemanticPayload(payloadRaw);
+  collectUnsupportedSemanticTypes(payload, unsupportedSemanticPayload);
 
   if (Array.isArray(payload.documentation)) {
     setBpmnProperty(bo, "documentation", restoreModdleValue(payload.documentation, moddle));
@@ -685,6 +750,8 @@ export function rehydrateSupportedBusinessObjectPayload(targetBo, payloadRaw, { 
     if (!key || ROOT_EXCLUDED_KEYS.has(key)) return;
     setBpmnProperty(bo, key, restoreModdleValue(custom[key], moddle));
   });
+
+  return { businessObject: bo, unsupportedSemanticPayload };
 }
 
 export function readTemplateNodeSemanticPayload(nodeRaw) {
