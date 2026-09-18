@@ -555,7 +555,18 @@ def _apply_shape_delete(root: ET.Element, op: Dict[str, Any]) -> None:
             shape_parent.remove(shape)
 
 
+def _validate_connection_create_op(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+    """Fail-safe: unsafe artifact connection-типы → full_save_required_for_bpmn_type до мутаций."""
+    bpmn_type = _op_bpmn_type(op)
+    if not bpmn_type:
+        return  # дефолт bpmn:SequenceFlow безопасен
+    tag = _resolve_bpmn_type(xml_text, bpmn_type, op)
+    if tag in _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES:
+        raise OperationApplyError(_op_id(op), _op_type(op), "full_save_required_for_bpmn_type")
+
+
 def _apply_connection_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+    _validate_connection_create_op(root, xml_text, op)
     connection_id = _op_connection_id(op)
     if not connection_id:
         raise OperationApplyError(_op_id(op), _op_type(op), "missing_connectionId")
