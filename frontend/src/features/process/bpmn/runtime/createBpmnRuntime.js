@@ -1,4 +1,5 @@
 import { disableBpmnZoomScroll } from "./zoomScrollLifecycle.js";
+import { saveXmlSafely } from "../save/saveBeforeSwitchDiagnostics.js";
 import {
   applyMessageFlowExportDialect,
   applyMessageFlowImportDialect,
@@ -540,7 +541,7 @@ export default function createBpmnRuntime(options = {}) {
     try {
       const saveXmlTimeout = Number(opts?.timeoutMs) > 0 ? Number(opts.timeoutMs) : 5000;
       const out = await Promise.race([
-        inst.saveXML({ format: opts?.format !== false }),
+        saveXmlSafely(inst, { format: opts?.format !== false }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("saveXML timeout")), saveXmlTimeout)
         ),
@@ -548,13 +549,34 @@ export default function createBpmnRuntime(options = {}) {
       if (destroyed || opToken !== activeToken || inst !== instance) {
         return { ok: false, reason: "stale", token: opToken };
       }
-      return { ok: true, token: opToken, xml: applyMessageFlowExportDialect(asText(out?.xml)) };
+      if (out && out.ok === false) {
+        emitTrace("save.error", { token: opToken, errorCode: out.errorCode || "bpmn_serialize_failed" });
+        return {
+          ok: false,
+          reason: "save_failed",
+          token: opToken,
+          errorCode: out.errorCode || "bpmn_serialize_failed",
+          error: "bpmn_serialize_failed",
+          diagnostics: out.diagnostics || null,
+        };
+      }
+      if (out?.recovered && typeof window !== "undefined" && typeof window.dispatchEvent === "function" && typeof window.CustomEvent === "function") {
+        try {
+          window.dispatchEvent(new window.CustomEvent("pm:bpmn-save-template-stripped"));
+        } catch {
+          // warning surfacing must never break save
+        }
+      }
+      return { ok: true, token: opToken, xml: applyMessageFlowExportDialect(asText(out?.xml)), ...(out?.recovered ? { recovered: true } : {}) };
     } catch (error) {
       const msg = asError(error, "saveXML failed");
       if (msg.toLowerCase().includes("no definitions loaded")) {
         return { ok: false, reason: "not_ready", token: opToken, error: msg };
       }
-      return { ok: false, reason: "save_failed", token: opToken, error: msg };
+      if (msg.toLowerCase().includes("savexml timeout")) {
+        return { ok: false, reason: "save_failed", token: opToken, error: "bpmn_serialize_failed", errorCode: "bpmn_serialize_failed", diagnostics: { firstError: msg } };
+      }
+      return { ok: false, reason: "save_failed", token: opToken, error: "bpmn_serialize_failed", errorCode: "bpmn_serialize_failed", diagnostics: { firstError: msg } };
     }
   }
 
