@@ -191,6 +191,16 @@ function elementTypeOf(ref) {
   return asText(ref?.businessObject?.$type || ref?.businessType || ref?.type);
 }
 
+// Артефактные типы (pool/lane/data/annotation/association) не маппятся в
+// ops-payload step1: консервативно требуем полное сохранение, иначе
+// серверная apply-op потеряет artifactRef (#995).
+const FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN =
+  /(?:participant|lane|datastorereference|dataobjectreference|datainputassociation|dataoutputassociation|textannotation|association)/i;
+
+function requiresFullSaveForBpmnType(typeRaw) {
+  return FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN.test(String(typeRaw || ""));
+}
+
 function mapShapeCreate(context, inverse) {
   if (inverse) {
     // Undo create — compensating delete-op (наследие п.6 §3 PLAN step2): id
@@ -210,9 +220,7 @@ function mapShapeCreate(context, inverse) {
   const elementType = elementTypeOf(ref);
   const b = bounds(ref?.bounds || ref);
   if (!elementId || !elementType || !b) return { needsFullSave: true };
-  // Артефакты (TextAnnotation и т.п.) вне ops-payload step1: консервативно
-  // уходим в полное сохранение — иначе серверная apply-op потеряет artifactRef.
-  if (elementType.toLowerCase().includes("textannotation")) return { needsFullSave: true };
+  if (requiresFullSaveForBpmnType(elementType)) return { needsFullSave: true };
   return {
     op: makeOp("shape.create", elementId, {
       elementType,
@@ -236,7 +244,7 @@ function mapConnectionCreate(context, inverse) {
   const targetId = elementIdOf(context?.target || connection?.target);
   if (!elementId || !sourceId || !targetId) return { needsFullSave: true };
   // Association — артефактная связь вне ops-payload step1: полное сохранение.
-  if ((elementTypeOf(connection) || "").toLowerCase().includes("association")) {
+  if (requiresFullSaveForBpmnType(elementTypeOf(connection))) {
     return { needsFullSave: true };
   }
   const wp = waypoints(connection?.waypoints);

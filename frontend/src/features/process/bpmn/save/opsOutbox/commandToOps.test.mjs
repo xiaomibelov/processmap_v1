@@ -608,6 +608,54 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
   assert.equal(flow.needsFullSave, false, "SequenceFlow create still maps to op");
 });
 
+test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", () => {
+  for (const type of [
+    "bpmn:Participant",
+    "bpmn:Lane",
+    "bpmn:DataStoreReference",
+    "bpmn:DataObjectReference",
+    "bpmn:TextAnnotation",
+  ]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: {
+        shape: { id: "X", type, businessObject: { $type: type }, x: 1, y: 1, width: 10, height: 10 },
+        parent: { id: "Process_1" },
+      },
+    });
+    assert.equal(out.needsFullSave, true, `${type} requires full save`);
+    assert.deepEqual(out.ops, []);
+  }
+  // connection-создание artifact-ассоциаций тоже уходит в full save.
+  for (const type of ["bpmn:DataInputAssociation", "bpmn:DataOutputAssociation", "bpmn:Association"]) {
+    const out = mapCommandToOps({
+      command: "connection.create",
+      action: "execute",
+      context: {
+        connection: el("X", { type }),
+        source: { id: "Task_1" },
+        target: { id: "Task_2" },
+      },
+    });
+    assert.equal(out.needsFullSave, true, `${type} requires full save`);
+    assert.deepEqual(out.ops, []);
+  }
+});
+
+test("task shape.create still maps to op (unsafe guard does not leak)", () => {
+  const result = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      shape: { id: "T", type: "bpmn:Task", businessObject: { $type: "bpmn:Task" }, x: 1, y: 1, width: 10, height: 10 },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(result.needsFullSave, false);
+  assert.equal(result.ops[0].type, "shape.create");
+});
+
 test("undo of shape.create / connection.create → compensating delete op (не needsFullSave)", () => {
   const undoShape = mapCommandToOps({
     command: "shape.create",
