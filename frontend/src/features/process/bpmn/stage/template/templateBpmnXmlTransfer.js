@@ -125,3 +125,17 @@ export async function buildFragmentXmlFromFullXml(fullXml, selectedIds) {
   if (diCount) fragmentRoot.appendChild(diParent);
   return new XMLSerializer().serializeToString(fragmentRoot);
 }
+
+export function isParseableBpmnXml(xmlRaw) {
+  const text = String(xmlRaw || "").trim();
+  if (!text) return true;
+  if (typeof DOMParser !== "function") return true;
+  try {
+    const doc = new DOMParser().parseFromString(text, "application/xml");
+    return !!doc.documentElement
+      && doc.documentElement.localName !== "parsererror"
+      && doc.getElementsByTagName("parsererror").length === 0;
+  } catch {
+    return false;
+  }
+}

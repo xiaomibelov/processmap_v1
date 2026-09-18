@@ -505,7 +505,7 @@ function resolveBusinessObjectFactory({ bpmnFactory = null, elementFactory = nul
   return null;
 }
 
-function pasteCopiedBpmnTreeFromClipboard({
+export function pasteCopiedBpmnTreeFromClipboard({
   snapshot,
   copyPaste,
   eventBus,

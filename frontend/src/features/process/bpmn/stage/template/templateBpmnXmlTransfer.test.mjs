@@ -11,6 +11,7 @@ import {
   buildTemplateBpmnTransfer,
   buildFragmentXmlFromFullXml,
   collectDescriptorIds,
+  isParseableBpmnXml,
 } from "./templateBpmnXmlTransfer.js";
 
 const FULL_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -193,4 +194,14 @@ test("buildFragmentXmlFromFullXml keeps only selected ids and their DI", async (
   assert.ok(xml.includes("dataInputAssociation"), "expected attached dataInputAssociation for selected Task_1");
   assert.ok(!xml.includes('id="DataStore_1"'));
   assert.ok(!xml.includes('bpmnElement="DataStore_1"'));
+});
+
+test("isParseableBpmnXml validates fragment xml", () => {
+  assert.equal(isParseableBpmnXml(FULL_XML), true);
+  assert.equal(isParseableBpmnXml("<bpmn:definitions xmlns:bpmn=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" id=\"D\" />"), true);
+  assert.equal(isParseableBpmnXml("not xml <<<"), false);
+  assert.equal(isParseableBpmnXml("<bpmn:definitions"), false);
+  assert.equal(isParseableBpmnXml(""), true);
+  assert.equal(isParseableBpmnXml(null), true);
+  assert.equal(isParseableBpmnXml(undefined), true);
 });

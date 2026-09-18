@@ -1902,3 +1902,244 @@ test("resolveGraphicalInsertParent maps lane to participant/root", () => {
   const fromParticipant = resolveGraphicalInsertParent(participant, root);
   assert.equal(fromParticipant, participant);
 });
+
+const VALID_TRANSFER_XML = `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="TemplateFragment" targetNamespace="http://processmap.ai/template"><bpmn:process id="Process_1"><bpmn:task id="Task_A" /><bpmn:task id="Task_B" /></bpmn:process></bpmn:definitions>`;
+
+function createTransferPack(overrides = {}) {
+  const node = (id, name) => ({
+    id,
+    type: "bpmn:Task",
+    name,
+    laneHint: "",
+    semanticPayload: {},
+    di: { x: 0, y: 0, w: 140, h: 80 },
+  });
+  const transfer = {
+    schema: "fpc.bpmn.template.xml.v1",
+    captureMode: "bpmn_xml_native_tree",
+    nativeTree: { elements: [{ id: "Task_A" }, { id: "Task_B" }] },
+    sourceDescriptorIds: ["Task_A", "Task_B"],
+    bpmnXml: VALID_TRANSFER_XML,
+    warnings: [],
+    ...(overrides.transfer || {}),
+  };
+  return {
+    title: "Native pack",
+    tags: [],
+    fragment: {
+      nodes: [node("Task_A", "A"), node("Task_B", "B")],
+      edges: [],
+      annotations: [],
+    },
+    entryNodeId: "Task_A",
+    exitNodeId: "Task_B",
+    hints: {},
+    transfer,
+    ...overrides,
+    transfer,
+  };
+}
+
+function createNativePasteMock({ fail = null } = {}) {
+  const calls = [];
+  const createdElements = [];
+  const listeners = new Set();
+  let registry = null;
+  let seq = 0;
+  const collectIds = (tree) => {
+    const ids = [];
+    const visit = (node) => {
+      if (!node || typeof node !== "object") return;
+      if (node.id) ids.push(String(node.id));
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === "object") visit(value);
+      }
+    };
+    visit(tree);
+    return Array.from(new Set(ids));
+  };
+  const copyPaste = {
+    paste({ element, point, tree } = {}) {
+      calls.push({ element, point, tree });
+      if (fail === "throw") throw new Error("paste failed");
+      if (fail === "empty") return [];
+      seq += 1;
+      const cache = {};
+      const batch = [];
+      for (const sourceId of collectIds(tree)) {
+        const nextId = `Pasted_${seq}_${sourceId}`;
+        const created = {
+          id: nextId,
+          type: "bpmn:Task",
+          x: Number(point?.x || 0),
+          y: Number(point?.y || 0),
+          width: 140,
+          height: 80,
+          businessObject: { id: nextId, $type: "bpmn:Task", name: "" },
+          di: { id: `${nextId}_di` },
+        };
+        cache[sourceId] = created;
+        batch.push(created);
+        createdElements.push(created);
+        if (registry) registry.push(created);
+      }
+      listeners.forEach((listener) => listener({ cache, descriptor: { id: collectIds(tree)[0] } }));
+      return batch;
+    },
+  };
+  const eventBus = {
+    on(eventName, listener) {
+      if (String(eventName || "") === "copyPaste.pasteElement") listeners.add(listener);
+    },
+    off(eventName, listener) {
+      if (String(eventName || "") === "copyPaste.pasteElement") listeners.delete(listener);
+    },
+  };
+  return {
+    copyPaste,
+    eventBus,
+    calls,
+    createdElements,
+    bindRegistry(items) {
+      registry = items;
+    },
+  };
+}
+
+test("insertTemplatePackOnModeler applies via native tree transfer with regenerated ids", async () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 520, 80, "B");
+  const paste = createNativePasteMock();
+  const { adapter, inst, registryItems } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [a, b],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+  paste.bindRegistry(registryItems);
+
+  const result = await adapter.insertTemplatePackOnModeler({
+    pack: createTransferPack(),
+    point: { x: 200, y: 200 },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applyMode, "native_tree");
+  assert.equal(result.mode, "after");
+  assert.ok(result.remap.Task_A, "expected remap for entry node");
+  assert.ok(result.remap.Task_B, "expected remap for exit node");
+  assert.notEqual(result.remap.Task_A, "Task_A", "final ids must be regenerated");
+  assert.ok(String(result.entryNodeId).startsWith("Pasted_"), "entryNodeId must be a regenerated id");
+  assert.equal(result.entryNodeId, result.remap.Task_A);
+  assert.equal(result.exitNodeId, result.remap.Task_B);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(paste.calls.length, 1);
+  assert.equal(registryItems.length, 4, "pasted shapes must be registered for anchor wiring");
+});
+
+test("insertTemplatePackOnModeler wires anchor to native tree entry shape", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const paste = createNativePasteMock();
+  const { adapter, inst, connectCalls, registryItems } = createModelerWithServices({
+    selectionItems: [anchor],
+    registryItems: [anchor],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+  paste.bindRegistry(registryItems);
+
+  const result = await adapter.insertTemplatePackOnModeler({
+    pack: createTransferPack(),
+    point: { x: 200, y: 200 },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applyMode, "native_tree");
+  assert.ok(
+    connectCalls.some((call) => call.sourceId === "Anchor_1" && call.targetId === result.entryNodeId),
+    "expected anchor -> entry sequenceFlow wiring",
+  );
+});
+
+test("insertTemplatePackOnModeler falls back to pack path when native tree paste throws", async () => {
+  const paste = createNativePasteMock({ fail: "throw" });
+  const { adapter, inst, createShapeCalls } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+
+  const result = await adapter.insertTemplatePackOnModeler({
+    pack: createTransferPack(),
+    point: { x: 200, y: 200 },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applyMode, "pack");
+  assert.ok(result.warnings.includes("template_native_tree_fallback"));
+  assert.ok(createShapeCalls.length > 0, "expected pack path to create shapes");
+});
+
+test("insertTemplatePackOnModeler falls back to pack path when transfer bpmnXml is invalid", async () => {
+  const paste = createNativePasteMock();
+  const { adapter, inst, createShapeCalls } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+
+  const result = await adapter.insertTemplatePackOnModeler({
+    pack: createTransferPack({ transfer: { bpmnXml: "not xml <<<" } }),
+    point: { x: 200, y: 200 },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applyMode, "pack");
+  assert.ok(result.warnings.includes("template_native_tree_fallback"));
+  assert.equal(paste.calls.length, 0, "invalid xml must not reach copyPaste.paste");
+  assert.ok(createShapeCalls.length > 0);
+});
+
+test("insertTemplatePackOnModeler falls back to pack path when paste creates nothing", async () => {
+  const paste = createNativePasteMock({ fail: "empty" });
+  const { adapter, inst, createShapeCalls } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+
+  const result = await adapter.insertTemplatePackOnModeler({
+    pack: createTransferPack(),
+    point: { x: 200, y: 200 },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.applyMode, "pack");
+  assert.ok(result.warnings.includes("template_native_tree_fallback"));
+  assert.ok(createShapeCalls.length > 0);
+});
+
+test("insertTemplatePackOnModeler double apply regenerates unique businessObject and DI ids", async () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 520, 80, "B");
+  const paste = createNativePasteMock();
+  const { adapter, inst, registryItems } = createModelerWithServices({
+    selectionItems: [],
+    registryItems: [a, b],
+    copyPaste: paste.copyPaste,
+    eventBus: paste.eventBus,
+  });
+  paste.bindRegistry(registryItems);
+  const pack = createTransferPack();
+
+  const first = await adapter.insertTemplatePackOnModeler({ pack, point: { x: 200, y: 200 } });
+  const second = await adapter.insertTemplatePackOnModeler({ pack, point: { x: 200, y: 200 } });
+  assert.equal(first.applyMode, "native_tree");
+  assert.equal(second.applyMode, "native_tree");
+  assert.notEqual(first.remap.Task_A, second.remap.Task_A, "second apply must regenerate ids");
+
+  const boIds = paste.createdElements.map((el) => el.businessObject?.id).filter(Boolean);
+  const diIds = paste.createdElements.map((el) => el.di?.id).filter(Boolean);
+  assert.equal(new Set(boIds).size, boIds.length, "duplicate businessObject ids across applies");
+  assert.equal(new Set(diIds).size, diIds.length, "duplicate DI ids across applies");
+  assert.ok(!boIds.includes("Task_A") && !boIds.includes("Task_B"), "source ids must not be reused as final ids");
+});
