@@ -4,6 +4,7 @@ import {
   rehydrateSupportedBusinessObjectPayload,
   serializeSupportedBusinessObjectPayload,
 } from "./templateSemanticPayload.js";
+import { buildTemplateBpmnTransfer } from "./templateBpmnXmlTransfer.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -534,7 +535,17 @@ export function createTemplatePackAdapter(deps = {}) {
     ? deps.isConnectionElement
     : () => false;
 
-  function captureTemplatePackOnModeler(inst, options = {}) {
+  async function attachBpmnTransfer(inst, pack, selected) {
+    const transferResult = await buildTemplateBpmnTransfer({ modeler: inst, elements: selected });
+    if (transferResult.ok) {
+      pack.transfer = transferResult.transfer;
+    } else {
+      pack.transferWarnings = [transferResult.error || "template_transfer_capture_failed"];
+    }
+    return pack;
+  }
+
+  async function captureTemplatePackOnModeler(inst, options = {}) {
     if (!inst) return { ok: false, error: "modeler_not_ready" };
     let rawSelection = [];
     try {
@@ -572,7 +583,7 @@ export function createTemplatePackAdapter(deps = {}) {
         });
         return {
           ok: true,
-          pack: subprocessPack,
+          pack: await attachBpmnTransfer(inst, subprocessPack, selectedNodes),
           diagnostics: {
             rawSelection: selectionSnapshot,
             normalizedSelection: subprocessPack.fragment.nodes.map((node) => ({
@@ -681,7 +692,7 @@ export function createTemplatePackAdapter(deps = {}) {
     });
     return {
       ok: true,
-      pack,
+      pack: await attachBpmnTransfer(inst, pack, selectedNodes),
       diagnostics: {
         rawSelection: selectionSnapshot,
         normalizedSelection: nodeItems.map((node) => ({
