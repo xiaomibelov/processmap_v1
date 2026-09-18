@@ -235,6 +235,7 @@ export async function recoverByReimport(ctx, inst, options = {}) {
     callbacks.applyInterviewDecor?.(inst, "editor");
     callbacks.applyUserNotesDecor?.(inst, "editor");
     callbacks.applyStepTimeDecor?.(inst, "editor");
+    callbacks.restoreOverlaysAfterReimport?.(inst, "editor");
     return true;
   }
 
@@ -268,6 +269,7 @@ export async function recoverByReimport(ctx, inst, options = {}) {
     callbacks.applyInterviewDecor?.(inst, "viewer");
     callbacks.applyUserNotesDecor?.(inst, "viewer");
     callbacks.applyStepTimeDecor?.(inst, "viewer");
+    callbacks.restoreOverlaysAfterReimport?.(inst, "viewer");
     return true;
   }
 
@@ -331,6 +333,7 @@ export async function recoverByHardReset(ctx, inst, options = {}) {
     callbacks.applyInterviewDecor?.(m, "editor");
     callbacks.applyUserNotesDecor?.(m, "editor");
     callbacks.applyStepTimeDecor?.(m, "editor");
+    callbacks.restoreOverlaysAfterReimport?.(m, "editor");
     return true;
   }
 
@@ -376,6 +379,7 @@ export async function recoverByHardReset(ctx, inst, options = {}) {
     callbacks.applyInterviewDecor?.(v, "viewer");
     callbacks.applyUserNotesDecor?.(v, "viewer");
     callbacks.applyStepTimeDecor?.(v, "viewer");
+    callbacks.restoreOverlaysAfterReimport?.(v, "viewer");
     return true;
   }
 
