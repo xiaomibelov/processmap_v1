@@ -73,6 +73,21 @@ function installCoordinatorClearInvalidation(inst, invalidate) {
   coordinatorClearHandlers.set(inst, onClear);
 }
 
+function uninstallCoordinatorClearInvalidation(inst) {
+  if (!inst || !coordinatorClearInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  const onClear = coordinatorClearHandlers.get(inst);
+  if (eventBus && onClear) {
+    try {
+      eventBus.off?.("diagram.clear", onClear);
+    } catch {
+      // no-op
+    }
+  }
+  coordinatorClearInstalled.delete(inst);
+  coordinatorClearHandlers.delete(inst);
+}
+
 function isSequenceFlowElement(el) {
   return Array.isArray(el?.waypoints) && String(el?.type).toLowerCase() === "bpmn:sequenceflow";
 }
@@ -530,6 +545,7 @@ export function createV2OverlayCoordinator({
     clear(inst, "viewer");
     clear(inst, "editor");
     uninstallCoordinatorHoverListeners(inst);
+    uninstallCoordinatorClearInvalidation(inst);
   }
 
   return {
