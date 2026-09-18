@@ -4,7 +4,10 @@ const BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI";
 export async function buildTemplateBpmnTransfer({ modeler, elements } = {}) {
   const copyPaste = modeler?.get?.("copyPaste");
   const selection = Array.isArray(elements) ? elements.filter(Boolean) : [];
-  if (!copyPaste || typeof copyPaste.createTree !== "function" || !selection.length) {
+  if (!selection.length) {
+    return { ok: false, error: "empty_selection" };
+  }
+  if (!copyPaste || typeof copyPaste.createTree !== "function") {
     return { ok: false, error: "copy_paste_unavailable" };
   }
   try {
@@ -45,8 +48,22 @@ export function collectDescriptorIds(nativeTree) {
 export async function buildFragmentXmlFromFullXml(fullXml, selectedIds) {
   const parser = new DOMParser();
   const sourceDoc = parser.parseFromString(fullXml, "application/xml");
+  if (
+    !sourceDoc.documentElement
+    || sourceDoc.documentElement.localName === "parsererror"
+    || sourceDoc.getElementsByTagName("parsererror").length > 0
+  ) {
+    throw new Error("source_xml_parse_failed");
+  }
+  // Carry over all xmlns:* declarations from the source root so imported
+  // semantic elements keep their prefixes bound (zeebe/camunda/pm/xsi/...).
+  const extraNs = Array.from(sourceDoc.documentElement.attributes)
+    .filter((attr) => (attr.name === "xmlns" || attr.name.startsWith("xmlns:"))
+      && attr.name !== "xmlns:bpmn" && attr.name !== "xmlns:bpmndi")
+    .map((attr) => `${attr.name}="${attr.value}"`)
+    .join(" ");
   const fragmentDoc = parser.parseFromString(
-    `<bpmn:definitions xmlns:bpmn="${BPMN_NS}" xmlns:bpmndi="${BPMNDI_NS}" id="TemplateFragment" targetNamespace="http://processmap.ai/template"/>`,
+    `<bpmn:definitions xmlns:bpmn="${BPMN_NS}" xmlns:bpmndi="${BPMNDI_NS}" ${extraNs} id="TemplateFragment" targetNamespace="http://processmap.ai/template"/>`,
     "application/xml",
   );
   const fragmentRoot = fragmentDoc.documentElement;
@@ -54,6 +71,9 @@ export async function buildFragmentXmlFromFullXml(fullXml, selectedIds) {
   const includedIds = new Set();
   const semanticSelector = Array.from(sourceDoc.documentElement.getElementsByTagNameNS(BPMN_NS, "*"))
     .filter((el) => idSet.has(el.getAttribute("id")));
+  if (!semanticSelector.length) {
+    throw new Error("no_selected_semantics");
+  }
   for (const el of semanticSelector) {
     const clone = fragmentDoc.importNode(el, true);
     includedIds.add(el.getAttribute("id"));
