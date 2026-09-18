@@ -139,8 +139,10 @@ function makeOp(type, elementId, payload) {
 }
 
 function mapUpdateProperties(context, inverse) {
-  const elementId = elementIdOf(context?.element);
+  const element = context?.element;
+  const elementId = elementIdOf(element);
   if (!elementId) return { needsFullSave: true };
+  if (requiresFullSaveForBpmnType(elementTypeOf(element))) return { needsFullSave: true };
   if (!inverse) {
     return { op: makeOp("element.updateProperties", elementId, { properties: sanitizeProperties(context?.properties) }) };
   }
@@ -149,8 +151,10 @@ function mapUpdateProperties(context, inverse) {
 }
 
 function mapUpdateLabel(context, inverse) {
-  const elementId = elementIdOf(context?.element);
+  const element = context?.element;
+  const elementId = elementIdOf(element);
   if (!elementId) return { needsFullSave: true };
+  if (requiresFullSaveForBpmnType(elementTypeOf(element))) return { needsFullSave: true };
   const name = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
   return { op: makeOp("element.updateProperties", elementId, { properties: { name } }) };
 }
