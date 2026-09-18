@@ -1,0 +1,23 @@
+{
+  "contour": "fix/template-roundtrip-artifacts",
+  "phase": "review",
+  "status": "READY_FOR_FINAL_REVIEW",
+  "blockers": [
+    "runtime e2e: local docker stack down, playwright specs not executed (Task 10)",
+    "H1 stage verdict BLOCKED: owner stage credentials unavailable (Task 11)"
+  ],
+  "ready_for_execution": false,
+  "next_action": "Reviewer fills REVIEW_REPORT.md; then run e2e matrix on live stack, obtain H1 stage verdict, await user approval for PR/merge. No prod deploy until H1 resolved.",
+  "branch": "fix/template-roundtrip-artifacts",
+  "base": "origin/main",
+  "ahead_commits": 16,
+  "diffstat": "19 files, +2186/-84",
+  "test_evidence": {
+    "frontend_core": "124/124 pass",
+    "frontend_save_extended": "192/192 pass",
+    "backend_ops_applier": "13 passed",
+    "vite_build": "ok (11.17s)"
+  },
+  "related_contours": [],
+  "related_prs": []
+}
