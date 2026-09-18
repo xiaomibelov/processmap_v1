@@ -2366,6 +2366,7 @@ components:
       title: PrecheckRequest
       type: object
     PreferencesPatchBody:
+      additionalProperties: false
       properties:
         base_version:
           title: Base Version
