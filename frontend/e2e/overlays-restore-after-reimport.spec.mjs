@@ -24,7 +24,6 @@ import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
 import { API_BASE, createFixture } from "./helpers/processFixture.mjs";
 import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 import { readServerDiagramStateVersion } from "./helpers/canvasStabilitySteps.mjs";
-import { switchTab } from "./helpers/processFixture.mjs";
 
 const TASK_A = "Task_restoreA";
 const TASK_B = "Task_restoreB";
@@ -192,6 +191,15 @@ async function screenshotStep(page, name) {
   await page.screenshot({ path: path.join(SHOTS_DIR, `${name}.png`), fullPage: false });
 }
 
+// Переключение табов процесса: в этом стеке табы — role=tab в tablist
+// «Process tabs» (shared-helper switchTab ищет устаревший .segBtn).
+async function switchProcessTab(page, name) {
+  const tab = page.getByRole("tab", { name: new RegExp(name, "i") }).first();
+  await expect(tab).toBeVisible({ timeout: 15_000 });
+  await tab.click();
+  await page.waitForTimeout(400);
+}
+
 // ---------------------------------------------------------------------------
 // Бутстрап: фикстура + V2-оверлеи включены
 // ---------------------------------------------------------------------------
@@ -223,6 +231,13 @@ async function setV2Overlays(page, on) {
 
 async function bootDiagramWithV2(page, request, runId) {
   const auth = await apiLogin(request, { apiBase: API_BASE });
+  // V2-оверлеи гейтятся серверным feature-флагом useBpmnExtensionOverlays
+  // (default 0 в чистом стеке) — включаем админски, иначе mount не стартует.
+  const flagsRes = await request.patch(`${API_BASE}/api/admin/feature-flags`, {
+    headers: auth.headers,
+    data: { flags: { useBpmnExtensionOverlays: true } },
+  });
+  expect(flagsRes.ok(), `enable feature flag: ${flagsRes.status()}`).toBeTruthy();
   const fixture = await createFixture(request, runId, auth.headers, seedXml());
   await setUiToken(page, auth.accessToken);
   const orgId = String(fixture.orgId || auth.activeOrgId || "").trim();
@@ -245,6 +260,13 @@ async function bootDiagramWithV2(page, request, runId) {
   await openPropertiesSection(page);
   await setV2Overlays(page, true);
   await expectV2Hosts(page);
+  // Сайдбар сужает контент и прячет табы процесса — сворачиваем обратно,
+  // чтобы сценарии (переключение табов) могли кликать .segBtn.
+  const collapse = page.getByRole("button", { name: "Скрыть панель" });
+  if (await collapse.isVisible().catch(() => false)) {
+    await collapse.click();
+    await page.waitForTimeout(300);
+  }
   return { auth, fixture };
 }
 
@@ -296,22 +318,26 @@ test("overlays restore after reimport: 409-rebase keeps V2 overlay cards", async
   await renameElement(page, TASK_A, marker);
   await triggerFlush(page);
 
-  // Rebase replay обязан вернуть переименование на канвас.
-  await waitForElementName(page, TASK_A, marker, FLUSH_WAIT_MS + 15_000);
-  expect(conflicts.length, "exactly one injected 409").toBe(1);
+  // Outbox-флейш должен упереться в инъектированный 409 ровно один раз.
+  await expect
+    .poll(() => conflicts.length, {
+      timeout: FLUSH_WAIT_MS,
+      message: "exactly one injected 409 expected",
+    })
+    .toBe(1);
 
-  // Главная проверка F1: после re-import (loadServerXml → runtime.load) V2
-  // карточки на месте — ровно по одной на элемент.
-  await expectV2Hosts(page);
-  await screenshotStep(page, "a-409-after");
-
-  // Правка доехала до сервера повторным flush после rebase.
+  // Rebase replay обязан довезти переименование до сервера повторным flush.
   await expect
     .poll(async () => (await fetchServerXml(request, fixture.sessionId, auth.headers)).includes(marker) ? 1 : 0, {
       timeout: FLUSH_WAIT_MS + 10_000,
       message: "server XML must contain rename marker after rebase replay",
     })
     .toBe(1);
+
+  // Главная проверка F1: после re-import (loadServerXml → runtime.load) V2
+  // карточки на месте — ровно по одной на элемент.
+  await expectV2Hosts(page);
+  await screenshotStep(page, "a-409-after");
 });
 
 // ---------------------------------------------------------------------------
@@ -321,7 +347,7 @@ test("overlays restore after reimport: 409-rebase keeps V2 overlay cards", async
 test("overlays restore after reimport: SSE full event rebase keeps V2 overlay cards", async ({ page, request }) => {
   const runId = `ovsse_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await installSseProbe(page);
-  const { fixture } = await bootDiagramWithV2(page, request, runId);
+  const { auth, fixture } = await bootDiagramWithV2(page, request, runId);
   await screenshotStep(page, "b-sse-before");
 
   // Контроль факта rebase: full-rebase делает GET /bpmn (fetchServerXml).
@@ -331,7 +357,7 @@ test("overlays restore after reimport: SSE full event rebase keeps V2 overlay ca
   });
   const bpmnFetchesBefore = bpmnFetches;
 
-  const version = await readServerDiagramStateVersion(page, fixture.sessionId, {});
+  const version = await readServerDiagramStateVersion(page, fixture.sessionId, auth.headers);
   await pushSyntheticSseFull(page, fixture.sessionId, version + 1);
 
   // Rebase реально произошёл (а не stale-drop и не no-op).
@@ -368,9 +394,9 @@ test("overlays restore after reimport: canvas recovery (recover2/recover3) keeps
     container.style.visibility = "hidden";
   });
 
-  await switchTab(page, "Interview");
+  await switchProcessTab(page, "Анализ процессов");
   await page.waitForTimeout(500);
-  await switchTab(page, "Diagram");
+  await switchProcessTab(page, "Diagram");
 
   // Recovery обязана завершиться пересозданием инстанса (recover3) — иначе
   // сценарий не тот, и проверка оверлеев была бы ложноположительной.
@@ -428,14 +454,14 @@ test("overlays restore after reimport: closing and reopening the tab keeps V2 ov
 test("overlays restore after reimport: repeated imports do not duplicate overlay nodes", async ({ page, request }) => {
   const runId = `ovdup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await installSseProbe(page);
-  const { fixture } = await bootDiagramWithV2(page, request, runId);
+  const { auth, fixture } = await bootDiagramWithV2(page, request, runId);
 
   let bpmnFetches = 0;
   page.on("request", (req) => {
     if (req.method() === "GET" && /\/api\/sessions\/[^/]+\/bpmn/.test(req.url())) bpmnFetches += 1;
   });
 
-  const baseVersion = await readServerDiagramStateVersion(page, fixture.sessionId, {});
+  const baseVersion = await readServerDiagramStateVersion(page, fixture.sessionId, auth.headers);
   for (let i = 1; i <= 3; i += 1) {
     await pushSyntheticSseFull(page, fixture.sessionId, baseVersion + i);
     await expect
