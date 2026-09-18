@@ -35,7 +35,7 @@ from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
 from .analytics_read_model import refresh_analytics_for_session
-from .camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
+from .camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml, extract_camunda_extensions_from_root
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import (
@@ -2921,7 +2921,9 @@ def _meta_with_fresh_camunda_extensions(
     current_meta: Any,
     xml_text: str,
     *,
+    session_id: str = "",
     camunda_ext: Optional[Dict[str, Any]] = None,
+    flow_element_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Rebuild the BPMN-derived Camunda extension map from the current XML.
 
@@ -2929,14 +2931,55 @@ def _meta_with_fresh_camunda_extensions(
     subprocess parent re-embed): the camunda section is always re-derived
     from the served XML, so ids from older revisions cannot survive as
     orphan entries and removed properties cannot survive as stale sidecars.
+
+    Guards:
+    - unparseable XML keeps the existing section untouched (warning);
+    - a valid diagram with flow elements but zero camunda properties means
+      a legit "user removed all properties" transition: the section is
+      replaced and the removed key count is logged (info);
+    - an empty diagram (no flow elements) also legitimately clears the
+      section (info).
     """
     normalized = _normalize_bpmn_meta(current_meta)
-    normalized.pop("camunda_extensions_by_element_id", None)
+    section_key = "camunda_extensions_by_element_id"
+    previous_map = normalized.get(section_key) or {}
+    if not isinstance(previous_map, dict):
+        previous_map = {}
     xml_str = str(xml_text or "").strip()
-    if xml_str:
-        normalized["camunda_extensions_by_element_id"] = (
-            camunda_ext if camunda_ext is not None else extract_camunda_extensions_from_bpmn_xml(xml_str)
+    if not xml_str:
+        normalized.pop(section_key, None)
+        return normalized
+    try:
+        root = ET.fromstring(xml_str.encode("utf-8"))
+    except Exception:
+        logger.warning(
+            "camunda_meta_guard: session %s bpmn_xml parse failed; keeping existing camunda section (%d keys)",
+            session_id,
+            len(previous_map),
+            exc_info=True,
         )
+        return normalized
+    fresh = camunda_ext if camunda_ext is not None else extract_camunda_extensions_from_root(root)
+    if not isinstance(fresh, dict):
+        fresh = {}
+    if flow_element_count is None:
+        flow_element_count = _count_bpmn_activities(xml_str)
+    if not fresh and previous_map:
+        removed = len(previous_map)
+        if int(flow_element_count or 0) > 0:
+            logger.info(
+                "camunda_meta_guard: session %s legit property removal: new XML has %d flow elements, 0 camunda properties; clearing camunda section (%d keys)",
+                session_id,
+                int(flow_element_count or 0),
+                removed,
+            )
+        else:
+            logger.info(
+                "camunda_meta_guard: session %s empty diagram (0 flow elements); clearing camunda section (%d keys)",
+                session_id,
+                removed,
+            )
+    normalized[section_key] = fresh
     return normalized
 
 
@@ -4780,7 +4823,10 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
                         # Re-embed replaces parent XML: rebuild the camunda
                         # section so the old child fragment ids do not linger.
                         parent.bpmn_meta = _meta_with_fresh_camunda_extensions(
-                            getattr(parent, "bpmn_meta", {}) or {}, new_parent_xml
+                            getattr(parent, "bpmn_meta", {}) or {},
+                            new_parent_xml,
+                            session_id=parent_session_id,
+                            flow_element_count=parent.activity_count,
                         )
                         _mark_diagram_truth_write(
                             parent,
@@ -4998,7 +5044,10 @@ def _sync_child_into_parent_with_retry(
                     # Re-embed replaces parent XML: rebuild the camunda
                     # section so the old child fragment ids do not linger.
                     parent.bpmn_meta = _meta_with_fresh_camunda_extensions(
-                        getattr(parent, "bpmn_meta", {}) or {}, new_parent_xml
+                        getattr(parent, "bpmn_meta", {}) or {},
+                        new_parent_xml,
+                        session_id=parent_session_id,
+                        flow_element_count=parent.activity_count,
                     )
                     _mark_diagram_truth_write(
                         parent,
@@ -5169,7 +5218,11 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
         # The ops batch replaces bpmn_xml: rebuild the camunda section from the
         # new XML so deleted/renamed elements do not leave orphan meta entries.
         s.bpmn_meta = _meta_with_fresh_camunda_extensions(
-            getattr(s, "bpmn_meta", {}) or {}, new_xml, camunda_ext=_deriv.camunda_extensions
+            getattr(s, "bpmn_meta", {}) or {},
+            new_xml,
+            session_id=session_id,
+            camunda_ext=_deriv.camunda_extensions,
+            flow_element_count=_deriv.activity_count,
         )
         _mark_diagram_truth_write(
             s,

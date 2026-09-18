@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -32,6 +33,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app import _legacy_main, storage  # noqa: E402
 from app.camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 SAMPLE_KEYS_LIMIT = 10
 
@@ -135,7 +138,14 @@ def prune_orphan_camunda_meta(
                             xml_element_ids.add(eid)
                     fresh_map = extract_camunda_extensions_from_bpmn_xml(xml) or {}
                 except Exception:
+                    # Same guard as _meta_with_fresh_camunda_extensions: broken
+                    # XML must never wipe the camunda section — skip, warn, keep.
                     result.parse_error = True
+                    logger.warning(
+                        "camunda-prune: session %s has unparseable bpmn_xml; skipping (existing section untouched)",
+                        session_id,
+                        exc_info=True,
+                    )
                     per_session.append(result)
                     continue
 
@@ -230,6 +240,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"mismatch={item['mismatched_keys']} {item['mismatched_keys_sample']}, "
                 f"kept={item['kept_keys']}"
             )
+    skipped = [row for row in summary["sessions"] if row.get("parse_error")]
+    if skipped:
+        print(f"[camunda-prune] skipped sessions (broken bpmn_xml, meta untouched): {len(skipped)}")
+        for item in skipped[:50]:
+            print(f"  - {item['session_id']}")
     if not args.apply and summary["sessions_changed"]:
         print("[camunda-prune] dry-run only; re-run with --apply to update sessions")
     return 0
