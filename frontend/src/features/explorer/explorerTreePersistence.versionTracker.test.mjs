@@ -15,6 +15,7 @@ import {
   registerPreferencesVersionSaver,
   setPreferencesQueryCacheBridge,
   patchUserPreferences,
+  unregisterPreferencesVersionSaver,
   __resetPreferencesVersionTrackerForTests,
 } from "./explorerTreePersistence.js";
 
@@ -80,6 +81,24 @@ test("adoptPreferencesSnapshot игнорирует битые снапшоты 
   assert.equal(getLatestKnownPreferencesVersion(), 4);
   assert.deepEqual(synced, [4]);
   assert.equal(bridged.length, 1);
+});
+
+test("unregisterPreferencesVersionSaver: cleanup снимает saver, чужой saver не трогает", () => {
+  __resetPreferencesVersionTrackerForTests();
+  const syncedA = [];
+  const syncedB = [];
+  const saverA = { syncVersion: (v) => syncedA.push(v) };
+  const saverB = { syncVersion: (v) => syncedB.push(v) };
+  registerPreferencesVersionSaver(saverA);
+
+  unregisterPreferencesVersionSaver(saverB);
+  adoptPreferencesSnapshot({ version: 5, preferences: {} });
+  assert.deepEqual(syncedA, [5], "чужой saver не снимает регистрацию");
+
+  unregisterPreferencesVersionSaver(saverA);
+  adoptPreferencesSnapshot({ version: 6, preferences: {} });
+  assert.deepEqual(syncedA, [5], "после unregister версия в saver не идёт");
+  assert.equal(getLatestKnownPreferencesVersion(), 6);
 });
 
 test("treeSaver: успешный flush синхронизирует query cache и saver-версию (bridge получает doc)", async () => {

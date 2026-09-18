@@ -82,24 +82,23 @@ async function screenshotStep(page, name) {
 async function bootWorkspaceExplorer(page, request, runId, auth) {
   const fixture = await createFixture(request, runId, auth.headers);
   const projectTitle = `E2E save ${runId}`;
-  await openWorkspaceExplorer(page, auth, projectTitle);
+  await openWorkspaceExplorer(page, auth, projectTitle, fixture);
   return { fixture, projectTitle };
 }
 
-/** Открывает /app и дожидается ExplorerPane workspace с фикстурным проектом. */
-async function openWorkspaceExplorer(page, auth, projectTitle) {
+/**
+ * Открывает ExplorerPane workspace с фикстурным проектом.
+ * Бутстрап — deeplink-навигация /app?project=&session= (как F1-спека
+ * overlays-restore-after-reimport): org резолвится из проекта ссылки без
+ * org-picker'а (deeplinkOrgChoice, #993) — клик по «Default» в пикере ломался
+ * при большом числе орг в БД (кнопка вне вьюпорта, review B1).
+ */
+async function openWorkspaceExplorer(page, auth, projectTitle, fixture) {
   await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId });
+  await page.goto(`/app?project=${encodeURIComponent(fixture.projectId)}&session=${encodeURIComponent(fixture.sessionId)}`);
+  await expect(page.locator(".bpmnStageHost")).toBeVisible({ timeout: 30_000 });
+  // Org уже подобран диплинком — возвращаемся в workspace explorer без пикера.
   await page.goto("/app");
-  // Орг-пикер (если active_org не подхватился) — как в overlays-спеке.
-  const chooser = page.getByText("Выберите организацию").first();
-  for (let i = 0; i < 40; i += 1) {
-    if (await chooser.isVisible().catch(() => false)) {
-      await page.getByRole("button", { name: /Default/i }).first().click();
-      break;
-    }
-    if (await page.getByTestId("workspace-filter-toolbar").isVisible().catch(() => false)) break;
-    await page.waitForTimeout(500);
-  }
   const workspaceItem = page.getByText(WORKSPACE_NAME, { exact: true }).first();
   await expect(workspaceItem).toBeVisible({ timeout: 30_000 });
   await workspaceItem.click();
@@ -232,7 +231,7 @@ test("preferences race: вкладка B подняла версию → у A fo
   const pageErrorsA = collectPageErrors(page);
   const patchesA = trackPrefsPatches(page);
   const refreshA = trackRefresh(page);
-  const { projectTitle } = await bootWorkspaceExplorer(page, request, runId, auth);
+  const { fixture, projectTitle } = await bootWorkspaceExplorer(page, request, runId, auth);
 
   // Вкладка B: второй независимый контекст (свои storage/cookies).
   const contextB = await browser.newContext();
@@ -240,7 +239,7 @@ test("preferences race: вкладка B подняла версию → у A fo
   try {
     const pageErrorsB = collectPageErrors(pageB);
     const patchesB = trackPrefsPatches(pageB);
-    await openWorkspaceExplorer(pageB, auth, projectTitle);
+    await openWorkspaceExplorer(pageB, auth, projectTitle, fixture);
 
     // B скрывает «Готово» → версия уходит вперёд без ведома A.
     const checkboxesB = await openStatusMenu(pageB);
