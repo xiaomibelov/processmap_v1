@@ -1,0 +1,34 @@
+{
+  "contour": "audit/tobe-stage-model-v1",
+  "phase": "execution",
+  "status": "ready_for_review",
+  "updated_at": "2026-09-16",
+  "role": "executor",
+  "agent": 2,
+  "branch": "audit/db-plane-measures-20260916",
+  "head": "ae91569b31f0470935ef426a16c7242a1da12dbb",
+  "origin_main": "ae91569b31f0470935ef426a16c7242a1da12dbb",
+  "db_plane_substitution": "measured on local DB snapshot 2026-09-15 (container processmap_v1-postgres-1) instead of direct prod SELECT; deviation recorded in AUDIT_REPORT.md",
+  "read_only": true,
+  "product_code_changed": false,
+  "key_facts": {
+    "sessions_total": 1789,
+    "sessions_alive": 1788,
+    "as_is_alive": 1786,
+    "to_be_alive": 2,
+    "pairs_by_derived_from": 2,
+    "pairs_by_name": 0,
+    "orphans": 0,
+    "pairs_where_asis_newer": 1,
+    "interview_stage_nonempty": 0,
+    "interview_json_nonempty": 174,
+    "tobe_with_column_provenance_pct": 100,
+    "tobe_with_content_provenance_pct": 0
+  },
+  "deliverables": [
+    "AUDIT_REPORT.md",
+    "STAGE_MODEL_MAP.md",
+    "STATE.json"
+  ],
+  "next": "Agent 3 reviewer: independent validation, verify SQL evidence, confirm read-only boundary"
+}

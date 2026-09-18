@@ -1,0 +1,61 @@
+session_id,org,project,title,elements,with_props,pct_props,keys,pct_named_task,pct_named_gate,pct_named_evt,id_gen,id_sem,edited,xml_kb
+7e00ebc150,org_default,,Добавить ингредиент,9,3,33.3,ingredient:3;equipment:2;ingredient_um:1;ingredient_value:1;container_tara:1,100.0,,0.0,9,0,False,4.8
+dcf62aba82,org_default,,measure session 1,974,439,45.1,ingredient:184;container_tara:183;equipment:130;ingredient_value:91;container_tara_value:68;ingredient_um:62,97.5,74.1,22.8,973,1,True,768.4
+8369840fea,org_default,31c4aec70b,Налить ингредиент,28,15,53.6,ingredient_value:8;ingredient_um:8;ingredient:4;equipment:3;container_tara_value:3;ingredient_base:2,100.0,60.0,0.0,28,0,True,15.9
+1e078c71a0,org_default,31c4aec70b,measure session 2,974,439,45.1,ingredient:184;container_tara:183;equipment:130;ingredient_value:91;container_tara_value:68;ingredient_um:62,97.5,74.1,22.8,973,1,True,774.8
+b608a00d1d,org_default,4204e4701b,Добавить ингредиент,9,3,33.3,ingredient:3;ee_time:3;ee_operation:3;container_tara:2;ingredient_value:1;ingredient_um:1,100.0,,0.0,9,0,True,5.0
+497f4ab7d9,org_default,4204e4701b,diag,137,45,32.8,ee_time:31;ee_operation:30;container_tara:12;ingredient:12;tara:11;equipment:10,60.4,100.0,20.0,136,1,True,70.9
+adc84cc764,org_default,445ebd4841,E2E save session 1789160545966_5gjet4,262,0,0.0,,100.0,100.0,100.0,150,112,True,69.5
+f3948ed8dd,org_default,45b465c05f,E2E save session 1789160570615_4t4jy2,262,0,0.0,,100.0,100.0,100.0,150,112,True,69.5
+162adb73f8,org_default,5d08a80d18,overlay-desync-fixture,5,1,20.0,ee_operation:1;ee_time:1;equipment:1,100.0,,0.0,2,3,True,2.2
+bc59b66816,org_default,94afe6fc3c,E2E save session 1789098470778_9s5afn,261,0,0.0,,100.0,100.0,100.0,149,112,True,69.1
+e1925a5b74,org_default,9db6144ae2,E2E save session 1789100252625_yku4h4,261,0,0.0,,100.0,100.0,100.0,149,112,True,69.1
+53006f5546,org_default,b1c8a56b6e,123,160,50,31.2,ee_time:36;ee_operation:35;container_tara:14;tara:14;ingredient:12;equipment:11,56.9,100.0,20.0,159,1,True,79.2
+ca36d5cb15,org_default,b1c8a56b6e,вывыв,97,45,46.4,ee_time:31;ee_operation:30;ingredient:12;container_tara:12;tara:11;equipment:10,97.0,100.0,20.0,96,1,True,58.0
+d138c5a9ae,org_default,c2afdb98c2,Добавить ингредиент,9,3,33.3,ingredient:3;equipment:2;ingredient_um:1;ingredient_value:1;container_tara:1,100.0,,0.0,9,0,True,4.8
+25c158aace,org_default,c2afdb98c2,Меренга_пирожное_ШУ - клон для замеров,974,439,45.1,ingredient:184;container_tara:183;equipment:130;ingredient_value:91;container_tara_value:68;ingredient_um:62,97.5,74.1,22.8,973,1,True,774.0
+6a31dbe457,org_default,d2b90bcbed,prop-speed,137,45,32.8,ee_time:31;ee_operation:30;container_tara:12;ingredient:12;tara:11;equipment:10,60.4,100.0,20.0,136,1,True,70.9
+6f24f8170f,org_default,d2b90bcbed,Переместить в емкость,9,3,33.3,ingredient:3;ee_time:3;ee_operation:3;container_tara:2;ingredient_value:1;ingredient_um:1,100.0,,0.0,9,0,True,4.7
+707564e262,org_default,d92925aa2f,Target Session,14,1,7.1,container_condition:1,100.0,100.0,100.0,4,10,True,6.3
+647655cc4d,org_default,e53f57af22,E2E save session 1789094536008_aq1epz,261,0,0.0,,100.0,100.0,100.0,149,112,True,69.1
+0291eceea0,org_default,e74e08e1ce,Source Session,13,1,7.7,container_condition:1,100.0,100.0,100.0,3,10,True,5.8
+8d8e2957bf,1507f99910a4,a41e114616,Overlay session,5,0,0.0,,100.0,,100.0,2,3,False,1.3
+5e91679ca3,58102a308f66,c070004d88,Overlay session,5,0,0.0,,100.0,,100.0,2,3,False,1.3
+59d1404920,7179de4119a2,b2ae5bf132,Overlay session,5,0,0.0,,100.0,,100.0,2,3,False,1.3
+cbb27857f6,baf439e90e4b,65119e9ade,Overlay session,5,0,0.0,,100.0,,100.0,2,3,False,1.3
+7b11e545a9,cf83eb14eb2f,2115529659,Overlay session,5,0,0.0,,100.0,,100.0,2,3,False,1.3
+c2cf05d499,ed4374a80e33,0a12a11781,Overlay session,5,0,0.0,,100.0,,100.0,2,3,False,1.3
+e0a0fa1dce,org_default,0004e8097d,E2E save session 1789100430100_ikf0q5,262,0,0.0,,100.0,100.0,100.0,150,112,True,69.3
+64d1ce372c,org_default,0118683617,E2E save session d3t2_1789434385382,316,0,0.0,,100.0,100.0,100.0,180,136,True,70.9
+2880dea822,org_default,01d115912b,E2E save session dbg4_1789436484544,317,0,0.0,,99.2,100.0,100.0,181,136,True,71.2
+4ca5abe42d,org_default,02a7a2206e,E2E save session 1789094596740_kcvrw6,262,0,0.0,,100.0,100.0,100.0,150,112,True,69.3
+62cdf6f667,org_default,02f0d8da7e,E2E save session 1789054476404_pu6sgp,244,0,0.0,,100.0,100.0,100.0,136,108,False,55.1
+74476470c0,org_default,03e624f451,E2E save session 1789100275700_ssm7q3,261,0,0.0,,100.0,100.0,100.0,149,112,True,68.9
+3b36b26df7,org_default,047edfc0bb,E2E save session 1789427291377_zu1rv5,316,0,0.0,,100.0,100.0,100.0,180,136,True,83.0
+250a6ddbdf,org_default,0489c791b2,E2E pending edits session 1788618486306_,5,0,0.0,,100.0,,100.0,2,3,False,2.0
+96c00f9de5,org_default,058003f7b1,E2E save session 1789433086729_w4gd9t,316,0,0.0,,100.0,100.0,100.0,180,136,True,70.9
+52ae5ecef5,org_default,061c7cae77,E2E save session 1789047166395_3mzwup,5,0,0.0,,100.0,,100.0,2,3,True,2.0
+2547ad2bf7,org_default,06267eb644,E2E polling session 1789159804673,422,0,0.0,,100.0,,0.0,280,142,False,107.7
+3e5b05c582,org_default,06a1b26961,E2E compare ui session single 1789480026,5,0,0.0,,100.0,,100.0,3,2,False,2.3
+ecfdf0c14a,org_default,06ad42ad8a,E2E save session dbg1_1789429524412,316,0,0.0,,100.0,100.0,100.0,180,136,True,70.9
+21dadc8a13,org_default,06c7b617df,E2E save session dbg2_1789428132730,316,0,0.0,,100.0,100.0,100.0,180,136,True,83.0
+a57ecc9d61,org_default,06fedc20e3,E2E save session 1789059592029_g97yix,260,0,0.0,,100.0,100.0,100.0,148,112,False,58.6
+691cbd95a1,org_default,0895c7b424,E2E compare ui session shot2 17894804400,7,0,0.0,,100.0,,100.0,5,2,False,2.7
+01b45c11b5,org_default,08aa1b353c,E2E pending edits session 1789360701809_,5,0,0.0,,100.0,,100.0,2,3,False,2.0
+b665007403,org_default,08b4b6be00,E2E semantic diff session 1789469712831_,7,0,0.0,,100.0,,100.0,3,4,True,3.3
+b68e44ac18,org_default,08ddfed481,E2E mixed versions session 1789477135523,5,0,0.0,,100.0,,100.0,3,2,True,2.3
+79138a5840,org_default,08f77a2a63,E2E pending edits session 1789360075936_,5,0,0.0,,100.0,,100.0,2,3,True,2.0
+66e85f059c,org_default,091d7507be,E2E snapshot accumulate session 17894749,9,0,0.0,,100.0,,100.0,7,2,True,4.6
+0ff141ff54,org_default,0a4d37e0e3,E2E compare ui session shot2 17894742229,7,0,0.0,,100.0,,100.0,5,2,False,2.7
+fffb07adb4,org_default,0a54bdd628,E2E polling session 1789153210491,422,0,0.0,,100.0,,0.0,280,142,False,107.7
+755b2aa213,org_default,0a8365c32f,E2E pending edits session 1788617564139_,5,0,0.0,,100.0,,100.0,2,3,True,2.0
+3baf94c0ea,org_default,0aa9db104c,E2E save session dbg3_1789432628927,319,0,0.0,,98.5,100.0,100.0,183,136,True,71.7
+840c2ff66d,org_default,0aedf120b8,probe,3,0,0.0,,0.0,,0.0,1,2,True,1.1
+8cdc35a764,org_default,0b091ff7d3,E2E save session 1789063441169_o8vvys,262,0,0.0,,100.0,100.0,100.0,150,112,True,69.2
+b255bfa808,org_default,0b5f72be8e,E2E save session 1789100539313_r1endr,261,0,0.0,,100.0,100.0,100.0,149,112,True,68.9
+27ed22924e,org_default,0b65a4a801,E2E snapshot accumulate session 17894761,9,0,0.0,,100.0,,100.0,7,2,True,4.6
+6d189c3973,org_default,0b6f81eeb7,E2E snapshot session 1789477148639_5vdc2,33,0,0.0,,100.0,,100.0,31,2,True,12.2
+cea8194fe9,org_default,0c1c6a97cc,dbg2 sess 1789128572994,5,0,0.0,,100.0,,0.0,2,3,False,1.8
+8545ad0205,org_default,0c69bc89f5,E2E polling session 1789149932735,422,0,0.0,,100.0,,0.0,280,142,True,119.6
+38c7bbdf8d,org_default,0c706c3fea,DBG7b,5,0,0.0,,100.0,,0.0,3,2,False,1.7
+38704e37e1,org_default,0c908bb085,E2E save session 1789437265474_0m9nf7,316,0,0.0,,100.0,100.0,100.0,180,136,True,70.9
