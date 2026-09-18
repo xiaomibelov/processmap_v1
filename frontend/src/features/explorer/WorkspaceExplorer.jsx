@@ -31,6 +31,7 @@ import {
   registerPreferencesVersionSaver,
   setPreferencesQueryCacheBridge,
   treeScopeKey,
+  unregisterPreferencesVersionSaver,
 } from "./explorerTreePersistence.js";
 import {
   STAGE_AS_IS,
@@ -2726,6 +2727,7 @@ function ExplorerPane({
     });
     return () => {
       setPreferencesQueryCacheBridge(null);
+      unregisterPreferencesVersionSaver(treeSaverRef.current);
     };
   }, [queryClient]);
   useEffect(() => {

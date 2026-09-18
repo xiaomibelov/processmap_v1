@@ -36,6 +36,11 @@ export function registerPreferencesVersionSaver(saver) {
   registeredSaver = saver && typeof saver.syncVersion === "function" ? saver : null;
 }
 
+/** Снять saver с регистрации (cleanup компонента; чужой saver не трогаем). */
+export function unregisterPreferencesVersionSaver(saver) {
+  if (!saver || registeredSaver === saver) registeredSaver = null;
+}
+
 /** Принять серверный снапшот (успех 200 или тело 409): версия + оба трекера. */
 export function adoptPreferencesSnapshot(doc) {
   if (!doc || typeof doc !== "object") return;
