@@ -41,6 +41,22 @@ test("ops-degraded maps onto failed state with degraded label", () => {
   assert.match(view.label, /полн/i, "degraded label mentions full save fallback");
 });
 
+test("ops-degraded copy: fixed full-save wording with reassurance, reason only telemetry", () => {
+  const view = buildSaveStatusSlotView({
+    saveUploadStatusRaw: {
+      state: "saved",
+      opsStage: "ops-degraded",
+      opsReason: "full_save_required_for_bpmn_type",
+    },
+  });
+  assert.equal(view.state, "failed");
+  assert.equal(view.label, "Сохраняем полностью: быстрое сохранение недоступно для этих изменений.");
+  assert.ok(view.title.includes("Данные не потеряны"), "title reassures data is not lost");
+  assert.ok(view.title.includes("полное сохранение"), "title confirms full save is active");
+  assert.ok(!view.title.includes("full_save_required_for_bpmn_type"), "no raw error details in visible copy");
+  assert.equal(view.opsReason, "full_save_required_for_bpmn_type", "reason exposed only as telemetry field");
+});
+
 test("conflict still dominates ops stages (existing conflict UX untouched)", () => {
   const view = buildSaveStatusSlotView({
     saveUploadStatusRaw: { state: "conflict" },
