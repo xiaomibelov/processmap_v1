@@ -11,6 +11,7 @@ import {
   TEMPLATE_PERSISTENT_FIELD_GROUPS,
   TEMPLATE_TRANSIENT_FIELD_GROUPS,
 } from "./templateSemanticPayload.js";
+import * as templateSemanticPayloadModule from "./templateSemanticPayload.js";
 import camundaModdleDescriptor from "../../../camunda/camundaModdleDescriptor.js";
 import pmModdleDescriptor from "../../../robotmeta/pmModdleDescriptor.js";
 
@@ -857,4 +858,37 @@ test("camunda properties on service task survive template semantic payload round
   assert.equal(/camunda:properties/i.test(out.xml), true);
   assert.equal(/name=["']robot\.code["'][^>]*value=["']R-42["']/i.test(out.xml), true);
   assert.equal(/name=["']risk["'][^>]*value=["']high["']/i.test(out.xml), true);
+});
+
+test("unknown semantic namespace is captured as unsupported diagnostics, not restored moddle value", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const target = moddle.create("bpmn:Task", { id: "Task_Unknown_Ns" });
+  const restored = rehydrateSupportedBusinessObjectPayload(target, {
+    extensionElements: {
+      $type: "bpmn:ExtensionElements",
+      values: [{ $type: "foo:ArtifactProbe", value: "probe" }],
+    },
+  }, { moddle });
+  assert.equal(restored?.unsupportedSemanticPayload?.length, 1);
+  assert.equal(restored?.businessObject, target);
+  assert.ok(restored?.businessObject?.extensionElements?.values?.[0]?.$descriptor);
+});
+
+test("restore never returns descriptor-less plain object", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+  const restoreTemplateModdleValue = templateSemanticPayloadModule.restoreTemplateModdleValue;
+  assert.equal(typeof restoreTemplateModdleValue, "function");
+  const restored = restoreTemplateModdleValue({ $type: "foo:Bar", x: 1 }, moddle);
+  assert.equal(restored?.value, null);
+  assert.equal(restored?.unsupported?.[0]?.$type, "foo:Bar");
 });
