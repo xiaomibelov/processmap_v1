@@ -1347,3 +1347,172 @@ class BpmnMetaMergeHelperTests(unittest.TestCase):
         self.assertEqual(saved.get("viewport"), patched.get("viewport"))
         self.assertEqual(saved.get("custom_key"), patched.get("custom_key"))
 
+
+CAMUNDA_PRUNE_OPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_prune" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_prune" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ee_time" value="0.33" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_2">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="ee_temp" value="4" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_1">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Task_2" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_2" targetRef="End_1" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+class BpmnMetaCamundaPruneOpsTests(unittest.TestCase):
+    """camunda_extensions_by_element_id must track the current bpmn_xml on every
+    xml-replacing path (save/restore/reimport/ops), not keep orphan entries."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
+        os.environ.setdefault("JWT_SECRET", "test-secret")
+        os.environ.setdefault("JWT_ISSUER", "test-issuer")
+        os.environ.setdefault("JWT_AUDIENCE", "test-audience")
+
+        from app._legacy_main import (
+            BpmnXmlIn,
+            CreateSessionIn,
+            SessionOperationsIn,
+            create_session,
+            get_storage,
+            session_bpmn_save,
+            session_operations_apply,
+        )
+
+        self.BpmnXmlIn = BpmnXmlIn
+        self.SessionOperationsIn = SessionOperationsIn
+        self.create_session = create_session
+        self.get_storage = get_storage
+        self.session_bpmn_save = session_bpmn_save
+        self.session_operations_apply = session_operations_apply
+
+        created = self.create_session(CreateSessionIn(title="camunda prune ops"))
+        self.sid = str(created.get("id") or "")
+        self.assertTrue(self.sid)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _camunda_map(self, meta):
+        return dict(meta or {}).get("camunda_extensions_by_element_id", {}) or {}
+
+    def _camunda_prop_names(self, meta, element_id):
+        ext = self._camunda_map(meta).get(element_id, {}) or {}
+        props = ext.get("properties", {}).get("extensionProperties", []) or []
+        return sorted(p.get("name") for p in props if isinstance(p, dict))
+
+    def test_ops_shape_delete_prunes_orphan_camunda_extensions(self):
+        res = self.session_bpmn_save(
+            self.sid, self.BpmnXmlIn(xml=CAMUNDA_PRUNE_OPS_XML, source_action="import_bpmn")
+        )
+        self.assertEqual(res.get("ok"), True)
+        base_version = int(res.get("diagram_state_version") or 0)
+
+        current = self.get_storage().load(self.sid, is_admin=True)
+        self.assertIn("Task_1", self._camunda_map(current.bpmn_meta))
+        self.assertIn("Task_2", self._camunda_map(current.bpmn_meta))
+
+        ops_res = self.session_operations_apply(
+            self.sid,
+            self.SessionOperationsIn(
+                baseVersion=base_version,
+                operations=[{"opId": "op-del-1", "type": "shape.delete", "elementId": "Task_2"}],
+            ),
+        )
+        self.assertEqual(ops_res.get("ok"), True, ops_res)
+
+        reloaded = self.get_storage().load(self.sid, is_admin=True)
+        camunda_map = self._camunda_map(reloaded.bpmn_meta)
+        self.assertNotIn("Task_2", camunda_map, f"deleted element must be pruned from meta, got {camunda_map}")
+        self.assertIn("Task_1", camunda_map, "surviving element properties must stay")
+        self.assertEqual(self._camunda_prop_names(reloaded.bpmn_meta, "Task_1"), ["ee_time"])
+
+    def test_ops_shape_delete_keeps_surviving_element_properties(self):
+        res = self.session_bpmn_save(
+            self.sid, self.BpmnXmlIn(xml=CAMUNDA_PRUNE_OPS_XML, source_action="import_bpmn")
+        )
+        self.assertEqual(res.get("ok"), True)
+        base_version = int(res.get("diagram_state_version") or 0)
+
+        ops_res = self.session_operations_apply(
+            self.sid,
+            self.SessionOperationsIn(
+                baseVersion=base_version,
+                operations=[{"opId": "op-del-2", "type": "shape.delete", "elementId": "Task_1"}],
+            ),
+        )
+        self.assertEqual(ops_res.get("ok"), True, ops_res)
+
+        reloaded = self.get_storage().load(self.sid, is_admin=True)
+        camunda_map = self._camunda_map(reloaded.bpmn_meta)
+        self.assertNotIn("Task_1", camunda_map)
+        self.assertIn("Task_2", camunda_map, "surviving element (still in XML) properties must stay")
+        self.assertEqual(self._camunda_prop_names(reloaded.bpmn_meta, "Task_2"), ["ee_temp"])
+
+    def test_save_replaces_property_set_for_unchanged_element_id(self):
+        # Reconcile rule: the camunda section is rebuilt from the current XML on
+        # every xml-replacing path. A property dropped from the XML (same element
+        # id) must disappear from meta, not survive as a stale sidecar entry.
+        xml_v1 = self._xml_with_props([("ee_time", "0.33"), ("ee_temp", "4")])
+        xml_v2 = self._xml_with_props([("ee_time", "0.66")])
+
+        self.assertEqual(
+            self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=xml_v1, source_action="import_bpmn")).get("ok"),
+            True,
+        )
+        self.assertEqual(
+            self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=xml_v2, source_action="import_bpmn")).get("ok"),
+            True,
+        )
+
+        reloaded = self.get_storage().load(self.sid, is_admin=True)
+        self.assertEqual(self._camunda_prop_names(reloaded.bpmn_meta, "Task_1"), ["ee_time"])
+        self.assertEqual(self._camunda_prop_values(reloaded.bpmn_meta, "Task_1", "ee_time"), ["0.66"])
+
+    def _xml_with_props(self, props):
+        rows = "".join(
+            f'<camunda:property name="{name}" value="{value}" />' for name, value in props
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+            'xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Defs_reconcile" targetNamespace="http://bpmn.io/schema/bpmn">'
+            '<bpmn:process id="Process_1" isExecutable="false">'
+            '<bpmn:startEvent id="StartEvent_1"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>'
+            '<bpmn:task id="Task_1"><bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing>'
+            '<bpmn:extensionElements><camunda:properties>%s</camunda:properties></bpmn:extensionElements></bpmn:task>'
+            '<bpmn:endEvent id="End_1"><bpmn:incoming>Flow_2</bpmn:incoming></bpmn:endEvent>'
+            '<bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />'
+            '<bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="End_1" />'
+            '</bpmn:process></bpmn:definitions>'
+        ) % rows
+
+    def _camunda_prop_values(self, meta, element_id, name):
+        ext = self._camunda_map(meta).get(element_id, {}) or {}
+        props = ext.get("properties", {}).get("extensionProperties", []) or []
+        return [p.get("value") for p in props if isinstance(p, dict) and p.get("name") == name]

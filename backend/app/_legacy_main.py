@@ -2917,6 +2917,29 @@ def _merge_and_normalize_bpmn_meta(
     return normalized_meta, auto_pass_state_write_requested
 
 
+def _meta_with_fresh_camunda_extensions(
+    current_meta: Any,
+    xml_text: str,
+    *,
+    camunda_ext: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Rebuild the BPMN-derived Camunda extension map from the current XML.
+
+    Used on xml-replacing paths outside the PUT save merge (ops batch,
+    subprocess parent re-embed): the camunda section is always re-derived
+    from the served XML, so ids from older revisions cannot survive as
+    orphan entries and removed properties cannot survive as stale sidecars.
+    """
+    normalized = _normalize_bpmn_meta(current_meta)
+    normalized.pop("camunda_extensions_by_element_id", None)
+    xml_str = str(xml_text or "").strip()
+    if xml_str:
+        normalized["camunda_extensions_by_element_id"] = (
+            camunda_ext if camunda_ext is not None else extract_camunda_extensions_from_bpmn_xml(xml_str)
+        )
+    return normalized
+
+
 def _enforce_gateway_tier_constraints(
     flow_meta: Dict[str, Dict[str, Any]],
     *,
@@ -4754,9 +4777,14 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
                         parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
                         parent.activity_count = _count_bpmn_activities(new_parent_xml)
                         parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
+                        # Re-embed replaces parent XML: rebuild the camunda
+                        # section so the old child fragment ids do not linger.
+                        parent.bpmn_meta = _meta_with_fresh_camunda_extensions(
+                            getattr(parent, "bpmn_meta", {}) or {}, new_parent_xml
+                        )
                         _mark_diagram_truth_write(
                             parent,
-                            changed_keys=["bpmn_xml"],
+                            changed_keys=["bpmn_xml", "bpmn_meta"],
                             actor_user_id=user_id,
                             actor_label=_resolve_actor_label_from_user(user, user_id),
                             client_id=client_id,
@@ -4967,9 +4995,14 @@ def _sync_child_into_parent_with_retry(
                     parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
                     parent.activity_count = _count_bpmn_activities(new_parent_xml)
                     parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
+                    # Re-embed replaces parent XML: rebuild the camunda
+                    # section so the old child fragment ids do not linger.
+                    parent.bpmn_meta = _meta_with_fresh_camunda_extensions(
+                        getattr(parent, "bpmn_meta", {}) or {}, new_parent_xml
+                    )
                     _mark_diagram_truth_write(
                         parent,
-                        changed_keys=["bpmn_xml"],
+                        changed_keys=["bpmn_xml", "bpmn_meta"],
                         actor_user_id=user_id,
                         actor_label=actor_label,
                         client_id=client_id,
@@ -5133,9 +5166,14 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
         s.activity_count = _deriv.activity_count
         s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
+        # The ops batch replaces bpmn_xml: rebuild the camunda section from the
+        # new XML so deleted/renamed elements do not leave orphan meta entries.
+        s.bpmn_meta = _meta_with_fresh_camunda_extensions(
+            getattr(s, "bpmn_meta", {}) or {}, new_xml, camunda_ext=_deriv.camunda_extensions
+        )
         _mark_diagram_truth_write(
             s,
-            changed_keys=["bpmn_xml"],
+            changed_keys=["bpmn_xml", "bpmn_meta"],
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
             client_id=client_id,
@@ -5162,7 +5200,7 @@ def session_operations_apply(session_id: str, inp: SessionOperationsIn, request:
             for op in pending
         ]
         state_trace = {
-            "changed_keys": ["bpmn_xml"],
+            "changed_keys": ["bpmn_xml", "bpmn_meta"],
             "payload_hash": hashlib.sha1(batch_payload.encode("utf-8")).hexdigest(),
             "actor_user_id": user_id,
             "actor_label": _resolve_actor_label_from_user(user, user_id),
