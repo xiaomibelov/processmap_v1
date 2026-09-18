@@ -277,7 +277,9 @@ test("1: unknown semantic namespace pack — apply/save/tab-switch без crash 
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "e2e-unknown-ns-canvas.png") });
 
   // Save + tab switch (save-before-switch): не должно быть crash/raw isGeneric.
-  await switchTab(page, "Overview");
+  // «XML» — реальная вкладка воркбенча (ProcessStageHeader: «Diagram (BPMN)» и
+  // «XML» — готовые представления); «Overview» в воркбенче нет.
+  await switchTab(page, "XML");
   await switchTab(page, "Diagram");
   await waitForDiagramReady(page);
 
