@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.147",
+  currentVersion: "v1.0.148",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.148",
+      changes: [
+        "Исправлен редкий сбой канваса после восстановления при конфликте версий (409): уничтоженный экземпляр диаграммы больше не получает оверлеи из отложенного монтирования.",
+      ],
+    },
     {
       version: "v1.0.147",
       changes: [

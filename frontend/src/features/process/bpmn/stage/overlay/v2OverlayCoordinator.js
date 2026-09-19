@@ -16,10 +16,13 @@ function setLegacyPropertyOverlayExpandedForElement(elementId, expanded) {
 const coordinatorHoverInstalled = new WeakSet();
 const coordinatorHoverHandlers = new WeakMap();
 
-// importXML → canvas.clear() → событие diagram.clear: Overlays-сервис
-// уничтожает все overlay-ноды. Слушатель инвалидирует sig-кэш, иначе
-// mountEntry считает оверлеи «уже смонтированными» и restore после
-// re-import — no-op (audit H3, fix/canvas-overlays-preferences-409 F1).
+// Два события обязаны инвалидировать sig-кэш:
+// 1) importXML → canvas.clear() → diagram.clear: Overlays-сервис уничтожает
+//    все overlay-ноды, иначе mountEntry считает оверлеи «уже смонтированными»
+//    и restore после re-import — no-op (audit H3, fix/canvas-overlays-preferences-409 F1).
+// 2) diagram.destroy (recover3/recoverByHardReset, fix/overlay-crash-regression-1000):
+//    destroy НЕ фигачит diagram.clear, а не-awaited chunked tail держит stale inst —
+//    без инвалидации его overlays.add падает на удалённом Canvas._planes (A3, P0).
 const coordinatorClearInstalled = new WeakSet();
 const coordinatorClearHandlers = new WeakMap();
 
@@ -69,6 +72,7 @@ function installCoordinatorClearInvalidation(inst, invalidate) {
     }
   };
   eventBus.on("diagram.clear", onClear);
+  eventBus.on("diagram.destroy", onClear);
   coordinatorClearInstalled.add(inst);
   coordinatorClearHandlers.set(inst, onClear);
 }
@@ -80,6 +84,7 @@ function uninstallCoordinatorClearInvalidation(inst) {
   if (eventBus && onClear) {
     try {
       eventBus.off?.("diagram.clear", onClear);
+      eventBus.off?.("diagram.destroy", onClear);
     } catch {
       // no-op
     }
@@ -480,7 +485,13 @@ export function createV2OverlayCoordinator({
           if (epoch !== mountEpochByKind[kind]) return;
           const chunk = tail.slice(idx, idx + MOUNT_CHUNK_SIZE);
           for (const [elementId, { ovl, el }] of chunk) {
-            mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
+            try {
+              mountEntry(inst, kind, elementId, ovl, el, placements.get(elementId) || null);
+            } catch {
+              // Инстанс может быть уничтожен mid-flight (recover3 → diagram.destroy
+              // без отмены тейла): tail-mount не должен крэшить страницу
+              // (P0, fix/overlay-crash-regression-1000, сценарий A3).
+            }
           }
         }
       })();
