@@ -1,0 +1,71 @@
+{
+  "contour": "feature/mutation-gateway-c3",
+  "type": "feature",
+  "role": "planner",
+  "phase": "PLAN_APPROVED",
+  "approved_at": "2026-09-19",
+  "approved_by": "владелец (explicit approve с условиями)",
+  "created": "2026-09-19",
+  "ready_for_execution": true,
+  "ready_flag_created": true,
+  "baseline": {
+    "origin_main_planned": "29640de0",
+    "origin_main_actual": "2c051887",
+    "note": "по условию владельца ветка от ФАКТИЧЕСКОГО origin/main (2c051887, включает #1004 e2e-only). Дельта 29640de0->2c051887 только test(e2e), на save-путь не влияет. file:line PLAN.md верифицированы на 29640de0"
+  },
+  "exec_conditions": [
+    "1. Ветка feature/mutation-gateway-c3 от фактического origin/main (2c051887), не от 29640de0",
+    "2. Первый коммит ветки: PLAN.md + STATE.json в .planning/contours/feature/mutation-gateway-c3/ (аудит PLAN-гейта в репо)",
+    "3. S0 (attribution, 0.5 дн) БЛОКИРУЮЩИЙ: повторить V5 live, объяснить full-PUT до любых изменений кода; проверить гипотезу владельца: PUT = keep-final flush координатора по notifyPositionalPending после drag-end (createLocalMutationStaging.js, STAGE_POSITIONAL_CHANGE)",
+    "4. Дата смерти full-PUT fallback — явно: 2026-10-03 (последний день fpc_gateway_cold_fallback; после даты флаг и ветки удаляются или эскалация владельцу); дата в READY_FOR_EXECUTION и в каждом PR",
+    "5. Метрика путей до/после (18 -> 1+1) — в описании каждого PR контура",
+    "6. Приёмка drag p95 < 50 мс @1000+ эл. — только реальный mouse drag (R-2), не синтетика",
+    "7. Merge/deploy/PR — только explicit approve владельца; PR и описание на русском"
+  ],
+  "cold_fallback_death_date": "2026-10-03",
+  "sources": [
+    "audit/save-pipeline-big-review/CONSOLIDATION-PLAN.md (T1)",
+    "audit/save-pipeline-big-review/evidence/A5-map.md (18 путей/8 писателей/13 таймеров/9 degrade)",
+    "fix/canvas-overlays-preferences-409/evidence/F4-inventory.md (S1-S6, positional leak)",
+    "audit/c1-c2-stage-verification/V5_PERF.md (drag p95 312.2ms @602эл, 1 full-PUT на moveShape, 50 req/8.06MB)",
+    "fix/self-conflict-silent-rebase/PLAN.md (контракт conflictSilentRebase.js + trySilentRebase hook, MERGED #1003)",
+    "step1/step2 архитектура (#989/#992 ops outbox + IDB journal + SSE ops_committed)",
+    "E3-урок: unsafe типы fail-closed (ops_applier.py:53-62 _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES)"
+  ],
+  "key_findings": [
+    "#1003 уже в baseline: trySilentRebase hook, conflictSilentRebase.js (контракт C3), outbox gate-block handling — аудит частично устарел",
+    "positional-ветка staging на 29640de0 УЖЕ консультирует outbox (createLocalMutationStaging.js:200-209) — описание F4 устарело",
+    "ПРОТИВОРЕЧИЕ: V5 на том же 29640de0 показал 1 full-PUT на moveShape при 0 ops POST → S0 attribution блокирующий; гипотеза владельца: keep-final flush по notifyPositionalPending",
+    "per-session single queue не существует (queueKey pipeline::sessionId, saveCoordinator.js:49-56); ad-hoc исключения: busy-poll 200ms, preserve sentinel, flushPromise, beginSingleWriter",
+    "backend: op-матрица фронт/бек идентична; разрывы elements.move/spaceTool/lane.updaterefs/artifact-типы (обе стороны fail-closed); applier O(N)/op без id-индекса",
+    "client_id в server_last_write подтверждён во всех 19 call sites (closure C2)",
+    "RAG: приёмка perf только на реальном mouse drag (прошлые perf-контуры rejected); React ~95% CPU drag — риск R-2"
+  ],
+  "t3_assessment": "НЕ поглощать: C4 отдельным контуром (2-3 дн); C3 даёт фундамент (saveCoordinator единственный bump-путь), граница контракта зафиксирована",
+  "slices": ["S0 attribution 0.5d (БЛОКИРУЮЩИЙ)", "S1 gateway-lane 2d", "S2 positional closure 1-2d", "S3 op wave A 2d", "S4 artifact types 2-3d", "S5 property ops 1-2d", "S6 degrade replacement 1d", "S7 undo/redo 1d", "S8 metrics 1d"],
+  "acceptance_metrics": {
+    "drag_p95": "< 50ms @1000+ элементов (vs 312.2ms V5), только реальный mouse drag (условие владельца)",
+    "full_put_on_interactive_mutation": 0,
+    "write_paths": "18 -> 1 interactive (ops via gateway) + 1 cold (system PUT via gateway.putSystem); метрика в каждом PR",
+    "in_flight_per_session": 1,
+    "backend_ops_p95": "<= 300ms @1000 элементов",
+    "regression": "все save/ops/conflict спеки зелёные, 0 новых падений vs origin/main"
+  },
+  "cold_fallback_death_date_rationale": "интерактивный full-PUT (positional arm + ops auto-degrade) удаляется в S2/S6 за fpc_gateway_cold_fallback; system cold-path перманентен (§9 PLAN.md); 2026-10-03 = верхняя граница EXEC+review окна",
+  "blockers": [],
+  "open_questions": [
+    "elements.move: нативный op vs батч shape.move (склонность: батч)",
+    "participant/pool: ops vs cold (прототип S4)",
+    "xml-tab snapshot: cold vs ops (по умолчанию cold)",
+    "флаг-стратегия (по умолчанию: флаг на срез)"
+  ],
+  "gates": {
+    "code_written": false,
+    "s0_blocking": true,
+    "merge_deploy_pr": "строго по explicit approve владельца; PR на русском",
+    "push": "не выполнялся (локальный коммит только)",
+    "ready_for_execution_flag": "создан в workspace-контуре после коммита PLAN+STATE в ветку"
+  },
+  "artifacts": ["PLAN.md", "STATE.json", "JOURNAL.md", "READY_FOR_EXECUTION"],
+  "next": "Agent 2 (Executor): S0 attribution live → S1 gateway-lane; каждый срез = отдельный коммит(ы) + characterization-gate; PR только после approve владельца"
+}
