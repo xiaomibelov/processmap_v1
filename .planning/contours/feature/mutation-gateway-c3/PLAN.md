@@ -12,7 +12,7 @@ PLAN.md **approve** со следующими обязательными усл�
 3. **S0 (attribution, 0.5 дн) — блокирующий**: повторить V5-сценарий live и объяснить источник full-PUT до любых изменений кода. Проверяемая гипотеза владельца: PUT = keep-final flush координатора по `notifyPositionalPending` после drag-end (`createLocalMutationStaging.js`, ветка `STAGE_POSITIONAL_CHANGE`).
 4. Дата смерти full-PUT fallback — **явной датой: 2026-10-03** (последний день существования `fpc_gateway_cold_fallback`; после даты флаг и вытеснённые fallback-ветки удаляются, либо контур эскалируется владельцу). Дата фиксируется в READY_FOR_EXECUTION и в каждом PR контура.
 5. Метрика «пути записи до/после» (18 → 1+1) — в описании каждого PR контура.
-6. Приёмка drag p95 < 50 мс @1000+ эл. — только на **реальном mouse drag** (R-2), не на синтетике.
+6. Приёмка drag p95 < 50 мс @1000+ эл. — только на **реальном mouse drag** (R-2), не на синтетике. **→ Отменено решением владельца 2026-09-20**: приёмка разделена, drag p95 < 50 мс убрана из C3 и передана в бэклог-контур `feature/canvas-drag-render-perf`; C3 владеет save-путём (§10). Реальный mouse drag как методика сохраняется для save-метрик (S0-методика).
 7. Merge/deploy/PR — только по explicit approve владельца; PR и его описание — на русском.
 
 ## 0. Резюме
@@ -119,7 +119,7 @@ Backend: op-матрица фронт/бек идентична (`commandToOps.j
 | **S5** | Property panel/property CRUD → element.updateProperties ops (applier пишет attrs verbatim, `ops_applier.py:290-321`); невозможное — cold path через gateway.putSystem | 1–2 дн | R-4, camunda-namespace регистрация | revert |
 | **S6** | Degrade-замена: ops degrade (double-409/no-server-xml) → больше не silent full-PUT; → conflict gate + честный модал (C2-контракт). Регистрация системных cold-действий (§9). Удаление вытеснённых веток: needsFullSave-автодеграда из interactive capture, busy-poll остатки | 1 дн | потеря safety-net при rebase-неудаче | revert (safety-net временно сохраняется за флагом до e2e-зелени) |
 | **S7** | Undo/redo полнота: undo-of-delete → compensating create-op с полным DI; undo coalesced → journal-семантика вместо needsFullSave; e2e полный цикл undo→redo→reload | 1 дн | R-3 (inverse-маппинг) | revert |
-| **S8** | Метрики и приёмка: реальный mouse-drag замер @1000+ эл. (методика V5 + настоящий ввод, RAG-правило), route-counters, waterfall, полный набор спек, отчёт до/после | 1 дн | R-2 | — |
+| **S8** | Метрики и приёмка (save-путь): persist-латентность drag-end → server ack, route-counters (0 full-PUT на мутацию), `__PM_OPS_COVERAGE__` ≥95% drag-команд, пути 18→1+1, полный набор save-спек, отчёт до/после. Оба baseline'а из S0: drag-окно 572.3 мс / post-mouseup PUT ~450 мс — в отчёте обязательны | 1 дн | R-6 | — |
 
 Порядок миграции мутаций (внутри срезов): capture/decision-логика (`commandToOps`) → backend-валидация → удаление full-ветки. Никогда наоборот (иначе окно, где обе ветки живут, превращается в drift).
 
@@ -153,12 +153,22 @@ Backend схема батча не меняется (open structs). Новые �
 
 ## 10. Метрики приёмки и методика
 
-1. **Drag p95 < 50 мс @1000+ эл.** против 312.2 мс (V5, 602 эл.). Методика: как V5 (`v5.mjs`-стиль, wall-time mouse.down→2×rAF после mouse.up, performance.now в page) + **обязательный прогон с реальным mouse drag** (не только синтез; RAG-правило после rejected perf-контуров). Синтез-ввод (~130 мс) исключается из отчёта отдельной строкой. Схема: 1000+ элементов (seed через PUT, паттерн processFixture).
-2. **0 sync full-XML PUT** на интерактивную мутацию (route-counters `PUT /bpmn`, `POST /operations`, `PATCH` в окне 6 с после мутации; сценарии: createShape, moveShape, multi-select move, spaceTool, label edit, property change, artifact create, undo/redo).
-3. **Пути записи 18 → 1+1**: 1 интерактивный канал (ops через gateway-lane) + 1 cold-канал (system PUT через `gateway.putSystem`). meta/analysis PATCH не считаются diagram-записью (disjoint-key, отдельная CAS-очередь сохраняется). Прямые PUT вне lane после C3: 0.
-4. **Один in-flight mutation-запрос на сессию** (gateway-lane; assert в characterization-тесте).
-5. **Backend ops-latency**: p95 apply батча ≤ 300 мс @1000 эл. (id-индекс; scale-guard в pytest).
-6. **Регрессионный gate**: все спеки §11 зелёные; новых падений 0 vs origin/main.
+**Разделение приёмки (решение владельца, 2026-09-20): C3 владеет ТОЛЬКО save-путём.** Метрика drag p95 < 50 мс из приёмки C3 **убрана** — она переходит в новый контур бэклога `feature/canvas-drag-render-perf` (канвас-рендер ~260 мс из S0-разложения — вне save-контура; R-2 подтверждён S0).
+
+Приёмка C3 (save-путь):
+1. **0 sync full-XML PUT** на интерактивную мутацию (route-counters `PUT /bpmn`, `POST /operations`, `PATCH` в окне 6 с после мутации; сценарии: createShape, moveShape реальный drag, multi-select move, spaceTool, label edit, property change, artifact create, undo/redo).
+2. **`elements.move` / `spaceTool` → ops**: drag-команды уходят `POST /operations`; **coverage drag-команд ≥95%** по `__PM_OPS_COVERAGE__` (метрика commandToOps.js:92-125), окно замера — серия из ≥20 реальных mouse-drag'ов.
+3. **Persist-латентность drag-end → server ack < 300 мс** (замер S0-методикой: центровка viewbox, `elementFromPoint → [data-element-id]`, assert реального смещения; HAR-timing запроса от mouseup до 200-ack).
+4. **Пути записи 18 → 1+1**: 1 интерактивный канал (ops через gateway-lane) + 1 cold-канал (system PUT через `gateway.putSystem`). meta/analysis PATCH не считаются diagram-записью (disjoint-key, отдельная CAS-очередь сохраняется). Прямые PUT вне lane после C3: 0.
+5. **Один in-flight mutation-запрос на сессию** (gateway-lane; assert в characterization-тесте).
+6. **Backend ops-latency**: p95 apply батча ≤ 300 мс @1000 эл. (id-индекс; scale-guard в pytest).
+7. **Регрессионный gate**: все спеки §11 зелёные; новых падений 0 vs origin/main.
+
+S8-отчёт обязан указать оба S0-baseline'а: **drag-окно p95 572.3 мс** и **post-mouseup PUT ~450 мс** — и к чему пришли по каждому (drag-окно ожидаемо почти не меняется — оно канвас; post-mouseup PUT должен уйти в ops-ack < 300 мс).
+
+## 10а. Передано в бэклог (вне C3)
+
+Контур `feature/canvas-drag-render-perf`: канвас-рендер bpmn-js/оверлеи (~260 мс из S0-разложения), React ~95% CPU drag (RAG-факт), target drag p95 < 50 мс @1000+ эл. Активация — отдельным approve владельца.
 
 ## 11. Тест-матрица
 
@@ -175,7 +185,7 @@ Backend схема батча не меняется (open structs). Новые �
 | # | Риск | Митигация |
 |---|---|---|
 | R-1 | Deadlock вложенного execute (xml→rawXml) при lane | lane на intent-уровне; `saveCoordinator.nested-execute` + новый deadlock-тест; постепенный rollout за `fpc_gateway_lane` |
-| R-2 | Drag p95 не достигается: канвас-рендер/React вне save-контура (факт RAG: ~95% CPU bundle; V5 longtasks 140 мс в drag-фазе) | S0-профилирование разделяет render vs save; честный вердикт в EXEC_REPORT (save-contribution отдельной строкой); если render — доминанта, метрика фиксируется как «save-path p95 < X мс» с эскалацей отдельного canvas-контура |
+| R-2 | ~~Drag p95 не достигается~~ — **закрыто решением владельца (2026-09-20): приёмка разделена**, канвас-рендер (~260 мс, S0) вынесен в бэклог-контур `feature/canvas-drag-render-perf`; C3 владеет save-путём (§10) | S0-разложение зафиксировано; S8 отчитует оба baseline'а (572.3 мс drag-окно / ~450 мс post-mouseup PUT) |
 | R-3 | Round-trip артефактов (#995 урок): ops-запись портит XML, который full-PUT писал корректно | fail-closed по типам, parity/golden обязателен до снятия FULL_SAVE pattern; «сомнение → cold» |
 | R-4 | Двухвкладочная конвергенция ломается при новых ops | `async-save-multiuser` на каждом срезе S3–S5; echo-suppression протокол не менять |
 | R-5 | Дрейф границы с C4 (tracker) | инвариант «только saveCoordinator бампит» закреплён в S1 + проверка в REVIEW; C4 отдельным контуром |
