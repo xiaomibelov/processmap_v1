@@ -31,6 +31,7 @@ export async function renderViewerDiagram(ctx, nextXml) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    applyPropertiesOverlayDecor,
     loadTransition,
   } = ctx;
 
@@ -141,6 +142,7 @@ export async function renderViewerDiagram(ctx, nextXml) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    applyPropertiesOverlayDecor,
   });
 }
 
@@ -183,6 +185,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    applyPropertiesOverlayDecor,
     loadTransition,
   } = ctx;
 
@@ -344,6 +347,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
       applyInterviewDecor,
       applyUserNotesDecor,
       applyStepTimeDecor,
+      applyPropertiesOverlayDecor,
     });
   })();
 
@@ -386,6 +390,7 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    applyPropertiesOverlayDecor,
     loadTransition,
   } = ctx;
 
@@ -490,6 +495,7 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
       applyInterviewDecor,
       applyUserNotesDecor,
       applyStepTimeDecor,
+      applyPropertiesOverlayDecor,
     });
   } catch (err) {
     if (err?.message === "stale") {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ensureVisibleOnInstance } from "./viewportRecovery.js";
+import { ensureVisibleOnInstance, recoverByReimport } from "./viewportRecovery.js";
 
 function ref(initial) {
   return { current: initial };
@@ -96,4 +96,45 @@ test("ensureVisibleOnInstance dedups in-flight promise", async () => {
   assert.equal(r1?.ok, false);
   assert.equal(r1?.reason, "layout_not_ready");
   assert.deepEqual(r2, r1);
+});
+
+test("recoverByReimport restores overlays after re-import (F1, audit H3)", async () => {
+  const inst = createInstance();
+  const restoreCalls = [];
+  const ctx = {
+    refs: {
+      activeSessionRef: ref("sid_1"),
+      runtimeTokenRef: ref(3),
+      ensureVisibleCycleRef: ref(0),
+      modelerRef: ref(inst),
+      viewerRef: ref(null),
+      modelerReadyRef: ref(false),
+      lastModelerXmlHashRef: ref(""),
+    },
+    values: {
+      sessionId: "sid_1",
+    },
+    callbacks: {
+      ensureModelerRuntime: () => ({
+        load: async () => ({ ok: true, token: 4 }),
+        getStatus: () => ({ ready: true, defs: true, token: 4 }),
+      }),
+      suppressViewboxEvents: () => {},
+      fnv1aHex: () => "hash",
+      applyTaskTypeDecor: () => {},
+      applyLinkEventDecor: () => {},
+      applyHappyFlowDecor: () => {},
+      applyRobotMetaDecor: () => {},
+      applyBottleneckDecor: () => {},
+      applyInterviewDecor: () => {},
+      applyUserNotesDecor: () => {},
+      applyStepTimeDecor: () => {},
+      restoreOverlaysAfterReimport: (i, kind) => restoreCalls.push([i === inst ? "inst" : "other", kind]),
+    },
+    helpers: {},
+  };
+
+  const ok = await recoverByReimport(ctx, inst, { xmlText: "<xml/>", reason: "recover2_test" });
+  assert.equal(ok, true);
+  assert.deepEqual(restoreCalls, [["inst", "editor"]]);
 });

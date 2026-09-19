@@ -10,6 +10,7 @@ export function applyFullBpmnDecorSet({
   applyUserNotesDecor,
   applyStepTimeDecor,
   applySubprocessDiscussionDecor,
+  applyPropertiesOverlayDecor,
 }) {
   if (!inst) return;
   applyTaskTypeDecor(inst, kind);
@@ -21,4 +22,8 @@ export function applyFullBpmnDecorSet({
   applyUserNotesDecor(inst, kind);
   applySubprocessDiscussionDecor?.(inst, kind);
   applyStepTimeDecor(inst, kind);
+  // Legacy property cards: без этого в полном сете после remote sync
+  // (re-import) карточки пропадают до отложенного fanout
+  // (fix/canvas-overlays-preferences-409 F1, audit H3).
+  applyPropertiesOverlayDecor?.(inst, kind);
 }
