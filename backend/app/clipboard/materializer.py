@@ -733,6 +733,7 @@ def materialize_task_payload_into_session(
             changed_keys=changed_keys,
             actor_user_id=user_id,
             actor_label=user_id,
+            client_id=_legacy_main._resolve_client_id_from_request(request),
         )
         st.save(target_session, user_id=user_id, org_id=target_org_id, is_admin=True)
         _legacy_main._invalidate_session_caches(
@@ -941,6 +942,7 @@ def materialize_subprocess_payload_into_session(
             changed_keys=changed_keys,
             actor_user_id=user_id,
             actor_label=user_id,
+            client_id=_legacy_main._resolve_client_id_from_request(request),
         )
         st.save(target_session, user_id=user_id, org_id=target_org_id, is_admin=True)
         _legacy_main._invalidate_session_caches(

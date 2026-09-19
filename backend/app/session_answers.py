@@ -14,6 +14,7 @@ from .utils.session_helpers import (
     _mark_diagram_truth_write,
     _require_diagram_cas_or_409,
     _resolve_actor_context,
+    _resolve_client_id_from_request,
     _resolve_base_diagram_state_version,
     _save_session_with_cas,
     raise_session_not_found,
@@ -210,6 +211,7 @@ def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str,
         changed_keys=["questions", "nodes"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     # Б6 (fix/save-latency-subprocess-async): тот же base, что прошёл
     # in-memory guard, доезжает до SQL-CAS. Гонка с параллельным PUT /bpmn

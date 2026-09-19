@@ -132,6 +132,9 @@ class SaveCoordinator {
       reconcileConflict: typeof config.reconcileConflict === "function" ? config.reconcileConflict : null,
       reconcileTimeout: typeof config.reconcileTimeout === "function" ? config.reconcileTimeout : null,
       on409: typeof config.on409 === "function" ? config.on409 : null,
+      // fix/self-conflict-silent-rebase: silent self-rebase над 409-conflict
+      // (disjoint keyspace). См. 409-ветку _runPipeline.
+      trySilentRebase: typeof config.trySilentRebase === "function" ? config.trySilentRebase : null,
       onError: typeof config.onError === "function" ? config.onError : null,
       debounceMs: Math.max(0, asNumber(config.debounceMs, 300)),
       retryCount: Math.max(0, asNumber(config.retryCount, 3)),
@@ -595,6 +598,26 @@ class SaveCoordinator {
             }
             if (reconciled?.ok) {
               return completeSuccess(reconciled);
+            }
+          }
+          // fix/self-conflict-silent-rebase: silent self-rebase ПЕРЕД gate.
+          // Hook обязан сам enforce'ить полную определённость (changed_keys
+          // непусты, известны и disjoint с локальными dirty-ключами) и бюджет
+          // «один silent retry на конфликт»; любое сомнение → null → модал.
+          if (pipeline.trySilentRebase) {
+            let silent = null;
+            try {
+              silent = await pipeline.trySilentRebase(result, sid, builtPayload, payload);
+            } catch {
+              silent = null;
+            }
+            if (silent?.ok) {
+              recordSaveDiagnostic("pipeline_silent_rebase", {
+                sid,
+                pipeline: pipelineName,
+                serverVersion: pickServerCurrentVersion(result),
+              });
+              return completeSuccess({ ...silent, reconciled: silent.reconciled || "silent-rebase" });
             }
           }
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
