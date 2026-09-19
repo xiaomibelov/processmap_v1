@@ -6,6 +6,14 @@ import { saveCoordinator } from "../../../../features/session/saveCoordinator.js
 import { apiGetSessionMeta as apiGetSessionMetaDefault } from "../../../../lib/api.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
 import { fnv1aHex } from "../lib/bpmnXmlHash.js";
+// fix/self-conflict-silent-rebase: silent self-rebase full-PUT над 409 —
+// только при полной определённости (disjoint changed_keys) и один раз на
+// конфликт. Сомнение → null → честный модал.
+import {
+  classifyRebaseSafety,
+  extractConflictDetail,
+  RAW_XML_WRITE_KEYS,
+} from "../save/conflictSilentRebase.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
@@ -91,6 +99,10 @@ export function createXmlSaveReconcileTimeout() {
  * копирования конфига.
  */
 export function createRawXmlPipelineConfig(overrides = {}) {
+  // Бюджет «один silent retry на конфликт»: sid → serverVersion, на который
+  // silent rebase уже выполнен. Повторный 409 с той же версией → null →
+  // модал (защита от 409-лупы).
+  const silentRebaseBudgetBySession = new Map();
   return {
     transport: async (sessionId, payload, signal) => {
       const apiPutBpmnXml = payload?.apiPutBpmnXml;
@@ -148,6 +160,37 @@ export function createRawXmlPipelineConfig(overrides = {}) {
       };
     },
     reconcileTimeout: createXmlSaveReconcileTimeout(),
+    trySilentRebase: async (response, sessionId, payload) => {
+      // Silent self-rebase full-PUT: серверная запись (напр. interview
+      // autosave из meta-пайплайна) подняла версию, но НЕ трогала ключи,
+      // которые перезаписывает этот PUT (bpmn_xml/bpmn_meta). Retry один раз
+      // с base из 409-снапшота. Локальный XML не перезагружаем и канвас не
+      // трогаем (нет re-import → нет риска для overlay-координатора, стык
+      // с C1); ops-outbox приостановлен структурно — pipeline busy на всём
+      // протяжении _runPipeline (outbox поллит getStatus).
+      const detail = extractConflictDetail(response);
+      if (!detail) return null;
+      const safety = classifyRebaseSafety({
+        serverChangedKeys: detail.changedKeys,
+        localDirtyKeys: RAW_XML_WRITE_KEYS,
+      });
+      if (safety !== "disjoint") return null;
+      if (silentRebaseBudgetBySession.get(sessionId) === detail.serverVersion) return null;
+      const apiPutBpmnXml = payload?.apiPutBpmnXml;
+      if (typeof apiPutBpmnXml !== "function") return null;
+      silentRebaseBudgetBySession.set(sessionId, detail.serverVersion);
+      const retried = await apiPutBpmnXml(sessionId, applyMessageFlowExportDialect(asText(payload?.xml)), {
+        ...(payload?.options && typeof payload.options === "object" ? payload.options : {}),
+        baseDiagramStateVersion: detail.serverVersion,
+      });
+      if (!retried || retried.ok === false) return null;
+      return {
+        ok: true,
+        status: 200,
+        storedRev: Number(payload?.options?.rev || 0),
+        diagramStateVersion: pickDiagramStateVersion(retried) ?? detail.serverVersion,
+      };
+    },
     getBaseVersion: (sessionId, payload) => {
       const tracked = getTrackedDiagramStateVersion(sessionId);
       const base = Number(payload?.baseDiagramStateVersion);
