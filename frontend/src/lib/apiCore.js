@@ -377,13 +377,38 @@ async function request(path, opts = {}) {
           path: String(path || ""),
           authAttempts: authAttempts + 1,
         });
-        return request(path, {
+        let retryOpts = {
           ...opts,
           __didRetryAuth: true,
           __authAttempts: authAttempts + 1,
           __requestId: requestId,
           __clientRequestId: clientRequestId,
-        });
+        };
+        // F2 (fix/canvas-overlays-preferences-409, audit H1): opt-in hook.
+        // Клиент (preferences) может перечитать контекст перед replay — иначе
+        // retry уходил с прежним телом со stale base_version → гарантированный
+        // 409. БЕЗ hook поведение apiCore не меняется ни в одном сценарии
+        // (characterization: apiCore.authRetry.characterization.test.mjs).
+        // Ошибка hook не должна ронять retry — падаем обратно на прежние opts.
+        if (typeof opts.onBeforeAuthRetry === "function") {
+          try {
+            const hookPatch = opts.onBeforeAuthRetry({
+              path: endpoint,
+              method,
+              opts: retryOpts,
+            });
+            if (hookPatch && typeof hookPatch === "object") {
+              retryOpts = { ...retryOpts, ...hookPatch };
+            }
+          } catch (hookError) {
+            logAuthTrace("auth_retry_hook_error", {
+              requestId,
+              path: String(path || ""),
+              error: String(hookError?.message || hookError || "hook_failed"),
+            });
+          }
+        }
+        return request(path, retryOpts);
       }
       logAuthTrace("refresh_chain_failed", {
         requestId,
