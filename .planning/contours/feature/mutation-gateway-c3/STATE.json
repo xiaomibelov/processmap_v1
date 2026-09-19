@@ -42,11 +42,23 @@
     "RAG: приёмка perf только на реальном mouse drag (прошлые perf-контуры rejected); React ~95% CPU drag — риск R-2"
   ],
   "t3_assessment": "НЕ поглощать: C4 отдельным контуром (2-3 дн); C3 даёт фундамент (saveCoordinator единственный bump-путь), граница контракта зафиксирована",
-  "slices": ["S0 attribution 0.5d (БЛОКИРУЮЩИЙ)", "S1 gateway-lane 2d", "S2 positional closure 1-2d", "S3 op wave A 2d", "S4 artifact types 2-3d", "S5 property ops 1-2d", "S6 degrade replacement 1d", "S7 undo/redo 1d", "S8 metrics 1d"],
+  "slices": [
+    "S0 attribution 0.5d (БЛОКИРУЮЩИЙ)",
+    "S1 gateway-lane 2d",
+    "S2 positional closure 1-2d",
+    "S3 op wave A 2d",
+    "S4 artifact types 2-3d",
+    "S5 property ops 1-2d",
+    "S6 degrade replacement 1d",
+    "S7 undo/redo 1d",
+    "S8 metrics 1d"
+  ],
   "acceptance_metrics": {
-    "drag_p95": "< 50ms @1000+ элементов (vs 312.2ms V5), только реальный mouse drag (условие владельца)",
-    "full_put_on_interactive_mutation": 0,
-    "write_paths": "18 -> 1 interactive (ops via gateway) + 1 cold (system PUT via gateway.putSystem); метрика в каждом PR",
+    "0_sync_full_put_on_interactive_mutation": "route-counters PUT /bpmn в окне 6с после мутации = 0 (реальный drag, S0-методика)",
+    "elements_move_and_spacetool_to_ops": "drag-команды уходят POST /operations",
+    "drag_command_coverage": ">=95% по __PM_OPS_COVERAGE__, >=20 реальных mouse-drag'ов",
+    "persist_latency_drag_end_to_ack": "< 300 мс (S0-методика: центровка viewbox, elementFromPoint assert, HAR-timing)",
+    "write_paths": "18 -> 1 interactive (ops via gateway) + 1 cold (system PUT); метрика в каждом PR",
     "in_flight_per_session": 1,
     "backend_ops_p95": "<= 300ms @1000 элементов",
     "regression": "все save/ops/conflict спеки зелёные, 0 новых падений vs origin/main"
@@ -59,6 +71,16 @@
     "xml-tab snapshot: cold vs ops (по умолчанию cold)",
     "флаг-стратегия (по умолчанию: флаг на срез)"
   ],
+  "s0_attribution": {
+    "status": "confirmed_with_amendments",
+    "date": "2026-09-19",
+    "verdict": "Гипотеза владельца подтверждена по существу: PUT = keep-final flush координатора по notifyPositionalPending (20/20 real drags, 1 full-PUT ~176KB на ~450-466ms после mouseup = dragFinalDebounceMs 500, 0 ops POST). Уточнения: (1) реальный drag = команда 'elements.move' (не 'shape.move'), не в whitelist commandToOps.js:297-311 → needsFullSave, op не создаётся; (2) dedup-предикат staging недостижим для positional (guard !autosaveSkipped, createLocalMutationStaging.js:200-209); (3) synthesized moveShape (путь V5): op создаётся, но PUT-ack перекрывает буфер (manualSaveCoveredOpIds wipe, createSaveOutbox.js:927-966) раньше ops-flush 2500ms → 0 POST.",
+    "v5_reinterpretation": "20 drags V5 инертны (fit-viewport → topbar/оффскрин, события мимо svg; p50 309.9 = пол ввода); единственный PUT V5 — от evaluate modeling.moveShape. Реальный baseline до: p50 545.2 / p95 572.3ms (S0 run6, 602 эл.)",
+    "s3_blocker": "runtime snapshot теряет context.elements (live-дескриптор elements.move = {delta,parent}) — маппинг в батч shape.move требует починки snapshotCommandContext",
+    "s2_target": "positional-ветка createLocalMutationStaging.js:236-251 (full-save arm по notifyPositionalPending без проверки захвата) — источник PUT №1; S3-маппинг elements.move обязателен вместе со S2 для метрики 0-PUT",
+    "report": "S0-ATTRIBUTION.md",
+    "evidence": "evidence/s0/ (s0.mjs, s0b.mjs, s0-diag*.mjs, logs/)"
+  },
   "gates": {
     "code_written": false,
     "s0_blocking": true,
@@ -66,6 +88,22 @@
     "push": "не выполнялся (локальный коммит только)",
     "ready_for_execution_flag": "создан в workspace-контуре после коммита PLAN+STATE в ветку"
   },
-  "artifacts": ["PLAN.md", "STATE.json", "JOURNAL.md", "READY_FOR_EXECUTION"],
-  "next": "Agent 2 (Executor): S0 attribution live → S1 gateway-lane; каждый срез = отдельный коммит(ы) + characterization-gate; PR только после approve владельца"
+  "artifacts": [
+    "PLAN.md",
+    "STATE.json",
+    "JOURNAL.md",
+    "READY_FOR_EXECUTION"
+  ],
+  "next": "Agent 2 (Executor): S0 attribution live → S1 gateway-lane; каждый срез = отдельный коммит(ы) + characterization-gate; PR только после approve владельца",
+  "acceptance_split": {
+    "date": "2026-09-20",
+    "decision": "владелец: приёмка разделена; C3 владеет только save-путём",
+    "removed_from_c3": "drag p95 < 50 мс @1000+ эл.",
+    "moved_to_backlog": "feature/canvas-drag-render-perf (канвас-рендер ~260мс из S0; активация отдельным approve)",
+    "s8_report_both_baselines": "drag-окно p95 572.3 мс / post-mouseup PUT ~450 мс — и к чему пришли по каждому"
+  },
+  "s8_dual_baselines": {
+    "drag_window_p95_ms": 572.3,
+    "post_mouseup_put_ms": 450
+  }
 }
