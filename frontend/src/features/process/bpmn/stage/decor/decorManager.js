@@ -1496,6 +1496,40 @@ export function applyRobotMetaDecor(ctx) {
   }
 }
 
+// Единый сброс signature/state-кэшей декора на diagram.clear
+// (fix/canvas-overlays-preferences-409 F1, audit H3 §3): после importXML
+// DOM-ноды бейджей мертвы, а prevSignature === signature заставляет apply-*
+// функции reuse'ить мёртвые overlayId. Сбрасываем ОБА kind'а — inst на момент
+// события может обслуживать любой. Форма слота сохраняется (массив/объект/
+// строка), т.к. apply-функции полагаются на тип (push/индексация).
+export function invalidateDecorSignatureState(ctx) {
+  const refs = ctx?.refs;
+  if (!refs) return;
+  const stateRefs = [
+    refs.interviewMarkerStateRef,
+    refs.interviewOverlayStateRef,
+    refs.interviewDecorSignatureRef,
+    refs.happyFlowMarkerStateRef,
+    refs.happyFlowStyledStateRef,
+    refs.userNotesDecorStateRef,
+    refs.stepTimeOverlayStateRef,
+    refs.stepTimeDecorSignatureRef,
+    refs.robotMetaDecorStateRef,
+    refs.propertiesOverlayStateRef,
+  ];
+  const emptyLike = (value) => {
+    if (Array.isArray(value)) return [];
+    if (typeof value === "string") return "";
+    return {};
+  };
+  stateRefs.forEach((ref) => {
+    if (!ref || typeof ref !== "object" || !ref.current || typeof ref.current !== "object") return;
+    Object.keys(ref.current).forEach((kindKey) => {
+      ref.current[kindKey] = emptyLike(ref.current[kindKey]);
+    });
+  });
+}
+
 export function clearPropertiesOverlayDecor(ctx) {
   const inst = ctx?.inst;
   const kind = ctx?.kind;

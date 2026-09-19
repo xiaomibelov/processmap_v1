@@ -16,6 +16,13 @@ function setLegacyPropertyOverlayExpandedForElement(elementId, expanded) {
 const coordinatorHoverInstalled = new WeakSet();
 const coordinatorHoverHandlers = new WeakMap();
 
+// importXML → canvas.clear() → событие diagram.clear: Overlays-сервис
+// уничтожает все overlay-ноды. Слушатель инвалидирует sig-кэш, иначе
+// mountEntry считает оверлеи «уже смонтированными» и restore после
+// re-import — no-op (audit H3, fix/canvas-overlays-preferences-409 F1).
+const coordinatorClearInstalled = new WeakSet();
+const coordinatorClearHandlers = new WeakMap();
+
 function installCoordinatorHoverListeners(inst, expandedRef) {
   if (!inst || coordinatorHoverInstalled.has(inst)) return;
   const eventBus = inst.get?.("eventBus");
@@ -48,6 +55,37 @@ function uninstallCoordinatorHoverListeners(inst) {
   }
   coordinatorHoverInstalled.delete(inst);
   coordinatorHoverHandlers.delete(inst);
+}
+
+function installCoordinatorClearInvalidation(inst, invalidate) {
+  if (!inst || coordinatorClearInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  if (!eventBus || typeof eventBus.on !== "function") return;
+  const onClear = () => {
+    try {
+      invalidate(inst);
+    } catch {
+      // Инвалидация не должна ломать импорт.
+    }
+  };
+  eventBus.on("diagram.clear", onClear);
+  coordinatorClearInstalled.add(inst);
+  coordinatorClearHandlers.set(inst, onClear);
+}
+
+function uninstallCoordinatorClearInvalidation(inst) {
+  if (!inst || !coordinatorClearInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  const onClear = coordinatorClearHandlers.get(inst);
+  if (eventBus && onClear) {
+    try {
+      eventBus.off?.("diagram.clear", onClear);
+    } catch {
+      // no-op
+    }
+  }
+  coordinatorClearInstalled.delete(inst);
+  coordinatorClearHandlers.delete(inst);
 }
 
 function isSequenceFlowElement(el) {
@@ -131,6 +169,7 @@ export function createV2OverlayCoordinator({
   selectedElementRef,
   hiddenFieldsRef,
   draftIndicatorRef,
+  onDiagramClear,
 }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
   // Supersede token for chunked mounts: a newer mount() invalidates the
@@ -138,6 +177,30 @@ export function createV2OverlayCoordinator({
   // serves both the viewer and the editor instance, and their mounts must not
   // cancel each other's tail chunks (preprod audit, blocker 4).
   const mountEpochByKind = { viewer: 0, editor: 0 };
+
+  // Единая точка инвалидации на diagram.clear: сигнатурные кэши мертвы
+  // (DOM-ноды уже уничтожены Overlays-сервисом), поэтому чистим карту обоих
+  // kind'ев, гасим хвосты чанкированного mount и отдаём наружу хук для
+  // сброса signature-state decorManager (BpmnStage.onDiagramClearDecor).
+  function invalidateInstanceCaches() {
+    mountEpochByKind.viewer += 1;
+    mountEpochByKind.editor += 1;
+    try {
+      elementOverlayMapRef.current.viewer.clear();
+      elementOverlayMapRef.current.editor.clear();
+    } catch {
+      // no-op
+    }
+  }
+
+  function handleDiagramClear(inst) {
+    invalidateInstanceCaches();
+    try {
+      onDiagramClear?.(inst);
+    } catch {
+      // no-op
+    }
+  }
 
   function isElementInViewportWithMidpoint(el, viewbox) {
     if (!viewbox || !Number.isFinite(viewbox.x)) return true;
@@ -306,7 +369,7 @@ export function createV2OverlayCoordinator({
     }
 
     if (existing) {
-      if (existing.contentSig !== contentSig) {
+      if (existing.contentSig !== contentSig || existing.host?.isConnected === false) {
         const result = renderForElement(inst, el, ovl, v2Expanded, placement, draft);
         if (result) {
           map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
@@ -326,6 +389,10 @@ export function createV2OverlayCoordinator({
 
   function mount(inst, kind, overlayList) {
     if (!inst || typeof document === "undefined") return;
+    // Слушатель diagram.clear ставим ДО guard расширений: decor-бейджи
+    // (robot meta и пр.) существуют и при выключенных V2-картах, их
+    // signature-state обязан сбрасываться на любом re-import.
+    installCoordinatorClearInvalidation(inst, handleDiagramClear);
     if (!useExtensionOverlaysRef?.current) return;
 
     const map = elementOverlayMapRef.current[kind];
@@ -478,6 +545,7 @@ export function createV2OverlayCoordinator({
     clear(inst, "viewer");
     clear(inst, "editor");
     uninstallCoordinatorHoverListeners(inst);
+    uninstallCoordinatorClearInvalidation(inst);
   }
 
   return {
