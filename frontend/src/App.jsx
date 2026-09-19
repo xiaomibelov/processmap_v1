@@ -70,6 +70,10 @@ import {
   validateRobotMetaV1,
 } from "./features/process/robotmeta/robotMeta";
 import {
+  buildProvenanceSidecar,
+  embedProvenanceIntoBpmnXml,
+} from "./features/technologist/workspace/tobeProvenance";
+import {
   extractCamundaExtensionsMapFromBpmnXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionsMap,
@@ -3816,11 +3820,15 @@ export default function App() {
   }, [draft?.session_id, sessions, tobeMode, openTobeWorkspace]);
 
   // WS3.6: TO BE как отдельная сессия проекта (derived_from на уровне процесса)
-  const handleTobePublished = useCallback(async ({ templateId, version, templateName }) => {
+  // fix(tobe-element-provenance-persistence-v1): traceMap из стейта рабочего
+  // места уходит двумя каналами — sidecar-снапшот в bpmn_meta при create и
+  // pm:Trace (derived_from/fate/rule_id) в BPMN XML до apiPutBpmnXml.
+  const handleTobePublished = useCallback(async ({ templateId, version, templateName, traceMap } = {}) => {
     try {
       const bpmn = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}/bpmn`, { responseType: "blob" });
       const xml = bpmn?.ok && bpmn.data ? await bpmn.data.text() : "";
       if (!xml) return;
+      const traceMapArr = ensureArray(traceMap);
       const created = await apiCreateProjectSession(
         projectId,
         "quick_skeleton",
@@ -3832,11 +3840,21 @@ export default function App() {
           process_layer: "to_be",
           derived_from_session_id: String(tobeMode?.asIsSessionId || ""),
           process_template_id: String(templateId),
+          ...(traceMapArr.length ? { bpmn_meta: { provenance: buildProvenanceSidecar(traceMapArr) } } : {}),
         },
       );
       const newSid = String(created?.session_id || created?.data?.id || "").trim();
       if (!created?.ok || !newSid) return;
-      await apiPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
+      let xmlToSave = xml;
+      if (traceMapArr.length) {
+        try {
+          xmlToSave = await embedProvenanceIntoBpmnXml(xml, traceMapArr);
+        } catch {
+          // best-effort: публикацию не ломаем — класс removed всё равно
+          // покрыт sidecar в meta сессии.
+        }
+      }
+      await apiPutBpmnXml(newSid, xmlToSave, { source_action: "tobe_publish" });
     } catch {
       // best-effort: связанная сессия — не блокер публикации
     }

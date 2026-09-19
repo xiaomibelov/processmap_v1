@@ -22,6 +22,29 @@ const pmModdleDescriptor = {
         },
       ],
     },
+    {
+      // Элементный provenance TO BE (fix/tobe-element-provenance-persistence-v1):
+      // derived_from — массив id AS IS-элементов (consolidated N→1).
+      name: "Trace",
+      superClass: ["Element"],
+      properties: [
+        {
+          name: "derived_from",
+          isMany: true,
+          type: "String",
+        },
+        {
+          name: "fate",
+          isAttr: true,
+          type: "String",
+        },
+        {
+          name: "rule_id",
+          isAttr: true,
+          type: "String",
+        },
+      ],
+    },
   ],
 };
 

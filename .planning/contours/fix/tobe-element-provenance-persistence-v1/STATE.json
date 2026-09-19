@@ -1,0 +1,34 @@
+{
+  "contour": "fix/tobe-element-provenance-persistence-v1",
+  "type": "fix",
+  "role": "reviewer",
+  "agent": 3,
+  "status": "PASS_WITH_NITS",
+  "ready_for_review": true,
+  "branch": "fix/tobe-element-provenance-persistence-v1",
+  "base": "999f0e37c8138a736373550b9c978108424ac74c",
+  "head_at_review_start": "8d74bfb096e5c18dcf72caf793ead29004acd466",
+  "remote": "git@github.com:xiaomibelov/processmap_v1.git",
+  "updated_at": "2026-09-16",
+  "verdict": "PASS_WITH_NITS",
+  "blockers": 0,
+  "majors": 0,
+  "nits": [
+    "projects.py:369-387, explorer.py:1345-1349: 422 после create оставляет сироту (по HTTP недостижимо)",
+    "explorer.py:1338-1350: attach meta post-create load-modify-save (окно гонки микроскопическое)",
+    "tobeProvenance.test.mjs:3-4 / API.md:12-15: комментарии/пример XML расходятся с кодом (pm:trace vs pm:Trace)",
+    "браузерный e2e round-trip не выполнен — известное ограничение, не блокер"
+  ],
+  "reviewer_runs": {
+    "frontend_unit": "9 passed / 0 failed (независимый прогон)",
+    "backend_sidecar": "6 passed / 0 failed (независимый прогон)",
+    "save_suite_branch": "6 failed, 59 passed, 34 skipped, 2 errors",
+    "save_suite_main": "6 failed, 59 passed, 34 skipped, 2 errors (падения идентичны)",
+    "persist_suite_branch": "3 failed, 22 passed",
+    "persist_suite_main": "3 failed, 20 passed (падения идентичны, +2 новых passed контура)",
+    "redocly_lint": "0 errors (независимый прогон)",
+    "live_e2e_api": "embed->PUT(save)->правка->PUT(save)->GET->extract: ROUND_TRIP_100_PERCENT=true"
+  },
+  "serving_mode_note": "общий стек serve-ит main, не ветку; зафиксировано в REVIEW_REPORT.md §2",
+  "artifacts": ["REVIEW_REPORT.md", "STATE.json"]
+}
