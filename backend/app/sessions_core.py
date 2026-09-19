@@ -500,11 +500,16 @@ def _patch_session_impl(session_id: str, inp: UpdateSessionIn, request: Request 
     if need_recompute:
         sess = _lm._recompute_session(sess)
     if diagram_write_requested:
+        # fix/self-conflict-silent-rebase: writer-info обязан быть полным во
+        # ВСЕХ diagram-truth путях. Без client_id 409-payload терял атрибуцию
+        # (пустой client_id → ложный same_user_other_tab → модал «другой вашей
+        # вкладке» при одной вкладке; same_tab auto-resolve не срабатывал).
         _mark_diagram_truth_write(
             sess,
             changed_keys=diagram_changed_keys,
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
+            client_id=_resolve_client_id_from_request(request),
         )
     # SQL-CAS for diagram-truth writes (audit P2): loses the race -> 409,
     # never a silent mixed-path overwrite.

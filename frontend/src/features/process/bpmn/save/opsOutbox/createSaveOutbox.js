@@ -50,7 +50,7 @@
 
 import { saveCoordinator } from "../../../../session/saveCoordinator.js";
 import { getVersion as getTrackedDiagramStateVersion } from "../../../../../lib/casVersionTracker.js";
-import { readAckDiagramStateVersion } from "../../../../../features/session/casResponse.js";
+import { readAckDiagramStateVersion, readConflictServerCurrentVersion } from "../../../../../features/session/casResponse.js";
 import { recordSaveDiagnostic } from "../../../../../features/session/saveDiagnosticsTrail.js";
 import { apiPostSessionOperations } from "../../../../../lib/api.js";
 import { OPS_OUTBOX_CONFIG, createOpsOutboxConfig } from "./opsOutboxConfig.js";
@@ -509,17 +509,53 @@ export function createSaveOutbox(options = {}) {
     emitStatus({ stage: "ops-saving", opCount: wireOps.length, reason });
     traceOpsFlush({ ts: now(), reason, opCount: wireOps.length, keepalive: false });
     try {
-      return await coordinator.execute(config.pipelineName, {
+      const result = await coordinator.execute(config.pipelineName, {
         sessionId,
         operations: wireOps,
         fallbackBaseVersion: getTrackedDiagramStateVersion(sessionId),
       });
+      // fix/self-conflict-silent-rebase (R3): gate-block приходит НЕ
+      // исключением, а результатом {blockedByConflict:true} — без _onAck/
+      // _onConflict хуков (transport не дёргался). Без явной обработки
+      // inFlight оставался true навсегда → op stranded (A1-live: op
+      // baseVersion=null зависла в gate_block и не ретраилась после resolve).
+      if (result && result.blockedByConflict === true) {
+        inFlight = false;
+        restorePendingAck();
+        armPostConflictFlush();
+        emitStatus({ stage: "ops-gate-blocked", reason });
+        return result;
+      }
+      return result;
     } catch {
       inFlight = false;
       restorePendingAck();
       return null;
     }
   }
+
+  // Одноразовая (на период armed-конфликта) подписка на conflict_resolved:
+  // после снятия gate возобновляем flush; база ре-резолвится из tracker
+  // at-send-time (механизм pipeline "ops").
+  let postConflictFlushArmed = false;
+  let postConflictFlushUnsubscribe = null;
+  const armPostConflictFlush = () => {
+    if (postConflictFlushArmed) return;
+    if (typeof coordinator.subscribe !== "function") return;
+    postConflictFlushArmed = true;
+    postConflictFlushUnsubscribe = coordinator.subscribe((event, data) => {
+      if (event !== "conflict_resolved") return;
+      if (data?.sessionId !== sessionId) return;
+      postConflictFlushArmed = false;
+      try {
+        postConflictFlushUnsubscribe?.();
+      } catch {
+        // no-op
+      }
+      postConflictFlushUnsubscribe = null;
+      if (!destroyed) scheduleFlush();
+    });
+  };
 
   const outbox = {
     sessionId,
@@ -745,6 +781,20 @@ export function createSaveOutbox(options = {}) {
       } catch {
         // no-op
       }
+      // fix/self-conflict-silent-rebase: adopt серверной версии должен
+      // персиститься в syncState.lastServerVersion (A1-live: устаревал до 0
+      // после rebase-adopt).
+      try {
+        const adopted = readConflictServerCurrentVersion(response);
+        if (adopted !== null) {
+          const run = Promise.resolve(
+            syncStateStore.patchSyncState(sessionId, { lastServerVersion: adopted }),
+          );
+          run.catch(() => undefined);
+        }
+      } catch {
+        // no-op
+      }
       scheduleFlush();
     },
 
@@ -843,6 +893,13 @@ export function createSaveOutbox(options = {}) {
       clearTimers();
       entry.bySession.delete(sessionId);
       unsubscribeCoordinator();
+      try {
+        postConflictFlushUnsubscribe?.();
+      } catch {
+        // no-op
+      }
+      postConflictFlushUnsubscribe = null;
+      postConflictFlushArmed = false;
     },
   };
 

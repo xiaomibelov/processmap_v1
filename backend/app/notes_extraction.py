@@ -34,6 +34,7 @@ from .utils.session_helpers import (
     _require_diagram_cas_or_409,
     _resolve_actor_context,
     _resolve_base_diagram_state_version,
+    _resolve_client_id_from_request,
     raise_session_not_found,
 )
 
@@ -97,6 +98,7 @@ def post_notes(session_id: str, inp: NotesIn, request: Request = None) -> Dict[s
         changed_keys=["notes", "roles", "start_role", "nodes", "edges", "questions"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     st.save(s)
     return s.model_dump()
@@ -397,6 +399,7 @@ def post_notes_extraction_apply(
         changed_keys=sorted(changed_keys),
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     st.save(s)
     session_payload = s.model_dump()

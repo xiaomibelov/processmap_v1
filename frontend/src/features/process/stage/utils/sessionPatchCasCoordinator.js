@@ -22,8 +22,38 @@ export {
   isPresenceHeartbeatPatch,
   classifySessionPatch,
 } from "../../../../features/session/patchKeys.js";
+// fix/self-conflict-silent-rebase: silent self-rebase meta-PATCH над 409 —
+// только при полной определённости (disjoint changed_keys) и один раз на
+// конфликт. Сомнение → null → честный модал.
+import {
+  classifyRebaseSafety,
+  diagramTruthKeysFromPatch,
+  extractConflictDetail,
+} from "../../bpmn/save/conflictSilentRebase.js";
 
 const PIPELINE_NAME = "meta";
+
+// Бюджет «один silent retry на конфликт (sid, serverVersion)»: sid →
+// serverVersion, на который silent rebase уже выполнен. Повторный 409 с той
+// же версией → null → модал (защита от 409-лупы). Семантика чуть шире
+// «один на конфликт»: новая серверная версия от другого disjoint-writer —
+// новый бюджет (NIT-2, review fix/self-conflict-silent-rebase).
+//
+// Cleanup (NIT-1): запись удаляется, когда 409 для sid уходит в модал
+// (overlap/unknown/нет detail); плюс cap 100 записей (evict самой старой) —
+// Map не растёт по числу сессий за жизнь страницы.
+const SILENT_REBASE_BUDGET_CAP = 100;
+const silentRebaseBudgetBySession = new Map();
+const budgetRemember = (sid, serverVersion) => {
+  if (silentRebaseBudgetBySession.size >= SILENT_REBASE_BUDGET_CAP) {
+    const oldest = silentRebaseBudgetBySession.keys().next().value;
+    if (oldest !== undefined) silentRebaseBudgetBySession.delete(oldest);
+  }
+  silentRebaseBudgetBySession.set(sid, serverVersion);
+};
+const budgetForget = (sid) => {
+  silentRebaseBudgetBySession.delete(sid);
+};
 
 saveCoordinator.registerPipeline(PIPELINE_NAME, {
   transport: async (sessionId, payload) => {
@@ -72,6 +102,36 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
   },
   onError: () => {
     // CAS rollback is handled by saveCoordinator._runPipeline.
+  },
+  trySilentRebase: async (response, sessionId, builtPayload) => {
+    const detail = extractConflictDetail(response);
+    if (!detail) {
+      budgetForget(sessionId);
+      return null;
+    }
+    const safety = classifyRebaseSafety({
+      serverChangedKeys: detail.changedKeys,
+      localDirtyKeys: diagramTruthKeysFromPatch(builtPayload?.patchBody),
+    });
+    if (safety !== "disjoint") {
+      // 409 уходит в модал — конфликт исчерпан, бюджет освобождаем.
+      budgetForget(sessionId);
+      return null;
+    }
+    if (silentRebaseBudgetBySession.get(sessionId) === detail.serverVersion) return null;
+    const apiPatchSession = builtPayload?.apiPatchSession;
+    if (typeof apiPatchSession !== "function") return null;
+    budgetRemember(sessionId, detail.serverVersion);
+    const retried = await apiPatchSession(sessionId, {
+      ...(builtPayload?.patchBody && typeof builtPayload.patchBody === "object" ? builtPayload.patchBody : {}),
+      base_diagram_state_version: detail.serverVersion,
+    });
+    if (!retried || retried.ok === false) return null;
+    return {
+      ok: true,
+      status: 200,
+      diagramStateVersion: readSessionPatchAckDiagramStateVersion(retried) ?? detail.serverVersion,
+    };
   },
   debounceMs: 0,
   retryCount: 3,

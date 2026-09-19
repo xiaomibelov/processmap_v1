@@ -6,6 +6,14 @@ import { saveCoordinator } from "../../../../features/session/saveCoordinator.js
 import { apiGetSessionMeta as apiGetSessionMetaDefault } from "../../../../lib/api.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
 import { fnv1aHex } from "../lib/bpmnXmlHash.js";
+// fix/self-conflict-silent-rebase: silent self-rebase full-PUT над 409 —
+// только при полной определённости (disjoint changed_keys) и один раз на
+// конфликт. Сомнение → null → честный модал.
+import {
+  classifyRebaseSafety,
+  extractConflictDetail,
+  RAW_XML_WRITE_KEYS,
+} from "../save/conflictSilentRebase.js";
 
 const RAW_XML_PIPELINE_NAME = "rawXml";
 
@@ -91,6 +99,31 @@ export function createXmlSaveReconcileTimeout() {
  * копирования конфига.
  */
 export function createRawXmlPipelineConfig(overrides = {}) {
+  // Бюджет «один silent retry на конфликт (sid, serverVersion)»: sid →
+  // serverVersion, на который silent rebase уже выполнен. Повторный 409 с
+  // той же версией → null → модал (защита от 409-лупы). Формально бюджет
+  // чуть шире «один на конфликт»: если между 409 и следующим конфликтом
+  // другой disjoint-writer поднял версию ещё раз, второй silent rebase
+  // допустим — каждый retry доказуемо безопасен (disjoint-only), лупы нет
+  // (та же версия → null → модал). NIT-2 (review fix/self-conflict-silent-rebase).
+  //
+  // Cleanup (NIT-1): запись удаляется, когда 409 для sid уходит в модал
+  // (overlap/unknown/отсутствие detail) — конфликт исчерпан, следующий 409
+  // это новый конфликт с новым бюджетом. Плюс жёсткий cap по размеру
+  // (evict самой старой записи) — Map не растёт по числу сессий за жизнь
+  // страницы.
+  const silentRebaseBudgetBySession = new Map();
+  const SILENT_REBASE_BUDGET_CAP = 100;
+  const budgetRemember = (sid, serverVersion) => {
+    if (silentRebaseBudgetBySession.size >= SILENT_REBASE_BUDGET_CAP) {
+      const oldest = silentRebaseBudgetBySession.keys().next().value;
+      if (oldest !== undefined) silentRebaseBudgetBySession.delete(oldest);
+    }
+    silentRebaseBudgetBySession.set(sid, serverVersion);
+  };
+  const budgetForget = (sid) => {
+    silentRebaseBudgetBySession.delete(sid);
+  };
   return {
     transport: async (sessionId, payload, signal) => {
       const apiPutBpmnXml = payload?.apiPutBpmnXml;
@@ -148,6 +181,44 @@ export function createRawXmlPipelineConfig(overrides = {}) {
       };
     },
     reconcileTimeout: createXmlSaveReconcileTimeout(),
+    trySilentRebase: async (response, sessionId, payload) => {
+      // Silent self-rebase full-PUT: серверная запись (напр. interview
+      // autosave из meta-пайплайна) подняла версию, но НЕ трогала ключи,
+      // которые перезаписывает этот PUT (bpmn_xml/bpmn_meta). Retry один раз
+      // с base из 409-снапшота. Локальный XML не перезагружаем и канвас не
+      // трогаем (нет re-import → нет риска для overlay-координатора, стык
+      // с C1); ops-outbox приостановлен структурно — pipeline busy на всём
+      // протяжении _runPipeline (outbox поллит getStatus).
+      const detail = extractConflictDetail(response);
+      if (!detail) {
+        budgetForget(sessionId);
+        return null;
+      }
+      const safety = classifyRebaseSafety({
+        serverChangedKeys: detail.changedKeys,
+        localDirtyKeys: RAW_XML_WRITE_KEYS,
+      });
+      if (safety !== "disjoint") {
+        // 409 уходит в модал — конфликт исчерпан, бюджет освобождаем.
+        budgetForget(sessionId);
+        return null;
+      }
+      if (silentRebaseBudgetBySession.get(sessionId) === detail.serverVersion) return null;
+      const apiPutBpmnXml = payload?.apiPutBpmnXml;
+      if (typeof apiPutBpmnXml !== "function") return null;
+      budgetRemember(sessionId, detail.serverVersion);
+      const retried = await apiPutBpmnXml(sessionId, applyMessageFlowExportDialect(asText(payload?.xml)), {
+        ...(payload?.options && typeof payload.options === "object" ? payload.options : {}),
+        baseDiagramStateVersion: detail.serverVersion,
+      });
+      if (!retried || retried.ok === false) return null;
+      return {
+        ok: true,
+        status: 200,
+        storedRev: Number(payload?.options?.rev || 0),
+        diagramStateVersion: pickDiagramStateVersion(retried) ?? detail.serverVersion,
+      };
+    },
     getBaseVersion: (sessionId, payload) => {
       const tracked = getTrackedDiagramStateVersion(sessionId);
       const base = Number(payload?.baseDiagramStateVersion);

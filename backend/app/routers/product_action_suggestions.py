@@ -17,6 +17,7 @@ from ..services.org_workspace import (
 )
 from ..services import product_action_suggestions_service as service
 from ..storage import get_storage
+from ..utils.session_helpers import _resolve_client_id_from_request
 from ._product_action_export_utils import _csv_bytes, _xlsx_bytes
 
 router = APIRouter(tags=["product-action-suggestions"])
@@ -183,6 +184,7 @@ def apply_approved_suggestions(session_id: str, inp: ApplySuggestionsIn, request
         session_id,
         inp.base_diagram_state_version,
         _actor_user_id(request),
+        client_id=_resolve_client_id_from_request(request),
     )
     return _success(result)
 
