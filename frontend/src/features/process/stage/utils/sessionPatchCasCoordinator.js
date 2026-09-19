@@ -22,8 +22,21 @@ export {
   isPresenceHeartbeatPatch,
   classifySessionPatch,
 } from "../../../../features/session/patchKeys.js";
+// fix/self-conflict-silent-rebase: silent self-rebase meta-PATCH над 409 —
+// только при полной определённости (disjoint changed_keys) и один раз на
+// конфликт. Сомнение → null → честный модал.
+import {
+  classifyRebaseSafety,
+  diagramTruthKeysFromPatch,
+  extractConflictDetail,
+} from "../../bpmn/save/conflictSilentRebase.js";
 
 const PIPELINE_NAME = "meta";
+
+// Бюджет «один silent retry на конфликт»: sid → serverVersion, на который
+// silent rebase уже выполнен. Повторный 409 с той же серверной версией →
+// null → модал (защита от 409-лупы).
+const silentRebaseBudgetBySession = new Map();
 
 saveCoordinator.registerPipeline(PIPELINE_NAME, {
   transport: async (sessionId, payload) => {
@@ -72,6 +85,29 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
   },
   onError: () => {
     // CAS rollback is handled by saveCoordinator._runPipeline.
+  },
+  trySilentRebase: async (response, sessionId, builtPayload) => {
+    const detail = extractConflictDetail(response);
+    if (!detail) return null;
+    const safety = classifyRebaseSafety({
+      serverChangedKeys: detail.changedKeys,
+      localDirtyKeys: diagramTruthKeysFromPatch(builtPayload?.patchBody),
+    });
+    if (safety !== "disjoint") return null;
+    if (silentRebaseBudgetBySession.get(sessionId) === detail.serverVersion) return null;
+    const apiPatchSession = builtPayload?.apiPatchSession;
+    if (typeof apiPatchSession !== "function") return null;
+    silentRebaseBudgetBySession.set(sessionId, detail.serverVersion);
+    const retried = await apiPatchSession(sessionId, {
+      ...(builtPayload?.patchBody && typeof builtPayload.patchBody === "object" ? builtPayload.patchBody : {}),
+      base_diagram_state_version: detail.serverVersion,
+    });
+    if (!retried || retried.ok === false) return null;
+    return {
+      ok: true,
+      status: 200,
+      diagramStateVersion: readSessionPatchAckDiagramStateVersion(retried) ?? detail.serverVersion,
+    };
   },
   debounceMs: 0,
   retryCount: 3,
