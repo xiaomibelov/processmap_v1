@@ -27,8 +27,11 @@ import {
   expandedIdsFromMap,
   expandedIdsFromPreferences,
   fetchUserPreferences,
-  patchUserPreferences,
+  patchUserPreferencesWithLww,
+  registerPreferencesVersionSaver,
+  setPreferencesQueryCacheBridge,
   treeScopeKey,
+  unregisterPreferencesVersionSaver,
 } from "./explorerTreePersistence.js";
 import {
   STAGE_AS_IS,
@@ -2677,6 +2680,9 @@ function ExplorerPane({
   const [explorerSort, setExplorerSort] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [hiddenStatusMenuOpen, setHiddenStatusMenuOpen] = useState(false);
+  // F2: исчерпанные ретраи сохранения статус-фильтров — inline-состояние с
+  // retry (UX-контракт: никаких raw errors в UI).
+  const [statusPrefsSaveError, setStatusPrefsSaveError] = useState(null);
   const [bulkTreeMode, setBulkTreeMode] = useState(null);
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const [activeTab, setActiveTab] = useState("projects");
@@ -2711,6 +2717,19 @@ function ExplorerPane({
       },
     });
   }
+  // F2 (audit H1): регистрируем saver и bridge единого version-tracker —
+  // любой успешный PATCH/409-снапшот любого писателя синхронизирует ОБА
+  // трекера (treeSaver.version и query cache ["user-preferences"]).
+  useEffect(() => {
+    registerPreferencesVersionSaver(treeSaverRef.current);
+    setPreferencesQueryCacheBridge((doc) => {
+      if (doc) queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, doc);
+    });
+    return () => {
+      setPreferencesQueryCacheBridge(null);
+      unregisterPreferencesVersionSaver(treeSaverRef.current);
+    };
+  }, [queryClient]);
   useEffect(() => {
     if (prefsQuery.data) treeSaverRef.current.attach(prefsQuery.data);
   }, [prefsQuery.data]);
@@ -2796,17 +2815,27 @@ function ExplorerPane({
         [EXPLORER_STATUS_FILTERS_HIDDEN_KEY]: nextValue,
       },
     }) : old);
+    const rollback = () => {
+      if (currentDoc) queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, currentDoc);
+      if (resetActiveFilter) setStatusFilter(previousStatusFilter);
+    };
     try {
-      const resp = await patchUserPreferences({
+      // F2 (audit H1): единый трекер версий + LWW-обработка 409 (раньше 409
+      // здесь не обрабатывался вовсе — сырой конфликт уходил в catch).
+      const result = await patchUserPreferencesWithLww({
         baseVersion: Number(currentDoc?.version || 0),
         set: { [EXPLORER_STATUS_FILTERS_HIDDEN_KEY]: nextValue },
       });
-      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить настройки статусов");
-      queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, resp.data || null);
+      if (!result.ok) {
+        rollback();
+        setStatusPrefsSaveError({ statusKey: key, visible, message: "Не удалось сохранить настройки статусов" });
+        return;
+      }
+      setStatusPrefsSaveError(null);
     } catch (e) {
       console.warn("[WorkspaceExplorer] failed to save status filter preferences", e);
-      if (currentDoc) queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, currentDoc);
-      if (resetActiveFilter) setStatusFilter(previousStatusFilter);
+      rollback();
+      setStatusPrefsSaveError({ statusKey: key, visible, message: "Не удалось сохранить настройки статусов" });
     }
   }, [activeOrgId, hiddenStatusKeys, prefsQuery.data, queryClient, statusFilter, workspaceId]);
 
@@ -2856,14 +2885,14 @@ function ExplorerPane({
       preferences: { ...(old.preferences || {}), ...next },
     }) : old);
     try {
-      let baseVersion = Number(currentDoc?.version || 0);
-      let resp = await patchUserPreferences({ baseVersion, set: next });
-      if (Number(resp?.status) === 409 && resp?.data) {
-        // CAS-конфликт: LWW — повторяем с версией из снапшота конфликта.
-        baseVersion = Number(resp.data.version || 0);
-        resp = await patchUserPreferences({ baseVersion, set: next });
-      }
-      if (resp?.ok) queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, resp.data || null);
+      // F2: единый трекер версий + adopt снапшота (раньше retry брал версию
+      // из тела 409, но не синхронизировал остальные писатели).
+      const result = await patchUserPreferencesWithLww({
+        baseVersion: Number(currentDoc?.version || 0),
+        set: next,
+        maxAttempts: 2,
+      });
+      if (!result.ok) console.warn("[WorkspaceExplorer] failed to persist TO BE banner dismiss", result.error);
     } catch (e) {
       console.warn("[WorkspaceExplorer] failed to persist TO BE banner dismiss", e);
     }
@@ -3743,6 +3772,22 @@ function ExplorerPane({
             </div>
           ) : null}
         </div>
+        {statusPrefsSaveError ? (
+          <span
+            className="inline-flex h-[26px] shrink-0 items-center gap-1.5 rounded-full border border-danger/50 bg-danger/10 px-2.5 text-[12px] text-danger"
+            role="alert"
+            data-testid="status-prefs-save-error"
+          >
+            Не сохранено.
+            <button
+              type="button"
+              className="font-medium underline underline-offset-2 hover:opacity-80"
+              onClick={() => handleStatusVisibilityChange(statusPrefsSaveError.statusKey, statusPrefsSaveError.visible)}
+            >
+              Повторить
+            </button>
+          </span>
+        ) : null}
         {showTobeOverview ? (
           <>
             <span className="mx-1 h-5 w-px shrink-0 self-center bg-border" aria-hidden="true" />

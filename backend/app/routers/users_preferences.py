@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, StrictInt
 
 from ..legacy.request_context import require_authenticated_user, request_active_org_id
 from .. import storage
@@ -71,7 +71,11 @@ MAX_TOBE_BANNER_DISMISSED_LEN = 64
 
 
 class PreferencesPatchBody(BaseModel):
-    base_version: int
+    # Strict (F3): extra-поля тела и не-int base_version → 422, а не молчаливый
+    # ignore/coerce — иначе PATCH с неверным форматом тихо портил документ.
+    model_config = ConfigDict(extra="forbid")
+
+    base_version: StrictInt
     set: Optional[Dict[str, Any]] = None
     unset: Optional[List[str]] = None
 
