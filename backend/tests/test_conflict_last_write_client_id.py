@@ -63,23 +63,38 @@ class ConflictLastWriteClientIdTests(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app._legacy_main import (
+            AnswerIn,
             BpmnXmlIn,
+            CreateNodeIn,
             CreateSessionIn,
+            NotesIn,
             UpdateSessionIn,
+            add_node,
+            answer,
             create_session,
             get_storage,
             patch_session,
+            post_notes,
             session_bpmn_save,
         )
+        from app.models import Node, Question
         from app.storage import get_default_org_id
 
+        self.AnswerIn = AnswerIn
         self.BpmnXmlIn = BpmnXmlIn
+        self.CreateNodeIn = CreateNodeIn
         self.CreateSessionIn = CreateSessionIn
+        self.NotesIn = NotesIn
         self.UpdateSessionIn = UpdateSessionIn
+        self.add_node = add_node
+        self.answer = answer
         self.create_session = create_session
         self.get_storage = get_storage
         self.patch_session = patch_session
+        self.post_notes = post_notes
         self.session_bpmn_save = session_bpmn_save
+        self.Node = Node
+        self.Question = Question
         self.default_org_id = get_default_org_id()
 
         created = self.create_session(self.CreateSessionIn(title="client-id test"))
@@ -175,6 +190,62 @@ class ConflictLastWriteClientIdTests(unittest.TestCase):
         self.assertEqual(out.get("ok"), True)
         sess = self.get_storage().load(self.sid, is_admin=True)
         self.assertEqual(str(getattr(sess, "diagram_last_write_client_id", "") or ""), "xml-client-2")
+
+    def _last_write_client_id(self, sid: str) -> str:
+        sess = self.get_storage().load(sid, is_admin=True)
+        return str(getattr(sess, "diagram_last_write_client_id", "") or "")
+
+    def test_graph_node_write_records_client_id(self):
+        # Draft-модель сессия (без bpmn_xml): nodes/edges пишутся легально.
+        created = self.create_session(self.CreateSessionIn(title="graph client-id"))
+        sid = str(created.get("id") or "")
+        req = self._req("graph-client-1")
+        out = self.add_node(
+            sid,
+            self.CreateNodeIn(title="Шаг 1", type="step", base_diagram_state_version=0),
+            req,
+        )
+        self.assertFalse(str(out.get("error") or ""), out)
+        self.assertEqual(self._last_write_client_id(sid), "graph-client-1")
+
+    def test_answer_write_records_client_id(self):
+        created = self.create_session(self.CreateSessionIn(title="answers client-id"))
+        sid = str(created.get("id") or "")
+        st = self.get_storage()
+        s = st.load(sid, is_admin=True)
+        s.nodes = [
+            self.Node(id="n_1", title="Step 1", parameters={}, equipment=[], disposition={}),
+        ]
+        s.questions = [
+            self.Question(
+                id="q_1",
+                node_id="n_1",
+                issue_type="MISSING",
+                question="Какой параметр?",
+                target={"field": "parameters.recipe_name", "mode": "set", "transform": "text"},
+                status="open",
+            ),
+        ]
+        st.save(s, is_admin=True)
+
+        out = self.answer(
+            sid,
+            self.AnswerIn(question_id="q_1", answer="Тестовый ответ", base_diagram_state_version=0),
+            self._req("answers-client-1"),
+        )
+        self.assertFalse(str(out.get("error") or ""), out)
+        self.assertEqual(self._last_write_client_id(sid), "answers-client-1")
+
+    def test_notes_write_records_client_id(self):
+        created = self.create_session(self.CreateSessionIn(title="notes client-id"))
+        sid = str(created.get("id") or "")
+        out = self.post_notes(
+            sid,
+            self.NotesIn(notes="Первичные заметки", base_diagram_state_version=0),
+            self._req("notes-client-1"),
+        )
+        self.assertFalse(str(out.get("error") or ""), out)
+        self.assertEqual(self._last_write_client_id(sid), "notes-client-1")
 
 
 if __name__ == "__main__":

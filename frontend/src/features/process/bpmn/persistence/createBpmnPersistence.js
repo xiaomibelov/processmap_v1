@@ -99,10 +99,31 @@ export function createXmlSaveReconcileTimeout() {
  * копирования конфига.
  */
 export function createRawXmlPipelineConfig(overrides = {}) {
-  // Бюджет «один silent retry на конфликт»: sid → serverVersion, на который
-  // silent rebase уже выполнен. Повторный 409 с той же версией → null →
-  // модал (защита от 409-лупы).
+  // Бюджет «один silent retry на конфликт (sid, serverVersion)»: sid →
+  // serverVersion, на который silent rebase уже выполнен. Повторный 409 с
+  // той же версией → null → модал (защита от 409-лупы). Формально бюджет
+  // чуть шире «один на конфликт»: если между 409 и следующим конфликтом
+  // другой disjoint-writer поднял версию ещё раз, второй silent rebase
+  // допустим — каждый retry доказуемо безопасен (disjoint-only), лупы нет
+  // (та же версия → null → модал). NIT-2 (review fix/self-conflict-silent-rebase).
+  //
+  // Cleanup (NIT-1): запись удаляется, когда 409 для sid уходит в модал
+  // (overlap/unknown/отсутствие detail) — конфликт исчерпан, следующий 409
+  // это новый конфликт с новым бюджетом. Плюс жёсткий cap по размеру
+  // (evict самой старой записи) — Map не растёт по числу сессий за жизнь
+  // страницы.
   const silentRebaseBudgetBySession = new Map();
+  const SILENT_REBASE_BUDGET_CAP = 100;
+  const budgetRemember = (sid, serverVersion) => {
+    if (silentRebaseBudgetBySession.size >= SILENT_REBASE_BUDGET_CAP) {
+      const oldest = silentRebaseBudgetBySession.keys().next().value;
+      if (oldest !== undefined) silentRebaseBudgetBySession.delete(oldest);
+    }
+    silentRebaseBudgetBySession.set(sid, serverVersion);
+  };
+  const budgetForget = (sid) => {
+    silentRebaseBudgetBySession.delete(sid);
+  };
   return {
     transport: async (sessionId, payload, signal) => {
       const apiPutBpmnXml = payload?.apiPutBpmnXml;
@@ -169,16 +190,23 @@ export function createRawXmlPipelineConfig(overrides = {}) {
       // с C1); ops-outbox приостановлен структурно — pipeline busy на всём
       // протяжении _runPipeline (outbox поллит getStatus).
       const detail = extractConflictDetail(response);
-      if (!detail) return null;
+      if (!detail) {
+        budgetForget(sessionId);
+        return null;
+      }
       const safety = classifyRebaseSafety({
         serverChangedKeys: detail.changedKeys,
         localDirtyKeys: RAW_XML_WRITE_KEYS,
       });
-      if (safety !== "disjoint") return null;
+      if (safety !== "disjoint") {
+        // 409 уходит в модал — конфликт исчерпан, бюджет освобождаем.
+        budgetForget(sessionId);
+        return null;
+      }
       if (silentRebaseBudgetBySession.get(sessionId) === detail.serverVersion) return null;
       const apiPutBpmnXml = payload?.apiPutBpmnXml;
       if (typeof apiPutBpmnXml !== "function") return null;
-      silentRebaseBudgetBySession.set(sessionId, detail.serverVersion);
+      budgetRemember(sessionId, detail.serverVersion);
       const retried = await apiPutBpmnXml(sessionId, applyMessageFlowExportDialect(asText(payload?.xml)), {
         ...(payload?.options && typeof payload.options === "object" ? payload.options : {}),
         baseDiagramStateVersion: detail.serverVersion,

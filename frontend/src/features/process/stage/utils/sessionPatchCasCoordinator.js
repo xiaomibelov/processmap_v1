@@ -33,10 +33,27 @@ import {
 
 const PIPELINE_NAME = "meta";
 
-// Бюджет «один silent retry на конфликт»: sid → serverVersion, на который
-// silent rebase уже выполнен. Повторный 409 с той же серверной версией →
-// null → модал (защита от 409-лупы).
+// Бюджет «один silent retry на конфликт (sid, serverVersion)»: sid →
+// serverVersion, на который silent rebase уже выполнен. Повторный 409 с той
+// же версией → null → модал (защита от 409-лупы). Семантика чуть шире
+// «один на конфликт»: новая серверная версия от другого disjoint-writer —
+// новый бюджет (NIT-2, review fix/self-conflict-silent-rebase).
+//
+// Cleanup (NIT-1): запись удаляется, когда 409 для sid уходит в модал
+// (overlap/unknown/нет detail); плюс cap 100 записей (evict самой старой) —
+// Map не растёт по числу сессий за жизнь страницы.
+const SILENT_REBASE_BUDGET_CAP = 100;
 const silentRebaseBudgetBySession = new Map();
+const budgetRemember = (sid, serverVersion) => {
+  if (silentRebaseBudgetBySession.size >= SILENT_REBASE_BUDGET_CAP) {
+    const oldest = silentRebaseBudgetBySession.keys().next().value;
+    if (oldest !== undefined) silentRebaseBudgetBySession.delete(oldest);
+  }
+  silentRebaseBudgetBySession.set(sid, serverVersion);
+};
+const budgetForget = (sid) => {
+  silentRebaseBudgetBySession.delete(sid);
+};
 
 saveCoordinator.registerPipeline(PIPELINE_NAME, {
   transport: async (sessionId, payload) => {
@@ -88,16 +105,23 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
   },
   trySilentRebase: async (response, sessionId, builtPayload) => {
     const detail = extractConflictDetail(response);
-    if (!detail) return null;
+    if (!detail) {
+      budgetForget(sessionId);
+      return null;
+    }
     const safety = classifyRebaseSafety({
       serverChangedKeys: detail.changedKeys,
       localDirtyKeys: diagramTruthKeysFromPatch(builtPayload?.patchBody),
     });
-    if (safety !== "disjoint") return null;
+    if (safety !== "disjoint") {
+      // 409 уходит в модал — конфликт исчерпан, бюджет освобождаем.
+      budgetForget(sessionId);
+      return null;
+    }
     if (silentRebaseBudgetBySession.get(sessionId) === detail.serverVersion) return null;
     const apiPatchSession = builtPayload?.apiPatchSession;
     if (typeof apiPatchSession !== "function") return null;
-    silentRebaseBudgetBySession.set(sessionId, detail.serverVersion);
+    budgetRemember(sessionId, detail.serverVersion);
     const retried = await apiPatchSession(sessionId, {
       ...(builtPayload?.patchBody && typeof builtPayload.patchBody === "object" ? builtPayload.patchBody : {}),
       base_diagram_state_version: detail.serverVersion,

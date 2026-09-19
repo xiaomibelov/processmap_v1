@@ -115,6 +115,7 @@ def apply_approved_suggestions(
     session_id: str,
     base_diagram_state_version: Optional[int],
     actor_user_id: str,
+    client_id: str = "",
 ) -> Dict[str, Any]:
     storage = get_storage()
     session = storage.load(session_id, is_admin=True)
@@ -175,6 +176,7 @@ def apply_approved_suggestions(
         changed_keys=["interview.analysis.product_actions"],
         actor_user_id=str(actor_user_id),
         actor_label=str(actor_user_id),
+        client_id=str(client_id or ""),
     )
 
     storage.save(
