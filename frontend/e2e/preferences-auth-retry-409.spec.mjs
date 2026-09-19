@@ -28,10 +28,38 @@ import { API_BASE, createFixture } from "./helpers/processFixture.mjs";
 const SHOTS_DIR = path.resolve("test-results", "preferences-409");
 const PREFS_URL = /\/api\/users\/me\/preferences$/;
 const HIDDEN_KEY = "explorer.status_filters.hidden";
+const TREE_EXPANDED_KEY = "explorer.tree.expanded";
 const WORKSPACE_NAME = "Main Workspace";
-const WORKSPACE_ID = "ws_org_default_main";
-const PREFS_SCOPE = `org_default::${WORKSPACE_ID}`;
 const FLUSH_WAIT_MS = 15_000;
+
+// Scope `orgId::workspaceId` фронт вычисляет динамически (treeScopeKey,
+// explorerTreePersistence.js) из active org/workspace — на stage это org
+// пользователя (например `055f06eae85d::ws_055f06eae85d_main`), а не
+// `org_default::ws_org_default_main`. Хардкод default-org scope ломал спеку
+// вне local dev (audit/c1-c2-stage-verification V4). Scope извлекаем из
+// treeSaver-flush (шаг A): раскрытие проекта пишет expanded под текущий scope.
+function extractPrefsScope(doc, activeOrgId = "") {
+  const expanded = doc?.preferences?.[TREE_EXPANDED_KEY] || {};
+  const keys = Object.keys(expanded);
+  const orgPrefix = `${String(activeOrgId || "").trim()}::`;
+  // В документе могут лежать scope-ключи других org (исторические записи) —
+  // берём ключ активной org, иначе любой `org::ws`, иначе legacy `ws`.
+  const scope = keys.find((key) => orgPrefix !== "::" && key.startsWith(orgPrefix))
+    || keys.find((key) => key.includes("::"));
+  if (scope) return scope;
+  const legacy = keys[0];
+  if (legacy) return legacy;
+  return orgPrefix !== "::" ? orgPrefix : "";
+}
+
+/** Значение hidden для scope: точный ключ, затем prefix-match (scope может
+ *  быть известен только как `orgId::`). */
+function hiddenForScope(hiddenValue, scope) {
+  if (!scope) return [];
+  if (Array.isArray(hiddenValue?.[scope])) return hiddenValue[scope];
+  const key = Object.keys(hiddenValue || {}).find((item) => item.startsWith(scope));
+  return key ? hiddenValue[key] || [] : [];
+}
 
 function collectPageErrors(page) {
   const errors = [];
@@ -138,11 +166,15 @@ async function fetchServerPrefs(request, auth) {
   return res.json();
 }
 
-/** Сбрасывает hidden-статуса для scope теста — детерминизм между прогонами. */
+/** Сбрасывает hidden-статуса активной org — детерминизм между прогонами.
+ *  Трогаем только scope-ключи текущей org (префикс `orgId::`), чужие org не
+ *  затираем — acceptance обязан работать вне default org (#989-урок). */
 async function resetHiddenScope(request, auth) {
   const doc = await fetchServerPrefs(request, auth);
-  const value = { ...(doc?.preferences?.[HIDDEN_KEY] || {}) };
-  delete value[PREFS_SCOPE];
+  const orgPrefix = `${String(auth.activeOrgId || "").trim()}::`;
+  const value = Object.fromEntries(
+    Object.entries(doc?.preferences?.[HIDDEN_KEY] || {}).filter(([key]) => !key.startsWith(orgPrefix)),
+  );
   const res = await request.patch(`${API_BASE}/api/users/me/preferences`, {
     headers: auth.headers,
     data: { base_version: Number(doc?.version || 0), set: { [HIDDEN_KEY]: value }, unset: [] },
@@ -180,7 +212,9 @@ test("preferences auth-retry: forced 401 на PATCH статус-фильтра 
   await page.getByText(`E2E save session ${runId}`, { exact: true }).waitFor({ timeout: 20_000 });
   await waitForCondition(() => patches.count200 >= 1);
   const docAfterTree = patches.responseDocs.filter((r) => r.status === 200).at(-1)?.doc;
-  expect(docAfterTree?.preferences?.["explorer.tree.expanded"], "treeSaver flush применён на сервере").toBeTruthy();
+  expect(docAfterTree?.preferences?.[TREE_EXPANDED_KEY], "treeSaver flush применён на сервере").toBeTruthy();
+  const prefsScope = extractPrefsScope(docAfterTree, auth.activeOrgId);
+  expect(prefsScope, "scope preferences извлечён из treeSaver flush").toBeTruthy();
 
   // Шаг B: статус-фильтр без 401 (PATCH #2, 200, свежая версия из трекера).
   const checkboxes = await openStatusMenu(page);
@@ -213,8 +247,8 @@ test("preferences auth-retry: forced 401 на PATCH статус-фильтра 
   // Серверный финал: оба статуса скрыты, версия продвинулась тремя записями.
   const finalDoc = await fetchServerPrefs(request, auth);
   const hiddenValue = finalDoc?.preferences?.[HIDDEN_KEY] || {};
-  const hidden = hiddenValue[PREFS_SCOPE] || hiddenValue[WORKSPACE_ID] || [];
-  expect(hidden, `hidden=${JSON.stringify(hiddenValue)}`).toEqual(expect.arrayContaining(["done", "draft"]));
+  const hidden = hiddenForScope(hiddenValue, prefsScope);
+  expect(hidden, `hidden=${JSON.stringify(hiddenValue)} (scope=${prefsScope})`).toEqual(expect.arrayContaining(["done", "draft"]));
 
   await screenshotStep(page, "1-forced401-after");
 });
@@ -279,8 +313,10 @@ test("preferences race: вкладка B подняла версию → у A fo
     // семантика LWW на уровне scoped-ключа, audit H1 её не меняет).
     const finalDoc = await fetchServerPrefs(request, auth);
     const hiddenValue = finalDoc?.preferences?.[HIDDEN_KEY] || {};
-    const hidden = hiddenValue[PREFS_SCOPE] || hiddenValue[WORKSPACE_ID] || [];
-    expect(hidden, `hidden=${JSON.stringify(hiddenValue)}`).toEqual(["draft"]);
+    const lastDocA = patchesA.responseDocs.filter((r) => r.status === 200).at(-1)?.doc;
+    const prefsScope = extractPrefsScope(lastDocA, auth.activeOrgId);
+    const hidden = hiddenForScope(hiddenValue, prefsScope);
+    expect(hidden, `hidden=${JSON.stringify(hiddenValue)} (scope=${prefsScope})`).toEqual(["draft"]);
     expect(finalDoc?.version).toBeGreaterThanOrEqual(2);
 
     // UI B не пострадал: чекбокс «Готово» остался скрытым, raw errors нет.
