@@ -143,6 +143,34 @@ test("retry-transport вернул ошибку → null (модал)", async ()
   assert.equal(result, null);
 });
 
+test("бюджет чистится при модале: overlap-409 освобождает запись (NIT-1)", async () => {
+  const config = createRawXmlPipelineConfig();
+  const { calls, payload } = makePayload({
+    putResults: [
+      { ok: true, status: 200, diagram_state_version: 33 },
+      { ok: true, status: 200, diagram_state_version: 33 },
+    ],
+  });
+
+  // 1) silent rebase на v33 — retry выполнен.
+  const first = await config.trySilentRebase(conflictResponse(), "s-raw-8", payload);
+  assert.equal(first.ok, true);
+  // 2) повторный disjoint 409 той же v33 → бюджет исчерпан → null.
+  const second = await config.trySilentRebase(conflictResponse(), "s-raw-8", payload);
+  assert.equal(second, null);
+  // 3) overlap-409 (модал) → запись бюджета удалена.
+  const modal = await config.trySilentRebase(
+    conflictResponse({ changedKeys: ["bpmn_xml"] }),
+    "s-raw-8",
+    payload,
+  );
+  assert.equal(modal, null);
+  // 4) новый disjoint 409 v33 → retry снова разрешён (конфликт новый).
+  const third = await config.trySilentRebase(conflictResponse(), "s-raw-8", payload);
+  assert.equal(third.ok, true);
+  assert.equal(calls.length, 2);
+});
+
 test("переопределение через overrides сохраняется совместимым", () => {
   const custom = async () => ({ ok: true });
   const config = createRawXmlPipelineConfig({ trySilentRebase: custom });

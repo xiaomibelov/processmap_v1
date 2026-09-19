@@ -11,6 +11,7 @@ from .services.session_recompute import _recompute_session
 from .storage import get_storage
 from .utils.session_helpers import (
     _mark_diagram_truth_write,
+    _resolve_client_id_from_request,
     _require_diagram_cas_or_409,
     _resolve_actor_context,
     _resolve_base_diagram_state_version,
@@ -115,6 +116,7 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
         changed_keys=["nodes"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
@@ -167,6 +169,7 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
         changed_keys=["nodes"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
@@ -202,6 +205,7 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
         changed_keys=["nodes", "edges"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
@@ -247,6 +251,7 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         changed_keys=["edges"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
@@ -286,6 +291,7 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         changed_keys=["edges"],
         actor_user_id=actor_user_id,
         actor_label=actor_label,
+        client_id=_resolve_client_id_from_request(request),
     )
     _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
