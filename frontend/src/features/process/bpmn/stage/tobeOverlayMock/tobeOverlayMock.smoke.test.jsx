@@ -237,3 +237,50 @@ describe("TobeOverlayMockLayers (T6 gate)", () => {
     expect(htmlHidden).toContain("display:none");
   });
 });
+
+describe("TobeOverlayMockControls (T7 header controls)", () => {
+  it("вне режима — кнопка входа; в режиме — ghost-toggle и выход", async () => {
+    const { createRoot } = await import("react-dom/client");
+    const { act } = await import("react-dom/test-utils");
+    const { default: TobeOverlayMockControls } = await import("./TobeOverlayMockControls.jsx");
+    const store = await import("./mockOverlayModeStore.js");
+
+    store.resetTobeOverlayMockState();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(<TobeOverlayMockControls />);
+      });
+      expect(container.querySelector('[data-testid="tobe-overlay-mock-enter"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="tobe-overlay-mock-exit"]')).toBeNull();
+
+      await act(async () => {
+        store.setTobeOverlayMockActive(true);
+      });
+      expect(container.querySelector('[data-testid="tobe-overlay-mock-enter"]')).toBeNull();
+      const ghostToggle = container.querySelector('[data-testid="tobe-overlay-mock-ghost-toggle"]');
+      expect(ghostToggle).toBeTruthy();
+      expect(container.querySelector('[data-testid="tobe-overlay-mock-exit"]')).toBeTruthy();
+
+      await act(async () => {
+        ghostToggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      expect(store.getTobeOverlayMockState().ghostVisible).toBe(false);
+      expect(container.textContent).toContain("(скрыта)");
+
+      await act(async () => {
+        store.setTobeOverlayMockActive(false);
+      });
+      expect(container.querySelector('[data-testid="tobe-overlay-mock-enter"]')).toBeTruthy();
+      expect(store.getTobeOverlayMockState().ghostVisible).toBe(true);
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      container.remove();
+      store.resetTobeOverlayMockState();
+    }
+  });
+});

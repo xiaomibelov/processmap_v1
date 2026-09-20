@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import ProcessPanels from "./ProcessPanels";
 import DiagramToolbarSaveStatusSlot from "./DiagramToolbarSaveStatusSlot";
 import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
+import TobeOverlayMockControls from "../../bpmn/stage/tobeOverlayMock/TobeOverlayMockControls";
 import ModeSwitchSegment from "../../../../components/ModeSwitchSegment";
 import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
@@ -196,6 +197,11 @@ export default function ProcessStageHeader({ view = {} }) {
           {featureFlags?.bpmn_fps_meter_enabled ? (
             <div className="ml-2" style={{ display: "inline-block", verticalAlign: "middle" }}>
               <BpmnFpsMeter enabled={true} />
+            </div>
+          ) : null}
+          {featureFlags?.tobe_overlay_mock && hasSession ? (
+            <div className="ml-2 flex items-center gap-1" style={{ verticalAlign: "middle" }}>
+              <TobeOverlayMockControls />
             </div>
           ) : null}
         </div>
