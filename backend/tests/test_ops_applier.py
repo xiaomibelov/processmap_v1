@@ -377,3 +377,58 @@ def test_s4w3_delete_empty_lane_ok_and_populated_lane_typed_422():
             {"opId": "l-del2", "type": "shape.delete", "elementId": "Lane_9"},
         ])
     assert "lane_not_empty" in str(exc.value), "populated lane delete — typed 422 (fail-closed)"
+
+
+# ---------------------------------------------------------------------------
+# Контур feature/mutation-gateway-c3 (срез S5): property panel golden-parity.
+# Серверный XML после ops === после full-PUT для name / documentation /
+# camunda-атрибутов (verbatim через _register_namespaces).
+# ---------------------------------------------------------------------------
+
+def test_s5_documentation_rows_replace_children_with_text_format():
+    from app.save_services.ops_applier import OperationApplyError, apply_operations
+    ops = [
+        {"opId": "p1", "type": "element.updateProperties", "elementId": "Task_1",
+         "properties": {"documentation": [
+             {"text": "Строка 1", "textFormat": "text/plain"},
+             {"text": "Строка 2", "textFormat": "text/html"},
+         ]}},
+        {"opId": "p2", "type": "element.updateProperties", "elementId": "Task_1",
+         "properties": {"documentation": [{"text": "Замена", "textFormat": "text/plain"}]}},
+    ]
+    out = apply_operations(ARTIFACT_BASE_XML, ops)
+    root = ET.fromstring(out)
+    task = _find_semantic_by_id(root, "Task_1")
+    docs = [ch for ch in task if ch.tag == f"{{{BPMN_NS}}}documentation"]
+    assert len(docs) == 1, "повторная правка ЗАМЕНЯЕТ documentation-children, не плодит"
+    assert docs[0].text == "Замена"
+    assert docs[0].get("textFormat") == "text/plain"
+    assert list(task)[0] is docs[0], "documentation — первый child (bpmn-js порядок)"
+
+    with pytest.raises(OperationApplyError) as exc:
+        apply_operations(ARTIFACT_BASE_XML, [
+            {"opId": "p3", "type": "element.updateProperties", "elementId": "Task_1",
+             "properties": {"documentation": [{"textFormat": "text/plain"}]}},
+        ])
+    assert "invalid_documentation" in str(exc.value), "row без text — typed 422 (fail-closed)"
+
+
+def test_s5_camunda_attribute_verbatim_and_name_golden():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(ARTIFACT_BASE_XML, [
+        {"opId": "p4", "type": "element.updateProperties", "elementId": "Task_1",
+         "properties": {"name": "Переименовано", "camunda:assignee": "demo",
+                        "camunda:dueDate": "2026-10-03T00:00:00", "camunda:candidateGroups": "grp1,grp2"}},
+    ])
+    root = ET.fromstring(out)
+    task = _find_semantic_by_id(root, "Task_1")
+    assert task.get("name") == "Переименовано"
+    # golden parity: camunda-атрибуты verbatim. После re-parse префикс —
+    # Clark-нотация; сериализованный текст несёт префикс (S5: applier сам
+    # добавляет xmlns при отсутствии — unbound prefix невозможен).
+    CAMUNDA = "{http://camunda.org/schema/1.0/bpmn}"
+    assert task.get(f"{CAMUNDA}assignee") == "demo"
+    assert task.get(f"{CAMUNDA}dueDate") == "2026-10-03T00:00:00"
+    assert task.get(f"{CAMUNDA}candidateGroups") == "grp1,grp2"
+    assert 'camunda:assignee="demo"' in out, "сериализация несёт префикс verbatim"
+    assert 'xmlns:camunda=' in out, "объявление добавлено applier'ом"

@@ -1127,3 +1127,98 @@ test("S4w3: shape.create bpmn:Lane → op; participant остаётся cold", (
   });
   assert.equal(participant.needsFullSave, true, "participant — cold навсегда");
 });
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S5): property panel → ops.
+// Класс B (documentation): bpmn-js шлёт моддл-массив modeling.updateProperties(
+// el, {documentation: [moddle]}). sanitizeValue терял его молча (ДЫРА: no-op op).
+// S5: сериализация rows {text, textFormat} → op-payload; backend replace-children.
+// Класс C (extensionElements / camunda custom properties): структурный payload —
+// fail-closed needsFullSave (round-trip риск #995; boundary пишет full-PUT).
+// Undo: oldProperties-ветка зеркалит execute (documentation rows).
+// ---------------------------------------------------------------------------
+
+function documentationDescriptor(text, textFormat = "text/plain") {
+  // имитация moddle-объекта bpmn:Documentation (геттеры text/textFormat)
+  return { $type: "bpmn:Documentation", text, textFormat };
+}
+
+test("S5: updateProperties documentation (moddle rows) → op payload rows (раньше молча терялось)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: [documentationDescriptor("Строка 1"), documentationDescriptor("Строка 2", "text/html")] },
+    },
+  });
+  assert.equal(out.needsFullSave, false, "documentation rows маппятся в op (больше не молчаливый no-op)");
+  assert.equal(out.ops.length, 1);
+  assert.deepEqual(out.ops[0].properties.documentation, [
+    { text: "Строка 1", textFormat: "text/plain" },
+    { text: "Строка 2", textFormat: "text/html" },
+  ]);
+});
+
+test("S5: undo updateProperties documentation → oldProperties rows (parity)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "undo",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: [documentationDescriptor("Новое")] },
+      oldProperties: { documentation: [documentationDescriptor("Старое")] },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops[0].properties.documentation, [{ text: "Старое", textFormat: "text/plain" }]);
+});
+
+test("S5: updateProperties с documentation-битым row → needsFullSave (fail-closed)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: [{ $type: "bpmn:Documentation" }] },
+    },
+  });
+  assert.equal(out.needsFullSave, true, "row без text — не сериализуем, честный full-save");
+  assert.equal(out.ops.length, 0);
+});
+
+test("S5: updateProperties extensionElements (moddle) → needsFullSave (класс C cold, причина #995)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { extensionElements: { $type: "bpmn:ExtensionElements", values: [] } },
+    },
+  });
+  assert.equal(out.needsFullSave, true, "extensionElements — структурный payload, fail-closed");
+  assert.equal(out.ops.length, 0);
+
+  const mixed = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { name: "X", extensionElements: { $type: "bpmn:ExtensionElements" } },
+    },
+  });
+  assert.equal(mixed.needsFullSave, true, "смешанный payload с moddle — целиком full-save");
+});
+
+test("S5: updateProperties sanitize-контракт — скаляры/вложенные plain-объекты по-прежнему ок", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { name: "N", "camunda:assignee": "demo", meta: { a: 1, b: [1, 2] } },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops[0].properties, { name: "N", "camunda:assignee": "demo", meta: { a: 1, b: [1, 2] } });
+});

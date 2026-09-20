@@ -52,9 +52,48 @@ function sanitizeValue(value, depth = 0) {
   return null;
 }
 
-function sanitizeProperties(properties) {
-  const clean = sanitizeValue(properties);
-  return isPlainObject(clean) ? clean : {};
+// S5: structured-key сериализация для element.updateProperties.
+// bpmn-js шлёт documentation как моддл-массив, extensionElements — моддл-
+// объект. Молчаливая потеря sanitize'ом (no-op op) — дыра, закрытая S5:
+// documentation rows → скалярный payload; extensionElements/немаппимое →
+// needsFullSave (fail-closed, урок E3/#995).
+function serializeDocumentationRows(value) {
+  if (!Array.isArray(value)) return { needsFullSave: true };
+  const rows = [];
+  for (const item of value) {
+    const text = item && typeof item === "object" ? item.text : undefined;
+    if (typeof text !== "string") return { needsFullSave: true };
+    const row = { text };
+    const textFormat = item?.textFormat;
+    if (textFormat !== undefined && textFormat !== null) {
+      row.textFormat = String(textFormat);
+    }
+    rows.push(row);
+  }
+  return { rows };
+}
+
+function sanitizeUpdateProperties(properties) {
+  const input = isPlainObject(properties) ? properties : null;
+  if (!input) return { needsFullSave: true };
+  const out = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined) continue;
+    if (key === "documentation") {
+      const rows = serializeDocumentationRows(value);
+      if (rows.needsFullSave) return { needsFullSave: true };
+      out.documentation = rows.rows;
+      continue;
+    }
+    // S5 fail-closed: extensionElements — структурный payload (camunda custom
+    // properties/listeners); ops-перевод требует round-trip сериализации
+    // (#995) — класс C панели идёт полным сохранением (boundary full-PUT).
+    if (key === "extensionElements") return { needsFullSave: true };
+    const clean = sanitizeValue(value);
+    if (clean === null && value !== null) return { needsFullSave: true };
+    out[key] = clean === null ? null : clean;
+  }
+  return { properties: out };
 }
 
 function point(value) {
@@ -143,11 +182,11 @@ function mapUpdateProperties(context, inverse) {
   const elementId = elementIdOf(element);
   if (!elementId) return { needsFullSave: true };
   if (requiresFullSaveForBpmnType(elementTypeOf(element))) return { needsFullSave: true };
-  if (!inverse) {
-    return { op: makeOp("element.updateProperties", elementId, { properties: sanitizeProperties(context?.properties) }) };
-  }
-  if (!isPlainObject(context?.oldProperties)) return { needsFullSave: true };
-  return { op: makeOp("element.updateProperties", elementId, { properties: sanitizeProperties(context.oldProperties) }) };
+  const source = inverse ? context?.oldProperties : context?.properties;
+  const sanitized = sanitizeUpdateProperties(source);
+  if (sanitized.needsFullSave) return { needsFullSave: true };
+  if (Object.keys(sanitized.properties).length === 0) return { needsFullSave: true };
+  return { op: makeOp("element.updateProperties", elementId, { properties: sanitized.properties }) };
 }
 
 function mapUpdateLabel(context, inverse) {

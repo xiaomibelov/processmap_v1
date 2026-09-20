@@ -31,6 +31,11 @@ KNOWN_NAMESPACES = {
     "di": DI_NS,
     "dc": DC_NS,
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    # S5: verbatim-атрибуты property-панели (camunda:assignee, zeebe:*).
+    # Документ bpmn-js может НЕ объявлять префикс до первого использования —
+    # applier обязан добавить объявление (иначе unbound prefix при re-parse).
+    "camunda": "http://camunda.org/schema/1.0/bpmn",
+    "zeebe": "http://camunda.org/schema/zeebe/1.0",
 }
 
 OP_SOURCE_VALUES = ("user", "agent", "e2e", "replay")
@@ -378,6 +383,11 @@ def _apply_update_properties(root: ET.Element, op: Dict[str, Any],
         if value is None:
             element.attrib.pop(name, None)
             continue
+        # S5: documentation rows [{text, textFormat?}] — replace-children
+        # (golden parity full-PUT bpmn-js: повторная правка заменяет блок).
+        if name == "documentation" and isinstance(value, list):
+            _set_documentation_rows(element, value, op)
+            continue
         if name == "documentation":
             _set_documentation(element, str(value))
             continue
@@ -399,6 +409,27 @@ def _set_documentation(element: ET.Element, text: str) -> None:
     doc = ET.Element(f"{{{BPMN_NS}}}documentation")
     doc.text = text
     element.insert(0, doc)
+
+
+def _set_documentation_rows(element: ET.Element, rows: List[Any], op: Dict[str, Any]) -> None:
+    """S5 (golden full-PUT parity): documentation-блок ЗАМЕНЯЕТСЯ rows."""
+    for ch in list(element):
+        if _ns(ch.tag) == BPMN_NS and _local(ch.tag) == "documentation":
+            element.remove(ch)
+    insert_at = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            raise OperationApplyError(_op_id(op), _op_type(op), f"invalid_documentation: {row!r}")
+        text = row.get("text")
+        if text is None or not isinstance(text, str):
+            raise OperationApplyError(_op_id(op), _op_type(op), "invalid_documentation: missing text")
+        doc = ET.Element(f"{{{BPMN_NS}}}documentation")
+        text_format = str(row.get("textFormat") or "").strip()
+        if text_format:
+            doc.set("textFormat", text_format)
+        doc.text = text
+        element.insert(insert_at, doc)
+        insert_at += 1
 
 
 def _apply_shape_move(root: ET.Element, op: Dict[str, Any],
@@ -902,6 +933,27 @@ def apply_one(root: ET.Element, xml_text: str, op: Dict[str, Any],
         _APPLIERS[op_type](root, op, index)
 
 
+def _ensure_attribute_prefixes_declared(root: ET.Element, xml_text: str) -> None:
+    """S5 (golden parity): verbatim-атрибуты с префиксом (camunda:assignee и
+    пр.) требуют объявленного xmlns — документ может его не нести до первого
+    использования (unbound prefix при re-parse). Добавляем объявление на root.
+    """
+    # Только объявленные САМИМ документом (_doc_prefix_map мержит
+    # KNOWN_NAMESPACES — для этой проверки он непригоден).
+    declared = {m.group(1) for m in _XMLNS_DECL_RE.finditer(xml_text)}
+    for el in root.iter():
+        for key in el.attrib:
+            if ":" not in key:
+                continue
+            prefix = key.split(":", 1)[0]
+            if not prefix or prefix in declared or prefix == "xml":
+                continue
+            uri = KNOWN_NAMESPACES.get(prefix)
+            if uri:
+                root.set(f"xmlns:{prefix}", uri)
+                declared.add(prefix)
+
+
 def apply_operations(xml_text: str, operations: List[Dict[str, Any]]) -> str:
     """Применить батч ops к XML. Ошибка любой op → OperationApplyError (батч не применяется)."""
     root = _parse_document(xml_text)
@@ -911,6 +963,7 @@ def apply_operations(xml_text: str, operations: List[Dict[str, Any]]) -> str:
     index = _ElementIndex(root)
     for op in operations or []:
         apply_one(root, xml_text, op if isinstance(op, dict) else {}, index)
+    _ensure_attribute_prefixes_declared(root, xml_text)
     return _serialize(root)
 
 
