@@ -44,3 +44,10 @@
 - Класс C (camunda custom properties) — explicit cold (needsFullSave, #995); boundary-apply подавлен (suppressCommandStackRef) — фантомный op/двойной PUT устранены.
 - e2e по классам PASS (0 PUT / 1 ops, reload server truth). Полный сьют 4002, 0 новых падений. Метрика путей 14→13.
 - Hang-тест: transportTimeoutMs=60_000 намеренно → тест устарел, не дыра S5 (tech-debt, эскалация).
+
+## 2026-09-20 — S6 degrade-замена (Agent 2, Executor)
+- 9 degrade-веток переклассифицированы: conflictStop (gate armed → honest modal, буфер pending) / inlineStop (422/transport, backoff-retry 1s→8s). degrade() удалён как класс; UI-стадии ops-conflict/unsupported/error. needsFullSave — explicit cold.
+- fpc_gateway_cold_fallback никогда не был в коде (grep 0) — смерть флага = удаление веток, дата 2026-10-03.
+- Аудит PUT: все сайты lane-участники/cold-документированы; вне lane — 0.
+- e2e-регресс на ИЗОЛИРОВАННОМ стеке wt-mgc3-s6 (чужая сессия останавливала общий): undo/redo PASS; repo-спеки 5/6 (same-tab 409 silent-rebase, kill-tab, offline, exactly-once, spaceTool); :470 coverage 18/20 = pre-existing drift (доказано stash-прогоном на S5), ре-базелина — S8.
+- Метрика путей 1+1+X (X=4). Полный сьют 4002, 0 новых падений.
