@@ -53,8 +53,8 @@ _INCIDENT_REF_TAGS = ("incoming", "outgoing")
 _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES = {
     f"{{{BPMN_NS}}}participant",
     f"{{{BPMN_NS}}}lane",
-    f"{{{BPMN_NS}}}dataStoreReference",
-    f"{{{BPMN_NS}}}dataObjectReference",
+    # S4 волна 2: dataStoreReference/dataObjectReference переведены в ops
+    # (golden-parity evidence/s4; companion dataObject — см. _apply_shape_create).
     f"{{{BPMN_NS}}}dataInputAssociation",
     f"{{{BPMN_NS}}}dataOutputAssociation",
     # S4 волна 1: textAnnotation + association переведены в ops (golden-parity
@@ -521,6 +521,17 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any],
     name = str(op.get("name") or "").strip()
     if name:
         element.set("name", name)
+    # S4 волна 2 (golden): dataObjectReference несёт companion <bpmn:dataObject>
+    # в process; bpmn-js чистит сироту при save — delete повторяет (см. ниже).
+    if tag == f"{{{BPMN_NS}}}dataObjectReference" and not element.get("dataObjectRef"):
+        import secrets as _secrets
+        data_object_id = f"DataObject_{_secrets.token_hex(4)}"
+        data_object = ET.Element(f"{{{BPMN_NS}}}dataObject")
+        data_object.set("id", data_object_id)
+        parent.append(data_object)
+        if index is not None:
+            index.semantic[data_object_id] = data_object
+        element.set("dataObjectRef", data_object_id)
     parent.append(element)
     if index is not None:
         index.semantic[element_id] = element
@@ -641,6 +652,19 @@ def _apply_shape_delete(root: ET.Element, op: Dict[str, Any],
     if _is_connection_element(element):
         _delete_connection(root, element_id, index)
         return
+    # S4 волна 2 (golden bpmn-js): удаление dataObjectReference чистит
+    # companion dataObject (сирота не живёт в сохранённом XML).
+    if element.tag == f"{{{BPMN_NS}}}dataObjectReference":
+        companion_id = str(element.get("dataObjectRef") or "").strip()
+        if companion_id:
+            companion = _find_semantic(root, companion_id, index)
+            if companion is not None and companion.tag == f"{{{BPMN_NS}}}dataObject":
+                companion_parent = _find_parent(root, companion)
+                if companion_parent is not None:
+                    companion_parent.remove(companion)
+                if index is not None:
+                    index.semantic.pop(companion_id, None)
+                    index.fallback.pop(companion_id, None)
     # Семантика bpmn-js: shape.delete удаляет инцидентные connection.
     for connection_id in _incident_connection_ids(root, element_id, index):
         _delete_connection(root, connection_id, index)
