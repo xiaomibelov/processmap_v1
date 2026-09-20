@@ -58,6 +58,9 @@ function sanitizeValue(value, depth = 0) {
 // documentation rows → скалярный payload; extensionElements/немаппимое →
 // needsFullSave (fail-closed, урок E3/#995).
 function serializeDocumentationRows(value) {
+  // S7: plain string — валидная форма (step1/2-era writers; pinpoint drift
+  // :470 был вызван отказом строки в S5). Нормализуем к rows.
+  if (typeof value === "string") return { rows: [{ text: value }] };
   if (!Array.isArray(value)) return { needsFullSave: true };
   const rows = [];
   for (const item of value) {
@@ -200,12 +203,19 @@ function mapUpdateLabel(context, inverse) {
   // честный needsFullSave (причина зафиксирована в PR_S4).
   if (/textannotation/i.test(elementTypeOf(element))) {
     const text = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
-    if (inverse) return { needsFullSave: true };
     const ops = [makeOp("element.updateProperties", elementId, { properties: { text } })];
-    const nextBounds = bounds(context?.newBounds);
-    if (nextBounds) {
-      ops.push(makeOp("shape.resize", elementId, { bounds: nextBounds }));
+    if (!inverse) {
+      const nextBounds = bounds(context?.newBounds);
+      if (nextBounds) {
+        ops.push(makeOp("shape.resize", elementId, { bounds: nextBounds }));
+      }
+      return { ops };
     }
+    // S7: undo — снапшот на undo-changed, element ref несёт post-undo
+    // (исходные) bounds: resize-компенсация absolute. Fail-closed без bounds.
+    const originalBounds = bounds(element?.bounds);
+    if (!originalBounds) return { needsFullSave: true };
+    ops.push(makeOp("shape.resize", elementId, { bounds: originalBounds }));
     return { ops };
   }
   const name = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
@@ -340,14 +350,76 @@ function mapConnectionReconnect(context, inverse) {
   };
 }
 
+// S7: undo delete → compensating create-op С СОХРАНЕНИЕМ id (контракт step2:
+// клиентский id в payload, сервер applied_ops opId-идемпотентен). Снапшот на
+// undo-changed несёт post-undo live-refs: bounds/waypoints/parentId/text —
+// полный recreate-пayload. Fail-closed: без type/bounds — needsFullSave
+// (recreate дырявого DI недопустим, урок pinpoint'а S2/E3).
+// S7: bpmn-js DeleteShape/ConnectionHandler при UNDO delete фаерит верхним
+// событием 'id.updateClaim' (release id-claim) — recreate элемента идёт молча
+// внутри handler.revert. Контекст несёт post-undo live-ref (enrichment S7:
+// bounds/type/parentId/endpoints/text) — тот же compensating-create payload,
+// что и прямой undo shape.delete. Execute-путь (claim при delete) — вложенный,
+// событий не даёт; на всякий случай — needsFullSave (honest unknown).
+function mapIdUpdateClaim(context, inverse, action) {
+  // undo → compensating create (post-undo live-ref, enrichment runtime);
+  // redo → повторное удаление: delete-op по __elementId (тип элемента на
+  // redo-changed недоступен — удалён из модели; backend _apply_shape_delete
+  // сам роутит connection по семантическому типу).
+  // execute как top-level событие не встречается (claim при delete вложенный,
+  // молчаливый) — honest needsFullSave на всякий случай.
+  if (inverse) return mapDeleteInversePayload(context?.element, context);
+  if (action === "redo") {
+    const elementId = asText(context?.element?.id) || asText(context?.__elementId);
+    if (!elementId) return { needsFullSave: true };
+    return { op: makeOp("shape.delete", elementId, {}) };
+  }
+  return { needsFullSave: true };
+}
+
 function mapDelete(kind) {
   return (context, inverse) => {
-    if (inverse) return { needsFullSave: true };
     const ref = context?.shape || context?.connection || context?.element;
-    const elementId = elementIdOf(ref);
+    const elementId = strictIdOf(ref);
     if (!elementId) return { needsFullSave: true };
-    return { op: makeOp(kind, elementId, {}) };
+    if (!inverse) {
+      return { op: makeOp(kind, elementId, {}) };
+    }
+    return mapDeleteInversePayload(ref, context);
   };
+}
+
+function mapDeleteInversePayload(ref, context) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const elementType = asText(ref?.type || ref?.businessType || ref?.$type);
+    const parentId = elementIdOf(context?.parent) || asText(ref?.parentId);
+    const isConnection = /sequenceflow|messageflow|association|datainputassociation|dataoutputassociation/i.test(elementType)
+      || (Array.isArray(ref?.waypoints) && !ref?.bounds);
+    if (isConnection) {
+      const sourceId = strictIdOf(context?.source) || asText(ref?.sourceId);
+      const targetId = strictIdOf(context?.target) || asText(ref?.targetId);
+      const wp = waypoints(ref?.waypoints);
+      if (!elementType || !sourceId || !targetId || !wp) return { needsFullSave: true };
+      return {
+        op: makeOp("connection.create", elementId, {
+          elementType,
+          sourceId,
+          targetId,
+          waypoints: wp,
+          parentId: parentId || "",
+        }),
+      };
+    }
+    if (requiresFullSaveForBpmnType(elementType)) return { needsFullSave: true };
+    const b = bounds(ref?.bounds);
+    if (!elementType || !b) return { needsFullSave: true };
+    const payload = { elementType, bounds: b, parentId: parentId || "" };
+    // textAnnotation: текст — дочерний <bpmn:text> (golden S4).
+    if (/textannotation/i.test(elementType) && typeof ref?.text === "string") {
+      payload.text = ref.text;
+    }
+    return { op: makeOp("shape.create", elementId, payload) };
 }
 
 // ---------------------------------------------------------------------------
@@ -438,9 +510,31 @@ function resizeBoundsForSpaceTool(boundsRaw, directionRaw, deltaRaw) {
 }
 
 function mapSpaceTool(context, inverse) {
-  if (inverse) return { needsFullSave: true };
   const delta = point(context?.delta);
   if (!delta) return { needsFullSave: true };
+  if (inverse) {
+    // S7: снапшот на undo-changed — post-undo live-состояние: movingShapes
+    // компенсируем -delta; resizingShapes несут ИСХОДНЫЕ bounds (resize
+    // absolute); affectedConnections — исходные waypoints (enrichment).
+    const ops = [];
+    const moving = Array.isArray(context?.movingShapes) ? context.movingShapes : [];
+    for (const ref of moving) {
+      const elementId = strictIdOf(ref);
+      if (!elementId) return { needsFullSave: true };
+      ops.push(makeOp("shape.move", elementId, { delta: { x: -delta.x, y: -delta.y } }));
+    }
+    const resizing = Array.isArray(context?.resizingShapes) ? context.resizingShapes : [];
+    for (const ref of resizing) {
+      const elementId = strictIdOf(ref);
+      const original = bounds(ref?.bounds);
+      if (!elementId || !original) return { needsFullSave: true };
+      ops.push(makeOp("shape.resize", elementId, { bounds: original }));
+    }
+    if (ops.length === 0) return { needsFullSave: true };
+    const diOps = mapAffectedConnectionDi(context);
+    if (diOps.needsFullSave) return diOps;
+    return { ops: [...ops, ...diOps.ops] };
+  }
   const ops = [];
   const moving = Array.isArray(context?.movingShapes) ? context.movingShapes : [];
   for (const ref of moving) {
@@ -478,6 +572,7 @@ const WHITELIST = Object.freeze({
   "connection.reconnectEnd": mapConnectionReconnect,
   "elements.move": mapElementsMove,
   "spaceTool": mapSpaceTool,
+  "id.updateClaim": mapIdUpdateClaim,
 });
 
 export function isReplayCommand(descriptor) {
@@ -518,7 +613,7 @@ export function mapCommandToOps(descriptor) {
   }
 
   const inverse = action === "undo";
-  const mapped = mapper(context, inverse);
+  const mapped = mapper(context, inverse, action);
   // S3: батч-мапперы (elements.move/spaceTool) возвращают {ops: [...]};
   // одиночные — {op}. Ни op, ни ops → честный needsFullSave.
   const mappedOps = Array.isArray(mapped?.ops) && mapped.ops.length > 0
