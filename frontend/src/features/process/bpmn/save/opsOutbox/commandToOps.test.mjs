@@ -614,10 +614,9 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
 });
 
 test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", () => {
-  // S4 волны 1-2 сняли TextAnnotation и data-refs; список — остающиеся cold.
+  // S4 волны 1-3 сняли TextAnnotation, data-refs и lane; cold — participant.
   for (const type of [
     "bpmn:Participant",
-    "bpmn:Lane",
   ]) {
     const out = mapCommandToOps({
       command: "shape.create",
@@ -661,11 +660,10 @@ test("task shape.create still maps to op (unsafe guard does not leak)", () => {
 });
 
 test("unsafe BPMN artifact element.updateProperties types → needsFullSave with no ops", () => {
-  // S4 волны 1-2 сняли TextAnnotation/Association и data-refs; список —
-  // остающиеся cold.
+  // S4 волны 1-3 сняли TextAnnotation/Association, data-refs и lane; cold —
+  // participant.
   for (const type of [
     "bpmn:Participant",
-    "bpmn:Lane",
   ]) {
     const elRef = { id: "X", businessObject: { $type: type } };
     for (const action of ["execute", "undo"]) {
@@ -685,7 +683,7 @@ test("unsafe BPMN artifact element.updateProperties types → needsFullSave with
 });
 
 test("artifact element.updateLabel: cold-типы needsFullSave, textAnnotation — ops (S4 волна 1)", () => {
-  for (const type of ["bpmn:Participant", "bpmn:Lane"]) {
+  for (const type of ["bpmn:Participant"]) {
     const out = mapCommandToOps({
       command: "element.updateLabel",
       action: "execute",
@@ -1045,8 +1043,8 @@ test("S4w1: updateLabel обычного элемента не затронут 
   assert.deepEqual(out.ops[0].properties, { name: "N" });
 });
 
-test("S4w1→w3: participant/lane остаются cold (data-refs сняты волной 2, lane — волной 3)", () => {
-  for (const type of ["bpmn:Participant", "bpmn:Lane"]) {
+test("S4w1→w3: participant остаётся cold (data-refs — волна 2, lane — волна 3)", () => {
+  for (const type of ["bpmn:Participant"]) {
     const out = mapCommandToOps({
       command: "shape.create",
       action: "execute",
@@ -1082,8 +1080,8 @@ test("S4w2: shape.create bpmn:DataStoreReference / bpmn:DataObjectReference → 
   }
 });
 
-test("S4w2: participant/lane остаются cold (свои волны / cold-статус)", () => {
-  for (const type of ["bpmn:Participant", "bpmn:Lane"]) {
+test("S4w2→w3: participant остаётся cold (lane снят волной 3)", () => {
+  for (const type of ["bpmn:Participant"]) {
     const out = mapCommandToOps({
       command: "shape.create",
       action: "execute",
@@ -1094,4 +1092,38 @@ test("S4w2: participant/lane остаются cold (свои волны / cold-�
     });
     assert.equal(out.needsFullSave, true, `${type} ещё cold`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S4, волна 3): lane в ops
+// (flowNodeRef-контракт). Golden (evidence/s4/logs/s4-wave23-golden.xml):
+// <bpmn:laneSet><bpmn:lane id/></bpmn:laneSet> в process; DI isHorizontal.
+// Undo-семантика: create undo → compensating delete-op; delete ПУСТОГО lane →
+// ops; delete lane с flowNodeRef → backend typed 422 (fail-closed) → честный
+// full-save через degrade (S6 закроет молчаливость).
+// ---------------------------------------------------------------------------
+
+test("S4w3: shape.create bpmn:Lane → op; participant остаётся cold", () => {
+  const lane = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      element: { id: "Lane_1", type: "bpmn:Lane", bounds: { x: 900, y: 210, width: 400, height: 100 } },
+      parent: { id: "Participant_1" },
+    },
+  });
+  assert.equal(lane.needsFullSave, false, "Lane create — ops с S4 волны 3");
+  assert.equal(lane.ops.length, 1);
+  assert.equal(lane.ops[0].elementType, "bpmn:Lane");
+  assert.equal(lane.ops[0].parentId, "Participant_1");
+
+  const participant = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      element: { id: "Participant_1", type: "bpmn:Participant", bounds: { x: 1, y: 2, width: 3, height: 4 } },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(participant.needsFullSave, true, "participant — cold навсегда");
 });
