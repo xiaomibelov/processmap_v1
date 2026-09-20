@@ -182,31 +182,35 @@ export default function createLocalMutationStaging(options = {}) {
     // never pay a full runtime.getXml (RC1: save hot-path on drag).
     const command = resolveCommand(ev);
     let positional = isPositionalCommand(command);
-    let autosaveSkipped = positional;
-    let skipReason = positional ? "positional_command" : "";
+
+    // S3 (op wave A): консультация SaveOutbox СНАЧАЛА — раньше guard
+    // `!autosaveSkipped` делал предикат недостижимым для positional-команд
+    // (positional помечался skipped до консультации): positional-интерактив
+    // не мог уйти в ops. dedup-ledger свежий: wiring консультирует предикат
+    // ПОСЛЕ outbox.pushCommand.
+    let opsCaptured = false;
+    if (shouldSkipAutosave) {
+      try {
+        opsCaptured = shouldSkipAutosave(command) === true;
+      } catch {
+        // предикат не должен ломать staging — консервативно НЕ считаем захват
+        opsCaptured = false;
+      }
+    }
 
     // While the user is dragging the canvas, suppress autosave for every
     // command — structural changes are coalesced and flushed after drag end.
-    if (!autosaveSkipped && getIsDragging()) {
+    let skipReason = "";
+    if (!positional && getIsDragging()) {
       positional = true;
-      autosaveSkipped = true;
       skipReason = "drag_in_progress";
     }
-
-    // SaveOutbox полностью захватил команду как ops — полный autosave для
-    // неё не планируем (persistence владеет pipeline "ops"). Предикат
-    // консультируется ПОСЛЕ onRuntimeChange(ev) — outbox.pushCommand
-    // (wiring) обновляет dedup-ledger раньше этого решения.
-    if (!autosaveSkipped && shouldSkipAutosave) {
-      try {
-        if (shouldSkipAutosave(command) === true) {
-          autosaveSkipped = true;
-          skipReason = "ops_outbox_captured";
-        }
-      } catch {
-        // предикат не должен ломать staging — консервативно НЕ скипаем
-      }
+    if (!skipReason) {
+      skipReason = opsCaptured ? "ops_outbox_captured" : (positional ? "positional_command" : "");
     }
+    // autosaveSkipped: outbox захватил команду целиком (ops-путь) ИЛИ
+    // positional без захвата (keep-final arm ниже).
+    const autosaveSkipped = opsCaptured || positional;
     // In-frame мы НЕ сериализуем модель ни для одного типа команд: и positional,
     // и structural правки на схемах 250+ элементов оплачиваются полным saveXML
     // (O(n) по элементам) на КАЖДУЮ команду. Вместо этого делаем синхронный
@@ -233,12 +237,13 @@ export default function createLocalMutationStaging(options = {}) {
       reason: "runtime_change",
     });
 
-    // Три исхода: (1) positional — keep-final flush после drag-end/таймера;
+    // Три исхода: (1) positional БЕЗ ops-захвата — keep-final flush после
+    // drag-end/таймера (lane.updaterefs и пр. вне ops-покрытия; durability);
     // (2) команда полностью захвачена SaveOutbox как ops — full-save НЕ
-    // планируем вообще (persistence владеет pipeline "ops"; positional-
-    // таймер здесь недопустим — он дал бы параллельный PUT поверх ops);
-    // (3) обычная structural-команда — автосохранение координатора.
-    if (positional) {
+    // планируем И keep-final arm НЕ взводим (иначе параллельный full-PUT
+    // поверх ops-flush; S3 вытеснение full-save arm positional-ветки);
+    // (3) обычная structural-команда без захвата — автосохранение координатора.
+    if (positional && !opsCaptured) {
       emit?.("STAGE_POSITIONAL_CHANGE", {
         sid,
         command,
@@ -248,6 +253,13 @@ export default function createLocalMutationStaging(options = {}) {
       notifyPositionalPending?.();
     } else if (!autosaveSkipped) {
       requestAutosave?.("autosave");
+    } else if (positional && opsCaptured) {
+      emit?.("STAGE_POSITIONAL_CHANGE", {
+        sid,
+        command,
+        reason: "ops_outbox_captured",
+        autosaveSkipped: true,
+      });
     }
 
     return {
