@@ -13,6 +13,12 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response, StreamingResponse
 
 from .. import _legacy_main
+from ..admin_capability_map import (
+    build_attention,
+    build_capability_map,
+    count_llm_provider_errors_conn,
+    resolve_runtime_flags,
+)
 from ..utils.authz import is_role_allowed, scope_allowed_project_ids
 from ..ai.execution_log import list_ai_executions
 from ..ai.module_catalog import ai_module_catalog_payload, ai_provider_settings_summary
@@ -27,6 +33,7 @@ from ..ai.prompt_registry import (
 )
 from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, find_user_by_id, list_users as list_auth_users, update_user
+from .feature_flags import _DEFAULT_FLAGS
 from ..error_events import redact_context_json
 from ..redis_client import get_client, runtime_status
 from ..settings import load_llm_settings, save_llm_settings, verify_llm_settings
@@ -769,7 +776,7 @@ def admin_dashboard(request: Request) -> Any:
         }
         for item in audit_items[:20]
     ]
-    return {
+    payload = {
         "ok": True,
         "generated_at": _now_iso(),
         "org": {
@@ -834,6 +841,39 @@ def admin_dashboard(request: Request) -> Any:
             "reason": _as_text(redis_runtime.get("reason")),
         },
     }
+
+    llm_errors_24h = 0
+    flags_for_map: Dict[str, bool] = {}
+    rag_readiness = None
+    # Все добавленные чтения — на одном соединении (флаги, llm-агрегат, rag readiness).
+    try:
+        with _connect() as con:
+            flags_for_map = resolve_runtime_flags(con, _DEFAULT_FLAGS, oid or "")
+            llm_errors_24h = count_llm_provider_errors_conn(con, oid or "")
+            rag_readiness = _rag_readiness_counts(con, oid or "")
+    except Exception:
+        pass
+    graph_freshness_iso = ""
+    try:
+        snapshots = list_snapshots() or []
+        if snapshots:
+            graph_freshness_iso = _as_text(snapshots[0].get("created_at"))
+    except Exception:
+        graph_freshness_iso = ""
+    payload["attention"] = build_attention(payload, llm_provider_errors_24h=llm_errors_24h)
+    payload["capability_map"] = build_capability_map(
+        payload,
+        flags=flags_for_map,
+        env_flags={"FPC_ASYNC_SUBPROCESS_SYNC": _env_async_subprocess_sync_enabled()},
+        llm_provider_errors_24h=llm_errors_24h,
+        rag_readiness=rag_readiness,
+        graph_freshness_iso=graph_freshness_iso,
+    )
+    return payload
+
+
+def _env_async_subprocess_sync_enabled() -> bool:
+    return str(os.environ.get("FPC_ASYNC_SUBPROCESS_SYNC", "0") or "").strip() == "1"
 
 
 class OrgStatusPatchIn(BaseModel):
