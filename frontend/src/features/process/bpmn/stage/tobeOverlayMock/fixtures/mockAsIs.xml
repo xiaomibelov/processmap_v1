@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_MockAsIs"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_MockAsIs" isExecutable="false">
+    <bpmn:startEvent id="MockAsIs_Start" />
+    <bpmn:userTask id="MockAsIs_TaskReview" name="Проверить заявку" />
+    <bpmn:endEvent id="MockAsIs_End" />
+    <bpmn:sequenceFlow id="MockAsIs_Flow_1" sourceRef="MockAsIs_Start" targetRef="MockAsIs_TaskReview" />
+    <bpmn:sequenceFlow id="MockAsIs_Flow_2" sourceRef="MockAsIs_TaskReview" targetRef="MockAsIs_End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_MockAsIs">
+    <bpmndi:BPMNPlane id="BPMNPlane_MockAsIs" bpmnElement="Process_MockAsIs">
+      <bpmndi:BPMNShape id="Shape_MockAsIs_Start" bpmnElement="MockAsIs_Start"><dc:Bounds x="132" y="152" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MockAsIs_TaskReview" bpmnElement="MockAsIs_TaskReview"><dc:Bounds x="240" y="130" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MockAsIs_End" bpmnElement="MockAsIs_End"><dc:Bounds x="452" y="152" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_MockAsIs_Flow_1" bpmnElement="MockAsIs_Flow_1"><di:waypoint x="168" y="170" /><di:waypoint x="240" y="170" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_MockAsIs_Flow_2" bpmnElement="MockAsIs_Flow_2"><di:waypoint x="380" y="170" /><di:waypoint x="452" y="170" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
