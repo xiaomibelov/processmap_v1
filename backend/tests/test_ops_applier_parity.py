@@ -642,6 +642,37 @@ class OpsApplierParityTests(unittest.TestCase):
         self.assertIsNotNone(self._find(out, "Task_large_new"))
         self._assert_di_invariants(out, deleted_ids=("Task_g100", "Flow_100", "Flow_101"))
 
+    def test_scale_guard_1000_elements_50_ops_applies_fast(self):
+        # S3 (op wave A): scale-guard контура — 1000 элементов (1000 tasks +
+        # 1001 flows + DI) и батч 50 ops. До id-индекса applier был
+        # O(ops×N) по root.iter(); индекс даёт O(N) на батч + O(1) на op.
+        xml_text = _gen_large_bpmn(1000)
+        root = ET.fromstring(xml_text)
+        self.assertGreater(len(list(root.iter())), 2000)
+        ops = []
+        for i in range(46):
+            ops.append({"opId": f"sg-op-{i}", "type": "element.updateProperties",
+                        "elementId": f"Task_g{i}", "properties": {"name": f"SG {i}"}})
+        ops.append({"opId": "sg-move", "type": "shape.move", "elementId": "Task_g500",
+                    "x": 42, "y": 43})
+        ops.append({"opId": "sg-resize", "type": "shape.resize", "elementId": "Task_g501",
+                    "width": 200, "height": 120})
+        ops.append({"opId": "sg-di", "type": "element.updateDi", "elementId": "Flow_500",
+                    "waypoints": [[1, 2], [3, 4]]})
+        ops.append({"opId": "sg-create", "type": "shape.create", "elementId": "Task_sg_new",
+                    "bpmnType": "bpmn:Task", "x": 50, "y": 60, "width": 100, "height": 80,
+                    "parentId": "Process_large"})
+        self.assertEqual(len(ops), 50)
+        start = time.monotonic()
+        result = self._apply(xml_text, ops)
+        elapsed = time.monotonic() - start
+        self.assertLess(elapsed, 5.0, f"apply too slow at 1000 elements / 50 ops: {elapsed:.2f}s")
+        out = ET.fromstring(result)
+        for i in range(46):
+            self.assertEqual(self._find(out, f"Task_g{i}").get("name"), f"SG {i}")
+        self.assertIsNotNone(self._find(out, "Task_sg_new"))
+        self._assert_di_invariants(out, required_ids={"Task_sg_new"})
+
 
 if __name__ == "__main__":
     unittest.main()
