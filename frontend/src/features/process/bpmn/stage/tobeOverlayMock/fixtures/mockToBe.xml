@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_MockToBe"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_MockToBe" isExecutable="false">
+    <bpmn:startEvent id="MockToBe_Start" />
+    <bpmn:userTask id="MockToBe_TaskReview" name="Проверить и согласовать заявку" />
+    <bpmn:userTask id="MockToBe_TaskApprove" name="Согласовать с руководителем" />
+    <bpmn:endEvent id="MockToBe_End" />
+    <bpmn:sequenceFlow id="MockToBe_Flow_1" sourceRef="MockToBe_Start" targetRef="MockToBe_TaskReview" />
+    <bpmn:sequenceFlow id="MockToBe_Flow_2" sourceRef="MockToBe_TaskReview" targetRef="MockToBe_TaskApprove" />
+    <bpmn:sequenceFlow id="MockToBe_Flow_3" sourceRef="MockToBe_TaskApprove" targetRef="MockToBe_End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_MockToBe">
+    <bpmndi:BPMNPlane id="BPMNPlane_MockToBe" bpmnElement="Process_MockToBe">
+      <bpmndi:BPMNShape id="Shape_MockToBe_Start" bpmnElement="MockToBe_Start"><dc:Bounds x="132" y="152" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MockToBe_TaskReview" bpmnElement="MockToBe_TaskReview"><dc:Bounds x="240" y="130" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MockToBe_TaskApprove" bpmnElement="MockToBe_TaskApprove"><dc:Bounds x="452" y="130" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MockToBe_End" bpmnElement="MockToBe_End"><dc:Bounds x="664" y="152" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_MockToBe_Flow_1" bpmnElement="MockToBe_Flow_1"><di:waypoint x="168" y="170" /><di:waypoint x="240" y="170" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_MockToBe_Flow_2" bpmnElement="MockToBe_Flow_2"><di:waypoint x="380" y="170" /><di:waypoint x="452" y="170" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_MockToBe_Flow_3" bpmnElement="MockToBe_Flow_3"><di:waypoint x="592" y="170" /><di:waypoint x="664" y="170" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
