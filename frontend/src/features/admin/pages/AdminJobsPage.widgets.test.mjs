@@ -1,5 +1,7 @@
-// Проверка переезда карточки «Проверка эндпоинтов» с дашборда в Админ / LLM.
-// Запуск: node --test src/features/admin/pages/AdminDashboardPage.endpointCheck.test.mjs
+// RED→GREEN: перенос виджетов на /admin/jobs (feature/admin-dashboard-v2-feature-map).
+// AutoPassOutcomesWidget + JobsThroughputWidget (собственный fetch dashboard на странице),
+// дубли удалены: QueueHealthWidget + recent-failures блок.
+// Запуск: node --test src/features/admin/pages/AdminJobsPage.widgets.test.mjs
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -25,7 +27,7 @@ async function loadPage() {
       appType: "custom",
     });
   }
-  const mod = await viteServer.ssrLoadModule("/src/features/admin/pages/AdminDashboardPage.jsx");
+  const mod = await viteServer.ssrLoadModule("/src/features/admin/pages/AdminJobsPage.jsx");
   return mod.default;
 }
 
@@ -44,8 +46,26 @@ function jsonResponse(data, status = 200) {
   };
 }
 
+const DASHBOARD_PAYLOAD = {
+  ok: true,
+  generated_at: "2026-09-20T12:00:00+03:00",
+  redis_health: { mode: "ON", queue_enabled: true, queue_depth: 2 },
+  jobs_health: { queue_depth: 2, autopass_runs: 10, autopass_done: 7, lock_busy_total: 1, avg_duration_s: 5 },
+  charts: { autopass_outcomes: { runs: 10, done: 7, failed: 3, success_rate_pct: 70 } },
+};
+
+const JOBS_PAYLOAD = {
+  ok: true,
+  summary: { queued: 1, running: 0, failed: 1, completed: 8, total: 10, avg_duration_s: 5, lock_busy_total: 1 },
+  queue_health: { enabled: true, queue_depth: 2, mode: "redis", state: "ready", degraded: false, incident: false, reason: "" },
+  items: [
+    { job_id: "job-1", session_id: "s-1", status: "failed", last_error: "boom" },
+  ],
+  count: 1,
+};
+
 function setupDom() {
-  const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true, url: "http://localhost/" });
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true, url: "http://localhost/admin/jobs" });
   const previous = {
     window: globalThis.window,
     document: globalThis.document,
@@ -72,7 +92,7 @@ function setupDom() {
   globalThis.sessionStorage = dom.window.sessionStorage;
   globalThis.fetch = async (url) => {
     const u = String(url);
-    if (u.includes("/api/feature-flags")) return jsonResponse({ flags: {} });
+    if (u.includes("/api/admin/dashboard")) return jsonResponse(DASHBOARD_PAYLOAD);
     return jsonResponse({ ok: true, items: [] });
   };
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -101,64 +121,47 @@ function setupDom() {
   return { dom, root, cleanup };
 }
 
-async function flush(ms = 60) {
+async function flush(ms = 80) {
   await act(async () => { await new Promise((r) => setTimeout(r, ms)); });
 }
 
-test("AdminDashboardPage: без права canOpenApiDocs карточка «переехало» не в DOM", async () => {
-  const Page = await loadPage();
-  const { dom, root, cleanup } = setupDom();
+test("SMOKE: /admin/jobs рендерится с перенесёнными виджетами и без дублей", async () => {
+  const env = setupDom();
   try {
+    const Page = await loadPage();
     await act(async () => {
-      root.render(React.createElement(Page, { payload: {}, onNavigate: () => {}, canOpenApiDocs: false }));
+      env.root.render(React.createElement(Page, { payload: JOBS_PAYLOAD, onNavigate: () => {} }));
     });
     await flush();
-    assert.equal(dom.window.document.querySelector('[data-testid="endpoint-check-moved-link"]'), null);
-    assert.equal(dom.window.document.body.textContent.includes("Проверка эндпоинтов"), false);
+    const text = env.dom.window.document.body.textContent;
+    assert.ok(text.includes("AutoPass Outcomes"), "AutoPassOutcomesWidget на месте");
+    assert.ok(text.includes("Jobs Throughput"), "JobsThroughputWidget на месте");
+    assert.ok(text.includes("70%"), "success rate из dashboard fetch");
+    assert.equal(text.includes("Состояние очереди"), false, "QueueHealthWidget-дубль удалён");
+    assert.equal(text.includes("Последние сбои"), false, "recent-failures-дубль удалён");
   } finally {
-    await cleanup();
+    await env.cleanup();
   }
 });
 
-test("AdminDashboardPage: с правом — видна карточка «переехало» со ссылкой на /admin/llm?tab=endpoint-check", async () => {
-  const Page = await loadPage();
-  const { dom, root, cleanup } = setupDom();
-  let navigated = "";
+test("/admin/jobs: onNavigate проброшен в AutoPassOutcomesWidget", async () => {
+  const env = setupDom();
   try {
+    const Page = await loadPage();
+    let navigated = null;
     await act(async () => {
-      root.render(React.createElement(Page, {
-        payload: {},
-        onNavigate: (path) => { navigated = path; },
-        canOpenApiDocs: true,
-      }));
+      env.root.render(React.createElement(Page, { payload: JOBS_PAYLOAD, onNavigate: (p) => { navigated = p; } }));
     });
     await flush();
-    const link = dom.window.document.querySelector('[data-testid="endpoint-check-moved-link"]');
-    assert.ok(link, "должна быть ссылка «переехало»");
-    assert.ok(dom.window.document.body.textContent.includes("Проверка эндпоинтов"));
-    assert.ok(dom.window.document.body.textContent.includes("Админ / LLM"));
-
+    const doc = env.dom.window.document;
+    const button = Array.from(doc.querySelectorAll("button")).find((b) => b.textContent.trim() === "Open Jobs");
+    assert.ok(button, "кнопка Open Jobs");
     await act(async () => {
-      link.dispatchEvent(new globalThis.MouseEvent("click", { bubbles: true }));
+      button.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
     });
     await flush();
-    assert.equal(navigated, "/admin/llm?tab=endpoint-check");
+    assert.equal(navigated, "/admin/jobs");
   } finally {
-    await cleanup();
-  }
-});
-
-test("AdminDashboardPage: виджет проверки эндпоинтов (run-button) больше не живёт на дашборде", async () => {
-  const Page = await loadPage();
-  const { dom, root, cleanup } = setupDom();
-  try {
-    await act(async () => {
-      root.render(React.createElement(Page, { payload: {}, onNavigate: () => {}, canOpenApiDocs: true }));
-    });
-    await flush();
-    assert.equal(dom.window.document.querySelector('[data-testid="endpoint-check-run-button"]'), null);
-    assert.equal(dom.window.document.querySelector('[data-testid="endpoint-check-panel"]'), null);
-  } finally {
-    await cleanup();
+    await env.cleanup();
   }
 });

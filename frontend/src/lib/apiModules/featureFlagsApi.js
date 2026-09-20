@@ -6,6 +6,11 @@ export async function apiGetFeatureFlags() {
   return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
 }
 
+export async function apiGetFeatureFlagsCatalog() {
+  const r = okOrError(await request(apiRoutes.admin.featureFlagsCatalog(), { method: "GET" }));
+  return r.ok ? { ok: true, groups: r.data?.groups || [], meta: r.data?.meta || null } : r;
+}
+
 export async function apiPatchFeatureFlags(flags = {}) {
   const r = okOrError(
     await request(apiRoutes.admin.featureFlagsPatch(), {

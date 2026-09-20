@@ -223,6 +223,7 @@ function AdminAppInner({
           onRefresh={() => orgsQ.reload?.()}
           recentInvite={recentOrgInvite}
           onInviteCreated={setRecentOrgInvite}
+          onNavigate={onNavigate}
         />
       );
     }
@@ -289,11 +290,12 @@ function AdminAppInner({
             );
           }}
           onOpenSession={(sid) => onNavigate?.(`/admin/sessions/${encodeURIComponent(toText(sid))}${rawSearch ? `?${rawSearch}` : ""}`)}
+          onNavigate={onNavigate}
         />
       );
     }
     if (route.section === "jobs") {
-      return <AdminJobsPage payload={jobsQ.data || {}} />;
+      return <AdminJobsPage payload={jobsQ.data || {}} onNavigate={onNavigate} />;
     }
     if (route.section === "audit") {
       return (

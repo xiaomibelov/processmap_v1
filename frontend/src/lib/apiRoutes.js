@@ -327,6 +327,7 @@ export const apiRoutes = {
     ragIndexingPlan: () => "/api/admin/rag/indexing-plan",
     featureFlags: () => "/api/admin/feature-flags",
     featureFlagsPatch: () => "/api/admin/feature-flags",
+    featureFlagsCatalog: () => "/api/admin/feature-flags/catalog",
     endpointCheckRun: () => "/api/admin/endpoint-check/run",
     endpointCheckStatus: () => "/api/admin/endpoint-check/status",
     endpointCheckRuns: (params = {}) => withQuery("/api/admin/endpoint-check/runs", params),

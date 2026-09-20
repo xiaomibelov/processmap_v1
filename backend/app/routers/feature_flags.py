@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Request, HTTPException
 
+from ..feature_flag_catalog import ENV_FLAG_CATALOG, build_catalog_payload
 from ..redis_client import get_client
 from ..storage import get_feature_flags, set_feature_flag
 
@@ -78,7 +79,22 @@ def get_feature_flags_endpoint(request: Request) -> Any:
     return {"ok": True, "flags": _get_flags(org_id)}
 
 
-@router.patch("/api/admin/feature-flags")
+def _reject_env_flags(keys) -> None:
+    env_keys = [str(k) for k in keys if str(k) in ENV_FLAG_CATALOG]
+    if env_keys:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "FEATURE_FLAG_ENV_READONLY",
+                "message": f"env-managed flag is read-only: {', '.join(env_keys)}",
+            },
+        )
+
+
+@router.patch("/api/admin/feature-flags", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin или членство в организации с нужными правами"},
+    422: {"description": "Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY"},
+})
 def patch_feature_flags_endpoint(request: Request, body: Dict[str, Any]) -> Any:
     user = _request_auth_user(request)
     if not bool(user.get("is_admin")):
@@ -87,12 +103,16 @@ def patch_feature_flags_endpoint(request: Request, body: Dict[str, Any]) -> Any:
     if hasattr(request.state, "org_id"):
         org_id = str(request.state.org_id or "")
     updates = body.get("flags", {})
+    _reject_env_flags(list(updates.keys()))
     for flag, value in updates.items():
         _set_flag(org_id, flag, bool(value))
     return {"ok": True, "flags": _get_flags(org_id)}
 
 
-@router.put("/api/admin/feature-flags/{key}")
+@router.put("/api/admin/feature-flags/{key}", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin или членство в организации с нужными правами"},
+    422: {"description": "Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY"},
+})
 def put_feature_flag_endpoint(key: str, request: Request, body: Dict[str, Any]) -> Any:
     user = _request_auth_user(request)
     if not bool(user.get("is_admin")):
@@ -100,6 +120,30 @@ def put_feature_flag_endpoint(key: str, request: Request, body: Dict[str, Any]) 
     org_id = ""
     if hasattr(request.state, "org_id"):
         org_id = str(request.state.org_id or "")
+    _reject_env_flags([key])
     value = bool(body.get("value")) if "value" in body else False
     _set_flag(org_id, key, value)
     return {"ok": True, "key": key, "value": value, "flags": _get_flags(org_id)}
+
+
+@router.get("/api/admin/feature-flags/catalog", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin или членство в организации с нужными правами"},
+})
+def get_feature_flags_catalog_endpoint(request: Request) -> Any:
+    user = _request_auth_user(request)
+    if not bool(user.get("is_admin")):
+        raise HTTPException(status_code=403, detail="admin required")
+    org_id = ""
+    if hasattr(request.state, "org_id"):
+        org_id = str(request.state.org_id or "")
+    flags = _get_flags(org_id)
+    try:
+        db_flags = get_feature_flags() or {}
+    except Exception as exc:
+        logger.warning("feature_flags: catalog db read failed: %s", exc)
+        db_flags = {}
+    return build_catalog_payload(
+        flags=flags,
+        db_keys=list(db_flags.keys()),
+        defaults=_DEFAULT_FLAGS,
+    )
