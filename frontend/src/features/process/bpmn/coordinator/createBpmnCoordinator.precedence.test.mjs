@@ -793,3 +793,55 @@ test("Ф5: flushSave propagates subprocesses_sync=pending into SAVE_PERSIST_DONE
   const doneEvent = traces.find((entry) => entry.event === "SAVE_PERSIST_DONE");
   assert.equal(doneEvent?.payload?.subprocesses_sync, "pending");
 });
+
+// Контур fix/ops-422 (RC2): pending-replay вооружается ДЕТЕРМИНИРОВАННО из
+// setPendingSave — без ожидания applyRuntimeStatus (blackhole при
+// неприходе status-события).
+
+test("fix422 RC2: pending (runtime not_ready, пустой store) → replay PUT без status-события", async () => {
+  if (typeof globalThis.window === "undefined") {
+    globalThis.window = globalThis;
+  }
+  const store = {
+    getState: () => ({ xml: "", rev: 3, dirty: true, lastSavedRev: 0, lastHash: "" }),
+    setXml: (xml, source, options = {}) => ({ xml, source, dirty: true, rev: options?.bumpRev === false ? 3 : 4 }),
+    markSaved: () => {},
+  };
+  const persistCalls = [];
+  const runtime = {
+    getStatus: () => ({ ready: false, defs: false, token: 7 }),
+    getXml: async () => ({ ok: false, reason: "not_ready" }),
+    onChange: () => () => {},
+    onStatus: () => () => {},
+  };
+  const coordinator = createBpmnCoordinator({
+    store,
+    getRuntime: () => runtime,
+    getSessionId: () => "sid_rc2",
+    debounceMs: 10_000,
+    persistence: {
+      saveRaw: async (sid, xml, rev, reason) => {
+        persistCalls.push({ reason, rev });
+        return { ok: true, storedRev: rev, hash: "h" };
+      },
+      cacheRaw: () => ({ ok: true }),
+      loadRaw: async () => ({ ok: true, xml: "", rev: 0 }),
+    },
+  });
+  try {
+    // not_ready + пустой fallback → PUT не выполняется, pending поставлен.
+    await coordinator.flushSave("autosave");
+    assert.equal(persistCalls.length, 0, "not_ready без fallback: PUT отложен");
+    // runtime «ожил» к моменту replay — replay обязан доехать БЕЗ status-события.
+    runtime.getStatus = () => ({ ready: true, defs: true, token: 7 });
+    runtime.getXml = async () => ({ ok: true, xml: "<bpmn:definitions id=\"a\"/>", token: 7 });
+    store.getState = () => ({ xml: "<bpmn:definitions id=\"a\"/>", rev: 3, dirty: true, lastSavedRev: 0, lastHash: "" });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.ok(
+      persistCalls.length >= 1,
+      "pending-replay из setPendingSave: PUT доехал БЕЗ applyRuntimeStatus-события (RC2 fix)",
+    );
+  } finally {
+    coordinator.destroy();
+  }
+});

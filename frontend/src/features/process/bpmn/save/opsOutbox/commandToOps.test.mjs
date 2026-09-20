@@ -130,7 +130,7 @@ test("connection.updateWaypoints → op element.updateDi with waypoints (DI-only
     command: "connection.updateWaypoints",
     action: "execute",
     context: {
-      connection: el("Flow_1", { type: "bpmn:SequenceFlow" }),
+      connection: el("Flow_1", { type: "bpmn:SequenceFlow", waypoints: [[1, 2], [3, 4]] }),
       newWaypoints: [[0, 0], [50, 50]],
       oldWaypoints: [[0, 0], [40, 40]],
     },
@@ -175,7 +175,7 @@ test("shape.create / connection.create → full descriptor ops", () => {
     command: "connection.create",
     action: "execute",
     context: {
-      connection: el("Flow_2", { type: "bpmn:SequenceFlow" }),
+      connection: el("Flow_2", { type: "bpmn:SequenceFlow", waypoints: [[1, 2], [3, 4]] }),
       source: { id: "Task_1" },
       target: { id: "Task_2" },
     },
@@ -553,7 +553,7 @@ test("create ops carry the client-generated element id in payload (server preser
     command: "connection.create",
     action: "execute",
     context: {
-      connection: el("Flow_clientid_2", { type: "bpmn:SequenceFlow" }),
+      connection: el("Flow_clientid_2", { type: "bpmn:SequenceFlow", waypoints: [[1, 2], [3, 4]] }),
       source: { id: "Task_1" },
       target: { id: "Task_2" },
     },
@@ -583,7 +583,7 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
     command: "connection.create",
     action: "execute",
     context: {
-      connection: el("Assoc_1", { type: "bpmn:Association" }),
+      connection: el("Assoc_1", { type: "bpmn:Association", waypoints: [[1, 2], [3, 4]] }),
       source: { id: "Task_1" },
       target: { id: "Annotation_1" },
     },
@@ -605,7 +605,7 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
     command: "connection.create",
     action: "execute",
     context: {
-      connection: el("Flow_1", { type: "bpmn:SequenceFlow" }),
+      connection: el("Flow_1", { type: "bpmn:SequenceFlow", waypoints: [[1, 2], [3, 4]] }),
       source: { id: "Task_1" },
       target: { id: "Task_2" },
     },
@@ -738,7 +738,7 @@ test("undo of shape.create / connection.create → compensating delete op (не 
     command: "connection.create",
     action: "undo",
     context: {
-      connection: el("Flow_2", { type: "bpmn:SequenceFlow" }),
+      connection: el("Flow_2", { type: "bpmn:SequenceFlow", waypoints: [[1, 2], [3, 4]] }),
       source: { id: "Task_1" },
       target: { id: "Task_2" },
     },
@@ -1383,3 +1383,112 @@ test("S7: documentation как plain string маппится (pinpoint drift :47
   assert.equal(out.needsFullSave, false, "string documentation — валидный payload (было: needsFullSave)");
   assert.deepEqual(out.ops[0].properties.documentation, [{ text: "Строка без массива" }]);
 });
+
+// ---------------------------------------------------------------------------
+// Контур fix/ops-422-quick-create-property (audit RC1/RC2 + parity-gaps):
+//  - elements.create (палитра bpmn-js 18 / diagram-js batch) → декомпозиция
+//    в СУЩЕСТВУЮЩИЕ shape.create/connection.create ops (новых типов НЕТ);
+//    undo → compensating delete-батч. Fail-closed: неполный elements →
+//    needsFullSave (не молчаливый no-op).
+//  - parity (a): properties с ключом id — ключ отфильтровывается; только id →
+//    needsFullSave (applier 422 protected_property недопустим).
+//  - parity (b): connection.create БЕЗ waypoints → needsFullSave (applier
+//    требует ≥2 waypoints → иначе 422 missing_waypoints).
+// ---------------------------------------------------------------------------
+
+test("fix422: elements.create (палитра) → батч shape.create/connection.create ops", () => {
+  const out = mapCommandToOps({
+    command: "elements.create",
+    action: "execute",
+    context: {
+      elements: [
+        { id: "Task_new1", type: "bpmn:UserTask", bounds: { x: 300, y: 200, width: 120, height: 80 }, parentId: "Process_1" },
+        { id: "Task_new2", type: "bpmn:UserTask", bounds: { x: 520, y: 200, width: 120, height: 80 }, parentId: "Process_1" },
+        { id: "Flow_new", type: "bpmn:SequenceFlow", sourceId: "Task_new1", targetId: "Task_new2", waypoints: [[420, 240], [520, 240]], parentId: "Process_1" },
+      ],
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.create", "shape.create", "connection.create"]);
+  assert.equal(out.ops[0].elementType, "bpmn:UserTask");
+  assert.deepEqual(out.ops[0].bounds, { x: 300, y: 200, width: 120, height: 80 });
+  assert.equal(out.ops[2].sourceId, "Task_new1");
+  assert.equal(out.ops[2].targetId, "Task_new2");
+  assert.deepEqual(out.ops[2].waypoints, [[420, 240], [520, 240]]);
+});
+
+test("fix422: undo elements.create → compensating delete-батч", () => {
+  const out = mapCommandToOps({
+    command: "elements.create",
+    action: "undo",
+    context: {
+      elements: [
+        { id: "Task_new1", type: "bpmn:UserTask", bounds: { x: 300, y: 200, width: 120, height: 80 } },
+        { id: "Flow_new", type: "bpmn:SequenceFlow", sourceId: "Task_new1", targetId: "Task_new2", waypoints: [[420, 240], [520, 240]] },
+      ],
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.delete", "connection.delete"]);
+  assert.equal(out.ops[0].elementId, "Task_new1");
+  assert.equal(out.ops[1].elementId, "Flow_new");
+});
+
+test("fix422: elements.create fail-closed — пустой elements / entry без id/bounds → needsFullSave", () => {
+  const empty = mapCommandToOps({ command: "elements.create", action: "execute", context: { elements: [] } });
+  assert.equal(empty.needsFullSave, true);
+
+  const noBounds = mapCommandToOps({
+    command: "elements.create",
+    action: "execute",
+    context: { elements: [{ id: "Task_x", type: "bpmn:UserTask" }] },
+  });
+  assert.equal(noBounds.needsFullSave, true, "shape без bounds — recreate дырявый");
+
+  const unsafe = mapCommandToOps({
+    command: "elements.create",
+    action: "execute",
+    context: { elements: [{ id: "Participant_x", type: "bpmn:Participant", bounds: { x: 1, y: 2, width: 3, height: 4 }, parentId: "P" }] },
+  });
+  assert.equal(unsafe.needsFullSave, true, "unsafe-тип — cold как раньше");
+});
+
+test("fix422: parity(a) — properties с ключом id: ключ отфильтрован; только id → needsFullSave", () => {
+  const mixed = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { id: "Hacked", name: "N" },
+    },
+  });
+  assert.equal(mixed.needsFullSave, false);
+  assert.deepEqual(mixed.ops[0].properties, { name: "N" }, "id не уходит в op-payload (applier 422 protected_property)");
+
+  const onlyId = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { id: "Hacked" },
+    },
+  });
+  assert.equal(onlyId.needsFullSave, true, "только id — нечего писать, честный full-save");
+});
+
+test("fix422: parity(b) — connection.create без waypoints → needsFullSave (не 422 missing_waypoints)", () => {
+  const out = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    context: {
+      element: { id: "Flow_x", type: "bpmn:SequenceFlow" },
+      source: { id: "Task_1" },
+      target: { id: "Task_2" },
+    },
+  });
+  assert.equal(out.needsFullSave, true);
+  assert.equal(out.ops.length, 0);
+});
+
+// Контур fix/ops-422 (RC2): deferredSaveRetry — одноразовый retry по
+// directEditing.complete/cancel.
