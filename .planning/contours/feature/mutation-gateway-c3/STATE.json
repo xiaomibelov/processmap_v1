@@ -167,6 +167,22 @@
       ],
       "next": "S7 undo-of-delete compensating create-op + undo coalesced journal; S8 метрики + ре-базелина coverage-спеки",
       "pushed_sha": "6dda5d91"
+    },
+    "s7": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "undo/redo полнота: undo delete → compensating create с id (id.updateClaim enrichment из elementRegistry; snapshotElementRef +parentId/endpoints/text; backend text-on-create); undo spaceTool/label-annotation по post-undo live-снапшоту (fail-closed); reconnect newSource/newTarget; :470 drift-фикс (documentation-string — S5-регрессия, спека 20/20 PASS); undo coalesced — needsFullSave сохранён; класс C — cold (порт preserve/rebuild-семантики, #995)",
+      "diffstat_commit": "740b8987",
+      "tests": "backend 58+3; save-зоны 562/563 (hang); commandToOps 69/69; полный сьют 4011, 0 новых падений",
+      "e2e_gate": "undo/redo-матрица 8 мапперов PASS (do/undo/redo 0 PUT, server truth); :470 20/20=1.00 putBpmn=0 PASS. evidence/s7/",
+      "drift_470_pinpoint": "documentation-as-string (2 правки спеки), НЕ lane.updaterefs; фикс в S7, спека зелёная — S8 ре-базелина не требуется",
+      "paths_metric_after_s7": "1+1+X, X=3: participant(навсегда)/класс C(cold, отдельная волна)/lane.updaterefs+data-ассоциации; X3 undo-of-delete ЗАКРЫТ",
+      "artifacts": [
+        "EXEC_REPORT_S7.md",
+        "PR_S7.md"
+      ],
+      "next": "S8 метрики приёмки (drag-замеры, оба S0-baseline'а); класс C ops-волна вне S8"
     }
   },
   "acceptance_metrics": {

@@ -51,3 +51,9 @@
 - Аудит PUT: все сайты lane-участники/cold-документированы; вне lane — 0.
 - e2e-регресс на ИЗОЛИРОВАННОМ стеке wt-mgc3-s6 (чужая сессия останавливала общий): undo/redo PASS; repo-спеки 5/6 (same-tab 409 silent-rebase, kill-tab, offline, exactly-once, spaceTool); :470 coverage 18/20 = pre-existing drift (доказано stash-прогоном на S5), ре-базелина — S8.
 - Метрика путей 1+1+X (X=4). Полный сьют 4002, 0 новых падений.
+
+## 2026-09-20 — S7 undo/redo полнота (Agent 2, Executor)
+- Undo delete → compensating create с id: ключевая находка — undo delete фаерит 'id.updateClaim' (пустой дескриптор); enrichment доснимает post-undo live-ref из elementRegistry; redo → delete-op. snapshotElementRef +parentId/endpoints/text; backend text-on-create.
+- Undo spaceTool/label-annotation: inverse по post-undo live-снапшоту (bounds/waypoints восстановлены на undo-changed), fail-closed.
+- :470 pinpoint: documentation-as-string (S5-регрессия маппера), НЕ lane.updaterefs; фикс → спека 20/20=1.00 putBpmn=0 PASS.
+- e2e undo-матрица 8 мапперов PASS (0 PUT на все фазы). X3 закрыт; класс C — cold (порт preserve/rebuild-семантики, #995). Метрика 1+1+X (X=3). Полный сьют 4011, 0 новых падений.
