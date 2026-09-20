@@ -208,9 +208,10 @@ test("shape.delete / connection.delete → delete ops", () => {
   );
 });
 
-test("non-whitelisted commands → needsFullSave, no ops (spaceTool, lane.resize, canvas.updateRoot)", () => {
+test("non-whitelisted commands → needsFullSave, no ops (lane.resize, canvas.updateRoot)", () => {
+  // S3: spaceTool выведен в whitelist (декомпозиция); пустой контекст spaceTool
+  // по-прежнему даёт needsFullSave через fail-closed маппер (см. S3-тесты ниже).
   for (const command of [
-    "spaceTool",
     "lane.resize",
     "canvas.updateRoot",
   ]) {
@@ -563,7 +564,9 @@ test("create ops carry the client-generated element id in payload (server preser
   assert.equal(connected.ops[0].targetId, "Task_2");
 });
 
-test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Association) → needsFullSave", () => {
+test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Association) → ops (S4 волна 1)", () => {
+  // step1 держал эти типы вне ops-payload; S4 волна 1 вывела их в ops
+  // (golden-parity evidence/s4, снятие строго парой frontend+backend).
   const annotation = mapCommandToOps({
     command: "shape.create",
     action: "execute",
@@ -572,8 +575,9 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
       parent: { id: "Process_1" },
     },
   });
-  assert.equal(annotation.needsFullSave, true, "TextAnnotation is an artifact outside ops payload (step1)");
-  assert.equal(annotation.ops.length, 0);
+  assert.equal(annotation.needsFullSave, false, "TextAnnotation create — ops с S4 волны 1");
+  assert.equal(annotation.ops.length, 1);
+  assert.equal(annotation.ops[0].type, "shape.create");
 
   const association = mapCommandToOps({
     command: "connection.create",
@@ -584,8 +588,9 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
       target: { id: "Annotation_1" },
     },
   });
-  assert.equal(association.needsFullSave, true, "Association is an artifact outside ops payload (step1)");
-  assert.equal(association.ops.length, 0);
+  assert.equal(association.needsFullSave, false, "Association create — ops с S4 волны 1");
+  assert.equal(association.ops.length, 1);
+  assert.equal(association.ops[0].type, "connection.create");
 
   const task = mapCommandToOps({
     command: "shape.create",
@@ -609,12 +614,9 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
 });
 
 test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", () => {
+  // S4 волны 1-3 сняли TextAnnotation, data-refs и lane; cold — participant.
   for (const type of [
     "bpmn:Participant",
-    "bpmn:Lane",
-    "bpmn:DataStoreReference",
-    "bpmn:DataObjectReference",
-    "bpmn:TextAnnotation",
   ]) {
     const out = mapCommandToOps({
       command: "shape.create",
@@ -627,8 +629,9 @@ test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", ()
     assert.equal(out.needsFullSave, true, `${type} requires full save`);
     assert.deepEqual(out.ops, []);
   }
-  // connection-создание artifact-ассоциаций тоже уходит в full save.
-  for (const type of ["bpmn:DataInputAssociation", "bpmn:DataOutputAssociation", "bpmn:Association"]) {
+  // connection-создание data-ассоциаций уходит в full save (S4 волна 1 сняла
+  // только bpmn:Association).
+  for (const type of ["bpmn:DataInputAssociation", "bpmn:DataOutputAssociation"]) {
     const out = mapCommandToOps({
       command: "connection.create",
       action: "execute",
@@ -657,13 +660,10 @@ test("task shape.create still maps to op (unsafe guard does not leak)", () => {
 });
 
 test("unsafe BPMN artifact element.updateProperties types → needsFullSave with no ops", () => {
+  // S4 волны 1-3 сняли TextAnnotation/Association, data-refs и lane; cold —
+  // participant.
   for (const type of [
     "bpmn:Participant",
-    "bpmn:Lane",
-    "bpmn:DataStoreReference",
-    "bpmn:DataObjectReference",
-    "bpmn:TextAnnotation",
-    "bpmn:Association",
   ]) {
     const elRef = { id: "X", businessObject: { $type: type } };
     for (const action of ["execute", "undo"]) {
@@ -682,18 +682,31 @@ test("unsafe BPMN artifact element.updateProperties types → needsFullSave with
   }
 });
 
-test("unsafe BPMN artifact element.updateLabel → needsFullSave with no ops", () => {
-  const out = mapCommandToOps({
+test("artifact element.updateLabel: cold-типы needsFullSave, textAnnotation — ops (S4 волна 1)", () => {
+  for (const type of ["bpmn:Participant"]) {
+    const out = mapCommandToOps({
+      command: "element.updateLabel",
+      action: "execute",
+      context: {
+        element: { id: "X", businessObject: { $type: type } },
+        newLabel: "n",
+        oldLabel: "o",
+      },
+    });
+    assert.equal(out.needsFullSave, true, `${type} updateLabel still cold`);
+    assert.deepEqual(out.ops, []);
+  }
+  const annotation = mapCommandToOps({
     command: "element.updateLabel",
     action: "execute",
     context: {
-      element: { id: "X", businessObject: { $type: "bpmn:TextAnnotation" } },
+      element: { id: "X", type: "bpmn:TextAnnotation", bounds: { x: 1, y: 1, width: 10, height: 10 } },
       newLabel: "n",
       oldLabel: "o",
     },
   });
-  assert.equal(out.needsFullSave, true, "TextAnnotation updateLabel requires full save");
-  assert.deepEqual(out.ops, []);
+  assert.equal(annotation.needsFullSave, false, "TextAnnotation updateLabel — text-op с S4 волны 1");
+  assert.equal(annotation.ops.length >= 1, true);
 });
 
 test("task element.updateProperties still maps to op (unsafe guard does not leak)", () => {
@@ -774,4 +787,599 @@ test("remote-source command is suppressed like replay — no ops, no coverage co
   assert.equal(out.needsFullSave, false);
   const coverage = getOpsCoverage();
   assert.deepEqual(coverage, { total: 0, mapped: 0, fullSave: 0 }, "coverage counters untouched");
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S3, op wave A):
+//  - elements.move → БАТЧ shape.move (по shapes-листу снапшота) +
+//    element.updateDi для affectedConnections (финальные waypoints;
+//    вложенные connection-обновления diagram-js «тихие» — commandStack.changed
+//    фаерится только на outermost action, S3-probe).
+//  - undo → компенсирующий батч: -delta по shapes; updateDi с captured-
+//    waypoints (на undo-changed рантайн переснимает post-undo состояние).
+//  - fail-closed: непустые shapes без id / без delta → needsFullSave;
+//    reparent (hints.oldParent ≠ newParent) и attach → needsFullSave.
+//  - spaceTool → декомпозиция: movingShapes→shape.move(delta),
+//    resizingShapes→shape.resize(resizeBounds-математика direction+delta),
+//    affectedConnections→updateDi. Undo spaceTool → needsFullSave (oldBounds
+//    не живёт в снапшоте; полный undo-цикл — S7).
+// ---------------------------------------------------------------------------
+
+function moveDescriptor(overrides = {}) {
+  return {
+    command: "elements.move",
+    action: "execute",
+    commandContext: {
+      shapes: [
+        { id: "Task_1", type: "bpmn:Task", bounds: { x: 100, y: 200, width: 120, height: 80 } },
+        { id: "Task_2", type: "bpmn:Task", bounds: { x: 300, y: 200, width: 120, height: 80 } },
+      ],
+      delta: { x: 40, y: 30 },
+      newParent: { id: "Process_1" },
+      affectedConnections: [
+        { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+test("S3: elements.move → батч shape.move по всем shapes + updateDi для affectedConnections", () => {
+  const out = mapCommandToOps(moveDescriptor());
+  assert.equal(out.needsFullSave, false);
+  const types = out.ops.map((op) => op.type);
+  assert.deepEqual(types, ["shape.move", "shape.move", "element.updateDi"]);
+  assert.equal(out.ops[0].elementId, "Task_1");
+  assert.equal(out.ops[1].elementId, "Task_2");
+  assert.deepEqual(out.ops[0].delta, { x: 40, y: 30 });
+  assert.deepEqual(out.ops[1].delta, { x: 40, y: 30 });
+  assert.equal(out.ops[2].elementId, "Flow_1");
+  assert.deepEqual(out.ops[2].waypoints, [[140, 240], [340, 230]]);
+  assert.equal(out.ops[0].source, "user");
+});
+
+test("S3: undo elements.move → компенсирующий батч (-delta) + updateDi с captured-waypoints", () => {
+  const descriptor = moveDescriptor();
+  descriptor.action = "undo";
+  const out = mapCommandToOps(descriptor);
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.move", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].delta, { x: -40, y: -30 });
+  assert.deepEqual(out.ops[1].delta, { x: -40, y: -30 });
+  // undo-changed переснимает post-undo waypoints — маппер использует captured как есть.
+  assert.deepEqual(out.ops[2].waypoints, [[140, 240], [340, 230]]);
+});
+
+test("S3: elements.move fail-closed — без shapes / без delta / shape без id → needsFullSave", () => {
+  const noShapes = mapCommandToOps(moveDescriptor({ shapes: [] }));
+  assert.equal(noShapes.needsFullSave, true, "пустой shapes-лист: честный full-save");
+  assert.equal(noShapes.ops.length, 0);
+
+  const noDelta = mapCommandToOps(moveDescriptor({ delta: null }));
+  assert.equal(noDelta.needsFullSave, true, "без delta батч неприменим");
+
+  const badId = mapCommandToOps(moveDescriptor({
+    shapes: [{ id: "", type: "bpmn:Task" }, { id: "Task_2" }],
+  }));
+  assert.equal(badId.needsFullSave, true, "shape без id — молчаливая потеря запрещена (pinpoint-урок)");
+  assert.equal(badId.ops.length, 0);
+});
+
+test("S3: elements.move reparent/attach → needsFullSave (ops не покрывают смену parent/host)", () => {
+  const reparent = mapCommandToOps(moveDescriptor({
+    hints: { oldParent: { id: "Sub_1" } },
+  }));
+  assert.equal(reparent.needsFullSave, true, "oldParent≠newParent — reparent вне ops-покрытия");
+
+  const attach = mapCommandToOps(moveDescriptor({
+    hints: { oldParent: { id: "Process_1" }, attach: true },
+  }));
+  assert.equal(attach.needsFullSave, true, "attach (host change) — консервативно full-save");
+
+  const sameParent = mapCommandToOps(moveDescriptor({
+    hints: { oldParent: { id: "Process_1" } },
+  }));
+  assert.equal(sameParent.needsFullSave, false, "same-parent drag остаётся в ops");
+});
+
+function spaceToolDescriptor(overrides = {}) {
+  return {
+    command: "spaceTool",
+    action: "execute",
+    commandContext: {
+      delta: { x: 80, y: 0 },
+      direction: "e",
+      start: 1580,
+      movingShapes: [
+        { id: "Task_8", type: "bpmn:Task", bounds: { x: 1640, y: 200, width: 120, height: 80 } },
+      ],
+      resizingShapes: [
+        { id: "Task_7", type: "bpmn:Task", bounds: { x: 1460, y: 200, width: 120, height: 80 } },
+      ],
+      affectedConnections: [
+        { id: "Flow_8", waypoints: [[1556, 240], [1640, 240]] },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+test("S3: spaceTool → декомпозиция shape.move + shape.resize (resizeBounds) + updateDi", () => {
+  const out = mapCommandToOps(spaceToolDescriptor());
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.resize", "element.updateDi"]);
+  assert.equal(out.ops[0].elementId, "Task_8");
+  assert.deepEqual(out.ops[0].delta, { x: 80, y: 0 });
+  assert.equal(out.ops[1].elementId, "Task_7");
+  // direction 'e' + delta.x=80 → width +80 (SpaceUtil.resizeBounds parity).
+  assert.deepEqual(out.ops[1].bounds, { x: 1460, y: 200, width: 200, height: 80 });
+  assert.equal(out.ops[2].elementId, "Flow_8");
+  assert.deepEqual(out.ops[2].waypoints, [[1556, 240], [1640, 240]]);
+});
+
+test("S3: spaceTool resizeBounds parity для всех направлений (n/s/e/w)", () => {
+  const base = { id: "Lane_1", type: "bpmn:Task", bounds: { x: 100, y: 100, width: 200, height: 100 } };
+  const cases = [
+    ["n", { x: 0, y: -30 }, { x: 100, y: 70, width: 200, height: 130 }],
+    ["s", { x: 0, y: 30 }, { x: 100, y: 100, width: 200, height: 130 }],
+    ["e", { x: 50, y: 0 }, { x: 100, y: 100, width: 250, height: 100 }],
+    ["w", { x: -50, y: 0 }, { x: 50, y: 100, width: 250, height: 100 }],
+  ];
+  for (const [direction, delta, expected] of cases) {
+    const out = mapCommandToOps(spaceToolDescriptor({
+      delta,
+      direction,
+      movingShapes: [],
+      resizingShapes: [base],
+      affectedConnections: [],
+    }));
+    assert.equal(out.needsFullSave, false, `direction ${direction} mapped`);
+    assert.deepEqual(out.ops[0].bounds, expected, `resizeBounds parity ${direction}`);
+  }
+});
+
+test("S3→S7: undo spaceTool → компенсирующий батч (post-undo live-снапшот)", () => {
+  const descriptor = spaceToolDescriptor();
+  descriptor.action = "undo";
+  // S7: на undo-changed resizingShapes несут исходные bounds — inverse маппится.
+  descriptor.commandContext.resizingShapes = [
+    { id: "Task_7", type: "bpmn:Task", bounds: { x: 1460, y: 200, width: 120, height: 80 } },
+  ];
+  const out = mapCommandToOps(descriptor);
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.resize", "element.updateDi"]);
+  assert.deepEqual(out.ops[1].bounds, { x: 1460, y: 200, width: 120, height: 80 });
+});
+
+test("S3: spaceTool fail-closed — без direction/bounds → needsFullSave", () => {
+  const noDirection = mapCommandToOps(spaceToolDescriptor({ direction: "" }));
+  assert.equal(noDirection.needsFullSave, true);
+
+  const noBounds = mapCommandToOps(spaceToolDescriptor({
+    resizingShapes: [{ id: "Task_7" }],
+  }));
+  assert.equal(noBounds.needsFullSave, true, "resize без bounds — молчаливая потеря запрещена");
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S4, волна 1): textAnnotation +
+// association в ops. Golden-эталон — реальный full-PUT bpmn-js (evidence/s4/
+// logs/s4-golden.xml): text — дочерний <bpmn:text>; association — атрибуты
+// sourceRef/targetRef БЕЗ incoming/outgoing. Undo-семантика волны (явно):
+// create undo → compensating delete-op; move undo → -delta (S3); text-edit
+// undo → needsFullSave (oldBounds не живёт в снапшоте — записано в PR_S4).
+// ---------------------------------------------------------------------------
+
+test("S4w1: shape.create bpmn:TextAnnotation → op (тип снят из full-save pattern)", () => {
+  const out = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementType, "bpmn:TextAnnotation");
+  assert.deepEqual(out.ops[0].bounds, { x: 650, y: 485, width: 100, height: 30 });
+});
+
+test("S4w1: connection.create bpmn:Association → op (artifactRef в sourceId/targetId)", () => {
+  const out = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    context: {
+      element: { id: "Association_1", type: "bpmn:Association", waypoints: [[417, 228], [684, 485]] },
+      source: { id: "Task_1" },
+      target: { id: "TextAnnotation_1" },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "connection.create");
+  assert.equal(out.ops[0].elementType, "bpmn:Association");
+  assert.equal(out.ops[0].sourceId, "Task_1");
+  assert.equal(out.ops[0].targetId, "TextAnnotation_1");
+  assert.deepEqual(out.ops[0].waypoints, [[417, 228], [684, 485]]);
+});
+
+test("S4w1: updateLabel на textAnnotation → updateProperties{text} + shape.resize (bounds под текст)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "execute",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      newLabel: "Золотой эталон",
+      oldLabel: "",
+      newBounds: { x: 650, y: 485, width: 140, height: 50 },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["element.updateProperties", "shape.resize"]);
+  assert.deepEqual(out.ops[0].properties, { text: "Золотой эталон" });
+  assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 140, height: 50 });
+});
+
+test("S4w1→S7: undo updateLabel textAnnotation → text(oldLabel) + resize(post-undo bounds)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      newLabel: "Новый",
+      oldLabel: "Старый",
+      newBounds: { x: 650, y: 485, width: 140, height: 50 },
+    },
+  });
+  assert.equal(out.needsFullSave, false, "S7: undo-правка маппится (post-undo bounds в снапшоте)");
+  assert.deepEqual(out.ops[0].properties, { text: "Старый" });
+  assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 100, height: 30 });
+});
+
+test("S4w1: updateLabel обычного элемента не затронут (name-путь как раньше)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "execute",
+    context: { element: { id: "Task_1", type: "bpmn:UserTask" }, newLabel: "N", oldLabel: "O" },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops[0].properties, { name: "N" });
+});
+
+test("S4w1→w3: participant остаётся cold (data-refs — волна 2, lane — волна 3)", () => {
+  for (const type of ["bpmn:Participant"]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: { element: { id: "X_1", type, bounds: { x: 1, y: 2, width: 3, height: 4 } }, parent: { id: "P" } },
+    });
+    assert.equal(out.needsFullSave, true, `${type} ещё cold`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S4, волна 2): dataStoreReference /
+// dataObjectReference в ops. Golden (evidence/s4/logs/s4-wave23-golden.xml):
+// dataStoreReference — пустой leaf; dataObjectReference несёт dataObjectRef
+// на companion <bpmn:dataObject> (bpmn-js удаляет сироту при save — backend
+// повторяет). Undo-семантика: create undo → compensating delete-op; move undo
+// → -delta (S3); delete undo → needsFullSave (S7-скоуп).
+// ---------------------------------------------------------------------------
+
+test("S4w2: shape.create bpmn:DataStoreReference / bpmn:DataObjectReference → ops", () => {
+  for (const type of ["bpmn:DataStoreReference", "bpmn:DataObjectReference"]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: {
+        element: { id: `${type.split(":")[1]}_1`, type, bounds: { x: 300, y: 620, width: 36, height: 50 } },
+        parent: { id: "Process_1" },
+      },
+    });
+    assert.equal(out.needsFullSave, false, `${type} create — ops с S4 волны 2`);
+    assert.equal(out.ops.length, 1);
+    assert.equal(out.ops[0].type, "shape.create");
+    assert.equal(out.ops[0].elementType, type);
+  }
+});
+
+test("S4w2→w3: participant остаётся cold (lane снят волной 3)", () => {
+  for (const type of ["bpmn:Participant"]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: {
+        element: { id: "X_1", type, bounds: { x: 1, y: 2, width: 3, height: 4 } },
+        parent: { id: "P" },
+      },
+    });
+    assert.equal(out.needsFullSave, true, `${type} ещё cold`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S4, волна 3): lane в ops
+// (flowNodeRef-контракт). Golden (evidence/s4/logs/s4-wave23-golden.xml):
+// <bpmn:laneSet><bpmn:lane id/></bpmn:laneSet> в process; DI isHorizontal.
+// Undo-семантика: create undo → compensating delete-op; delete ПУСТОГО lane →
+// ops; delete lane с flowNodeRef → backend typed 422 (fail-closed) → честный
+// full-save через degrade (S6 закроет молчаливость).
+// ---------------------------------------------------------------------------
+
+test("S4w3: shape.create bpmn:Lane → op; participant остаётся cold", () => {
+  const lane = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      element: { id: "Lane_1", type: "bpmn:Lane", bounds: { x: 900, y: 210, width: 400, height: 100 } },
+      parent: { id: "Participant_1" },
+    },
+  });
+  assert.equal(lane.needsFullSave, false, "Lane create — ops с S4 волны 3");
+  assert.equal(lane.ops.length, 1);
+  assert.equal(lane.ops[0].elementType, "bpmn:Lane");
+  assert.equal(lane.ops[0].parentId, "Participant_1");
+
+  const participant = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      element: { id: "Participant_1", type: "bpmn:Participant", bounds: { x: 1, y: 2, width: 3, height: 4 } },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(participant.needsFullSave, true, "participant — cold навсегда");
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S5): property panel → ops.
+// Класс B (documentation): bpmn-js шлёт моддл-массив modeling.updateProperties(
+// el, {documentation: [moddle]}). sanitizeValue терял его молча (ДЫРА: no-op op).
+// S5: сериализация rows {text, textFormat} → op-payload; backend replace-children.
+// Класс C (extensionElements / camunda custom properties): структурный payload —
+// fail-closed needsFullSave (round-trip риск #995; boundary пишет full-PUT).
+// Undo: oldProperties-ветка зеркалит execute (documentation rows).
+// ---------------------------------------------------------------------------
+
+function documentationDescriptor(text, textFormat = "text/plain") {
+  // имитация moddle-объекта bpmn:Documentation (геттеры text/textFormat)
+  return { $type: "bpmn:Documentation", text, textFormat };
+}
+
+test("S5: updateProperties documentation (moddle rows) → op payload rows (раньше молча терялось)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: [documentationDescriptor("Строка 1"), documentationDescriptor("Строка 2", "text/html")] },
+    },
+  });
+  assert.equal(out.needsFullSave, false, "documentation rows маппятся в op (больше не молчаливый no-op)");
+  assert.equal(out.ops.length, 1);
+  assert.deepEqual(out.ops[0].properties.documentation, [
+    { text: "Строка 1", textFormat: "text/plain" },
+    { text: "Строка 2", textFormat: "text/html" },
+  ]);
+});
+
+test("S5: undo updateProperties documentation → oldProperties rows (parity)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "undo",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: [documentationDescriptor("Новое")] },
+      oldProperties: { documentation: [documentationDescriptor("Старое")] },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops[0].properties.documentation, [{ text: "Старое", textFormat: "text/plain" }]);
+});
+
+test("S5: updateProperties с documentation-битым row → needsFullSave (fail-closed)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: [{ $type: "bpmn:Documentation" }] },
+    },
+  });
+  assert.equal(out.needsFullSave, true, "row без text — не сериализуем, честный full-save");
+  assert.equal(out.ops.length, 0);
+});
+
+test("S5: updateProperties extensionElements (moddle) → needsFullSave (класс C cold, причина #995)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { extensionElements: { $type: "bpmn:ExtensionElements", values: [] } },
+    },
+  });
+  assert.equal(out.needsFullSave, true, "extensionElements — структурный payload, fail-closed");
+  assert.equal(out.ops.length, 0);
+
+  const mixed = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { name: "X", extensionElements: { $type: "bpmn:ExtensionElements" } },
+    },
+  });
+  assert.equal(mixed.needsFullSave, true, "смешанный payload с moddle — целиком full-save");
+});
+
+test("S5: updateProperties sanitize-контракт — скаляры/вложенные plain-объекты по-прежнему ок", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { name: "N", "camunda:assignee": "demo", meta: { a: 1, b: [1, 2] } },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops[0].properties, { name: "N", "camunda:assignee": "demo", meta: { a: 1, b: [1, 2] } });
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S7): undo/redo полнота.
+//  - undo delete → compensating create-op С СОХРАНЕНИЕМ id (контракт step2;
+//    snapshotElementRef enrichment: parentId + text для textAnnotation);
+//  - undo spaceTool / undo text-edit аннотации — inverse по post-undo
+//    live-состоянию (снимок на undo-changed = восстановленное состояние);
+//  - documentation как plain string (pinpoint drift :470 — регрессия S5);
+//  - fail-closed: битый снапшот (нет bounds/type) → needsFullSave с причиной.
+// ---------------------------------------------------------------------------
+
+test("S7: undo shape.delete → compensating shape.create с тем же id/bounds/parentId", () => {
+  const out = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: {
+      element: { id: "Task_9", type: "bpmn:UserTask", bounds: { x: 300, y: 200, width: 120, height: 80 }, parentId: "Process_1" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementId, "Task_9");
+  assert.equal(out.ops[0].elementType, "bpmn:UserTask");
+  assert.deepEqual(out.ops[0].bounds, { x: 300, y: 200, width: 120, height: 80 });
+  assert.equal(out.ops[0].parentId, "Process_1");
+});
+
+test("S7: undo connection.delete → compensating connection.create (source/target/waypoints)", () => {
+  const out = mapCommandToOps({
+    command: "connection.delete",
+    action: "undo",
+    context: {
+      element: { id: "Flow_9", type: "bpmn:SequenceFlow", waypoints: [[100, 240], [300, 240]], parentId: "Process_1" },
+      source: { id: "Task_1" },
+      target: { id: "Task_2" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops[0].type, "connection.create");
+  assert.equal(out.ops[0].elementId, "Flow_9");
+  assert.equal(out.ops[0].sourceId, "Task_1");
+  assert.equal(out.ops[0].targetId, "Task_2");
+  assert.deepEqual(out.ops[0].waypoints, [[100, 240], [300, 240]]);
+});
+
+test("S7: undo delete textAnnotation → create с text-пayload", () => {
+  const out = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_9", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 }, parentId: "Process_1", text: "Сохранить id" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementType, "bpmn:TextAnnotation");
+  assert.equal(out.ops[0].text, "Сохранить id");
+});
+
+test("S7: undo delete fail-closed — нет bounds/type → needsFullSave (не молчаливый no-op)", () => {
+  const noBounds = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: { element: { id: "Task_9", type: "bpmn:UserTask" } },
+  });
+  assert.equal(noBounds.needsFullSave, true, "recreate без bounds — дыра DI");
+  const noType = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: { element: { id: "Task_9", bounds: { x: 1, y: 1, width: 10, height: 10 } } },
+  });
+  assert.equal(noType.needsFullSave, true, "recreate без типа — нечего создавать");
+});
+
+test("S7: undo spaceTool → -delta move + resize по post-undo bounds + updateDi", () => {
+  const out = mapCommandToOps({
+    command: "spaceTool",
+    action: "undo",
+    context: {
+      delta: { x: 80, y: 0 },
+      movingShapes: [
+        { id: "Task_8", type: "bpmn:UserTask", bounds: { x: 1480, y: 200, width: 120, height: 80 } },
+      ],
+      resizingShapes: [
+        // post-undo live bounds = исходные
+        { id: "Task_7", type: "bpmn:UserTask", bounds: { x: 1300, y: 200, width: 120, height: 80 } },
+      ],
+      affectedConnections: [
+        { id: "Flow_8", waypoints: [[1476, 240], [1480, 240]] },
+      ],
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.resize", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].delta, { x: -80, y: -0 });
+  assert.deepEqual(out.ops[1].bounds, { x: 1300, y: 200, width: 120, height: 80 });
+  assert.deepEqual(out.ops[2].waypoints, [[1476, 240], [1480, 240]]);
+});
+
+test("S7: undo spaceTool fail-closed — resize без bounds → needsFullSave", () => {
+  const out = mapCommandToOps({
+    command: "spaceTool",
+    action: "undo",
+    context: {
+      delta: { x: 80, y: 0 },
+      movingShapes: [],
+      resizingShapes: [{ id: "Task_7" }],
+      affectedConnections: [],
+    },
+  });
+  assert.equal(out.needsFullSave, true);
+});
+
+test("S7: undo text-edit аннотации → text(oldLabel) + resize по post-undo bounds", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      newLabel: "Новый",
+      oldLabel: "Старый",
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["element.updateProperties", "shape.resize"]);
+  assert.deepEqual(out.ops[0].properties, { text: "Старый" });
+  assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 100, height: 30 });
+});
+
+test("S7: undo text-edit аннотации fail-closed — нет bounds → needsFullSave", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation" },
+      newLabel: "N",
+      oldLabel: "O",
+    },
+  });
+  assert.equal(out.needsFullSave, true, "без bounds resize-компенсация невозможна");
+});
+
+test("S7: documentation как plain string маппится (pinpoint drift :470, регрессия S5)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: "Строка без массива" },
+    },
+  });
+  assert.equal(out.needsFullSave, false, "string documentation — валидный payload (было: needsFullSave)");
+  assert.deepEqual(out.ops[0].properties.documentation, [{ text: "Строка без массива" }]);
 });

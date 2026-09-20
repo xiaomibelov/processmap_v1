@@ -23,9 +23,12 @@ test("nested execute from within a transport does not deadlock", async () => {
   c.registerPipeline("xml", {
     debounceMs: 0,
     transportTimeoutMs: 200,
-    transport: async (sessionId) => {
+    // C3/S1: вложенный execute проходит lane inline ТОЛЬКО по явному токену
+    // chain (4-й аргумент transport'а → payload.mutationLaneContext) — без
+    // токена вызов встанет в FIFO-очередь за внешним xml-прогоном (deadlock).
+    transport: async (sessionId, _payload, _signal, laneContext) => {
       order.push("xml:start");
-      const nested = await c.execute("rawXml", { sessionId });
+      const nested = await c.execute("rawXml", { sessionId, mutationLaneContext: laneContext });
       order.push("xml:nested-done");
       return nested?.ok ? { ok: true, status: 200 } : { ok: false, status: 0, error: "nested failed" };
     },

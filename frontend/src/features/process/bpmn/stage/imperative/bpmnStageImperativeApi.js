@@ -648,6 +648,19 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
       const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
       if (!inst) return { ok: false, error: "modeler_not_ready" };
+      // S5: modeler-apply внутри boundary-save подавляем commandStack-эхо —
+      // boundary перзистит полным путём (saveBpmnState → xml pipeline), а
+      // modeling.updateProperties(extensionElements) иначе дал бы фантомный
+      // no-op op в outbox (класс C, fail-closed в маппере → и двойной PUT).
+      const suppressRef = refs.suppressCommandStackRef;
+      if (suppressRef && typeof suppressRef === "object") {
+        suppressRef.current = Number(suppressRef.current || 0) + 1;
+        try {
+          return applyCamundaExtensionStateToModeler(elementId, extensionStateRaw, inst);
+        } finally {
+          suppressRef.current = Math.max(0, Number(suppressRef.current || 0) - 1);
+        }
+      }
       return applyCamundaExtensionStateToModeler(elementId, extensionStateRaw, inst);
     },
     getBaseDiagramStateVersion: () => {

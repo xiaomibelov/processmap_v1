@@ -1,0 +1,258 @@
+{
+  "contour": "feature/mutation-gateway-c3",
+  "type": "feature",
+  "role": "planner",
+  "phase": "S8_DONE_READY_FOR_REVIEW",
+  "approved_at": "2026-09-19",
+  "approved_by": "владелец (explicit approve с условиями)",
+  "created": "2026-09-19",
+  "ready_for_execution": true,
+  "ready_flag_created": true,
+  "baseline": {
+    "origin_main_planned": "29640de0",
+    "origin_main_actual": "2c051887",
+    "note": "по условию владельца ветка от ФАКТИЧЕСКОГО origin/main (2c051887, включает #1004 e2e-only). Дельта 29640de0->2c051887 только test(e2e), на save-путь не влияет. file:line PLAN.md верифицированы на 29640de0"
+  },
+  "exec_conditions": [
+    "1. Ветка feature/mutation-gateway-c3 от фактического origin/main (2c051887), не от 29640de0",
+    "2. Первый коммит ветки: PLAN.md + STATE.json в .planning/contours/feature/mutation-gateway-c3/ (аудит PLAN-гейта в репо)",
+    "3. S0 (attribution, 0.5 дн) БЛОКИРУЮЩИЙ: повторить V5 live, объяснить full-PUT до любых изменений кода; проверить гипотезу владельца: PUT = keep-final flush координатора по notifyPositionalPending после drag-end (createLocalMutationStaging.js, STAGE_POSITIONAL_CHANGE)",
+    "4. Дата смерти full-PUT fallback — явно: 2026-10-03 (последний день fpc_gateway_cold_fallback; после даты флаг и ветки удаляются или эскалация владельцу); дата в READY_FOR_EXECUTION и в каждом PR",
+    "5. Метрика путей до/после (18 -> 1+1) — в описании каждого PR контура",
+    "6. Приёмка drag p95 < 50 мс @1000+ эл. — только реальный mouse drag (R-2), не синтетика",
+    "7. Merge/deploy/PR — только explicit approve владельца; PR и описание на русском"
+  ],
+  "cold_fallback_death_date": "2026-10-03",
+  "sources": [
+    "audit/save-pipeline-big-review/CONSOLIDATION-PLAN.md (T1)",
+    "audit/save-pipeline-big-review/evidence/A5-map.md (18 путей/8 писателей/13 таймеров/9 degrade)",
+    "fix/canvas-overlays-preferences-409/evidence/F4-inventory.md (S1-S6, positional leak)",
+    "audit/c1-c2-stage-verification/V5_PERF.md (drag p95 312.2ms @602эл, 1 full-PUT на moveShape, 50 req/8.06MB)",
+    "fix/self-conflict-silent-rebase/PLAN.md (контракт conflictSilentRebase.js + trySilentRebase hook, MERGED #1003)",
+    "step1/step2 архитектура (#989/#992 ops outbox + IDB journal + SSE ops_committed)",
+    "E3-урок: unsafe типы fail-closed (ops_applier.py:53-62 _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES)"
+  ],
+  "key_findings": [
+    "#1003 уже в baseline: trySilentRebase hook, conflictSilentRebase.js (контракт C3), outbox gate-block handling — аудит частично устарел",
+    "positional-ветка staging на 29640de0 УЖЕ консультирует outbox (createLocalMutationStaging.js:200-209) — описание F4 устарело",
+    "ПРОТИВОРЕЧИЕ: V5 на том же 29640de0 показал 1 full-PUT на moveShape при 0 ops POST → S0 attribution блокирующий; гипотеза владельца: keep-final flush по notifyPositionalPending",
+    "per-session single queue не существует (queueKey pipeline::sessionId, saveCoordinator.js:49-56); ad-hoc исключения: busy-poll 200ms, preserve sentinel, flushPromise, beginSingleWriter",
+    "backend: op-матрица фронт/бек идентична; разрывы elements.move/spaceTool/lane.updaterefs/artifact-типы (обе стороны fail-closed); applier O(N)/op без id-индекса",
+    "client_id в server_last_write подтверждён во всех 19 call sites (closure C2)",
+    "RAG: приёмка perf только на реальном mouse drag (прошлые perf-контуры rejected); React ~95% CPU drag — риск R-2"
+  ],
+  "t3_assessment": "НЕ поглощать: C4 отдельным контуром (2-3 дн); C3 даёт фундамент (saveCoordinator единственный bump-путь), граница контракта зафиксирована",
+  "slices": [
+    "S0 attribution 0.5d (БЛОКИРУЮЩИЙ)",
+    "S1 gateway-lane 2d",
+    "S2 positional closure 1-2d",
+    "S3 op wave A 2d",
+    "S4 artifact types 2-3d",
+    "S5 property ops 1-2d",
+    "S6 degrade replacement 1d",
+    "S7 undo/redo 1d",
+    "S8 metrics 1d"
+  ],
+  "slices_progress": {
+    "s2": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "keep-final positional flush → lane-семантику: armDragFinalTimer без guard saveInFlight, F3 re-arm (finally flushSave/persistExplicitXml) удалён, lane даёт детерминированный defer + base-at-send-time. Перенос БЕЗ СЪЁМА (e2e: drag→reload→элемент на месте, keep-final PUT 524мс после mouseup)",
+      "diffstat": "2 файла +248/-12 (координатор +12/-12 фактически -2 строки + новый characterization-файл +236)",
+      "tests": "coordinator-зона 91/91; полный сьют 3978, 0 новых падений vs S1-baseline",
+      "e2e_gate": "PASS 2/2 на локальном стеке ветки (COMPOSE_PROJECT_NAME=wt-mgc3-s2, API 18011, frontend 15177; чужой стек wt-audit-canvas-409 на 8011/5177 не тронут). evidence/s2/",
+      "artifacts": [
+        "EXEC_REPORT_S2.md",
+        "PR_S2.md"
+      ],
+      "next": "S3 op wave A: elements.move батч shape.move + backend id-индекс",
+      "pushed_sha": "2122dbe1"
+    },
+    "s3_pinpoint": {
+      "date": "2026-09-20",
+      "finding": "elements.move commandContext = {delta, parent} — список перемещаемых элементов теряется. diagram-js Modeling.moveElements строит контекст с полем shapes (diagram-js/lib/features/modeling/Modeling.js:236-243), а snapshotCommandContext (createBpmnRuntime.js:155-190) маппит только context.elements — shapes молча пропускается; newParent доезжает через алиас parent",
+      "evidence": "evidence/s2/s2-e2e-drag-persist.mjs (rt.onChange probe на реальном drag, logs/s2-events.jsonl: pinpoint-drag-events ctxKeys=[delta,parent])",
+      "fix_in_s3": "snapshotCommandContext: добавить маппинг context.shapes (~4 строки, аналог context.elements) + маппер elements.move → батч shape.move в commandToOps; snapshotElementRef уже несёт id/bounds/waypoints — для батч-маппинга достаточно",
+      "volume": "~5-8 строк runtime + маппер + parity-тесты (S3)"
+    },
+    "s1": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "per-session mutation lane (gatewayLane.js) в saveCoordinator; поглощение busy-poll 200ms / fullSavePreserve+manualSaveCoveredOpIds sentinel-пары / coordinator flushPromise; gatewayPutBpmnXml для 6 прямых PUT; kill-switch fpc_gateway_lane (default ON)",
+      "design_invariant": "lane на уровне mutation-intent; reentrancy СТРОГО по explicit chain-token (transport 4-й арг → options.laneContext → payload.mutationLaneContext); внешний вызов без токена всегда FIFO-очередь; meta/analysis mutationLane:false (C2-контракт); beginSingleWriter (template_apply) не тронут",
+      "red_green": "RED 4 падения (serialization + deterministic-resume) → GREEN; итерация temporal-reentrancy отклонена тестами; entry-time проверки outbox-flush перепроверяются в lane-task",
+      "tests": "save-зоны 526/527 (1 fail pre-existing на origin/main); полный сьют 3975 тестов, 0 новых падений vs origin/main (identical failure sets)",
+      "diffstat": "18 файлов +694/-196; net save-ядро -84 строки; createSaveOutbox.js 1029→1000",
+      "artifacts": [
+        "EXEC_REPORT_S1.md",
+        "PR_S1.md",
+        "JOURNAL.md"
+      ],
+      "push_pr_merge": "НЕ выполнялись (по условию владельца); PR_S1.md готов к approve",
+      "next": "S2 positional closure (по результатам S0: удаление full-save arm createLocalMutationStaging.js:236-251)"
+    },
+    "s3": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "op wave A: elements.move батч shape.move (+undo -delta) + affectedConnections updateDi; spaceTool декомпозиция (move+resize+updateDi); runtime-снапшот shapes/movingShapes/resizingShapes/hints/direction/start; staging guard-перестройка (консультация outbox первой, keep-final arm гаснет при захвате — full-save arm positional-ветки вытеснен); backend id→element индекс + scale-guard 1000эл/50ops (0.08s)",
+      "diffstat_commits": [
+        "4ec579f0 mapper+snapshot",
+        "d342bdca backend index",
+        "a244c00b staging arm вытеснение"
+      ],
+      "tests": "save-зоны 539/540 (1 pre-existing); backend parity/applier 34+3 subtests, scale-guard 0.08s; полный сьют 3988, 0 регрессий (presence-poller load-flaky семейство)",
+      "e2e_gate": "PASS (a)-(d) на контейнере: drag/multi/spaceTool/createShape — 0 PUT /bpmn, ≥1 POST /operations, reload-равенство server truth. evidence/s3/",
+      "paths_metric_after_s3": "18→17: positional-интерактив (drag single/multi, spaceTool) ушёл в ops; до 1+1 остаётся S4 artifacts / S5 property / S6 degrade+прямые PUT",
+      "artifacts": [
+        "EXEC_REPORT_S3.md",
+        "PR_S3.md"
+      ],
+      "next": "S4 artifact-типы (textAnnotation/association/data-refs) обе стороны fail-closed; participant остаётся cold",
+      "pushed_sha": "00840106"
+    },
+    "s4": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "artifact-типы волнами: w1 textAnnotation+association (golden: <bpmn:text> child; association без incoming/outgoing; каскад delete), w2 data-refs (companion dataObject create/delete cascade), w3 lane (laneSet/processRef/isHorizontal; fail-closed lane_not_empty typed 422). participant — cold навсегда (обоснование в PR_S4)",
+      "diffstat_commits": [
+        "340274f0 w1",
+        "001a0410 w2",
+        "42c67330 w3"
+      ],
+      "tests": "backend 56+3 subtests; frontend save-зоны 548/549 (1 pre-existing); полный сьют 3997, 0 новых падений",
+      "e2e_gate": "все 3 волны PASS на контейнере: create/move/delete → 0 PUT /bpmn, ≥1 POST /operations, reload server truth (текст/assoc/companion/laneSet/DI). evidence/s4/",
+      "undo_semantics": "create→compensating delete; move→-delta; text-edit annotation undo→needsFullSave (oldBounds не в снапшоте); populated lane delete→typed 422; delete undo→S7",
+      "paths_metric_after_s4": "18→14: textAnnotation/association/data-refs/lane ушли из full-путей; остаются participant(cold навсегда)/data-ассоциации/property(S5)/degrade(S6)/undo-delete(S7)",
+      "artifacts": [
+        "EXEC_REPORT_S4.md",
+        "PR_S4.md"
+      ],
+      "next": "S5 property panel → element.updateProperties ops",
+      "pushed_sha": "da4a267c"
+    },
+    "s5": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "property panel → element.updateProperties ops: класс B documentation (ДЫРА sanitize: moddle rows терялись молча → serializeDocumentationRows + backend replace-children golden-parity), класс B2 camunda-атрибуты verbatim (+applier xmlns-declaration, unbound prefix краш), класс C camunda custom properties — explicit cold (needsFullSave, причина #995) + suppression boundary-apply (фантомный op/двойной PUT устранены). sanitizeValue-контракт усилен: moddle → needsFullSave",
+      "inventory": "EXEC_REPORT_S5 §Инвентаризация (классы A/B/B2/C + file:line)",
+      "diffstat_commit": "90fcb467 (+267/-8 по 6 файлам)",
+      "tests": "backend 58+3 subtests; frontend save-зоны 553/554 (hang pre-existing); полный сьют 4002, 0 новых падений",
+      "e2e_gate": "PASS (rename/documentation/camunda:assignee → 0 PUT, 1 ops, reload server truth; контейнер 15177). evidence/s5/",
+      "hang_test_verdict": "pre-existing: transportTimeoutMs 60_000 намеренно > hang 12с теста; не дыра S5; tech-debt мини-фикс вне скоупа",
+      "paths_metric_after_s5": "14→13: documentation в ops; cold: C(#995)/participant/data-ассоциации/degrade(S6)/undo-delete(S7)/системные §9",
+      "artifacts": [
+        "EXEC_REPORT_S5.md",
+        "PR_S5.md"
+      ],
+      "next": "S6 degrade-замена + аудит прямых PUT + fpc_gateway_cold_fallback-ветки",
+      "pushed_sha": "24897363"
+    },
+    "s6": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "degrade-замена: 9 веток → conflictStop (C2 gate+modal) / inlineStop (422/transport, backoff-retry); degrade() удалён; needsFullSave — explicit cold; UI-стадии ops-conflict/unsupported/error. Аудит PUT: все сайты lane/cold-документированы, вне lane — 0. fpc_gateway_cold_fallback в коде не существовал — смерть = удаление веток (дата 2026-10-03)",
+      "diffstat_commit": "ee044305 (+84/-44)",
+      "tests": "backend 58+3; save-зоны 553/554 (hang); полный сьют 4002, 0 новых падений; opsOutbox 163/163",
+      "e2e_gate": "undo/redo PASS; repo-спеки async-save: 5/6 PASS (same-tab 409 silent-rebase, spaceTool ops, kill-tab IDB, offline sync, exactly-once); :470 coverage FAIL 18/20 = pre-existing drift (идентично на S5, lane-фикстура, ре-базелина S8)",
+      "paths_metric_after_s6": "1+1+X, X=4: participant(навсегда)/класс C property(до S7+)/undo-of-delete(S7)/lane.updaterefs+data-ассоциации(вокабуларая волна)",
+      "artifacts": [
+        "EXEC_REPORT_S6.md",
+        "PR_S6.md"
+      ],
+      "next": "S7 undo-of-delete compensating create-op + undo coalesced journal; S8 метрики + ре-базелина coverage-спеки",
+      "pushed_sha": "6dda5d91"
+    },
+    "s7": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "undo/redo полнота: undo delete → compensating create с id (id.updateClaim enrichment из elementRegistry; snapshotElementRef +parentId/endpoints/text; backend text-on-create); undo spaceTool/label-annotation по post-undo live-снапшоту (fail-closed); reconnect newSource/newTarget; :470 drift-фикс (documentation-string — S5-регрессия, спека 20/20 PASS); undo coalesced — needsFullSave сохранён; класс C — cold (порт preserve/rebuild-семантики, #995)",
+      "diffstat_commit": "740b8987",
+      "tests": "backend 58+3; save-зоны 562/563 (hang); commandToOps 69/69; полный сьют 4011, 0 новых падений",
+      "e2e_gate": "undo/redo-матрица 8 мапперов PASS (do/undo/redo 0 PUT, server truth); :470 20/20=1.00 putBpmn=0 PASS. evidence/s7/",
+      "drift_470_pinpoint": "documentation-as-string (2 правки спеки), НЕ lane.updaterefs; фикс в S7, спека зелёная — S8 ре-базелина не требуется",
+      "paths_metric_after_s7": "1+1+X, X=3: participant(навсегда)/класс C(cold, отдельная волна)/lane.updaterefs+data-ассоциации; X3 undo-of-delete ЗАКРЫТ",
+      "artifacts": [
+        "EXEC_REPORT_S7.md",
+        "PR_S7.md"
+      ],
+      "next": "S8 метрики приёмки (drag-замеры, оба S0-baseline'а); класс C ops-волна вне S8",
+      "pushed_sha": "da179cc3"
+    },
+    "s8": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "метрики приёмки: drag-end flush (mouseup-commit); persist-латентность p50 30.3/p95 207.6/p99 329.9 мс (<300 PASS, n=20 real drags S0-методика); coverage 100% (drag 20/20 + 7 сценариев); ops 182 B vs 176 KB PUT; 0 PUT на drag; оба S0-baseline'а в отчёте (572.3 окно / ~450 PUT)",
+      "metrics_commit": "003e4cdd",
+      "tests": "backend 58+3; save-зоны 562/563 (hang); полный сьют 4011 (presence load-flaky 1 имя, изолированно 5/5); e2e async-save 6/6 (:470 20/20 putBpmn=0)",
+      "final_report": "FINAL_REPORT.md",
+      "merge": "НЕ выполнялся (prod-freeze до 22.09 ~03:11 MSK + чекпоинты +24h/+48h) — решение владельца",
+      "artifacts": [
+        "S8-METRICS.md",
+        "PR_S8.md",
+        "FINAL_REPORT.md"
+      ],
+      "pushed_sha": "9c73d905"
+    }
+  },
+  "acceptance_metrics": {
+    "0_sync_full_put_on_interactive_mutation": "route-counters PUT /bpmn в окне 6с после мутации = 0 (реальный drag, S0-методика)",
+    "elements_move_and_spacetool_to_ops": "drag-команды уходят POST /operations",
+    "drag_command_coverage": ">=95% по __PM_OPS_COVERAGE__, >=20 реальных mouse-drag'ов",
+    "persist_latency_drag_end_to_ack": "< 300 мс (S0-методика: центровка viewbox, elementFromPoint assert, HAR-timing)",
+    "write_paths": "18 -> 1 interactive (ops via gateway) + 1 cold (system PUT); метрика в каждом PR",
+    "in_flight_per_session": 1,
+    "backend_ops_p95": "<= 300ms @1000 элементов",
+    "regression": "все save/ops/conflict спеки зелёные, 0 новых падений vs origin/main"
+  },
+  "cold_fallback_death_date_rationale": "интерактивный full-PUT (positional arm + ops auto-degrade) удаляется в S2/S6 за fpc_gateway_cold_fallback; system cold-path перманентен (§9 PLAN.md); 2026-10-03 = верхняя граница EXEC+review окна",
+  "blockers": [],
+  "open_questions": [
+    "elements.move: нативный op vs батч shape.move (склонность: батч)",
+    "participant/pool: ops vs cold (прототип S4)",
+    "xml-tab snapshot: cold vs ops (по умолчанию cold)",
+    "флаг-стратегия (по умолчанию: флаг на срез)"
+  ],
+  "s0_attribution": {
+    "status": "confirmed_with_amendments",
+    "date": "2026-09-19",
+    "verdict": "Гипотеза владельца подтверждена по существу: PUT = keep-final flush координатора по notifyPositionalPending (20/20 real drags, 1 full-PUT ~176KB на ~450-466ms после mouseup = dragFinalDebounceMs 500, 0 ops POST). Уточнения: (1) реальный drag = команда 'elements.move' (не 'shape.move'), не в whitelist commandToOps.js:297-311 → needsFullSave, op не создаётся; (2) dedup-предикат staging недостижим для positional (guard !autosaveSkipped, createLocalMutationStaging.js:200-209); (3) synthesized moveShape (путь V5): op создаётся, но PUT-ack перекрывает буфер (manualSaveCoveredOpIds wipe, createSaveOutbox.js:927-966) раньше ops-flush 2500ms → 0 POST.",
+    "v5_reinterpretation": "20 drags V5 инертны (fit-viewport → topbar/оффскрин, события мимо svg; p50 309.9 = пол ввода); единственный PUT V5 — от evaluate modeling.moveShape. Реальный baseline до: p50 545.2 / p95 572.3ms (S0 run6, 602 эл.)",
+    "s3_blocker": "runtime snapshot теряет context.elements (live-дескриптор elements.move = {delta,parent}) — маппинг в батч shape.move требует починки snapshotCommandContext",
+    "s2_target": "positional-ветка createLocalMutationStaging.js:236-251 (full-save arm по notifyPositionalPending без проверки захвата) — источник PUT №1; S3-маппинг elements.move обязателен вместе со S2 для метрики 0-PUT",
+    "report": "S0-ATTRIBUTION.md",
+    "evidence": "evidence/s0/ (s0.mjs, s0b.mjs, s0-diag*.mjs, logs/)"
+  },
+  "gates": {
+    "code_written": false,
+    "s0_blocking": true,
+    "merge_deploy_pr": "строго по explicit approve владельца; PR на русском",
+    "push": "не выполнялся (локальный коммит только)",
+    "ready_for_execution_flag": "создан в workspace-контуре после коммита PLAN+STATE в ветку"
+  },
+  "artifacts": [
+    "PLAN.md",
+    "STATE.json",
+    "JOURNAL.md",
+    "READY_FOR_EXECUTION"
+  ],
+  "next": "Agent 2 (Executor): S0 attribution live → S1 gateway-lane; каждый срез = отдельный коммит(ы) + characterization-gate; PR только после approve владельца",
+  "acceptance_split": {
+    "date": "2026-09-20",
+    "decision": "владелец: приёмка разделена; C3 владеет только save-путём",
+    "removed_from_c3": "drag p95 < 50 мс @1000+ эл.",
+    "moved_to_backlog": "feature/canvas-drag-render-perf (канвас-рендер ~260мс из S0; активация отдельным approve)",
+    "s8_report_both_baselines": "drag-окно p95 572.3 мс / post-mouseup PUT ~450 мс — и к чему пришли по каждому"
+  },
+  "s8_dual_baselines": {
+    "drag_window_p95_ms": 572.3,
+    "post_mouseup_put_ms": 450
+  }
+}

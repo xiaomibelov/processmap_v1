@@ -27,11 +27,11 @@
 //    navigator.onLine === false → flush suppressed + status-событие
 //    ops-local/offline (рендеринг индикатора — следующий слайс).
 //
-// Взаимное исключение с full-save: очереди координатора per-pipeline
-// (queueKey = pipeline::session), поэтому single-writer обеспечиваем явным
-// poll'ом busy-статуса pipelines xml/rawXml перед ops-flush (full-save в
-// полёте → отложить; ack full-save → версионная reconciliation/срез по
-// sentinel, серверное состояние покрывает подтверждённые локальные ops).
+// Взаимное исключение с full-save: per-session mutation lane координатора
+// (C3/S1, gatewayLane.js) — один in-flight diagram-truth mutation-запрос на
+// сессию; ops-flush и full-save сериализуются lane детерминированно (бывший
+// busy-poll 200 мс удалён). Ack full-save снимает covered-снимок opId буфера,
+// серверное состояние покрывает подтверждённые локальные ops.
 //
 // Интеграционные точки (проводка в BpmnStage/ProcessStage — отдельный шаг
 // владельца, god-компоненты здесь не трогаем):
@@ -207,7 +207,6 @@ export function createSaveOutbox(options = {}) {
   let stage = "idle";
   let inFlight = false;
   let flushTimer = null;
-  let busyPollTimer = null;
   let syncStateTimer = null;
   let consecutiveConflicts = 0;
   // pendingAck-детач (наследие п.1): срез буфера, реально ушедший в полёт
@@ -215,20 +214,14 @@ export function createSaveOutbox(options = {}) {
   // мутаируют только его; ack снимает pendingAck целиком; 409/nack возвращает
   // его в голову буфера с сохранением opId.
   let pendingAck = null;
-  // Снимок буфера на момент старта РУЧНОГО full-save (наследие п.5, review
-  // BLOCKER-2): первый busy (stage "build") прогона xml/rawXml без активного
-  // fullSavePreserve → ops в буфере на тот момент покрываются сериализованным
-  // XML. Ack full-save снимает ТОЛЬКО их (пересечение с текущим буфером);
-  // ops, дописанные после снимка, ack'ом не покрыты — остаются и уходят
-  // следующим flush. Version-арифметика (ack.version >= base+sentCount)
-  // удалена: сервер даёт +1 на батч, не на op — порог был несостоятелен
-  // (drain терял post-flight ops, sentCount>=2 — livelock).
-  let manualSaveCoveredOpIds = null;
-  // Sentinel full-save пути, инициированного outbox'ом: opId хвоста буфера на
-  // момент делегирования (null — буфер был пуст). Ack full-save сохраняет всё,
-  // дописанное ПОСЛЕ делегирования (review BLOCKER-2, ack-wipe).
-  let fullSavePreserveActive = false;
-  let fullSavePreserveFromOpId = null;
+  // Снимок opId буфера, покрываемых уходящим full-save (единый механизм для
+  // outbox-initiated и ручного full-save, C3/S1 — вместо пары fullSavePreserve
+  // sentinel + manualSaveCoveredOpIds): XML сериализуется из модели, уже
+  // содержащей эти правки; ack full-save снимает ТОЛЬКО пересечение с текущим
+  // буфером; ops, дописанные после снимка, ack'ом не покрыты — остаются и
+  // уходят следующим flush. Определённость снимка гарантируется mutation lane:
+  // ops-flush и full-save одной сессии не бывают in-flight одновременно.
+  let fullSaveCoveredOpIds = null;
   // Online/offline: offline подавляет flush (не штатная ошибка) и эмитит
   // ops-local/offline status-событие (рендеринг индикатора — следующий слайс).
   let online = true;
@@ -258,25 +251,10 @@ export function createSaveOutbox(options = {}) {
     }
   };
 
-  const isFullSaveBusy = () => {
-    for (const name of ["xml", "rawXml"]) {
-      try {
-        if (coordinator.getStatus?.(name)?.state === "busy") return true;
-      } catch {
-        // no-op
-      }
-    }
-    return false;
-  };
-
   const clearTimers = () => {
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
-    }
-    if (busyPollTimer) {
-      clearTimeout(busyPollTimer);
-      busyPollTimer = null;
     }
     if (syncStateTimer) {
       clearTimeout(syncStateTimer);
@@ -388,25 +366,46 @@ export function createSaveOutbox(options = {}) {
     }
   };
 
-  const degrade = (reason) => {
-    if (stage !== "degraded") {
-      stage = "degraded";
-      emitStatus({ stage: "ops-degraded", reason });
-    }
-    // Деградация ≠ удаление: full-save путь должен работать — поднимаем
-    // conflict gate (tracked-base уже адоптирован серверной версией).
-    try {
-      if (coordinator.getConflict?.(sessionId)) {
-        coordinator.resolveConflict?.(sessionId, "refresh");
-      }
-    } catch {
-      // no-op
-    }
-    requestFullSave();
+  // ---------------------------------------------------------------------
+  // S6 (degrade-замена, PLAN §7): НИ ОДНОЙ молчаливой деградации. Две честные
+  // остановки вместо degrade()→silent full-PUT:
+  //  - conflictStop: координатор уже armed conflict gate (C2, 409-ветка) →
+  //    статус ops-conflict, модал через C2-контракт; gate НЕ снимаем; буфер
+  //    ops остаётся pending (journal-durable), доставка после resolve.
+  //  - inlineStop: 422/transport-failed → инлайн-оповещение с explicit reason;
+  //    буфер pending; bounded backoff-retry (детерминированный, cap из конфига).
+  // fpc_gateway_cold_fallback не существовал в коде (kill-switch уровня
+  // планирования) — «смерть флага» = удаление этих веток (S6, 2026-10-03).
+  // ---------------------------------------------------------------------
+  let failureRetryCount = 0;
+  let failureRetryTimer = null;
+
+  const conflictStop = (reason) => {
+    stage = "conflict";
+    emitStatus({ stage: "ops-conflict", reason });
+    // Gate намеренно НЕ снимаем: C2 conflict gate + honest modal.
+  };
+
+  const inlineStop = (kind, reason) => {
+    stage = "degraded";
+    emitStatus({ stage: kind === "unsupported" ? "ops-unsupported" : "ops-error", reason });
+    failureRetryCount += 1;
+    const base = Math.max(1000, asNumber(config.retryDelayMs, 1000));
+    const cap = Math.max(base, asNumber(config.maxRetryDelayMs, 8000));
+    const delay = Math.min(cap, base * 2 ** Math.min(6, failureRetryCount - 1));
+    if (failureRetryTimer) clearTimeout(failureRetryTimer);
+    failureRetryTimer = setTimeout(() => {
+      failureRetryTimer = null;
+      if (!destroyed) void flushNow({ reason: "retry-after-failure" });
+    }, delay);
+    if (typeof failureRetryTimer.unref === "function") failureRetryTimer.unref();
   };
 
   async function flushNow({ reason = "manual", keepalive = false } = {}) {
     if (stage === "degraded") return null;
+    // S6: в armed-conflict отправка бессмысленна (gate даст gate_block) —
+    // ждём resolve; retry-after-failure при conflict — no-op.
+    if (stage === "conflict" && reason !== "manual") return null;
 
     // Offline подавляет flush (не штатная ошибка): состояние уходит наружу
     // status-событием — индикатор (следующий слайс) его отрендерит.
@@ -470,68 +469,80 @@ export function createSaveOutbox(options = {}) {
     // инстанс outbox на той же сессии обязан дослать восстановленные ops.
     await hydratePromise;
 
-    if (inFlight) return null;
-
-    if (needsFullSave) {
-      // Не-whitelisted команда: текущий flush уходит существующим полным путём.
-      // Буфер НЕ чистим здесь: после ack full-save придёт coordinator
-      // "success" (xml/rawXml) и снимет подтверждённый префикс (срез от
-      // sentinel-opId хвоста на этот момент). Ops, дописанные ПОСЛЕ этого
-      // момента, ack'ом полного сохранения не покрыты — sentinel их сохранит.
-      needsFullSave = false;
-      fullSavePreserveActive = true;
-      fullSavePreserveFromOpId = buffer.length > 0 ? buffer[buffer.length - 1].opId : null;
-      requestFullSave();
-      scheduleFlush();
-      return null;
-    }
-
-    if (buffer.length === 0) return null;
-
-    // Mutual exclusion с full-save (single writer на сессию): очереди
-    // координатора per-pipeline, поэтому busy-статус xml/rawXml poll'им явно.
-    if (isFullSaveBusy()) {
-      if (!busyPollTimer) {
-        busyPollTimer = setTimeout(() => {
-          busyPollTimer = null;
-          void flushNow({ reason: "after-full-save" });
-        }, config.fullSaveBusyPollMs);
-        if (typeof busyPollTimer.unref === "function") busyPollTimer.unref();
+    // C3/S1: весь send (delegate full-save / ops POST) — task per-session
+    // mutation lane. Busy-poll 200 мс удалён: lane детерминированно сериализует
+    // ops-flush с full-save одной сессии, а освобождение (lane-release)
+    // возобновляет отложенный flush без таймера. Вложенный execute той же
+    // chain (needsFullSave → requestFullSave → rawXml) проходит lane inline.
+    const send = async (laneContext) => {
+      // Проверки entry-time (degraded/offline/conflict) устаревают, пока task
+      // ждёт в lane-очереди за in-flight мутацией — перепроверяем на момент
+      // исполнения.
+      if (stage === "degraded") return null;
+      if (stage === "conflict") return null;
+      if (isOffline()) {
+        emitStatus({ stage: "ops-local", reason, offline: true });
+        return null;
       }
-      return null;
-    }
+      if (inFlight) return null;
 
-    inFlight = true;
-    // pendingAck-детач: отправленный список живёт отдельно от буфера.
-    const sent = buffer.splice(0);
-    pendingAck = sent;
-    const wireOps = sent.map(toWireOp);
-    emitStatus({ stage: "ops-saving", opCount: wireOps.length, reason });
-    traceOpsFlush({ ts: now(), reason, opCount: wireOps.length, keepalive: false });
-    try {
-      const result = await coordinator.execute(config.pipelineName, {
-        sessionId,
-        operations: wireOps,
-        fallbackBaseVersion: getTrackedDiagramStateVersion(sessionId),
-      });
-      // fix/self-conflict-silent-rebase (R3): gate-block приходит НЕ
-      // исключением, а результатом {blockedByConflict:true} — без _onAck/
-      // _onConflict хуков (transport не дёргался). Без явной обработки
-      // inFlight оставался true навсегда → op stranded (A1-live: op
-      // baseVersion=null зависла в gate_block и не ретраилась после resolve).
-      if (result && result.blockedByConflict === true) {
+      if (needsFullSave) {
+        // Не-whitelisted команда: текущий flush уходит существующим полным путём.
+        // Буфер НЕ чистим здесь: ops, дописанные после делегирования, ack'ом
+        // полного сохранения не покрыты — единый covered-снимок (см. выше)
+        // сохранит их, подтверждённое покрытие снимет ack.
+        needsFullSave = false;
+        fullSaveCoveredOpIds = new Set(
+          buffer.map((op) => asText(op.opId)).filter(Boolean),
+        );
+        requestFullSave();
+        scheduleFlush();
+        return null;
+      }
+
+      if (buffer.length === 0) return null;
+
+      inFlight = true;
+      // pendingAck-детач: отправленный список живёт отдельно от буфера.
+      const sent = buffer.splice(0);
+      pendingAck = sent;
+      const wireOps = sent.map(toWireOp);
+      emitStatus({ stage: "ops-saving", opCount: wireOps.length, reason });
+      traceOpsFlush({ ts: now(), reason, opCount: wireOps.length, keepalive: false });
+      try {
+        const result = await coordinator.execute(config.pipelineName, {
+          sessionId,
+          operations: wireOps,
+          fallbackBaseVersion: getTrackedDiagramStateVersion(sessionId),
+          // Токен lane-task: execute "ops" идёт внутри этой же chain — без
+          // проброса встал бы в очередь за собой (deadlock).
+          ...(laneContext ? { mutationLaneContext: laneContext } : {}),
+        });
+        // fix/self-conflict-silent-rebase (R3): gate-block приходит НЕ
+        // исключением, а результатом {blockedByConflict:true} — без _onAck/
+        // _onConflict хуков (transport не дёргался). Без явной обработки
+        // inFlight оставался true навсегда → op stranded (A1-live: op
+        // baseVersion=null зависла в gate_block и не ретраилась после resolve).
+        if (result && result.blockedByConflict === true) {
+          inFlight = false;
+          restorePendingAck();
+          armPostConflictFlush();
+          emitStatus({ stage: "ops-gate-blocked", reason });
+          return result;
+        }
+        return result;
+      } catch {
         inFlight = false;
         restorePendingAck();
-        armPostConflictFlush();
-        emitStatus({ stage: "ops-gate-blocked", reason });
-        return result;
+        return null;
       }
-      return result;
-    } catch {
-      inFlight = false;
-      restorePendingAck();
-      return null;
-    }
+    };
+
+    const lane = typeof coordinator.getMutationLane === "function"
+      ? coordinator.getMutationLane()
+      : null;
+    if (!lane) return send();
+    return lane.run(sessionId, send);
   }
 
   // Одноразовая (на период armed-конфликта) подписка на conflict_resolved:
@@ -700,6 +711,7 @@ export function createSaveOutbox(options = {}) {
     _onAck(response) {
       inFlight = false;
       consecutiveConflicts = 0;
+      failureRetryCount = 0;
       // Ack-wipe защита: ack покрывает ТОЛЬКО ops ушедшего батча; дописанные
       // во время полёта остаются в буфере и уходят следующим flush (иначе
       // правки пользователя во время запроса теряются молча — review BLOCKER-2).
@@ -732,8 +744,9 @@ export function createSaveOutbox(options = {}) {
       restorePendingAck();
       consecutiveConflicts += 1;
       if (consecutiveConflicts >= 2) {
-        // Двойной 409 подряд — auto-rebase не сходится, честная деградация.
-        degrade("double-409");
+        // Двойной 409 подряд — auto-rebase не сходится: S6 conflictStop
+        // (gate armed → честный модал), НЕ silent full-PUT.
+        conflictStop("double-409");
         return;
       }
       stage = "rebasing";
@@ -751,13 +764,13 @@ export function createSaveOutbox(options = {}) {
         || response?.currentXml
         || null;
       if (!serverXml) {
-        degrade("rebase-no-server-xml");
+        conflictStop("rebase-no-server-xml");
         return;
       }
       try {
         await loadServerXml(serverXml);
       } catch {
-        degrade("reload-failed");
+        conflictStop("reload-failed");
         return;
       }
       let result;
@@ -767,8 +780,9 @@ export function createSaveOutbox(options = {}) {
         result = { ok: false, needsFullSave: true };
       }
       if (!result?.ok) {
-        // Fuzzy miss / нет версии в 409-body — full-save fallback (UI.md §6).
-        degrade(result?.needsFullSave ? "rebase-failed" : "rebase-error");
+        // Fuzzy miss / нет версии в 409-body: S6 conflictStop (UI.md §6
+        // silent full-save fallback вытеснен — C2-контракт).
+        conflictStop(result?.needsFullSave ? "rebase-failed" : "rebase-error");
         return;
       }
       stage = "idle";
@@ -802,8 +816,13 @@ export function createSaveOutbox(options = {}) {
     _onError(result) {
       inFlight = false;
       restorePendingAck();
-      if (stage === "degraded") return;
-      degrade(result?.status === 422 ? "operation-unsupported" : "transport-failed");
+      // S6: 422 → inline-оповещение с explicit reason; прочее — ops-error;
+      // оба — НЕ silent full-PUT, буфер pending, bounded backoff-retry.
+      if (result?.status === 422) {
+        inlineStop("unsupported", asText(result?.error || result?.code || "operation-unsupported"));
+        return;
+      }
+      inlineStop("transport", asText(result?.error || "transport-failed"));
     },
 
     /** Гидрация буфера извне (reconciliation entry / тесты). */
@@ -891,6 +910,10 @@ export function createSaveOutbox(options = {}) {
     destroy() {
       destroyed = true;
       clearTimers();
+      if (failureRetryTimer) {
+        clearTimeout(failureRetryTimer);
+        failureRetryTimer = null;
+      }
       entry.bySession.delete(sessionId);
       unsubscribeCoordinator();
       try {
@@ -907,17 +930,16 @@ export function createSaveOutbox(options = {}) {
   const entry = dispatchRegistry.get(coordinator);
   entry.bySession.set(sessionId, outbox);
 
-  // Full-save lifecycle (review BLOCKER-2): ручной ack покрывает локальные
-  // ops — но НЕ слепо и НЕ через version-арифметику (сервер +1/батч, не /op):
-  //  - status busy/stage:"build" xml/rawXml БЕЗ активного preserve → снимок
-  //    текущих opId буфера (manualSaveCoveredOpIds): XML будет сериализован
-  //    из модели, уже содержащей эти правки;
+  // Full-save lifecycle (review BLOCKER-2): ack покрывает локальные ops — но
+  // НЕ слепо и НЕ через version-арифметику (сервер +1/батч, не /op).
+  // Единый механизм (C3/S1, вместо пары preserve-sentinel + manual-snapshot):
+  //  - снимок opId буфера: либо на момент делегирования outbox-initiated
+  //    full-save (детерминированно, т.к. lane не допускает одновременного
+  //    ops-flush), либо на первый busy/stage:"build" ручного full-save;
   //  - error xml/rawXml → снимок недействителен (XML не закоммичен);
-  //  - success: preserve-ветка (outbox-initiated) — sentinel-opId хвоста на
-  //    момент делегирования (без изменений); manual-ветка — drain ТОЛЬКО
-  //    пересечения буфера со снимком. Ops, дописанные после снимка, ack'ом
-  //    не покрыты — остаются и уходят следующим flush (opId-идемпотентность
-  //    делает возможный пересыл безопасным).
+  //  - success: drain ТОЛЬКО пересечения буфера со снимком. Ops, дописанные
+  //    после снимка, ack'ом не покрыты — остаются и уходят следующим flush
+  //    (opId-идемпотентность делает возможный пересыл безопасным).
   const unsubscribeCoordinator = coordinator.subscribe?.((event, data) => {
     if (data?.sessionId !== sessionId) return;
     const pipeline = asText(data?.pipeline);
@@ -925,8 +947,8 @@ export function createSaveOutbox(options = {}) {
     if (!isFullSavePipeline) return;
 
     if (event === "status") {
-      if (data?.state === "busy" && data?.stage === "build" && !fullSavePreserveActive) {
-        manualSaveCoveredOpIds = new Set(
+      if (data?.state === "busy" && data?.stage === "build" && fullSaveCoveredOpIds === null) {
+        fullSaveCoveredOpIds = new Set(
           buffer.map((op) => asText(op.opId)).filter(Boolean),
         );
       }
@@ -935,34 +957,18 @@ export function createSaveOutbox(options = {}) {
 
     if (event === "error") {
       // Full-save провален — покрытия не было, снимок недействителен.
-      manualSaveCoveredOpIds = null;
+      fullSaveCoveredOpIds = null;
       return;
     }
 
     if (event !== "success") return;
-    if (fullSavePreserveActive) {
-      fullSavePreserveActive = false;
-      const sentinel = fullSavePreserveFromOpId;
-      fullSavePreserveFromOpId = null;
-      if (sentinel !== null) {
-        const idx = buffer.findIndex((op) => op.opId === sentinel);
-        if (idx >= 0) {
-          const dropped = buffer.slice(0, idx + 1);
-          buffer = buffer.slice(idx + 1);
-          journalRemove(dropped.map((op) => op.opId));
-        }
-        // idx === -1: sentinel вырезан undo → всё оставшееся моложе
-        // делегирования либо неразличимо — сохраняем буфер целиком.
-      }
-    } else {
-      const covered = manualSaveCoveredOpIds;
-      manualSaveCoveredOpIds = null;
-      if (covered && covered.size > 0) {
-        const dropped = buffer.filter((op) => covered.has(asText(op.opId)));
-        if (dropped.length > 0) {
-          buffer = buffer.filter((op) => !covered.has(asText(op.opId)));
-          journalRemove(dropped.map((op) => op.opId));
-        }
+    const covered = fullSaveCoveredOpIds;
+    fullSaveCoveredOpIds = null;
+    if (covered && covered.size > 0) {
+      const dropped = buffer.filter((op) => covered.has(asText(op.opId)));
+      if (dropped.length > 0) {
+        buffer = buffer.filter((op) => !covered.has(asText(op.opId)));
+        journalRemove(dropped.map((op) => op.opId));
       }
     }
     needsFullSave = false;

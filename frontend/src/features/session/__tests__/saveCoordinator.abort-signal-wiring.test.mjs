@@ -18,7 +18,9 @@ test("saveCoordinator._runTransportWithTimeout creates AbortController and passe
   assert.ok(source.includes("new AbortController()"), "must create AbortController");
   assert.ok(source.includes("controller.abort()"), "must call controller.abort() on timeout");
   assert.ok(
-    source.includes("pipeline.transport(sessionId, payload, controller.signal)"),
+    // C3/S1: 4-й аргумент — laneContext (токен mutation chain); signal
+    // остаётся третьим.
+    source.includes("pipeline.transport(sessionId, payload, controller.signal, laneContext)"),
     "must pass controller.signal as 3rd arg to transport",
   );
 });
@@ -42,9 +44,10 @@ test("saveBpmnState xml pipeline transport accepts and forwards signal", () => {
     path.resolve(__dirname, "../../process/save/saveBpmnState.js"),
     "utf8",
   );
-  // The transport function must accept signal parameter.
+  // The transport function must accept signal parameter (3rd arg; 4-й — C3/S1
+  // laneContext, пробрасываемый во flushSave).
   assert.ok(
-    source.includes("transport: async (sessionId, payload, signal)"),
+    source.includes("transport: async (sessionId, payload, signal, laneContext)"),
     "xml pipeline transport must accept signal as 3rd arg",
   );
   // Must forward signal to apiPutBpmnXml call.

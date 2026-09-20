@@ -56,6 +56,7 @@ import {
   apiNavigateToSubprocess,
   apiReturnToParent,
 } from "./lib/api";
+import { gatewayPutBpmnXml } from "./features/session/gatewayPut.js";
 import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
@@ -3836,7 +3837,7 @@ export default function App() {
       );
       const newSid = String(created?.session_id || created?.data?.id || "").trim();
       if (!created?.ok || !newSid) return;
-      await apiPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
+      await gatewayPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
     } catch {
       // best-effort: связанная сессия — не блокер публикации
     }

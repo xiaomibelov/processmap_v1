@@ -315,7 +315,7 @@ test("mutual exclusion: ops flush waits while full-save (xml pipeline) is in fli
     debounceMs: 0,
     retryCount: 0,
     // Full-save завершается ОТКАЗОМ: ack не приходит → буфер ops НЕ сбрасывается
-    // (success xml/rawXml покрывает локальные ops) → после освобождения busy
+    // (success xml/rawXml покрывает локальные ops) → после освобождения lane
     // ops-flush обязан отправить накопленное.
     transport: async () => {
       await xmlStarted;
@@ -328,19 +328,50 @@ test("mutual exclusion: ops flush waits while full-save (xml pipeline) is in fli
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(coordinator.getStatus("xml").state, "busy");
 
-  const ctx = makeOutbox(null, {
-    coordinator,
-    configOverrides: { fullSaveBusyPollMs: 20 },
-  });
+  const ctx = makeOutbox(null, { coordinator });
   pushRename(ctx.outbox, "Task_1", "A");
   void ctx.outbox.flushNow({ reason: "test" });
   await new Promise((r) => setTimeout(r, 60));
-  assert.equal(ctx.api.calls.length, 0, "ops transport must not run while full-save is busy");
+  assert.equal(ctx.api.calls.length, 0, "ops transport must not run while full-save holds the lane");
 
   resolveXml({ ok: false, status: 500, error: "full-save failed" });
   await xmlPromise;
   await new Promise((r) => setTimeout(r, 80));
   assert.equal(ctx.api.calls.length, 1, "ops flush proceeds after full-save lane frees");
+  ctx.destroy();
+});
+
+test("lane resume is deterministic: flushNow promise resolves only after the queued ops send", async () => {
+  // C3/S1: busy-poll 200 мс заменён lane-очередью — возобновление flush'а
+  // детерминировано (lane-release), flushNow не возвращает управление до
+  // фактической отправки (на baseline с busy-poll промис резолвится сразу с
+  // null, а отправка происходит позже по таймеру).
+  const coordinator = createSaveCoordinator();
+  let resolveXml;
+  const xmlStarted = new Promise((resolve) => { resolveXml = resolve; });
+  coordinator.registerPipeline("xml", {
+    debounceMs: 0,
+    retryCount: 0,
+    transport: async () => {
+      await xmlStarted;
+      return { ok: true, status: 200, diagramStateVersion: 9 };
+    },
+    getBaseVersion: (sid) => getTrackedDiagramStateVersion(sid),
+  });
+  setTrackedDiagramStateVersion("s1", 7);
+  const xmlPromise = coordinator.execute("xml", { sessionId: "s1" });
+  await new Promise((r) => setTimeout(r, 5));
+
+  const ctx = makeOutbox(null, { coordinator });
+  pushRename(ctx.outbox, "Task_1", "A");
+  const flushPromise = ctx.outbox.flushNow({ reason: "test" });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(ctx.api.calls.length, 0, "ops send is queued behind the full-save lane");
+
+  resolveXml({ ok: true, status: 200, diagramStateVersion: 9 });
+  await xmlPromise;
+  await flushPromise;
+  assert.equal(ctx.api.calls.length, 1, "ops send deterministically resumes when the lane frees");
   ctx.destroy();
 });
 
@@ -554,7 +585,7 @@ test("replay echo during rebase: replay-flagged command restores op with same op
   }
 });
 
-test("double 409 → ops-degraded, full-save fallback requested", async (t) => {
+test("double 409 → conflict gate + честный модал (S6: silent full-PUT запрещён)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const api = makeApi({
@@ -575,16 +606,18 @@ test("double 409 → ops-degraded, full-save fallback requested", async (t) => {
     t.mock.timers.tick(2500);
     await drain();
     const state = ctx.outbox.getState();
-    assert.equal(state.stage, "degraded");
-    assert.ok(ctx.statuses.some((s) => s.stage === "ops-degraded"));
-    assert.ok(ctx.fullSaveRequests.length >= 1, "full-save fallback requested after double 409");
+    assert.equal(state.stage, "conflict", "S6: double-409 переклассифицирован в conflict (не degrade)");
+    assert.ok(ctx.statuses.some((s) => s.stage === "ops-conflict"), "honest ops-conflict status");
+    assert.equal(ctx.fullSaveRequests.length, 0, "S6: НИ ОДНОГО silent full-PUT из interactive-пути");
+    assert.ok(ctx.coordinator.getConflict("s1"), "conflict gate armed (C2) → честный модал");
+    assert.equal(state.bufferedCount, 1, "ops остаются в буфере (journal-durable)");
     ctx.destroy();
   } finally {
     t.mock.timers.reset();
   }
 });
 
-test("422 OPERATION_UNSUPPORTED → ops-degraded after bounded coordinator retries", async (t) => {
+test("422 OPERATION_UNSUPPORTED → honest inline stop after bounded coordinator retries (S6)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const api = makeApi({
@@ -604,8 +637,10 @@ test("422 OPERATION_UNSUPPORTED → ops-degraded after bounded coordinator retri
     // saveCoordinator ретраит любой не-conflict отказ ровно retryCount раз
     // (контракт соседних пайплайнов не меняем): 1 попытка + 3 ретрая.
     assert.equal(ctx.api.calls.length, 4, "bounded retries (1 + retryCount), no storm beyond");
-    assert.equal(ctx.outbox.getState().stage, "degraded");
-    assert.ok(ctx.fullSaveRequests.length >= 1);
+    assert.equal(ctx.outbox.getState().stage, "degraded", "S6: 422 — honest inline stop (stage degraded БЕЗ full-save)");
+    assert.ok(ctx.statuses.some((s) => s.stage === "ops-unsupported"), "inline-оповещение с explicit reason");
+    assert.equal(ctx.fullSaveRequests.length, 0, "S6: 422 не ведёт в silent full-PUT");
+    assert.equal(ctx.outbox.getState().bufferedCount, 1, "op остаётся pending (не потерян)");
     await flushPromise;
     ctx.destroy();
   } finally {
@@ -613,7 +648,7 @@ test("422 OPERATION_UNSUPPORTED → ops-degraded after bounded coordinator retri
   }
 });
 
-test("fuzzy miss during rebase replay → needsFullSave → degraded + full-save requested", async (t) => {
+test("fuzzy miss during rebase replay → conflict gate + honest modal (S6, was: silent full-save)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const api = makeApi({
@@ -624,19 +659,16 @@ test("fuzzy miss during rebase replay → needsFullSave → degraded + full-save
         data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, server_current_xml: "<xml/>" } },
       }),
     });
-    const applyOpsFn = async () => ({
-      ok: false,
-      applied: 0,
-      failed: 1,
-      results: [{ opId: "op-1", ok: false, error: "element_not_found", fuzzyMiss: true }],
-    });
-    const ctx = makeOutbox(t, { api, applyOpsFn });
+    const ctx = makeOutbox(t, { api, applyOpsFn: async () => ({ ok: false, needsFullSave: true, failed: 1 }) });
     setTrackedDiagramStateVersion("s1", 7);
     pushRename(ctx.outbox, "Task_1", "A");
     await ctx.outbox.flushNow({ reason: "test" });
-    await new Promise((r) => setImmediate(r));
-    assert.equal(ctx.outbox.getState().stage, "degraded");
-    assert.ok(ctx.fullSaveRequests.length >= 1);
+    await drain();
+    const state = ctx.outbox.getState();
+    assert.equal(state.stage, "conflict");
+    assert.ok(ctx.statuses.some((s) => s.stage === "ops-conflict"));
+    assert.equal(ctx.fullSaveRequests.length, 0, "S6: fuzzy-miss rebase — НЕ silent full-PUT");
+    assert.ok(ctx.coordinator.getConflict("s1"), "gate armed → honest modal");
     ctx.destroy();
   } finally {
     t.mock.timers.reset();

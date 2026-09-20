@@ -22,6 +22,7 @@ import {
   withTimeout,
 } from "./createBpmnCoordinator.helpers.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
+import { saveCoordinator } from "../../../session/saveCoordinator.js";
 
 export default function createBpmnCoordinator(options = {}) {
   const store = options?.store;
@@ -33,6 +34,15 @@ export default function createBpmnCoordinator(options = {}) {
   const persistence = options?.persistence && typeof options.persistence === "object"
     ? options.persistence
     : {};
+  // C3/S1: сериализация mutation-запросов даётся per-session mutation lane
+  // (общий с saveCoordinator инстанс — вложенные save-пути проходят lane
+  // inline по chain reentrancy, deadlock невозможен). flushPromise-
+  // triangulation удалена: flushSave/persistExplicitXml выполняются как task
+  // lane сессии. Опция mutationLane — точка изоляции для тестов (null/false =
+  // без lane, поведение вне сессии — lane не используется).
+  const mutationLane = Object.prototype.hasOwnProperty.call(options, "mutationLane")
+    ? options.mutationLane
+    : (typeof saveCoordinator?.getMutationLane === "function" ? saveCoordinator.getMutationLane() : null);
   const debounceMs = asNumber(options?.debounceMs, 600);
   const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
   // Контур fix/canvas-250-editing-performance: direct-editing активен — модель
@@ -62,7 +72,6 @@ export default function createBpmnCoordinator(options = {}) {
   let lastDragSaveAt = 0;
   let saveQueuedRev = 0;
   let conflictReplayReason = "";
-  let flushPromise = null;
   let singleWriterOwner = "";
   let singleWriterExpiresAt = 0;
   let diagramMutationSaveActive = false;
@@ -394,6 +403,11 @@ export default function createBpmnCoordinator(options = {}) {
     if (options?.sourceAction && typeof options.sourceAction === "string") {
       persistOptions.sourceAction = options.sourceAction;
     }
+    // C3/S1: токен mutation lane вложенной chain (xml transport → flushSave):
+    // без проброса rawXml-прогон встал бы в очередь lane за xml-прогоном.
+    if (options?.laneContext) {
+      persistOptions.laneContext = options.laneContext;
+    }
 
     emit("SAVE_REQUESTED", {
       sid,
@@ -476,9 +490,10 @@ export default function createBpmnCoordinator(options = {}) {
     let rawXml = xmlOverride;
     if (!rawXml.trim()) {
       // The durable flush path must never hang indefinitely: a busy or
-      // transiently broken modeler can block runtime.getXml() for 10+ seconds,
-      // which also blocks every subsequent save that queues behind flushPromise.
-      // Cap serialization and treat a timeout the same as a "not_ready" deferral.
+      // transiently broken modeler can block runtime.getXml() for 10+ seconds;
+      // subsequent saves сессии ждут в mutation lane (C3/S1), поэтому зависший
+      // serialize блокирует весь save-путь сессии. Cap serialization and
+      // treat a timeout the same as a "not_ready" deferral.
       let xmlRes;
       try {
         xmlRes = await withTimeout(
@@ -775,7 +790,12 @@ export default function createBpmnCoordinator(options = {}) {
   function armDragFinalTimer() {
     // If there are structural or positional changes that never got flushed,
     // schedule one final debounced save shortly after mouseup.
-    if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer && !saveInFlight) {
+    // C3/S2: занятость save (in-flight flush) больше не откладывает взвод
+    // таймера — keep-final flush является полноценным lane-участником:
+    // flushSave исполняется как task mutation lane и детерминированно
+    // деферится при занятой lane (ad-hoc наложение F3 «guard saveInFlight +
+    // re-arm в finally» удалено, сериализацию даёт gatewayLane).
+    if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer) {
       dragFinalTimer = window.setTimeout(() => {
         dragFinalTimer = 0;
         const hadStructural = dragPendingStructural;
@@ -796,8 +816,8 @@ export default function createBpmnCoordinator(options = {}) {
       window.clearTimeout(dragThrottleTimer);
       dragThrottleTimer = 0;
     }
-    // Drag-end, пришедшийся на in-flight PUT, здесь таймер НЕ взводит
-    // (saveInFlight) — до-вооружение происходит в finally flushSave (F3).
+    // Таймер взводится всегда (C3/S2); занятая lane даст детерминированный
+    // defer самого flushSave — без ожидания finally in-flight PUT.
     armDragFinalTimer();
   }
 
@@ -818,9 +838,21 @@ export default function createBpmnCoordinator(options = {}) {
     }
     clearSaveTimer();
     if (!store) return { ok: false, rev: 0, error: "store unavailable" };
-    if (flushPromise) {
-      await flushPromise;
-    }
+    // C3/S1: сериализация — task per-session mutation lane (общей с
+    // saveCoordinator); вложенные save-пути проходят lane inline по chain.
+    const sid = asText(currentSid());
+    if (!mutationLane || !sid) return flushSaveRun(reason, options);
+    // Внешний вызов — строго в FIFO-очередь lane. Вложенный (xml transport →
+    // flushSave) приходит с options.laneContext и проходит lane inline
+    // (токен активной chain), иначе deadlock xml→rawXml.
+    return mutationLane.run(
+      sid,
+      (ctx) => flushSaveRun(reason, { ...options, laneContext: options?.laneContext ?? ctx }),
+      options?.laneContext,
+    );
+  }
+
+  async function flushSaveRun(reason = "manual", options = {}) {
     const run = (async () => {
       saveInFlight = true;
       try {
@@ -873,19 +905,13 @@ export default function createBpmnCoordinator(options = {}) {
         }
         return result;
       } finally {
+        // C3/S2: re-arm drag-final здесь больше не нужен — таймер взводится
+        // на drag-end без guard'а saveInFlight, а lane детерминированно
+        // деферит сам flushSave (ad-hoc наложение F3 удалено).
         saveInFlight = false;
-        // Drag-end мог прийтись на in-flight PUT: notifyDragEnd не взвёл
-        // dragFinalTimer (saveInFlight), pending-флаги остались без таймера —
-        // до-вооружаем финальный flush после завершения PUT (F3).
-        armDragFinalTimer();
       }
     })();
-    flushPromise = run;
-    try {
-      return await run;
-    } finally {
-      if (flushPromise === run) flushPromise = null;
-    }
+    return run;
   }
 
   async function persistExplicitXml(xmlText, reason = "explicit_persist", options = {}) {
@@ -904,9 +930,18 @@ export default function createBpmnCoordinator(options = {}) {
       };
     }
     if (!store) return { ok: false, rev: 0, error: "store unavailable" };
-    if (flushPromise) {
-      await flushPromise;
-    }
+    // C3/S1: сериализация — task per-session mutation lane (зеркально flushSave).
+    const sid = asText(currentSid());
+    if (!mutationLane || !sid) return persistExplicitXmlRun(xmlText, reason, options);
+    // Зеркально flushSave: вложенный вызов с laneContext — inline, внешний — очередь.
+    return mutationLane.run(
+      sid,
+      (ctx) => persistExplicitXmlRun(xmlText, reason, { ...options, laneContext: options?.laneContext ?? ctx }),
+      options?.laneContext,
+    );
+  }
+
+  async function persistExplicitXmlRun(xmlText, reason = "explicit_persist", options = {}) {
     const run = (async () => {
       saveInFlight = true;
       try {
@@ -957,6 +992,9 @@ export default function createBpmnCoordinator(options = {}) {
         const explicitPersistOptions = {};
         if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
           explicitPersistOptions.bpmnMeta = options.bpmnMeta;
+        }
+        if (options?.laneContext) {
+          explicitPersistOptions.laneContext = options.laneContext;
         }
         const persisted = await persistRaw(sid, xml, rev, reason, explicitPersistOptions);
         if (!persisted?.ok) {
@@ -1009,20 +1047,11 @@ export default function createBpmnCoordinator(options = {}) {
             : null,
         };
       } finally {
+        // C3/S2: зеркально flushSave — F3-residual re-arm удалён (lane-дефер).
         saveInFlight = false;
-        // Drag-end мог прийтись на in-flight property PUT: notifyDragEnd не
-        // взвёл dragFinalTimer (saveInFlight), pending-флаги остались без
-        // таймера — до-вооружаем финальный flush после завершения explicit
-        // persist (F3-residual, зеркально finally flushSave).
-        armDragFinalTimer();
       }
     })();
-    flushPromise = run;
-    try {
-      return await run;
-    } finally {
-      if (flushPromise === run) flushPromise = null;
-    }
+    return run;
   }
 
   function bindRuntime(runtime) {
@@ -1225,7 +1254,9 @@ export default function createBpmnCoordinator(options = {}) {
   }
 
   function isFlushing() {
-    return !!saveInFlight || !!flushPromise;
+    if (saveInFlight) return true;
+    const sid = asText(currentSid());
+    return !!sid && !!mutationLane && mutationLane.has(sid) === true;
   }
 
   function clearPendingWork(reason = "manual_clear") {
@@ -1248,7 +1279,12 @@ export default function createBpmnCoordinator(options = {}) {
   function destroy() {
     clearPendingWork("destroy");
     unbindRuntime();
-    flushPromise = null;
+    // C3/S1: разрыв цепочки mutation lane сессии (запущенные task'и не отменяются).
+    try {
+      mutationLane?.clear?.(currentSid());
+    } catch {
+      // no-op
+    }
     saveInFlight = false;
     saveQueuedRev = 0;
     lastDragSaveAt = 0;

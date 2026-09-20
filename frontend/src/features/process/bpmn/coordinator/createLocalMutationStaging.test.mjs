@@ -308,3 +308,58 @@ test("stageRuntimeChange shouldSkipAutosave predicate failure falls back to norm
   assert.equal(result.autosaveRequested, true);
   assert.deepEqual(autosaveReasons, ["autosave"]);
 });
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S3): перестройка guard'ов staging.
+// Порядок решений: СНАЧАЛА консультация outbox (shouldSkipAutosave), ПОТОМ
+// positional-ветка. Keep-final arm (notifyPositionalPending) обязан ГАСНУТЬ,
+// когда outbox захватил команду как ops (иначе параллельный full-PUT поверх
+// ops-flush). Не-захваченный positional (lane.updaterefs и пр.) — arm сохранён.
+// ---------------------------------------------------------------------------
+
+test("S3: positional + outbox захватил → keep-final arm НЕ взводится, autosave нет", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const positionalPendings = [];
+  const { staging, autosaveReasons, emitted } = makeStaging(store, {
+    shouldSkipAutosave: (command) => command === "elements.move",
+    notifyPositionalPending: () => positionalPendings.push(Date.now()),
+  });
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "elements.move" });
+
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.equal(result.skipReason, "ops_outbox_captured");
+  assert.deepEqual(autosaveReasons, [], "full-save autosave не планируется");
+  assert.equal(positionalPendings.length, 0, "keep-final arm гаснет при ops-захвате");
+  assert.ok(
+    emitted.some((e) => e.event === "STAGE_POSITIONAL_CHANGE" && e.payload.reason === "ops_outbox_captured"),
+    "positional-факт фиксируется в telemetry",
+  );
+});
+
+test("S3: positional НЕ захвачен outbox'ом → keep-final arm сохраняется (durability)", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const positionalPendings = [];
+  const { staging, autosaveReasons } = makeStaging(store, {
+    shouldSkipAutosave: () => false,
+    notifyPositionalPending: () => positionalPendings.push(Date.now()),
+  });
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "lane.updaterefs" });
+
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.deepEqual(autosaveReasons, []);
+  assert.equal(positionalPendings.length, 1, "не-захваченный positional уходит в keep-final flush");
+});
