@@ -52,9 +52,51 @@ function sanitizeValue(value, depth = 0) {
   return null;
 }
 
-function sanitizeProperties(properties) {
-  const clean = sanitizeValue(properties);
-  return isPlainObject(clean) ? clean : {};
+// S5: structured-key сериализация для element.updateProperties.
+// bpmn-js шлёт documentation как моддл-массив, extensionElements — моддл-
+// объект. Молчаливая потеря sanitize'ом (no-op op) — дыра, закрытая S5:
+// documentation rows → скалярный payload; extensionElements/немаппимое →
+// needsFullSave (fail-closed, урок E3/#995).
+function serializeDocumentationRows(value) {
+  // S7: plain string — валидная форма (step1/2-era writers; pinpoint drift
+  // :470 был вызван отказом строки в S5). Нормализуем к rows.
+  if (typeof value === "string") return { rows: [{ text: value }] };
+  if (!Array.isArray(value)) return { needsFullSave: true };
+  const rows = [];
+  for (const item of value) {
+    const text = item && typeof item === "object" ? item.text : undefined;
+    if (typeof text !== "string") return { needsFullSave: true };
+    const row = { text };
+    const textFormat = item?.textFormat;
+    if (textFormat !== undefined && textFormat !== null) {
+      row.textFormat = String(textFormat);
+    }
+    rows.push(row);
+  }
+  return { rows };
+}
+
+function sanitizeUpdateProperties(properties) {
+  const input = isPlainObject(properties) ? properties : null;
+  if (!input) return { needsFullSave: true };
+  const out = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined) continue;
+    if (key === "documentation") {
+      const rows = serializeDocumentationRows(value);
+      if (rows.needsFullSave) return { needsFullSave: true };
+      out.documentation = rows.rows;
+      continue;
+    }
+    // S5 fail-closed: extensionElements — структурный payload (camunda custom
+    // properties/listeners); ops-перевод требует round-trip сериализации
+    // (#995) — класс C панели идёт полным сохранением (boundary full-PUT).
+    if (key === "extensionElements") return { needsFullSave: true };
+    const clean = sanitizeValue(value);
+    if (clean === null && value !== null) return { needsFullSave: true };
+    out[key] = clean === null ? null : clean;
+  }
+  return { properties: out };
 }
 
 function point(value) {
@@ -143,11 +185,11 @@ function mapUpdateProperties(context, inverse) {
   const elementId = elementIdOf(element);
   if (!elementId) return { needsFullSave: true };
   if (requiresFullSaveForBpmnType(elementTypeOf(element))) return { needsFullSave: true };
-  if (!inverse) {
-    return { op: makeOp("element.updateProperties", elementId, { properties: sanitizeProperties(context?.properties) }) };
-  }
-  if (!isPlainObject(context?.oldProperties)) return { needsFullSave: true };
-  return { op: makeOp("element.updateProperties", elementId, { properties: sanitizeProperties(context.oldProperties) }) };
+  const source = inverse ? context?.oldProperties : context?.properties;
+  const sanitized = sanitizeUpdateProperties(source);
+  if (sanitized.needsFullSave) return { needsFullSave: true };
+  if (Object.keys(sanitized.properties).length === 0) return { needsFullSave: true };
+  return { op: makeOp("element.updateProperties", elementId, { properties: sanitized.properties }) };
 }
 
 function mapUpdateLabel(context, inverse) {
@@ -155,6 +197,27 @@ function mapUpdateLabel(context, inverse) {
   const elementId = elementIdOf(element);
   if (!elementId) return { needsFullSave: true };
   if (requiresFullSaveForBpmnType(elementTypeOf(element))) return { needsFullSave: true };
+  // S4 волна 1: text-правка аннотации — текст живёт в дочернем <bpmn:text>
+  // (golden full-PUT bpmn-js), а НЕ в name; UpdateLabelHandler заодно ресайзит
+  // аннотацию под текст (newBounds). Undo: oldBounds не живёт в снапшоте →
+  // честный needsFullSave (причина зафиксирована в PR_S4).
+  if (/textannotation/i.test(elementTypeOf(element))) {
+    const text = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
+    const ops = [makeOp("element.updateProperties", elementId, { properties: { text } })];
+    if (!inverse) {
+      const nextBounds = bounds(context?.newBounds);
+      if (nextBounds) {
+        ops.push(makeOp("shape.resize", elementId, { bounds: nextBounds }));
+      }
+      return { ops };
+    }
+    // S7: undo — снапшот на undo-changed, element ref несёт post-undo
+    // (исходные) bounds: resize-компенсация absolute. Fail-closed без bounds.
+    const originalBounds = bounds(element?.bounds);
+    if (!originalBounds) return { needsFullSave: true };
+    ops.push(makeOp("shape.resize", elementId, { bounds: originalBounds }));
+    return { ops };
+  }
   const name = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
   return { op: makeOp("element.updateProperties", elementId, { properties: { name } }) };
 }
@@ -195,11 +258,14 @@ function elementTypeOf(ref) {
   return asText(ref?.businessObject?.$type || ref?.businessType || ref?.type);
 }
 
-// Артефактные типы (pool/lane/data/annotation/association) не маппятся в
-// ops-payload step1: консервативно требуем полное сохранение, иначе
-// серверная apply-op потеряет artifactRef (#995).
+// Артефактные типы (pool/lane/data-refs) не маппятся в ops-payload step1: консервативно требуем полное сохранение, иначе
+// серверная apply-op потеряет artifactRef (#995). S4 выводит типы из этого
+// множества волнами (волна 1: textAnnotation+association — сняты), строго
+// парами frontend+backend с golden-parity тестами.
+// S4: волны 1-3 сняли textAnnotation/association, data-refs, lane. Остаются
+// cold: participant (навсегда, решение контура) + data-ассоциации (S5+).
 const FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN =
-  /(?:participant|lane|datastorereference|dataobjectreference|datainputassociation|dataoutputassociation|textannotation|association)/i;
+  /(?:participant|datainputassociation|dataoutputassociation)/i;
 
 function requiresFullSaveForBpmnType(typeRaw) {
   return FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN.test(String(typeRaw || ""));
@@ -284,14 +350,210 @@ function mapConnectionReconnect(context, inverse) {
   };
 }
 
+// S7: undo delete → compensating create-op С СОХРАНЕНИЕМ id (контракт step2:
+// клиентский id в payload, сервер applied_ops opId-идемпотентен). Снапшот на
+// undo-changed несёт post-undo live-refs: bounds/waypoints/parentId/text —
+// полный recreate-пayload. Fail-closed: без type/bounds — needsFullSave
+// (recreate дырявого DI недопустим, урок pinpoint'а S2/E3).
+// S7: bpmn-js DeleteShape/ConnectionHandler при UNDO delete фаерит верхним
+// событием 'id.updateClaim' (release id-claim) — recreate элемента идёт молча
+// внутри handler.revert. Контекст несёт post-undo live-ref (enrichment S7:
+// bounds/type/parentId/endpoints/text) — тот же compensating-create payload,
+// что и прямой undo shape.delete. Execute-путь (claim при delete) — вложенный,
+// событий не даёт; на всякий случай — needsFullSave (honest unknown).
+function mapIdUpdateClaim(context, inverse, action) {
+  // undo → compensating create (post-undo live-ref, enrichment runtime);
+  // redo → повторное удаление: delete-op по __elementId (тип элемента на
+  // redo-changed недоступен — удалён из модели; backend _apply_shape_delete
+  // сам роутит connection по семантическому типу).
+  // execute как top-level событие не встречается (claim при delete вложенный,
+  // молчаливый) — honest needsFullSave на всякий случай.
+  if (inverse) return mapDeleteInversePayload(context?.element, context);
+  if (action === "redo") {
+    const elementId = asText(context?.element?.id) || asText(context?.__elementId);
+    if (!elementId) return { needsFullSave: true };
+    return { op: makeOp("shape.delete", elementId, {}) };
+  }
+  return { needsFullSave: true };
+}
+
 function mapDelete(kind) {
   return (context, inverse) => {
-    if (inverse) return { needsFullSave: true };
     const ref = context?.shape || context?.connection || context?.element;
-    const elementId = elementIdOf(ref);
+    const elementId = strictIdOf(ref);
     if (!elementId) return { needsFullSave: true };
-    return { op: makeOp(kind, elementId, {}) };
+    if (!inverse) {
+      return { op: makeOp(kind, elementId, {}) };
+    }
+    return mapDeleteInversePayload(ref, context);
   };
+}
+
+function mapDeleteInversePayload(ref, context) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const elementType = asText(ref?.type || ref?.businessType || ref?.$type);
+    const parentId = elementIdOf(context?.parent) || asText(ref?.parentId);
+    const isConnection = /sequenceflow|messageflow|association|datainputassociation|dataoutputassociation/i.test(elementType)
+      || (Array.isArray(ref?.waypoints) && !ref?.bounds);
+    if (isConnection) {
+      const sourceId = strictIdOf(context?.source) || asText(ref?.sourceId);
+      const targetId = strictIdOf(context?.target) || asText(ref?.targetId);
+      const wp = waypoints(ref?.waypoints);
+      if (!elementType || !sourceId || !targetId || !wp) return { needsFullSave: true };
+      return {
+        op: makeOp("connection.create", elementId, {
+          elementType,
+          sourceId,
+          targetId,
+          waypoints: wp,
+          parentId: parentId || "",
+        }),
+      };
+    }
+    if (requiresFullSaveForBpmnType(elementType)) return { needsFullSave: true };
+    const b = bounds(ref?.bounds);
+    if (!elementType || !b) return { needsFullSave: true };
+    const payload = { elementType, bounds: b, parentId: parentId || "" };
+    // textAnnotation: текст — дочерний <bpmn:text> (golden S4).
+    if (/textannotation/i.test(elementType) && typeof ref?.text === "string") {
+      payload.text = ref.text;
+    }
+    return { op: makeOp("shape.create", elementId, payload) };
+}
+
+// ---------------------------------------------------------------------------
+// S3: строгий id для fail-closed мапперов — elementIdOf при пустом id
+// откатывается к String(ref) ("[object Object]") и пропускает битую запись.
+function strictIdOf(ref) {
+  return asText(typeof ref === "string" ? ref : ref?.id);
+}
+
+// S3 (op wave A): elements.move → батч shape.move + element.updateDi для
+// affectedConnections. Контекст снапшота несёт shapes-лист (S3 runtime-маппинг,
+// parity с diagram-js moveElements). Вложенные connection-обновления diagram-js
+// «тихие» (commandStack.changed — только outermost action), поэтому affected
+// connections рантайн доснимает сам: affectedConnections = финальные waypoints
+// (на undo-changed — post-undo, маппер использует captured как есть).
+// Fail-closed: непустые shapes без id / без delta, reparent (hints.oldParent ≠
+// newParent), attach → needsFullSave (молчаливая потеря запрещена).
+// ---------------------------------------------------------------------------
+
+function mapElementsMove(context, inverse) {
+  const shapes = Array.isArray(context?.shapes) ? context.shapes : [];
+  if (shapes.length === 0) return { needsFullSave: true };
+  const delta = point(context?.delta);
+  if (!delta) return { needsFullSave: true };
+
+  const oldParentId = elementIdOf(context?.hints?.oldParent);
+  const newParentId = elementIdOf(context?.newParent);
+  if (oldParentId && newParentId && oldParentId !== newParentId) {
+    // Reparent вне покрытия ops (shape.move не меняет parent).
+    return { needsFullSave: true };
+  }
+  if (context?.hints?.attach === true) {
+    // Attach (host change) — консервативно полное сохранение.
+    return { needsFullSave: true };
+  }
+
+  const finalDelta = inverse ? { x: -delta.x, y: -delta.y } : delta;
+  const ops = [];
+  for (const ref of shapes) {
+    // fail-closed: пустой/отсутствующий id НЕ должен превращаться в
+    // "[object Object]" через elementIdOf-fallback (pinpoint-урок S2).
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    ops.push(makeOp("shape.move", elementId, { delta: { ...finalDelta } }));
+  }
+  const diOps = mapAffectedConnectionDi(context);
+  if (diOps.needsFullSave) return diOps;
+  return { ops: [...ops, ...diOps.ops] };
+}
+
+function mapAffectedConnectionDi(context) {
+  const connections = Array.isArray(context?.affectedConnections)
+    ? context.affectedConnections
+    : [];
+  const ops = [];
+  for (const ref of connections) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const wp = waypoints(ref?.waypoints);
+    if (!wp) return { needsFullSave: true };
+    ops.push(makeOp("element.updateDi", elementId, { waypoints: wp }));
+  }
+  return { ops };
+}
+
+// S3: spaceTool → декомпозиция по PLAN §8. Контекст снапшота несёт
+// movingShapes/resizingShapes (S3 runtime-маппинг; diagram-js createSpace).
+// resizeBounds — parity SpaceUtil.resizeBounds (direction n/s/e/w).
+// Undo spaceTool → needsFullSave: oldBounds живёт только в handler-closure
+// диаграммы, в снапшот не попадает (полный undo-цикл — S7).
+function resizeBoundsForSpaceTool(boundsRaw, directionRaw, deltaRaw) {
+  const b = bounds(boundsRaw);
+  const d = point(deltaRaw);
+  const direction = asText(directionRaw).toLowerCase();
+  if (!b || !d) return null;
+  switch (direction) {
+    case "n":
+      return { x: b.x, y: b.y + d.y, width: b.width, height: b.height - d.y };
+    case "s":
+      return { x: b.x, y: b.y, width: b.width, height: b.height + d.y };
+    case "e":
+      return { x: b.x, y: b.y, width: b.width + d.x, height: b.height };
+    case "w":
+      return { x: b.x + d.x, y: b.y, width: b.width - d.x, height: b.height };
+    default:
+      return null;
+  }
+}
+
+function mapSpaceTool(context, inverse) {
+  const delta = point(context?.delta);
+  if (!delta) return { needsFullSave: true };
+  if (inverse) {
+    // S7: снапшот на undo-changed — post-undo live-состояние: movingShapes
+    // компенсируем -delta; resizingShapes несут ИСХОДНЫЕ bounds (resize
+    // absolute); affectedConnections — исходные waypoints (enrichment).
+    const ops = [];
+    const moving = Array.isArray(context?.movingShapes) ? context.movingShapes : [];
+    for (const ref of moving) {
+      const elementId = strictIdOf(ref);
+      if (!elementId) return { needsFullSave: true };
+      ops.push(makeOp("shape.move", elementId, { delta: { x: -delta.x, y: -delta.y } }));
+    }
+    const resizing = Array.isArray(context?.resizingShapes) ? context.resizingShapes : [];
+    for (const ref of resizing) {
+      const elementId = strictIdOf(ref);
+      const original = bounds(ref?.bounds);
+      if (!elementId || !original) return { needsFullSave: true };
+      ops.push(makeOp("shape.resize", elementId, { bounds: original }));
+    }
+    if (ops.length === 0) return { needsFullSave: true };
+    const diOps = mapAffectedConnectionDi(context);
+    if (diOps.needsFullSave) return diOps;
+    return { ops: [...ops, ...diOps.ops] };
+  }
+  const ops = [];
+  const moving = Array.isArray(context?.movingShapes) ? context.movingShapes : [];
+  for (const ref of moving) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    ops.push(makeOp("shape.move", elementId, { delta: { x: delta.x, y: delta.y } }));
+  }
+  const resizing = Array.isArray(context?.resizingShapes) ? context.resizingShapes : [];
+  for (const ref of resizing) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const nextBounds = resizeBoundsForSpaceTool(ref?.bounds, context?.direction, delta);
+    if (!nextBounds) return { needsFullSave: true };
+    ops.push(makeOp("shape.resize", elementId, { bounds: nextBounds }));
+  }
+  if (ops.length === 0) return { needsFullSave: true };
+  const diOps = mapAffectedConnectionDi(context);
+  if (diOps.needsFullSave) return diOps;
+  return { ops: [...ops, ...diOps.ops] };
 }
 
 const WHITELIST = Object.freeze({
@@ -308,6 +570,9 @@ const WHITELIST = Object.freeze({
   "connection.reconnect": mapConnectionReconnect,
   "connection.reconnectStart": mapConnectionReconnect,
   "connection.reconnectEnd": mapConnectionReconnect,
+  "elements.move": mapElementsMove,
+  "spaceTool": mapSpaceTool,
+  "id.updateClaim": mapIdUpdateClaim,
 });
 
 export function isReplayCommand(descriptor) {
@@ -348,8 +613,13 @@ export function mapCommandToOps(descriptor) {
   }
 
   const inverse = action === "undo";
-  const mapped = mapper(context, inverse);
-  if (!mapped?.op) {
+  const mapped = mapper(context, inverse, action);
+  // S3: батч-мапперы (elements.move/spaceTool) возвращают {ops: [...]};
+  // одиночные — {op}. Ни op, ни ops → честный needsFullSave.
+  const mappedOps = Array.isArray(mapped?.ops) && mapped.ops.length > 0
+    ? mapped.ops
+    : (mapped?.op ? [mapped.op] : null);
+  if (!mappedOps) {
     recordCoverage(false, true);
     return { ops: [], needsFullSave: true, replay: false, action, command };
   }
@@ -357,10 +627,10 @@ export function mapCommandToOps(descriptor) {
   // Порядок spread: payload маппера побеждает — connection.reconnect несёт
   // endpoint-ids в source/target (wire-контракт applier'а), provenance
   // (user|agent|e2e) остаётся дефолтом для остальных op-типов.
-  const op = {
+  const ops = mappedOps.map((mappedOp) => ({
     source: asText(descriptor?.source) || "user",
-    ...mapped.op,
-  };
+    ...mappedOp,
+  }));
   recordCoverage(true, false);
-  return { ops: [op], needsFullSave: false, replay: false, action, command };
+  return { ops, needsFullSave: false, replay: false, action, command };
 }

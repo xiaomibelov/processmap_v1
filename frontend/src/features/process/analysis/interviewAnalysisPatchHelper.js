@@ -10,6 +10,9 @@ const PIPELINE_NAME = "analysis";
 const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
 saveCoordinator.registerPipeline(PIPELINE_NAME, {
+  // C3/S1: analysis не участвует в mutation lane — per-pipeline очередь и
+  // disjoint-key семантика (C2-контракт) сохраняются.
+  mutationLane: false,
   transport: async (sessionId, payload) => {
     const apiPatchSession = payload?.apiPatchSession;
     if (typeof apiPatchSession !== "function") {

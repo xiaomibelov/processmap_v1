@@ -31,6 +31,11 @@ KNOWN_NAMESPACES = {
     "di": DI_NS,
     "dc": DC_NS,
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    # S5: verbatim-атрибуты property-панели (camunda:assignee, zeebe:*).
+    # Документ bpmn-js может НЕ объявлять префикс до первого использования —
+    # applier обязан добавить объявление (иначе unbound prefix при re-parse).
+    "camunda": "http://camunda.org/schema/1.0/bpmn",
+    "zeebe": "http://camunda.org/schema/zeebe/1.0",
 }
 
 OP_SOURCE_VALUES = ("user", "agent", "e2e", "replay")
@@ -52,13 +57,15 @@ _INCIDENT_REF_TAGS = ("incoming", "outgoing")
 # клиент обязан уйти в full-save fallback (потеря правок запрещена).
 _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES = {
     f"{{{BPMN_NS}}}participant",
-    f"{{{BPMN_NS}}}lane",
-    f"{{{BPMN_NS}}}dataStoreReference",
-    f"{{{BPMN_NS}}}dataObjectReference",
+    # S4 волна 2: dataStoreReference/dataObjectReference; волна 3: lane —
+    # переведены в ops (golden-parity evidence/s4; lane: laneSet/isHorizontal,
+    # fail-closed delete populated lane). Participant — cold навсегда.
+    # (golden-parity evidence/s4; companion dataObject — см. _apply_shape_create).
     f"{{{BPMN_NS}}}dataInputAssociation",
     f"{{{BPMN_NS}}}dataOutputAssociation",
-    f"{{{BPMN_NS}}}association",
-    f"{{{BPMN_NS}}}textAnnotation",
+    # S4 волна 1: textAnnotation + association переведены в ops (golden-parity
+    # evidence/s4; fail-closed на уровне мапперов + typed 422). Волны 2/3
+    # (data-refs/lane) и participant — по-прежнему cold.
 }
 
 
@@ -122,16 +129,67 @@ def _ns(tag: str) -> str:
     return tag[1:].split("}", 1)[0] if tag.startswith("{") else ""
 
 
-def _find_semantic(root: ET.Element, element_id: str) -> Optional[ET.Element]:
-    """Поиск семантического элемента по id; элементы BPMN-неймспейса предпочтительнее."""
+class _ElementIndex:
+    """S3: id→element индекс за один проход по документу (O(N) на батч вместо
+    O(ops×N)). Эквивалентен посимвольно скан-семантике: BPMN-namespaced id
+    предпочтительнее, первый в документе порядок сохраняется."""
+
+    def __init__(self, root: ET.Element) -> None:
+        self.semantic: Dict[str, ET.Element] = {}
+        self.fallback: Dict[str, ET.Element] = {}
+        self.di_shapes: Dict[str, List[ET.Element]] = {}
+        self.di_edges: Dict[str, List[ET.Element]] = {}
+        self.plane: Optional[ET.Element] = None
+        for el in root.iter():
+            tag = el.tag
+            if not isinstance(tag, str):
+                continue
+            ns = _ns(tag)
+            local = _local(tag)
+            if ns == BPMNDI_NS and local == "BPMNPlane" and self.plane is None:
+                self.plane = el
+            if ns == BPMNDI_NS and local == "BPMNShape":
+                ref = el.get("bpmnElement")
+                if ref:
+                    self.di_shapes.setdefault(ref, []).append(el)
+            if ns == BPMNDI_NS and local == "BPMNEdge":
+                ref = el.get("bpmnElement")
+                if ref:
+                    self.di_edges.setdefault(ref, []).append(el)
+            element_id = el.get("id")
+            if not element_id:
+                continue
+            if ns == BPMN_NS:
+                self.semantic.setdefault(element_id, el)
+            else:
+                self.fallback.setdefault(element_id, el)
+
+
+def _find_semantic(root: ET.Element, element_id: str,
+                   index: Optional[_ElementIndex] = None) -> Optional[ET.Element]:
+    """Поиск семантического элемента по id; элементы BPMN-неймспейса предпочтительнее.
+
+    S3: индекс hit → O(1); miss → scan + мемоизация в индекс (self-healing:
+    create/delete внутри батча поддерживают индекс, но сторонние вставки
+    не оставляют lookup сломанным — эквивалентность посимвольная)."""
+    if index is not None:
+        found = index.semantic.get(element_id)
+        if found is None:
+            found = index.fallback.get(element_id)
+        if found is not None:
+            return found
     fallback: Optional[ET.Element] = None
     for el in root.iter():
         if el.get("id") != element_id:
             continue
         if _ns(el.tag) == BPMN_NS:
+            if index is not None:
+                index.semantic.setdefault(element_id, el)
             return el
         if fallback is None:
             fallback = el
+    if index is not None and fallback is not None:
+        index.fallback.setdefault(element_id, fallback)
     return fallback
 
 
@@ -159,27 +217,45 @@ def _resolve_bpmn_type(xml_text: str, bpmn_type: str, op: Dict[str, Any]) -> str
     return f"{{{BPMN_NS}}}{tag_local}"
 
 
-def _di_plane(root: ET.Element) -> Optional[ET.Element]:
+def _di_plane(root: ET.Element, index: Optional[_ElementIndex] = None) -> Optional[ET.Element]:
+    if index is not None:
+        return index.plane
     for el in root.iter():
         if _ns(el.tag) == BPMNDI_NS and _local(el.tag) == "BPMNPlane":
             return el
     return None
 
 
-def _di_shapes_for(root: ET.Element, element_id: str) -> List[ET.Element]:
-    return [
+def _di_shapes_for(root: ET.Element, element_id: str,
+                   index: Optional[_ElementIndex] = None) -> List[ET.Element]:
+    if index is not None:
+        cached = index.di_shapes.get(element_id)
+        if cached is not None:
+            return cached
+    result = [
         el for el in root.iter()
         if _ns(el.tag) == BPMNDI_NS and _local(el.tag) == "BPMNShape"
         and el.get("bpmnElement") == element_id
     ]
+    if index is not None:
+        index.di_shapes[element_id] = result
+    return result
 
 
-def _di_edges_for(root: ET.Element, element_id: str) -> List[ET.Element]:
-    return [
+def _di_edges_for(root: ET.Element, element_id: str,
+                  index: Optional[_ElementIndex] = None) -> List[ET.Element]:
+    if index is not None:
+        cached = index.di_edges.get(element_id)
+        if cached is not None:
+            return cached
+    result = [
         el for el in root.iter()
         if _ns(el.tag) == BPMNDI_NS and _local(el.tag) == "BPMNEdge"
         and el.get("bpmnElement") == element_id
     ]
+    if index is not None:
+        index.di_edges[element_id] = result
+    return result
 
 
 def _shape_bounds(shape: ET.Element) -> Optional[ET.Element]:
@@ -287,12 +363,13 @@ def normalize_op_source(raw: Any) -> str:
 # per-type appliers
 
 
-def _apply_update_properties(root: ET.Element, op: Dict[str, Any]) -> None:
+def _apply_update_properties(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     element_id = str(_require_field(op, "elementId")).strip()
     properties = _require_field(op, "properties")
     if not isinstance(properties, dict):
         raise OperationApplyError(_op_id(op), _op_type(op), "invalid_properties")
-    element = _find_semantic(root, element_id)
+    element = _find_semantic(root, element_id, index)
     if element is None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"element_not_found: {element_id}")
     for key, value in properties.items():
@@ -306,8 +383,21 @@ def _apply_update_properties(root: ET.Element, op: Dict[str, Any]) -> None:
         if value is None:
             element.attrib.pop(name, None)
             continue
+        # S5: documentation rows [{text, textFormat?}] — replace-children
+        # (golden parity full-PUT bpmn-js: повторная правка заменяет блок).
+        if name == "documentation" and isinstance(value, list):
+            _set_documentation_rows(element, value, op)
+            continue
         if name == "documentation":
             _set_documentation(element, str(value))
+            continue
+        # S4 golden: текст аннотации — дочерний <bpmn:text> (не атрибут).
+        if name == "text" and element.tag == f"{{{BPMN_NS}}}textAnnotation":
+            for old in [ch for ch in element if ch.tag == f"{{{BPMN_NS}}}text"]:
+                element.remove(old)
+            text_el = ET.Element(f"{{{BPMN_NS}}}text")
+            text_el.text = _as_str(value)
+            element.append(text_el)
             continue
         element.set(name, _as_str(value))
 
@@ -321,7 +411,29 @@ def _set_documentation(element: ET.Element, text: str) -> None:
     element.insert(0, doc)
 
 
-def _apply_shape_move(root: ET.Element, op: Dict[str, Any]) -> None:
+def _set_documentation_rows(element: ET.Element, rows: List[Any], op: Dict[str, Any]) -> None:
+    """S5 (golden full-PUT parity): documentation-блок ЗАМЕНЯЕТСЯ rows."""
+    for ch in list(element):
+        if _ns(ch.tag) == BPMN_NS and _local(ch.tag) == "documentation":
+            element.remove(ch)
+    insert_at = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            raise OperationApplyError(_op_id(op), _op_type(op), f"invalid_documentation: {row!r}")
+        text = row.get("text")
+        if text is None or not isinstance(text, str):
+            raise OperationApplyError(_op_id(op), _op_type(op), "invalid_documentation: missing text")
+        doc = ET.Element(f"{{{BPMN_NS}}}documentation")
+        text_format = str(row.get("textFormat") or "").strip()
+        if text_format:
+            doc.set("textFormat", text_format)
+        doc.text = text
+        element.insert(insert_at, doc)
+        insert_at += 1
+
+
+def _apply_shape_move(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     element_id = str(_require_field(op, "elementId")).strip()
     delta = op.get("delta")
     use_delta = isinstance(delta, dict) and delta.get("x") is not None and delta.get("y") is not None
@@ -334,7 +446,7 @@ def _apply_shape_move(root: ET.Element, op: Dict[str, Any]) -> None:
         dx = dy = None
         x = _require_number(op, "x")
         y = _require_number(op, "y")
-    shapes = _di_shapes_for(root, element_id)
+    shapes = _di_shapes_for(root, element_id, index)
     if not shapes:
         raise OperationApplyError(_op_id(op), _op_type(op), f"di_shape_not_found: {element_id}")
     for shape in shapes:
@@ -361,7 +473,8 @@ def _apply_shape_move(root: ET.Element, op: Dict[str, Any]) -> None:
                     label_bounds.set("y", _fmt_num(float(label_bounds.get("y") or 0) + move_dy))
 
 
-def _apply_shape_resize(root: ET.Element, op: Dict[str, Any]) -> None:
+def _apply_shape_resize(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     element_id = str(_require_field(op, "elementId")).strip()
     bounds_values = _require_bounds(op, ("width", "height"))
     # x/y опциональны: плоские поля или bounds-объект (wire bpmn-js).
@@ -371,7 +484,7 @@ def _apply_shape_resize(root: ET.Element, op: Dict[str, Any]) -> None:
         new_y = float(optionals["y"]) if optionals.get("y") is not None else None
     except (TypeError, ValueError) as exc:
         raise OperationApplyError(_op_id(op), _op_type(op), f"invalid_bounds: {optionals!r}") from exc
-    shapes = _di_shapes_for(root, element_id)
+    shapes = _di_shapes_for(root, element_id, index)
     if not shapes:
         raise OperationApplyError(_op_id(op), _op_type(op), f"di_shape_not_found: {element_id}")
     for shape in shapes:
@@ -400,7 +513,8 @@ def _validate_shape_create_op(root: ET.Element, xml_text: str, op: Dict[str, Any
         raise OperationApplyError(_op_id(op), _op_type(op), "full_save_required_for_bpmn_type")
 
 
-def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     _validate_shape_create_op(root, xml_text, op)
     # Client-generated id (API.md §5.5): клиент присылает `id`, элемент создаётся
     # с ним без регенерации — replay create при 409-rebase безопасен.
@@ -412,9 +526,9 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> 
         raise OperationApplyError(_op_id(op), _op_type(op), "missing_bpmnType")
     bounds_values = _require_bounds(op, ("x", "y", "width", "height"))
     parent_id = str(op.get("parentId") or "").strip()
-    if _find_semantic(root, element_id) is not None:
+    if _find_semantic(root, element_id, index) is not None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"element_already_exists: {element_id}")
-    parent = _find_semantic(root, parent_id) if parent_id else None
+    parent = _find_semantic(root, parent_id, index) if parent_id else None
     if parent is not None and _local(parent.tag) == "participant":
         # Wire bpmn-js может нести parentId=participant (контекст createShape) —
         # flow node внутри bpmn:participant невалидна и bpmn-js дропает её при
@@ -422,7 +536,7 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> 
         # который уже опирается на parent source-элемента).
         process_ref = str(parent.get("processRef") or "").strip()
         if process_ref:
-            process = _find_semantic(root, process_ref)
+            process = _find_semantic(root, process_ref, index)
             if process is not None:
                 parent = process
     if parent is None:
@@ -439,17 +553,73 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> 
     name = str(op.get("name") or "").strip()
     if name:
         element.set("name", name)
+    # S4 волна 3 (golden evidence/s4): lane живёт в <bpmn:laneSet> process'а
+    # (laneSet минтится при отсутствии); parent participant резолвится через
+    # processRef. DI lane — isHorizontal="true".
+    if tag == f"{{{BPMN_NS}}}lane":
+        lane_host = parent
+        if lane_host.tag == f"{{{BPMN_NS}}}participant":
+            process_ref = str(lane_host.get("processRef") or "").strip()
+            resolved = _find_semantic(root, process_ref, index) if process_ref else None
+            if resolved is None:
+                raise OperationApplyError(_op_id(op), _op_type(op), f"process_ref_not_found: {process_ref}")
+            lane_host = resolved
+        lane_set = None
+        for ch in lane_host:
+            if ch.tag == f"{{{BPMN_NS}}}laneSet":
+                lane_set = ch
+                break
+        if lane_set is None:
+            import secrets as _secrets
+            lane_set = ET.Element(f"{{{BPMN_NS}}}laneSet")
+            lane_set.set("id", f"LaneSet_{_secrets.token_hex(4)}")
+            lane_host.append(lane_set)
+        lane_set.append(element)
+        if index is not None:
+            index.semantic[element_id] = element
+        _create_di_shape(
+            root, element_id,
+            bounds_values["x"], bounds_values["y"], bounds_values["width"], bounds_values["height"],
+            op,
+            index,
+        )
+        di_entries = _di_shapes_for(root, element_id, index)
+        if di_entries:
+            di_entries[0].set("isHorizontal", "true")
+        return
+    # S4 волна 2 (golden): dataObjectReference несёт companion <bpmn:dataObject>
+    # в process; bpmn-js чистит сироту при save — delete повторяет (см. ниже).
+    if tag == f"{{{BPMN_NS}}}dataObjectReference" and not element.get("dataObjectRef"):
+        import secrets as _secrets
+        data_object_id = f"DataObject_{_secrets.token_hex(4)}"
+        data_object = ET.Element(f"{{{BPMN_NS}}}dataObject")
+        data_object.set("id", data_object_id)
+        parent.append(data_object)
+        if index is not None:
+            index.semantic[data_object_id] = data_object
+        element.set("dataObjectRef", data_object_id)
+    # S7 (undo-delete parity): recreate textAnnotation несёт text-payload.
+    if tag == f"{{{BPMN_NS}}}textAnnotation":
+        text_value = op.get("text")
+        if text_value is not None and str(text_value) != "":
+            text_el = ET.Element(f"{{{BPMN_NS}}}text")
+            text_el.text = str(text_value)
+            element.append(text_el)
     parent.append(element)
+    if index is not None:
+        index.semantic[element_id] = element
     _create_di_shape(
         root, element_id,
         bounds_values["x"], bounds_values["y"], bounds_values["width"], bounds_values["height"],
         op,
+        index,
     )
 
 
 def _create_di_shape(root: ET.Element, element_id: str, x: float, y: float,
-                     width: float, height: float, op: Dict[str, Any]) -> None:
-    plane = _di_plane(root)
+                     width: float, height: float, op: Dict[str, Any],
+                     index: Optional[_ElementIndex] = None) -> None:
+    plane = _di_plane(root, index)
     if plane is None:
         raise OperationApplyError(_op_id(op), _op_type(op), "di_plane_not_found")
     shape = ET.Element(f"{{{BPMNDI_NS}}}BPMNShape")
@@ -464,8 +634,9 @@ def _create_di_shape(root: ET.Element, element_id: str, x: float, y: float,
 
 
 def _create_di_edge(root: ET.Element, connection_id: str,
-                    waypoints: List[Tuple[float, float]], op: Dict[str, Any]) -> None:
-    plane = _di_plane(root)
+                    waypoints: List[Tuple[float, float]], op: Dict[str, Any],
+                    index: Optional[_ElementIndex] = None) -> None:
+    plane = _di_plane(root, index)
     if plane is None:
         raise OperationApplyError(_op_id(op), _op_type(op), "di_plane_not_found")
     edge = ET.Element(f"{{{BPMNDI_NS}}}BPMNEdge")
@@ -482,11 +653,12 @@ def _is_connection_element(element: ET.Element) -> bool:
     return "sourceRef" in element.attrib and "targetRef" in element.attrib
 
 
-def _incident_connection_ids(root: ET.Element, element_id: str) -> List[str]:
+def _incident_connection_ids(root: ET.Element, element_id: str,
+                             index: Optional[_ElementIndex] = None) -> List[str]:
     """Все connection, инцидентные элементу (через incoming/outgoing и sourceRef/targetRef)."""
     ids: List[str] = []
     seen = set()
-    element = _find_semantic(root, element_id)
+    element = _find_semantic(root, element_id, index)
     if element is not None:
         for ch in element:
             if _ns(ch.tag) == BPMN_NS and _local(ch.tag) in _INCIDENT_REF_TAGS:
@@ -511,15 +683,20 @@ def _remove_connection_refs(root: ET.Element, connection_id: str) -> None:
                     el.remove(ch)
 
 
-def _delete_connection(root: ET.Element, connection_id: str) -> bool:
-    element = _find_semantic(root, connection_id)
+def _delete_connection(root: ET.Element, connection_id: str,
+                       index: Optional[_ElementIndex] = None) -> bool:
+    if index is not None:
+        index.semantic.pop(connection_id, None)
+        index.fallback.pop(connection_id, None)
+        index.di_edges.pop(connection_id, None)
+    element = _find_semantic(root, connection_id, index)
     removed = False
     if element is not None:
         parent = _find_parent(root, element)
         if parent is not None:
             parent.remove(element)
             removed = True
-    for edge in _di_edges_for(root, connection_id):
+    for edge in _di_edges_for(root, connection_id, index):
         parent = _find_parent(root, edge)
         if parent is not None:
             parent.remove(edge)
@@ -535,21 +712,46 @@ def _find_parent(root: ET.Element, child: ET.Element) -> Optional[ET.Element]:
     return None
 
 
-def _apply_shape_delete(root: ET.Element, op: Dict[str, Any]) -> None:
+def _apply_shape_delete(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     element_id = str(_require_field(op, "elementId")).strip()
-    element = _find_semantic(root, element_id)
+    if index is not None:
+        index.semantic.pop(element_id, None)
+        index.fallback.pop(element_id, None)
+        index.di_shapes.pop(element_id, None)
+    element = _find_semantic(root, element_id, index)
     if element is None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"element_not_found: {element_id}")
     if _is_connection_element(element):
-        _delete_connection(root, element_id)
+        _delete_connection(root, element_id, index)
         return
+    # S4 волна 3 (fail-closed): lane с flowNodeRef-children не удаляется опом —
+    # семантика переноса flowNodes в ops не покрыта; честный typed 422 →
+    # клиентский degrade в full-save.
+    if element.tag == f"{{{BPMN_NS}}}lane":
+        flow_refs = [ch for ch in element if ch.tag == f"{{{BPMN_NS}}}flowNodeRef"]
+        if flow_refs:
+            raise OperationApplyError(_op_id(op), _op_type(op), f"lane_not_empty: {element_id}")
+    # S4 волна 2 (golden bpmn-js): удаление dataObjectReference чистит
+    # companion dataObject (сирота не живёт в сохранённом XML).
+    if element.tag == f"{{{BPMN_NS}}}dataObjectReference":
+        companion_id = str(element.get("dataObjectRef") or "").strip()
+        if companion_id:
+            companion = _find_semantic(root, companion_id, index)
+            if companion is not None and companion.tag == f"{{{BPMN_NS}}}dataObject":
+                companion_parent = _find_parent(root, companion)
+                if companion_parent is not None:
+                    companion_parent.remove(companion)
+                if index is not None:
+                    index.semantic.pop(companion_id, None)
+                    index.fallback.pop(companion_id, None)
     # Семантика bpmn-js: shape.delete удаляет инцидентные connection.
-    for connection_id in _incident_connection_ids(root, element_id):
-        _delete_connection(root, connection_id)
+    for connection_id in _incident_connection_ids(root, element_id, index):
+        _delete_connection(root, connection_id, index)
     parent = _find_parent(root, element)
     if parent is not None:
         parent.remove(element)
-    for shape in _di_shapes_for(root, element_id):
+    for shape in _di_shapes_for(root, element_id, index):
         shape_parent = _find_parent(root, shape)
         if shape_parent is not None:
             shape_parent.remove(shape)
@@ -565,7 +767,8 @@ def _validate_connection_create_op(root: ET.Element, xml_text: str, op: Dict[str
         raise OperationApplyError(_op_id(op), _op_type(op), "full_save_required_for_bpmn_type")
 
 
-def _apply_connection_create(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+def _apply_connection_create(root: ET.Element, xml_text: str, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     _validate_connection_create_op(root, xml_text, op)
     connection_id = _op_connection_id(op)
     if not connection_id:
@@ -574,10 +777,10 @@ def _apply_connection_create(root: ET.Element, xml_text: str, op: Dict[str, Any]
     source_id = str(_require_field(op, "sourceId")).strip()
     target_id = str(_require_field(op, "targetId")).strip()
     waypoints = _require_waypoints(op)
-    if _find_semantic(root, connection_id) is not None:
+    if _find_semantic(root, connection_id, index) is not None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"element_already_exists: {connection_id}")
-    source = _find_semantic(root, source_id)
-    target = _find_semantic(root, target_id)
+    source = _find_semantic(root, source_id, index)
+    target = _find_semantic(root, target_id, index)
     if source is None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"source_not_found: {source_id}")
     if target is None:
@@ -592,29 +795,36 @@ def _apply_connection_create(root: ET.Element, xml_text: str, op: Dict[str, Any]
         connection.set("name", name)
     parent = _find_parent(root, source) or root
     parent.append(connection)
-    # bpmn-js поддерживает incoming/outgoing дочерние элементы.
-    outgoing = ET.Element(f"{{{BPMN_NS}}}outgoing")
-    outgoing.text = connection_id
-    source.append(outgoing)
-    incoming = ET.Element(f"{{{BPMN_NS}}}incoming")
-    incoming.text = connection_id
-    target.append(incoming)
-    _create_di_edge(root, connection_id, waypoints, op)
+    # bpmn-js поддерживает incoming/outgoing дочерние элементы — но НЕ для
+    # association (S4 golden: <bpmn:association sourceRef targetRef/> без
+    # incident-ссылок на endpoints; artifactRef терять запрещено, #995).
+    if tag != f"{{{BPMN_NS}}}association":
+        outgoing = ET.Element(f"{{{BPMN_NS}}}outgoing")
+        outgoing.text = connection_id
+        source.append(outgoing)
+        incoming = ET.Element(f"{{{BPMN_NS}}}incoming")
+        incoming.text = connection_id
+        target.append(incoming)
+    if index is not None:
+        index.semantic[connection_id] = connection
+    _create_di_edge(root, connection_id, waypoints, op, index)
 
 
-def _apply_connection_delete(root: ET.Element, op: Dict[str, Any]) -> None:
+def _apply_connection_delete(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     connection_id = _op_connection_id(op)
     if not connection_id:
         raise OperationApplyError(_op_id(op), _op_type(op), "missing_connectionId")
-    if not _delete_connection(root, connection_id):
+    if not _delete_connection(root, connection_id, index):
         raise OperationApplyError(_op_id(op), _op_type(op), f"connection_not_found: {connection_id}")
 
 
-def _remove_incident_ref(root: ET.Element, element_id: str, connection_id: str) -> None:
+def _remove_incident_ref(root: ET.Element, element_id: str, connection_id: str,
+                         index: Optional[_ElementIndex] = None) -> None:
     """Убрать incoming/outgoing-ссылку на connection у конкретного элемента."""
     if not element_id or element_id == connection_id:
         return
-    element = _find_semantic(root, element_id)
+    element = _find_semantic(root, element_id, index)
     if element is None:
         return
     for ch in list(element):
@@ -633,7 +843,8 @@ def _append_incident_ref(element: ET.Element, tag_local: str, connection_id: str
     element.append(ref)
 
 
-def _apply_connection_reconnect(root: ET.Element, op: Dict[str, Any]) -> None:
+def _apply_connection_reconnect(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     """Rewrite sourceRef/targetRef connection + перелинковка incoming/outgoing.
 
     DI-edge не трогаем: id connection не меняется, waypoints сохраняются
@@ -645,12 +856,12 @@ def _apply_connection_reconnect(root: ET.Element, op: Dict[str, Any]) -> None:
         raise OperationApplyError(_op_id(op), _op_type(op), "missing_connectionId")
     source_id = str(_require_field(op, "source")).strip()
     target_id = str(_require_field(op, "target")).strip()
-    connection = _find_semantic(root, connection_id)
+    connection = _find_semantic(root, connection_id, index)
     if connection is None or not _is_connection_element(connection):
         raise OperationApplyError(_op_id(op), _op_type(op), f"connection_not_found: {connection_id}")
-    if _find_semantic(root, source_id) is None:
+    if _find_semantic(root, source_id, index) is None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"source_not_found: {source_id}")
-    if _find_semantic(root, target_id) is None:
+    if _find_semantic(root, target_id, index) is None:
         raise OperationApplyError(_op_id(op), _op_type(op), f"target_not_found: {target_id}")
     old_source = str(connection.get("sourceRef") or "").strip()
     old_target = str(connection.get("targetRef") or "").strip()
@@ -660,20 +871,21 @@ def _apply_connection_reconnect(root: ET.Element, op: Dict[str, Any]) -> None:
     connection.set("targetRef", target_id)
     _remove_incident_ref(root, old_source, connection_id)
     _remove_incident_ref(root, old_target, connection_id)
-    new_source = _find_semantic(root, source_id)
-    new_target = _find_semantic(root, target_id)
+    new_source = _find_semantic(root, source_id, index)
+    new_target = _find_semantic(root, target_id, index)
     if new_source is not None:
         _append_incident_ref(new_source, "outgoing", connection_id)
     if new_target is not None:
         _append_incident_ref(new_target, "incoming", connection_id)
 
 
-def _apply_update_di(root: ET.Element, op: Dict[str, Any]) -> None:
+def _apply_update_di(root: ET.Element, op: Dict[str, Any],
+        index: Optional[_ElementIndex] = None) -> None:
     element_id = str(_require_field(op, "elementId")).strip()
     waypoints = op.get("waypoints")
     if waypoints is not None:
         points = _require_waypoints(op)
-        edges = _di_edges_for(root, element_id)
+        edges = _di_edges_for(root, element_id, index)
         if not edges:
             raise OperationApplyError(_op_id(op), _op_type(op), f"di_edge_not_found: {element_id}")
         for edge in edges:
@@ -688,7 +900,7 @@ def _apply_update_di(root: ET.Element, op: Dict[str, Any]) -> None:
                      if _bounds_payload(op).get(field) is not None]
     if not bounds_fields:
         raise OperationApplyError(_op_id(op), _op_type(op), "missing_di_payload")
-    shapes = _di_shapes_for(root, element_id)
+    shapes = _di_shapes_for(root, element_id, index)
     if not shapes:
         raise OperationApplyError(_op_id(op), _op_type(op), f"di_shape_not_found: {element_id}")
     values = _require_bounds(op, tuple(bounds_fields))
@@ -715,24 +927,50 @@ _APPLIERS = {
 SUPPORTED_OP_TYPES = tuple(_APPLIERS.keys())
 
 
-def apply_one(root: ET.Element, xml_text: str, op: Dict[str, Any]) -> None:
+def apply_one(root: ET.Element, xml_text: str, op: Dict[str, Any],
+              index: Optional[_ElementIndex] = None) -> None:
     op_type = _op_type(op)
     if op_type not in _APPLIERS:
         raise OperationApplyError(_op_id(op), op_type, f"unsupported_op_type: {op_type}")
     if op_type == "shape.create":
-        _apply_shape_create(root, xml_text, op)
+        _apply_shape_create(root, xml_text, op, index)
     elif op_type == "connection.create":
-        _apply_connection_create(root, xml_text, op)
+        _apply_connection_create(root, xml_text, op, index)
     else:
-        _APPLIERS[op_type](root, op)
+        _APPLIERS[op_type](root, op, index)
+
+
+def _ensure_attribute_prefixes_declared(root: ET.Element, xml_text: str) -> None:
+    """S5 (golden parity): verbatim-атрибуты с префиксом (camunda:assignee и
+    пр.) требуют объявленного xmlns — документ может его не нести до первого
+    использования (unbound prefix при re-parse). Добавляем объявление на root.
+    """
+    # Только объявленные САМИМ документом (_doc_prefix_map мержит
+    # KNOWN_NAMESPACES — для этой проверки он непригоден).
+    declared = {m.group(1) for m in _XMLNS_DECL_RE.finditer(xml_text)}
+    for el in root.iter():
+        for key in el.attrib:
+            if ":" not in key:
+                continue
+            prefix = key.split(":", 1)[0]
+            if not prefix or prefix in declared or prefix == "xml":
+                continue
+            uri = KNOWN_NAMESPACES.get(prefix)
+            if uri:
+                root.set(f"xmlns:{prefix}", uri)
+                declared.add(prefix)
 
 
 def apply_operations(xml_text: str, operations: List[Dict[str, Any]]) -> str:
     """Применить батч ops к XML. Ошибка любой op → OperationApplyError (батч не применяется)."""
     root = _parse_document(xml_text)
     _register_namespaces(xml_text)
+    # S3: id→element индекс строится один раз на батч — каждая op O(1) по
+    #иску вместо O(N) по документу (applier был O(ops×N)).
+    index = _ElementIndex(root)
     for op in operations or []:
-        apply_one(root, xml_text, op if isinstance(op, dict) else {})
+        apply_one(root, xml_text, op if isinstance(op, dict) else {}, index)
+    _ensure_attribute_prefixes_declared(root, xml_text)
     return _serialize(root)
 
 

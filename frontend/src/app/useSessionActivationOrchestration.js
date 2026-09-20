@@ -4,8 +4,8 @@ import {
   apiGetSession,
   apiListProjectSessions,
   apiListProjects,
-  apiPutBpmnXml,
 } from "../lib/api.js";
+import { gatewayPutBpmnXml } from "../features/session/gatewayPut.js";
 import { setVersion as setTrackedDiagramStateVersion } from "../lib/casVersionTracker.js";
 import { recordSaveDiagnostic } from "../features/session/saveDiagnosticsTrail.js";
 import {
@@ -389,7 +389,7 @@ export default function useSessionActivationOrchestration({
       setSnapshotRestoreNotice({ sid, ts, nonce: Date.now() });
       void (async () => {
         recordSaveDiagnostic("snapshot_restore_put", { sid });
-        const putRes = await apiPutBpmnXml(sid, xml, buildSnapshotRestorePutOptions({
+        const putRes = await gatewayPutBpmnXml(sid, xml, buildSnapshotRestorePutOptions({
           sessionLike: nextRaw,
           restoredSnapshot,
         }));

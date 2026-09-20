@@ -58,7 +58,10 @@ function withTimeout(promiseFactory, ms, context) {
  */
 export function createXmlPipelineConfig(overrides = {}) {
   return {
-    transport: async (sessionId, payload, signal) => {
+    // C3/S1: laneContext (4-й аргумент) пробрасываем во flushSave — вложенный
+    // rawXml-прогон той же execution-chain обязан пройти mutation lane inline,
+    // а не встать в очередь за внешним xml-прогоном (deadlock xml→rawXml).
+    transport: async (sessionId, payload, signal, laneContext) => {
       const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
       if (useFlushSave) {
         return payload.flushSave(payload.sourceAction, {
@@ -67,6 +70,7 @@ export function createXmlPipelineConfig(overrides = {}) {
           sourceAction: payload.sourceAction,
           bpmnMeta: payload.bpmnMeta,
           signal,
+          ...(laneContext ? { laneContext } : {}),
         });
       }
       if (typeof payload.apiPutBpmnXml === "function") {

@@ -38,6 +38,7 @@ import {
   apiRestoreBpmnVersion,
 } from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
+import { gatewayPutBpmnXml } from "../features/session/gatewayPut.js";
 import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
   shortSnapshotHash,
@@ -1675,7 +1676,7 @@ function ProcessStage({
       const newSid = toText(created?.session_id || created?.session?.id);
       if (!created?.ok || !newSid) throw new Error(created?.error || "create_failed");
       const baseVersion = Number(created?.session?.diagram_state_version ?? 0);
-      const saved = await apiPutBpmnXml(newSid, xml, {
+      const saved = await gatewayPutBpmnXml(newSid, xml, {
         baseDiagramStateVersion: Number.isFinite(baseVersion) && baseVersion >= 0 ? baseVersion : 0,
         sourceAction: "dead_session_restore_draft",
       });
@@ -1748,7 +1749,7 @@ function ProcessStage({
       setGenErr("");
       try {
         saveCoordinator.resolveConflict(sid, "overwrite");
-        const saved = await apiPutBpmnXml(sid, localXml, {
+        const saved = await gatewayPutBpmnXml(sid, localXml, {
           baseDiagramStateVersion: serverVersion,
           sourceAction: "manual_save_same_tab_replay",
         });
@@ -2665,7 +2666,7 @@ function ProcessStage({
     try {
       // Снимаем conflict gate с явным принятием серверной базы (overwrite).
       saveCoordinator.resolveConflict(sid, "overwrite");
-      const saved = await apiPutBpmnXml(sid, localXml, {
+      const saved = await gatewayPutBpmnXml(sid, localXml, {
         baseDiagramStateVersion: serverVersion,
         sourceAction: "manual_save_overwrite_conflict",
       });
@@ -2700,7 +2701,7 @@ function ProcessStage({
     bpmnRef,
     draftRef,
     saveUploadStatus?.conflict,
-    apiPutBpmnXml,
+    gatewayPutBpmnXml,
     rememberDiagramStateVersion,
     bpmnSync,
     setGenErr,
@@ -2750,7 +2751,7 @@ function ProcessStage({
       // Merge-panel «keep mine» — тоже осознанный force: снимаем conflict gate
       // с явным принятием серверной базы.
       saveCoordinator.resolveConflict(sid, "overwrite");
-      const saved = await apiPutBpmnXml(sid, localXml, {
+      const saved = await gatewayPutBpmnXml(sid, localXml, {
         baseDiagramStateVersion: serverVersion,
         reason: "manual_save",
       });
@@ -2789,7 +2790,7 @@ function ProcessStage({
     draftRef,
     saveUploadStatus?.conflict,
     remoteSaveHighlightBadge?.serverVersion,
-    apiPutBpmnXml,
+    gatewayPutBpmnXml,
     rememberDiagramStateVersion,
     bpmnSync,
     closeMergePanel,

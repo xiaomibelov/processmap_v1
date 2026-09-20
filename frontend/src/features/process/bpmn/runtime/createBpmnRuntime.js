@@ -149,7 +149,69 @@ export default function createBpmnRuntime(options = {}) {
     // соединения на ref, чтобы сериализованный контекст его не терял.
     const refWaypoints = snapshotWaypoints(ref.waypoints);
     if (refWaypoints) out.waypoints = refWaypoints;
+    // S7 (undo-completeness): recreate-пayload для compensating create-op
+    // (undo delete → shape.create/connection.create с сохранением id).
+    // parentId — всегда (нужен recreate-опам); endpoints — для connection-
+    // refs; text — для textAnnotation (дочерний <bpmn:text>, golden S4).
+    const parentId = asText(ref?.parent?.id);
+    if (parentId) out.parentId = parentId;
+    const sourceId = asText(ref?.source?.id);
+    const targetId = asText(ref?.target?.id);
+    if (sourceId) out.sourceId = sourceId;
+    if (targetId) out.targetId = targetId;
+    const textValue = ref?.businessObject && "text" in ref.businessObject
+      ? ref.businessObject.text
+      : (typeof ref?.text === "string" ? ref.text : "");
+    if (asText(textValue)) out.text = asText(textValue);
     return out;
+  }
+
+  // S3 (op wave A): affected-connections enrichment для positional-батчей.
+  // Вложенные connection-обновления diagram-js «тихие» (commandStack.changed
+  // фаерится только на outermost action — _popAction), поэтому рантайн
+  // доснимает финальные waypoints сам: elements.move — closure.allConnections
+  // (fallback — incoming/outgoing shapes), spaceTool — инцидентные связи
+  // moving∪resizing. На undo-changed снапшот снимается с post-undo
+  // состояния — captured waypoints корректны для обоих направлений.
+  function collectIncidentConnections(rawShapes) {
+    const seen = new Map();
+    for (const shape of rawShapes) {
+      for (const list of [shape?.incoming, shape?.outgoing]) {
+        if (!Array.isArray(list)) continue;
+        for (const conn of list) {
+          if (conn && asText(conn.id) && !seen.has(conn.id)) seen.set(conn.id, conn);
+        }
+      }
+    }
+    return [...seen.values()];
+  }
+
+  function enrichPositionalSnapshot(commandRaw, rawContext, snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    const command = asText(commandRaw);
+    let connections = null;
+    if (command === "elements.move") {
+      const closureConns = rawContext?.closure?.allConnections;
+      if (closureConns && typeof closureConns === "object") {
+        connections = Object.values(closureConns);
+      } else {
+        connections = collectIncidentConnections(
+          Array.isArray(rawContext?.shapes) ? rawContext.shapes : [],
+        );
+      }
+    } else if (command === "spaceTool") {
+      connections = collectIncidentConnections([
+        ...(Array.isArray(rawContext?.movingShapes) ? rawContext.movingShapes : []),
+        ...(Array.isArray(rawContext?.resizingShapes) ? rawContext.resizingShapes : []),
+      ]);
+    }
+    if (!connections || connections.length === 0) return;
+    const snapshotConns = connections
+      .map((ref) => snapshotElementRef(ref))
+      .filter(Boolean);
+    if (snapshotConns.length > 0) {
+      snapshot.affectedConnections = snapshotConns;
+    }
   }
 
   function snapshotCommandContext(contextRaw) {
@@ -167,6 +229,28 @@ export default function createBpmnRuntime(options = {}) {
     if (Array.isArray(context.elements)) {
       out.elements = context.elements.map((entry) => snapshotElementRef(entry)).filter(Boolean);
     }
+    // S3 (op wave A): diagram-js moveElements/createSpace несут списки под
+    // ключами shapes/movingShapes/resizingShapes (s3_pinpoint S2) — parity-
+    // маппинг с elements, иначе список молча теряется.
+    for (const listKey of ["shapes", "movingShapes", "resizingShapes"]) {
+      if (Array.isArray(context[listKey])) {
+        out[listKey] = context[listKey].map((entry) => snapshotElementRef(entry)).filter(Boolean);
+      }
+    }
+    // Reparent/attach-детекция для fail-closed маппера elements.move: handler
+    // диаграммы фиксирует pre-move parent в hints.oldParent (postExecute).
+    const hintsOldParent = snapshotElementRef(context?.hints?.oldParent);
+    if (hintsOldParent || context?.hints?.attach === true) {
+      out.hints = {
+        ...(hintsOldParent ? { oldParent: hintsOldParent } : {}),
+        ...(context?.hints?.attach === true ? { attach: true } : {}),
+      };
+    }
+    // S3: скаляры spaceTool-контекста (декомпозиция shape.move+shape.resize
+    // требует direction для resizeBounds-parity; start — телеметрия апplера).
+    const directionText = asText(context?.direction);
+    if (directionText) out.direction = directionText;
+    if (Number.isFinite(Number(context?.start))) out.start = Number(context.start);
     const delta = snapshotPoint(context.delta);
     if (delta) out.delta = delta;
     const newBounds = snapshotBounds(context.newBounds);
@@ -191,6 +275,17 @@ export default function createBpmnRuntime(options = {}) {
     if (source) out.source = source;
     const target = snapshotElementRef(context.target);
     if (target) out.target = target;
+    // S7 (undo reconnect parity): bpmn-js reconnect-контекст несёт
+    // newSource/newTarget (execute-семантика) и oldSource/oldTarget
+    // (preExecute, undo-семантика). Алиас source/target = new*.
+    const newSource = snapshotElementRef(context.newSource);
+    const newTarget = snapshotElementRef(context.newTarget);
+    if (newSource) { out.newSource = newSource; out.source = out.source || newSource; }
+    if (newTarget) { out.newTarget = newTarget; out.target = out.target || newTarget; }
+    const oldSource = snapshotElementRef(context.oldSource);
+    const oldTarget = snapshotElementRef(context.oldTarget);
+    if (oldSource) out.oldSource = oldSource;
+    if (oldTarget) out.oldTarget = oldTarget;
     return out;
   }
 
@@ -359,10 +454,24 @@ export default function createBpmnRuntime(options = {}) {
           if (!command) command = asText(actionEntry?.command || actionEntry?.id || "").trim();
           contextSource = actionEntry?.context;
         }
+        const snapshot = snapshotCommandContext(contextSource);
+        enrichPositionalSnapshot(command, contextSource, snapshot);
+        // S7 (undo-delete): undo delete фаерит 'id.updateClaim', чей контекст
+        // — пустой дескриптор claim-сервиса (type/bounds нулевые). Recreate
+        // живёт в модели: доснимаем post-undo live-ref из elementRegistry —
+        // полный recreate-пayload для compensating create-op. Элемент не
+        // найден → снапшот остаётся пустым → маппер fail-closed needsFullSave.
+        if (command === "id.updateClaim" && action === "undo" && snapshot && typeof snapshot === "object") {
+          try {
+            const liveEl = instance?.get?.("elementRegistry")?.get?.(asText(snapshot.__elementId));
+            const liveRef = snapshotElementRef(liveEl);
+            if (liveRef) snapshot.element = liveRef;
+          } catch { /* enrichment must not break the cascade */ }
+        }
         notifyChange({
           command,
           action,
-          commandContext: snapshotCommandContext(contextSource),
+          commandContext: snapshot,
         });
       };
       eventBus.on("commandStack.changed", 1000, onCommandChanged);
