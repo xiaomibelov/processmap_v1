@@ -938,12 +938,17 @@ test("S3: spaceTool resizeBounds parity для всех направлений (
   }
 });
 
-test("S3: undo spaceTool → needsFullSave (oldBounds не живёт в снапшоте; полный undo-цикл — S7)", () => {
+test("S3→S7: undo spaceTool → компенсирующий батч (post-undo live-снапшот)", () => {
   const descriptor = spaceToolDescriptor();
   descriptor.action = "undo";
+  // S7: на undo-changed resizingShapes несут исходные bounds — inverse маппится.
+  descriptor.commandContext.resizingShapes = [
+    { id: "Task_7", type: "bpmn:Task", bounds: { x: 1460, y: 200, width: 120, height: 80 } },
+  ];
   const out = mapCommandToOps(descriptor);
-  assert.equal(out.needsFullSave, true);
-  assert.equal(out.ops.length, 0);
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.resize", "element.updateDi"]);
+  assert.deepEqual(out.ops[1].bounds, { x: 1460, y: 200, width: 120, height: 80 });
 });
 
 test("S3: spaceTool fail-closed — без direction/bounds → needsFullSave", () => {
@@ -1018,19 +1023,20 @@ test("S4w1: updateLabel на textAnnotation → updateProperties{text} + shape.r
   assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 140, height: 50 });
 });
 
-test("S4w1: undo updateLabel textAnnotation → needsFullSave (oldBounds не в снапшоте; причина зафиксирована)", () => {
+test("S4w1→S7: undo updateLabel textAnnotation → text(oldLabel) + resize(post-undo bounds)", () => {
   const out = mapCommandToOps({
     command: "element.updateLabel",
     action: "undo",
     context: {
-      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 140, height: 50 } },
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
       newLabel: "Новый",
       oldLabel: "Старый",
       newBounds: { x: 650, y: 485, width: 140, height: 50 },
     },
   });
-  assert.equal(out.needsFullSave, true, "undo текст-правки аннотации — честный full-save");
-  assert.equal(out.ops.length, 0);
+  assert.equal(out.needsFullSave, false, "S7: undo-правка маппится (post-undo bounds в снапшоте)");
+  assert.deepEqual(out.ops[0].properties, { text: "Старый" });
+  assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 100, height: 30 });
 });
 
 test("S4w1: updateLabel обычного элемента не затронут (name-путь как раньше)", () => {
@@ -1221,4 +1227,159 @@ test("S5: updateProperties sanitize-контракт — скаляры/влож
   });
   assert.equal(out.needsFullSave, false);
   assert.deepEqual(out.ops[0].properties, { name: "N", "camunda:assignee": "demo", meta: { a: 1, b: [1, 2] } });
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S7): undo/redo полнота.
+//  - undo delete → compensating create-op С СОХРАНЕНИЕМ id (контракт step2;
+//    snapshotElementRef enrichment: parentId + text для textAnnotation);
+//  - undo spaceTool / undo text-edit аннотации — inverse по post-undo
+//    live-состоянию (снимок на undo-changed = восстановленное состояние);
+//  - documentation как plain string (pinpoint drift :470 — регрессия S5);
+//  - fail-closed: битый снапшот (нет bounds/type) → needsFullSave с причиной.
+// ---------------------------------------------------------------------------
+
+test("S7: undo shape.delete → compensating shape.create с тем же id/bounds/parentId", () => {
+  const out = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: {
+      element: { id: "Task_9", type: "bpmn:UserTask", bounds: { x: 300, y: 200, width: 120, height: 80 }, parentId: "Process_1" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementId, "Task_9");
+  assert.equal(out.ops[0].elementType, "bpmn:UserTask");
+  assert.deepEqual(out.ops[0].bounds, { x: 300, y: 200, width: 120, height: 80 });
+  assert.equal(out.ops[0].parentId, "Process_1");
+});
+
+test("S7: undo connection.delete → compensating connection.create (source/target/waypoints)", () => {
+  const out = mapCommandToOps({
+    command: "connection.delete",
+    action: "undo",
+    context: {
+      element: { id: "Flow_9", type: "bpmn:SequenceFlow", waypoints: [[100, 240], [300, 240]], parentId: "Process_1" },
+      source: { id: "Task_1" },
+      target: { id: "Task_2" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops[0].type, "connection.create");
+  assert.equal(out.ops[0].elementId, "Flow_9");
+  assert.equal(out.ops[0].sourceId, "Task_1");
+  assert.equal(out.ops[0].targetId, "Task_2");
+  assert.deepEqual(out.ops[0].waypoints, [[100, 240], [300, 240]]);
+});
+
+test("S7: undo delete textAnnotation → create с text-пayload", () => {
+  const out = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_9", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 }, parentId: "Process_1", text: "Сохранить id" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementType, "bpmn:TextAnnotation");
+  assert.equal(out.ops[0].text, "Сохранить id");
+});
+
+test("S7: undo delete fail-closed — нет bounds/type → needsFullSave (не молчаливый no-op)", () => {
+  const noBounds = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: { element: { id: "Task_9", type: "bpmn:UserTask" } },
+  });
+  assert.equal(noBounds.needsFullSave, true, "recreate без bounds — дыра DI");
+  const noType = mapCommandToOps({
+    command: "shape.delete",
+    action: "undo",
+    context: { element: { id: "Task_9", bounds: { x: 1, y: 1, width: 10, height: 10 } } },
+  });
+  assert.equal(noType.needsFullSave, true, "recreate без типа — нечего создавать");
+});
+
+test("S7: undo spaceTool → -delta move + resize по post-undo bounds + updateDi", () => {
+  const out = mapCommandToOps({
+    command: "spaceTool",
+    action: "undo",
+    context: {
+      delta: { x: 80, y: 0 },
+      movingShapes: [
+        { id: "Task_8", type: "bpmn:UserTask", bounds: { x: 1480, y: 200, width: 120, height: 80 } },
+      ],
+      resizingShapes: [
+        // post-undo live bounds = исходные
+        { id: "Task_7", type: "bpmn:UserTask", bounds: { x: 1300, y: 200, width: 120, height: 80 } },
+      ],
+      affectedConnections: [
+        { id: "Flow_8", waypoints: [[1476, 240], [1480, 240]] },
+      ],
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.resize", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].delta, { x: -80, y: -0 });
+  assert.deepEqual(out.ops[1].bounds, { x: 1300, y: 200, width: 120, height: 80 });
+  assert.deepEqual(out.ops[2].waypoints, [[1476, 240], [1480, 240]]);
+});
+
+test("S7: undo spaceTool fail-closed — resize без bounds → needsFullSave", () => {
+  const out = mapCommandToOps({
+    command: "spaceTool",
+    action: "undo",
+    context: {
+      delta: { x: 80, y: 0 },
+      movingShapes: [],
+      resizingShapes: [{ id: "Task_7" }],
+      affectedConnections: [],
+    },
+  });
+  assert.equal(out.needsFullSave, true);
+});
+
+test("S7: undo text-edit аннотации → text(oldLabel) + resize по post-undo bounds", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      newLabel: "Новый",
+      oldLabel: "Старый",
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["element.updateProperties", "shape.resize"]);
+  assert.deepEqual(out.ops[0].properties, { text: "Старый" });
+  assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 100, height: 30 });
+});
+
+test("S7: undo text-edit аннотации fail-closed — нет bounds → needsFullSave", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation" },
+      newLabel: "N",
+      oldLabel: "O",
+    },
+  });
+  assert.equal(out.needsFullSave, true, "без bounds resize-компенсация невозможна");
+});
+
+test("S7: documentation как plain string маппится (pinpoint drift :470, регрессия S5)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateProperties",
+    action: "execute",
+    context: {
+      element: { id: "Task_1", type: "bpmn:UserTask" },
+      properties: { documentation: "Строка без массива" },
+    },
+  });
+  assert.equal(out.needsFullSave, false, "string documentation — валидный payload (было: needsFullSave)");
+  assert.deepEqual(out.ops[0].properties.documentation, [{ text: "Строка без массива" }]);
 });

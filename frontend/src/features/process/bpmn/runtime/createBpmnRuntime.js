@@ -149,6 +149,20 @@ export default function createBpmnRuntime(options = {}) {
     // соединения на ref, чтобы сериализованный контекст его не терял.
     const refWaypoints = snapshotWaypoints(ref.waypoints);
     if (refWaypoints) out.waypoints = refWaypoints;
+    // S7 (undo-completeness): recreate-пayload для compensating create-op
+    // (undo delete → shape.create/connection.create с сохранением id).
+    // parentId — всегда (нужен recreate-опам); endpoints — для connection-
+    // refs; text — для textAnnotation (дочерний <bpmn:text>, golden S4).
+    const parentId = asText(ref?.parent?.id);
+    if (parentId) out.parentId = parentId;
+    const sourceId = asText(ref?.source?.id);
+    const targetId = asText(ref?.target?.id);
+    if (sourceId) out.sourceId = sourceId;
+    if (targetId) out.targetId = targetId;
+    const textValue = ref?.businessObject && "text" in ref.businessObject
+      ? ref.businessObject.text
+      : (typeof ref?.text === "string" ? ref.text : "");
+    if (asText(textValue)) out.text = asText(textValue);
     return out;
   }
 
@@ -261,6 +275,17 @@ export default function createBpmnRuntime(options = {}) {
     if (source) out.source = source;
     const target = snapshotElementRef(context.target);
     if (target) out.target = target;
+    // S7 (undo reconnect parity): bpmn-js reconnect-контекст несёт
+    // newSource/newTarget (execute-семантика) и oldSource/oldTarget
+    // (preExecute, undo-семантика). Алиас source/target = new*.
+    const newSource = snapshotElementRef(context.newSource);
+    const newTarget = snapshotElementRef(context.newTarget);
+    if (newSource) { out.newSource = newSource; out.source = out.source || newSource; }
+    if (newTarget) { out.newTarget = newTarget; out.target = out.target || newTarget; }
+    const oldSource = snapshotElementRef(context.oldSource);
+    const oldTarget = snapshotElementRef(context.oldTarget);
+    if (oldSource) out.oldSource = oldSource;
+    if (oldTarget) out.oldTarget = oldTarget;
     return out;
   }
 
@@ -431,6 +456,18 @@ export default function createBpmnRuntime(options = {}) {
         }
         const snapshot = snapshotCommandContext(contextSource);
         enrichPositionalSnapshot(command, contextSource, snapshot);
+        // S7 (undo-delete): undo delete фаерит 'id.updateClaim', чей контекст
+        // — пустой дескриптор claim-сервиса (type/bounds нулевые). Recreate
+        // живёт в модели: доснимаем post-undo live-ref из elementRegistry —
+        // полный recreate-пayload для compensating create-op. Элемент не
+        // найден → снапшот остаётся пустым → маппер fail-closed needsFullSave.
+        if (command === "id.updateClaim" && action === "undo" && snapshot && typeof snapshot === "object") {
+          try {
+            const liveEl = instance?.get?.("elementRegistry")?.get?.(asText(snapshot.__elementId));
+            const liveRef = snapshotElementRef(liveEl);
+            if (liveRef) snapshot.element = liveRef;
+          } catch { /* enrichment must not break the cascade */ }
+        }
         notifyChange({
           command,
           action,

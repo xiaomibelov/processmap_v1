@@ -598,6 +598,13 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any],
         if index is not None:
             index.semantic[data_object_id] = data_object
         element.set("dataObjectRef", data_object_id)
+    # S7 (undo-delete parity): recreate textAnnotation несёт text-payload.
+    if tag == f"{{{BPMN_NS}}}textAnnotation":
+        text_value = op.get("text")
+        if text_value is not None and str(text_value) != "":
+            text_el = ET.Element(f"{{{BPMN_NS}}}text")
+            text_el.text = str(text_value)
+            element.append(text_el)
     parent.append(element)
     if index is not None:
         index.semantic[element_id] = element
