@@ -366,25 +366,46 @@ export function createSaveOutbox(options = {}) {
     }
   };
 
-  const degrade = (reason) => {
-    if (stage !== "degraded") {
-      stage = "degraded";
-      emitStatus({ stage: "ops-degraded", reason });
-    }
-    // Деградация ≠ удаление: full-save путь должен работать — поднимаем
-    // conflict gate (tracked-base уже адоптирован серверной версией).
-    try {
-      if (coordinator.getConflict?.(sessionId)) {
-        coordinator.resolveConflict?.(sessionId, "refresh");
-      }
-    } catch {
-      // no-op
-    }
-    requestFullSave();
+  // ---------------------------------------------------------------------
+  // S6 (degrade-замена, PLAN §7): НИ ОДНОЙ молчаливой деградации. Две честные
+  // остановки вместо degrade()→silent full-PUT:
+  //  - conflictStop: координатор уже armed conflict gate (C2, 409-ветка) →
+  //    статус ops-conflict, модал через C2-контракт; gate НЕ снимаем; буфер
+  //    ops остаётся pending (journal-durable), доставка после resolve.
+  //  - inlineStop: 422/transport-failed → инлайн-оповещение с explicit reason;
+  //    буфер pending; bounded backoff-retry (детерминированный, cap из конфига).
+  // fpc_gateway_cold_fallback не существовал в коде (kill-switch уровня
+  // планирования) — «смерть флага» = удаление этих веток (S6, 2026-10-03).
+  // ---------------------------------------------------------------------
+  let failureRetryCount = 0;
+  let failureRetryTimer = null;
+
+  const conflictStop = (reason) => {
+    stage = "conflict";
+    emitStatus({ stage: "ops-conflict", reason });
+    // Gate намеренно НЕ снимаем: C2 conflict gate + honest modal.
+  };
+
+  const inlineStop = (kind, reason) => {
+    stage = "degraded";
+    emitStatus({ stage: kind === "unsupported" ? "ops-unsupported" : "ops-error", reason });
+    failureRetryCount += 1;
+    const base = Math.max(1000, asNumber(config.retryDelayMs, 1000));
+    const cap = Math.max(base, asNumber(config.maxRetryDelayMs, 8000));
+    const delay = Math.min(cap, base * 2 ** Math.min(6, failureRetryCount - 1));
+    if (failureRetryTimer) clearTimeout(failureRetryTimer);
+    failureRetryTimer = setTimeout(() => {
+      failureRetryTimer = null;
+      if (!destroyed) void flushNow({ reason: "retry-after-failure" });
+    }, delay);
+    if (typeof failureRetryTimer.unref === "function") failureRetryTimer.unref();
   };
 
   async function flushNow({ reason = "manual", keepalive = false } = {}) {
     if (stage === "degraded") return null;
+    // S6: в armed-conflict отправка бессмысленна (gate даст gate_block) —
+    // ждём resolve; retry-after-failure при conflict — no-op.
+    if (stage === "conflict" && reason !== "manual") return null;
 
     // Offline подавляет flush (не штатная ошибка): состояние уходит наружу
     // status-событием — индикатор (следующий слайс) его отрендерит.
@@ -452,11 +473,13 @@ export function createSaveOutbox(options = {}) {
     // mutation lane. Busy-poll 200 мс удалён: lane детерминированно сериализует
     // ops-flush с full-save одной сессии, а освобождение (lane-release)
     // возобновляет отложенный flush без таймера. Вложенный execute той же
-    // chain (degrade → requestFullSave → rawXml) проходит lane inline.
+    // chain (needsFullSave → requestFullSave → rawXml) проходит lane inline.
     const send = async (laneContext) => {
-      // Проверки entry-time (degraded/offline) устаревают, пока task ждёт в
-      // lane-очереди за in-flight мутацией — перепроверяем на момент исполнения.
+      // Проверки entry-time (degraded/offline/conflict) устаревают, пока task
+      // ждёт в lane-очереди за in-flight мутацией — перепроверяем на момент
+      // исполнения.
       if (stage === "degraded") return null;
+      if (stage === "conflict") return null;
       if (isOffline()) {
         emitStatus({ stage: "ops-local", reason, offline: true });
         return null;
@@ -688,6 +711,7 @@ export function createSaveOutbox(options = {}) {
     _onAck(response) {
       inFlight = false;
       consecutiveConflicts = 0;
+      failureRetryCount = 0;
       // Ack-wipe защита: ack покрывает ТОЛЬКО ops ушедшего батча; дописанные
       // во время полёта остаются в буфере и уходят следующим flush (иначе
       // правки пользователя во время запроса теряются молча — review BLOCKER-2).
@@ -720,8 +744,9 @@ export function createSaveOutbox(options = {}) {
       restorePendingAck();
       consecutiveConflicts += 1;
       if (consecutiveConflicts >= 2) {
-        // Двойной 409 подряд — auto-rebase не сходится, честная деградация.
-        degrade("double-409");
+        // Двойной 409 подряд — auto-rebase не сходится: S6 conflictStop
+        // (gate armed → честный модал), НЕ silent full-PUT.
+        conflictStop("double-409");
         return;
       }
       stage = "rebasing";
@@ -739,13 +764,13 @@ export function createSaveOutbox(options = {}) {
         || response?.currentXml
         || null;
       if (!serverXml) {
-        degrade("rebase-no-server-xml");
+        conflictStop("rebase-no-server-xml");
         return;
       }
       try {
         await loadServerXml(serverXml);
       } catch {
-        degrade("reload-failed");
+        conflictStop("reload-failed");
         return;
       }
       let result;
@@ -755,8 +780,9 @@ export function createSaveOutbox(options = {}) {
         result = { ok: false, needsFullSave: true };
       }
       if (!result?.ok) {
-        // Fuzzy miss / нет версии в 409-body — full-save fallback (UI.md §6).
-        degrade(result?.needsFullSave ? "rebase-failed" : "rebase-error");
+        // Fuzzy miss / нет версии в 409-body: S6 conflictStop (UI.md §6
+        // silent full-save fallback вытеснен — C2-контракт).
+        conflictStop(result?.needsFullSave ? "rebase-failed" : "rebase-error");
         return;
       }
       stage = "idle";
@@ -790,8 +816,13 @@ export function createSaveOutbox(options = {}) {
     _onError(result) {
       inFlight = false;
       restorePendingAck();
-      if (stage === "degraded") return;
-      degrade(result?.status === 422 ? "operation-unsupported" : "transport-failed");
+      // S6: 422 → inline-оповещение с explicit reason; прочее — ops-error;
+      // оба — НЕ silent full-PUT, буфер pending, bounded backoff-retry.
+      if (result?.status === 422) {
+        inlineStop("unsupported", asText(result?.error || result?.code || "operation-unsupported"));
+        return;
+      }
+      inlineStop("transport", asText(result?.error || "transport-failed"));
     },
 
     /** Гидрация буфера извне (reconciliation entry / тесты). */
@@ -879,6 +910,10 @@ export function createSaveOutbox(options = {}) {
     destroy() {
       destroyed = true;
       clearTimers();
+      if (failureRetryTimer) {
+        clearTimeout(failureRetryTimer);
+        failureRetryTimer = null;
+      }
       entry.bySession.delete(sessionId);
       unsubscribeCoordinator();
       try {

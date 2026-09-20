@@ -585,7 +585,7 @@ test("replay echo during rebase: replay-flagged command restores op with same op
   }
 });
 
-test("double 409 → ops-degraded, full-save fallback requested", async (t) => {
+test("double 409 → conflict gate + честный модал (S6: silent full-PUT запрещён)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const api = makeApi({
@@ -606,16 +606,18 @@ test("double 409 → ops-degraded, full-save fallback requested", async (t) => {
     t.mock.timers.tick(2500);
     await drain();
     const state = ctx.outbox.getState();
-    assert.equal(state.stage, "degraded");
-    assert.ok(ctx.statuses.some((s) => s.stage === "ops-degraded"));
-    assert.ok(ctx.fullSaveRequests.length >= 1, "full-save fallback requested after double 409");
+    assert.equal(state.stage, "conflict", "S6: double-409 переклассифицирован в conflict (не degrade)");
+    assert.ok(ctx.statuses.some((s) => s.stage === "ops-conflict"), "honest ops-conflict status");
+    assert.equal(ctx.fullSaveRequests.length, 0, "S6: НИ ОДНОГО silent full-PUT из interactive-пути");
+    assert.ok(ctx.coordinator.getConflict("s1"), "conflict gate armed (C2) → честный модал");
+    assert.equal(state.bufferedCount, 1, "ops остаются в буфере (journal-durable)");
     ctx.destroy();
   } finally {
     t.mock.timers.reset();
   }
 });
 
-test("422 OPERATION_UNSUPPORTED → ops-degraded after bounded coordinator retries", async (t) => {
+test("422 OPERATION_UNSUPPORTED → honest inline stop after bounded coordinator retries (S6)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const api = makeApi({
@@ -635,8 +637,10 @@ test("422 OPERATION_UNSUPPORTED → ops-degraded after bounded coordinator retri
     // saveCoordinator ретраит любой не-conflict отказ ровно retryCount раз
     // (контракт соседних пайплайнов не меняем): 1 попытка + 3 ретрая.
     assert.equal(ctx.api.calls.length, 4, "bounded retries (1 + retryCount), no storm beyond");
-    assert.equal(ctx.outbox.getState().stage, "degraded");
-    assert.ok(ctx.fullSaveRequests.length >= 1);
+    assert.equal(ctx.outbox.getState().stage, "degraded", "S6: 422 — honest inline stop (stage degraded БЕЗ full-save)");
+    assert.ok(ctx.statuses.some((s) => s.stage === "ops-unsupported"), "inline-оповещение с explicit reason");
+    assert.equal(ctx.fullSaveRequests.length, 0, "S6: 422 не ведёт в silent full-PUT");
+    assert.equal(ctx.outbox.getState().bufferedCount, 1, "op остаётся pending (не потерян)");
     await flushPromise;
     ctx.destroy();
   } finally {
@@ -644,7 +648,7 @@ test("422 OPERATION_UNSUPPORTED → ops-degraded after bounded coordinator retri
   }
 });
 
-test("fuzzy miss during rebase replay → needsFullSave → degraded + full-save requested", async (t) => {
+test("fuzzy miss during rebase replay → conflict gate + honest modal (S6, was: silent full-save)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const api = makeApi({
@@ -655,19 +659,16 @@ test("fuzzy miss during rebase replay → needsFullSave → degraded + full-save
         data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 9, server_current_xml: "<xml/>" } },
       }),
     });
-    const applyOpsFn = async () => ({
-      ok: false,
-      applied: 0,
-      failed: 1,
-      results: [{ opId: "op-1", ok: false, error: "element_not_found", fuzzyMiss: true }],
-    });
-    const ctx = makeOutbox(t, { api, applyOpsFn });
+    const ctx = makeOutbox(t, { api, applyOpsFn: async () => ({ ok: false, needsFullSave: true, failed: 1 }) });
     setTrackedDiagramStateVersion("s1", 7);
     pushRename(ctx.outbox, "Task_1", "A");
     await ctx.outbox.flushNow({ reason: "test" });
-    await new Promise((r) => setImmediate(r));
-    assert.equal(ctx.outbox.getState().stage, "degraded");
-    assert.ok(ctx.fullSaveRequests.length >= 1);
+    await drain();
+    const state = ctx.outbox.getState();
+    assert.equal(state.stage, "conflict");
+    assert.ok(ctx.statuses.some((s) => s.stage === "ops-conflict"));
+    assert.equal(ctx.fullSaveRequests.length, 0, "S6: fuzzy-miss rebase — НЕ silent full-PUT");
+    assert.ok(ctx.coordinator.getConflict("s1"), "gate armed → honest modal");
     ctx.destroy();
   } finally {
     t.mock.timers.reset();
