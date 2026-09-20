@@ -1,14 +1,17 @@
+import { useMemo } from "react";
 import AdminPageContainer from "../layout/AdminPageContainer";
-import SectionCard from "../components/common/SectionCard";
 import AdminTablePagination from "../components/common/AdminTablePagination";
 import AdminDateRangeFilter from "../components/filters/AdminDateRangeFilter";
 import AdminFiltersBar from "../components/filters/AdminFiltersBar";
 import AdminSearchInput from "../components/filters/AdminSearchInput";
 import AdminSelectFilter from "../components/filters/AdminSelectFilter";
 import AdminToggleFilter from "../components/filters/AdminToggleFilter";
+import ReportsHealthWidget from "../components/dashboard/ReportsHealthWidget";
+import RedisHealthWidget from "../components/dashboard/RedisHealthWidget";
 import SessionsSummaryRow from "../components/sessions/SessionsSummaryRow";
 import SessionsTable from "../components/sessions/SessionsTable";
-import { asArray, formatTs, toInt, toText } from "../utils/adminFormat";
+import useAdminDashboardSnapshot from "../hooks/useAdminDashboardSnapshot";
+import { asArray, toText } from "../utils/adminFormat";
 import { updateFilterState } from "../utils/adminQuery";
 import { ru } from "../../../shared/i18n/ru";
 
@@ -21,10 +24,16 @@ export default function AdminSessionsPage({
   onOpenSession,
 }) {
   const rows = asArray(payload?.items);
-  const risky = rows
-    .filter((row) => toInt(row?.warnings_count, 0) > 0 || toInt(row?.errors_count, 0) > 0)
-    .sort((a, b) => (toInt(b?.warnings_count, 0) + toInt(b?.errors_count, 0)) - (toInt(a?.warnings_count, 0) + toInt(a?.errors_count, 0)))
-    .slice(0, 6);
+  const dashboard = useAdminDashboardSnapshot();
+  const dashboardWidgets = useMemo(() => {
+    if (!dashboard.data) return null;
+    return (
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ReportsHealthWidget payload={dashboard.data?.charts?.report_doc_health || {}} />
+        <RedisHealthWidget payload={dashboard.data?.redis_health || {}} />
+      </div>
+    );
+  }, [dashboard.data]);
   const filterItems = [
     { label: ru.admin.filters.query, value: filters?.q },
     { label: ru.admin.filters.status, value: filters?.status },
@@ -38,44 +47,7 @@ export default function AdminSessionsPage({
   return (
     <AdminPageContainer
       summary={<SessionsSummaryRow items={rows} />}
-      secondary={(
-        <div className="grid gap-4 xl:grid-cols-2">
-          <SectionCard title={ru.admin.sessionsPage.attentionTitle} subtitle={ru.admin.sessionsPage.attentionSubtitle} eyebrow={ru.admin.sessionsPage.attentionEyebrow}>
-            <div className="space-y-3">
-              {risky.length ? risky.map((row) => (
-                <button
-                  key={toText(row?.session_id)}
-                  type="button"
-                  className="flex w-full items-start justify-between rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left"
-                  onClick={() => onOpenSession?.(toText(row?.session_id))}
-                >
-                  <div>
-                    <div className="text-sm font-medium text-slate-950">{toText(row?.session_id)}</div>
-                    <div className="mt-1 text-xs text-slate-500">{toText(row?.project_name || row?.project_id || "—")} · {formatTs(row?.updated_at)}</div>
-                  </div>
-                  <div className="text-xs text-amber-700">{toInt(row?.warnings_count, 0)}w / {toInt(row?.errors_count, 0)}e</div>
-                </button>
-              )) : <div className="text-sm text-slate-500">{ru.admin.sessionsPage.attentionEmpty}</div>}
-            </div>
-          </SectionCard>
-          <SectionCard title={ru.admin.sessionsPage.redisTitle} subtitle={ru.admin.sessionsPage.redisSubtitle} eyebrow={ru.admin.sessionsPage.redisEyebrow}>
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">ON</div>
-                <div className="mt-2 text-2xl font-semibold text-slate-950">{rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "on").length}</div>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                <div className="text-xs text-amber-700">{ru.admin.sessionsPage.redisFallback}</div>
-                <div className="mt-2 text-2xl font-semibold text-amber-900">{rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "fallback").length}</div>
-              </div>
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
-                <div className="text-xs text-rose-700">{ru.admin.sessionsPage.redisIncident}</div>
-                <div className="mt-2 text-2xl font-semibold text-rose-900">{rows.filter((row) => toText(row?.redis_mode).toLowerCase() === "error").length}</div>
-              </div>
-            </div>
-          </SectionCard>
-        </div>
-      )}
+      secondary={dashboardWidgets}
     >
       <AdminFiltersBar title={ru.admin.sessionsPage.filtersTitle} subtitle={ru.admin.sessionsPage.filtersSubtitle} activeFilters={filterItems}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

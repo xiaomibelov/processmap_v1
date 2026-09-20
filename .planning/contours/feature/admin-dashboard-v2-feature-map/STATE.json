@@ -1,0 +1,14 @@
+{
+  "contour": "feature/admin-dashboard-v2-feature-map",
+  "type": "feature",
+  "role": "executor",
+  "phase": "PR_OPEN",
+  "date": "2026-09-21",
+  "baseline": "2c05188726c9228e28af0281f166c99b42e58591",
+  "branch": "feature/admin-dashboard-v2-feature-map",
+  "head": "71ea5010",
+  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/1007",
+  "review_ref": "review/admin-dashboard-v2-feature-map — REVIEW_PASS",
+  "ux_iteration": "Вариант 1 approved владельцем, реализован (71ea5010)",
+  "pending": "merge-решение владельца; post-merge: stage-верификация, e2e-спеки, бэклог-контуры fix/feature-flags-governance + fix/admin-shell-context-combobox"
+}
