@@ -1,0 +1,12 @@
+{
+  "contour": "feature/admin-dashboard-v2-feature-map",
+  "type": "feature",
+  "role": "executor",
+  "phase": "EXEC_IN_PROGRESS",
+  "date": "2026-09-20",
+  "baseline": "2c05188726c9228e28af0281f166c99b42e58591",
+  "branch": "feature/admin-dashboard-v2-feature-map",
+  "worktree": "server-backup/opt/processmap-test-worktrees/feature-admin-dashboard-v2-feature-map",
+  "audit_ref": "audit/admin-dashboard-v2-verify (ACCEPTED, 14 правок учтены)",
+  "artifacts": ["PLAN.md", "RAG_PREFLIGHT_EXECUTOR.md", "EXEC_REPORT.md"]
+}
