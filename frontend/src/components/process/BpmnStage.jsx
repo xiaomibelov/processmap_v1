@@ -6293,6 +6293,10 @@ const BpmnStage = forwardRef(function BpmnStage({
         viewboxListenersRef,
         bottlenecksRef,
         opsOutboxRef,
+        // S5: suppression boundary-apply camunda-extensions (boundary сам
+        // перзистит full-PUT; commandStack-эхо — артефакт, аналогично
+        // template apply, :3759).
+        suppressCommandStackRef,
       },
       values: {
         view,
