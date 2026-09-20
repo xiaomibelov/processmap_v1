@@ -53,6 +53,21 @@
     "S7 undo/redo 1d",
     "S8 metrics 1d"
   ],
+  "slices_progress": {
+    "s1": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "per-session mutation lane (gatewayLane.js) в saveCoordinator; поглощение busy-poll 200ms / fullSavePreserve+manualSaveCoveredOpIds sentinel-пары / coordinator flushPromise; gatewayPutBpmnXml для 6 прямых PUT; kill-switch fpc_gateway_lane (default ON)",
+      "design_invariant": "lane на уровне mutation-intent; reentrancy СТРОГО по explicit chain-token (transport 4-й арг → options.laneContext → payload.mutationLaneContext); внешний вызов без токена всегда FIFO-очередь; meta/analysis mutationLane:false (C2-контракт); beginSingleWriter (template_apply) не тронут",
+      "red_green": "RED 4 падения (serialization + deterministic-resume) → GREEN; итерация temporal-reentrancy отклонена тестами; entry-time проверки outbox-flush перепроверяются в lane-task",
+      "tests": "save-зоны 526/527 (1 fail pre-existing на origin/main); полный сьют 3975 тестов, 0 новых падений vs origin/main (identical failure sets)",
+      "diffstat": "18 файлов +694/-196; net save-ядро -84 строки; createSaveOutbox.js 1029→1000",
+      "artifacts": ["EXEC_REPORT_S1.md", "PR_S1.md", "JOURNAL.md"],
+      "push_pr_merge": "НЕ выполнялись (по условию владельца); PR_S1.md готов к approve",
+      "next": "S2 positional closure (по результатам S0: удаление full-save arm createLocalMutationStaging.js:236-251)"
+    }
+  },
   "acceptance_metrics": {
     "0_sync_full_put_on_interactive_mutation": "route-counters PUT /bpmn в окне 6с после мутации = 0 (реальный drag, S0-методика)",
     "elements_move_and_spacetool_to_ops": "drag-команды уходят POST /operations",
