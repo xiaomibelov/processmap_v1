@@ -170,3 +170,42 @@ describe("tobeOverlayMockController", () => {
     expect(fakeViewers.fake.asis.api.asisViewboxSetCalls).toBe(0);
   });
 });
+describe("tobeOverlayMock read-only гарантии", () => {
+  it("контроллер не подписывается ни на что, кроме canvas.viewbox.changed TO BE", async () => {
+    const fakeViewers = makeFakeViewers();
+    const controller = createTobeOverlayMockController({
+      createViewers: async () => fakeViewers,
+    });
+    const { asisHost, tobeHost } = makeHosts();
+    await controller.mount({ asisContainer: asisHost, tobeContainer: tobeHost });
+
+    // commandStack/onChange-подписок нет по определению: fake eventBus фиксирует
+    // каждую подписку; допустима ровно одна — viewbox.changed на TO BE.
+    for (const kind of ["asis", "tobe"]) {
+      const bus = fakeViewers.fake[kind].eventBus;
+      const events = ["commandStack.changed", "commandStack.shape.changed", "element.changed", "saveXML"];
+      for (const event of events) {
+        expect(bus.listenerCount(event), `${kind} не должен слушать ${event}`).toBe(0);
+      }
+    }
+    expect(fakeViewers.fake.tobe.eventBus.listenerCount("canvas.viewbox.changed")).toBe(1);
+  });
+
+  it("исходники модуля не импортируют saveCoordinator/api/runtime/lane", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const moduleDir = path.resolve(
+      process.cwd(),
+      "src/features/process/bpmn/stage/tobeOverlayMock",
+    );
+    for (const file of ["tobeOverlayMockController.js", "createMockOverlayViewers.js"]) {
+      const src = fs.readFileSync(path.join(moduleDir, file), "utf8");
+      expect(src, file).not.toMatch(/saveCoordinator/);
+      expect(src, file).not.toMatch(/apiModules|\/lib\/api/);
+      expect(src, file).not.toMatch(/createBpmnRuntime/);
+      expect(src, file).not.toMatch(/gatewayLane/);
+      expect(src, file).not.toMatch(/overlayLifecycle/);
+      expect(src, file).not.toMatch(/commandStack\.on|commandStack\.changed/);
+    }
+  });
+});
