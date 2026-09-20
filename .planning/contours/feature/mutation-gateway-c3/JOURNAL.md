@@ -23,3 +23,11 @@
 - **Перенос без съёма** (инвариант владельца №1): e2e-гейт на ЛОКАЛЬНОМ стеке ветки 2/2 PASS — реальный drag T_5 (+60,+20 после snap), keep-final `PUT /bpmn` через 524 мс после mouseup, reload → элемент на месте, серверный XML (1360,80). Чужой стек `wt-audit-canvas-409` (8011/5177) не тронут; свой `wt-mgc3-s2` (API 18011, frontend 15177).
 - **s3_pinpoint (без фикса)**: `elements.move` context = `{delta, parent}` — `shapes` теряется: diagram-js `moveElements` кладёт `shapes` (Modeling.js:236-243), `snapshotCommandContext` маппит только `elements`. Фикс ~4-8 строк runtime в S3 + маппер батч shape.move.
 - Полный сьют: 3978 тестов, 0 новых падений vs S1-baseline. Артефакты: EXEC_REPORT_S2.md, PR_S2.md.
+
+## 2026-09-20 — S3 op wave A (Agent 2, Executor)
+- elements.move → батч shape.move (+undo -delta) + affectedConnections updateDi; spaceTool → декомпозиция move+resize+updateDi (resizeBounds-parity SpaceUtil). Runtime-снапшот: shapes/movingShapes/resizingShapes/hints/direction/start + affectedConnections enrichment (вложенные diagram-js обновления «тихие» — commandStack.changed только outermost).
+- Находки GREEN-итераций: strictIdOf (elementIdOf пустой id → '[object Object]'); снапшот терял direction/start (e2e gate (c) поймал full-PUT); e2e ack-гонка на reload (postOpsDone).
+- Staging: консультация outbox первой, keep-final arm гаснет при захвате → full-save arm positional-ветки вытеснен (durability на каждом префиксе: drag→ops с коммита a244c00b).
+- Backend: _ElementIndex (O(N)/батч, self-healing, create/delete maintenance), scale-guard 1000эл/50ops = 0.08s.
+- e2e (a)-(d) PASS на контейнере: drag/multi/spaceTool/createShape — 0 PUT /bpmn, ≥1 POST /operations, reload-равенство. Полный сьют 3988, 0 регрессий (presence-poller — load-flaky семейство, имя плавает между прогонами).
+- Метрика путей: 18→17. Артефакты: EXEC_REPORT_S3.md, PR_S3.md. evidence/s3/.

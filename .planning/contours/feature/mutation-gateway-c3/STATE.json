@@ -92,6 +92,25 @@
       ],
       "push_pr_merge": "НЕ выполнялись (по условию владельца); PR_S1.md готов к approve",
       "next": "S2 positional closure (по результатам S0: удаление full-save arm createLocalMutationStaging.js:236-251)"
+    },
+    "s3": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "op wave A: elements.move батч shape.move (+undo -delta) + affectedConnections updateDi; spaceTool декомпозиция (move+resize+updateDi); runtime-снапшот shapes/movingShapes/resizingShapes/hints/direction/start; staging guard-перестройка (консультация outbox первой, keep-final arm гаснет при захвате — full-save arm positional-ветки вытеснен); backend id→element индекс + scale-guard 1000эл/50ops (0.08s)",
+      "diffstat_commits": [
+        "4ec579f0 mapper+snapshot",
+        "d342bdca backend index",
+        "a244c00b staging arm вытеснение"
+      ],
+      "tests": "save-зоны 539/540 (1 pre-existing); backend parity/applier 34+3 subtests, scale-guard 0.08s; полный сьют 3988, 0 регрессий (presence-poller load-flaky семейство)",
+      "e2e_gate": "PASS (a)-(d) на контейнере: drag/multi/spaceTool/createShape — 0 PUT /bpmn, ≥1 POST /operations, reload-равенство server truth. evidence/s3/",
+      "paths_metric_after_s3": "18→17: positional-интерактив (drag single/multi, spaceTool) ушёл в ops; до 1+1 остаётся S4 artifacts / S5 property / S6 degrade+прямые PUT",
+      "artifacts": [
+        "EXEC_REPORT_S3.md",
+        "PR_S3.md"
+      ],
+      "next": "S4 artifact-типы (textAnnotation/association/data-refs) обе стороны fail-closed; participant остаётся cold"
     }
   },
   "acceptance_metrics": {
