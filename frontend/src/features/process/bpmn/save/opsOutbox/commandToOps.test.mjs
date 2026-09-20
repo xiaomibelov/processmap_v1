@@ -564,7 +564,9 @@ test("create ops carry the client-generated element id in payload (server preser
   assert.equal(connected.ops[0].targetId, "Task_2");
 });
 
-test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Association) → needsFullSave", () => {
+test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Association) → ops (S4 волна 1)", () => {
+  // step1 держал эти типы вне ops-payload; S4 волна 1 вывела их в ops
+  // (golden-parity evidence/s4, снятие строго парой frontend+backend).
   const annotation = mapCommandToOps({
     command: "shape.create",
     action: "execute",
@@ -573,8 +575,9 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
       parent: { id: "Process_1" },
     },
   });
-  assert.equal(annotation.needsFullSave, true, "TextAnnotation is an artifact outside ops payload (step1)");
-  assert.equal(annotation.ops.length, 0);
+  assert.equal(annotation.needsFullSave, false, "TextAnnotation create — ops с S4 волны 1");
+  assert.equal(annotation.ops.length, 1);
+  assert.equal(annotation.ops[0].type, "shape.create");
 
   const association = mapCommandToOps({
     command: "connection.create",
@@ -585,8 +588,9 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
       target: { id: "Annotation_1" },
     },
   });
-  assert.equal(association.needsFullSave, true, "Association is an artifact outside ops payload (step1)");
-  assert.equal(association.ops.length, 0);
+  assert.equal(association.needsFullSave, false, "Association create — ops с S4 волны 1");
+  assert.equal(association.ops.length, 1);
+  assert.equal(association.ops[0].type, "connection.create");
 
   const task = mapCommandToOps({
     command: "shape.create",
@@ -610,12 +614,12 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
 });
 
 test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", () => {
+  // S4 волна 1 сняла TextAnnotation (теперь ops); список — остающиеся cold.
   for (const type of [
     "bpmn:Participant",
     "bpmn:Lane",
     "bpmn:DataStoreReference",
     "bpmn:DataObjectReference",
-    "bpmn:TextAnnotation",
   ]) {
     const out = mapCommandToOps({
       command: "shape.create",
@@ -628,8 +632,9 @@ test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", ()
     assert.equal(out.needsFullSave, true, `${type} requires full save`);
     assert.deepEqual(out.ops, []);
   }
-  // connection-создание artifact-ассоциаций тоже уходит в full save.
-  for (const type of ["bpmn:DataInputAssociation", "bpmn:DataOutputAssociation", "bpmn:Association"]) {
+  // connection-создание data-ассоциаций уходит в full save (S4 волна 1 сняла
+  // только bpmn:Association).
+  for (const type of ["bpmn:DataInputAssociation", "bpmn:DataOutputAssociation"]) {
     const out = mapCommandToOps({
       command: "connection.create",
       action: "execute",
@@ -658,13 +663,12 @@ test("task shape.create still maps to op (unsafe guard does not leak)", () => {
 });
 
 test("unsafe BPMN artifact element.updateProperties types → needsFullSave with no ops", () => {
+  // S4 волна 1 сняла TextAnnotation/Association; список — остающиеся cold.
   for (const type of [
     "bpmn:Participant",
     "bpmn:Lane",
     "bpmn:DataStoreReference",
     "bpmn:DataObjectReference",
-    "bpmn:TextAnnotation",
-    "bpmn:Association",
   ]) {
     const elRef = { id: "X", businessObject: { $type: type } };
     for (const action of ["execute", "undo"]) {
@@ -683,18 +687,31 @@ test("unsafe BPMN artifact element.updateProperties types → needsFullSave with
   }
 });
 
-test("unsafe BPMN artifact element.updateLabel → needsFullSave with no ops", () => {
-  const out = mapCommandToOps({
+test("artifact element.updateLabel: cold-типы needsFullSave, textAnnotation — ops (S4 волна 1)", () => {
+  for (const type of ["bpmn:Participant", "bpmn:Lane"]) {
+    const out = mapCommandToOps({
+      command: "element.updateLabel",
+      action: "execute",
+      context: {
+        element: { id: "X", businessObject: { $type: type } },
+        newLabel: "n",
+        oldLabel: "o",
+      },
+    });
+    assert.equal(out.needsFullSave, true, `${type} updateLabel still cold`);
+    assert.deepEqual(out.ops, []);
+  }
+  const annotation = mapCommandToOps({
     command: "element.updateLabel",
     action: "execute",
     context: {
-      element: { id: "X", businessObject: { $type: "bpmn:TextAnnotation" } },
+      element: { id: "X", type: "bpmn:TextAnnotation", bounds: { x: 1, y: 1, width: 10, height: 10 } },
       newLabel: "n",
       oldLabel: "o",
     },
   });
-  assert.equal(out.needsFullSave, true, "TextAnnotation updateLabel requires full save");
-  assert.deepEqual(out.ops, []);
+  assert.equal(annotation.needsFullSave, false, "TextAnnotation updateLabel — text-op с S4 волны 1");
+  assert.equal(annotation.ops.length >= 1, true);
 });
 
 test("task element.updateProperties still maps to op (unsafe guard does not leak)", () => {
@@ -942,4 +959,102 @@ test("S3: spaceTool fail-closed — без direction/bounds → needsFullSave", 
     resizingShapes: [{ id: "Task_7" }],
   }));
   assert.equal(noBounds.needsFullSave, true, "resize без bounds — молчаливая потеря запрещена");
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S4, волна 1): textAnnotation +
+// association в ops. Golden-эталон — реальный full-PUT bpmn-js (evidence/s4/
+// logs/s4-golden.xml): text — дочерний <bpmn:text>; association — атрибуты
+// sourceRef/targetRef БЕЗ incoming/outgoing. Undo-семантика волны (явно):
+// create undo → compensating delete-op; move undo → -delta (S3); text-edit
+// undo → needsFullSave (oldBounds не живёт в снапшоте — записано в PR_S4).
+// ---------------------------------------------------------------------------
+
+test("S4w1: shape.create bpmn:TextAnnotation → op (тип снят из full-save pattern)", () => {
+  const out = mapCommandToOps({
+    command: "shape.create",
+    action: "execute",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "shape.create");
+  assert.equal(out.ops[0].elementType, "bpmn:TextAnnotation");
+  assert.deepEqual(out.ops[0].bounds, { x: 650, y: 485, width: 100, height: 30 });
+});
+
+test("S4w1: connection.create bpmn:Association → op (artifactRef в sourceId/targetId)", () => {
+  const out = mapCommandToOps({
+    command: "connection.create",
+    action: "execute",
+    context: {
+      element: { id: "Association_1", type: "bpmn:Association", waypoints: [[417, 228], [684, 485]] },
+      source: { id: "Task_1" },
+      target: { id: "TextAnnotation_1" },
+      parent: { id: "Process_1" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.equal(out.ops.length, 1);
+  assert.equal(out.ops[0].type, "connection.create");
+  assert.equal(out.ops[0].elementType, "bpmn:Association");
+  assert.equal(out.ops[0].sourceId, "Task_1");
+  assert.equal(out.ops[0].targetId, "TextAnnotation_1");
+  assert.deepEqual(out.ops[0].waypoints, [[417, 228], [684, 485]]);
+});
+
+test("S4w1: updateLabel на textAnnotation → updateProperties{text} + shape.resize (bounds под текст)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "execute",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 100, height: 30 } },
+      newLabel: "Золотой эталон",
+      oldLabel: "",
+      newBounds: { x: 650, y: 485, width: 140, height: 50 },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["element.updateProperties", "shape.resize"]);
+  assert.deepEqual(out.ops[0].properties, { text: "Золотой эталон" });
+  assert.deepEqual(out.ops[1].bounds, { x: 650, y: 485, width: 140, height: 50 });
+});
+
+test("S4w1: undo updateLabel textAnnotation → needsFullSave (oldBounds не в снапшоте; причина зафиксирована)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "undo",
+    context: {
+      element: { id: "TextAnnotation_1", type: "bpmn:TextAnnotation", bounds: { x: 650, y: 485, width: 140, height: 50 } },
+      newLabel: "Новый",
+      oldLabel: "Старый",
+      newBounds: { x: 650, y: 485, width: 140, height: 50 },
+    },
+  });
+  assert.equal(out.needsFullSave, true, "undo текст-правки аннотации — честный full-save");
+  assert.equal(out.ops.length, 0);
+});
+
+test("S4w1: updateLabel обычного элемента не затронут (name-путь как раньше)", () => {
+  const out = mapCommandToOps({
+    command: "element.updateLabel",
+    action: "execute",
+    context: { element: { id: "Task_1", type: "bpmn:UserTask" }, newLabel: "N", oldLabel: "O" },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops[0].properties, { name: "N" });
+});
+
+test("S4w1: participant/lane/data-refs остаются cold до своих волн", () => {
+  for (const type of ["bpmn:Participant", "bpmn:Lane", "bpmn:DataStoreReference", "bpmn:DataObjectReference"]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: { element: { id: "X_1", type, bounds: { x: 1, y: 2, width: 3, height: 4 } }, parent: { id: "P" } },
+    });
+    assert.equal(out.needsFullSave, true, `${type} ещё cold`);
+  }
 });

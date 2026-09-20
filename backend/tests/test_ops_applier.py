@@ -1,8 +1,17 @@
 """Server-side fail-safe validation for unsafe artifact shape ops (Task 6)."""
 
+import xml.etree.ElementTree as ET
+
 import pytest
 
-from app.save_services.ops_applier import OperationApplyError, apply_operations
+from app.save_services.ops_applier import (
+    BPMN_NS,
+    BPMNDI_NS,
+    OperationApplyError,
+    _local,
+    _ns,
+    apply_operations,
+)
 
 XML = (
     '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
@@ -19,8 +28,8 @@ UNSAFE_CREATE_CASES = [
     "bpmn:DataObjectReference",
     "bpmn:DataInputAssociation",
     "bpmn:DataOutputAssociation",
-    "bpmn:Association",
-    "bpmn:TextAnnotation",
+    # S4 волна 1: Association/TextAnnotation выведены в ops (golden-parity
+    # evidence/s4) — в списке остаются неснятые cold-типы.
 ]
 
 
@@ -66,7 +75,7 @@ CONNECTION_XML = (
 )
 
 UNSAFE_CONNECTION_TYPES = [
-    "bpmn:Association",
+    # S4 волна 1 сняла bpmn:Association (golden-parity).
     "bpmn:DataInputAssociation",
     "bpmn:DataOutputAssociation",
 ]
@@ -100,3 +109,126 @@ def test_connection_create_sequence_flow_still_works():
     result = apply_operations(CONNECTION_XML, [_connection_op("Flow_1", "bpmn:SequenceFlow")])
     assert 'id="Flow_1"' in result
     assert "<bpmn:sequenceFlow" in result
+
+
+# ---------------------------------------------------------------------------
+# Контур feature/mutation-gateway-c3 (срез S4, волна 1): textAnnotation +
+# association. Golden — реальный full-PUT bpmn-js (evidence/s4/logs/s4-golden.xml):
+# <bpmn:textAnnotation id><bpmn:text>..</bpmn:text></bpmn:textAnnotation>;
+# <bpmn:association id sourceRef targetRef/> БЕЗ incoming/outgoing у endpoints.
+# ---------------------------------------------------------------------------
+
+ARTIFACT_BASE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Defs_art" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_art" isExecutable="false">
+    <bpmn:userTask id="Task_1" name="Task one">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start_1" targetRef="Task_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="D1"><bpmndi:BPMNPlane id="P1" bpmnElement="Process_art">
+    <bpmndi:BPMNShape id="Task_1_di" bpmnElement="Task_1"><dc:Bounds x="290" y="148" width="170" height="80" /></bpmndi:BPMNShape>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>"""
+
+
+def test_s4w1_text_annotation_create_matches_golden():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(ARTIFACT_BASE_XML, [
+        {"opId": "a1", "type": "shape.create", "elementId": "TextAnnotation_1",
+         "bpmnType": "bpmn:TextAnnotation", "x": 650, "y": 485, "width": 100, "height": 30,
+         "parentId": "Process_art"},
+    ])
+    root = ET.fromstring(out)
+    ann = _find_semantic_by_id(root, "TextAnnotation_1")
+    assert ann is not None and ann.tag == f"{{{BPMN_NS}}}textAnnotation"
+    texts = [ch for ch in ann if ch.tag == f"{{{BPMN_NS}}}text"]
+    assert len(texts) <= 1  # пустая аннотация — без <bpmn:text> или с пустым
+    di = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNShape"
+          and el.get("bpmnElement") == "TextAnnotation_1"]
+    assert len(di) == 1
+
+
+def _find_semantic_by_id(root, element_id):
+    for el in root.iter():
+        if el.get("id") == element_id and _ns(el.tag) == BPMN_NS:
+            return el
+    return None
+
+
+def test_s4w1_association_create_no_incoming_outgoing():
+    from app.save_services.ops_applier import apply_operations
+    ops = [
+        {"opId": "a1", "type": "shape.create", "elementId": "TextAnnotation_1",
+         "bpmnType": "bpmn:TextAnnotation", "x": 650, "y": 485, "width": 100, "height": 30,
+         "parentId": "Process_art"},
+        {"opId": "a2", "type": "connection.create", "elementId": "Association_1",
+         "bpmnType": "bpmn:Association", "sourceId": "Task_1", "targetId": "TextAnnotation_1",
+         "waypoints": [[417, 228], [684, 485]]},
+    ]
+    out = apply_operations(ARTIFACT_BASE_XML, ops)
+    root = ET.fromstring(out)
+    assoc = _find_semantic_by_id(root, "Association_1")
+    assert assoc is not None and assoc.tag == f"{{{BPMN_NS}}}association"
+    assert assoc.get("sourceRef") == "Task_1"
+    assert assoc.get("targetRef") == "TextAnnotation_1"
+    # golden parity: incoming/outgoing НЕ создаются для association.
+    task = _find_semantic_by_id(root, "Task_1")
+    incident = [ch for ch in task if _local(ch.tag) in ("incoming", "outgoing")]
+    assert [ch.text for ch in incident] == ["Flow_1"]
+    ann = _find_semantic_by_id(root, "TextAnnotation_1")
+    assert len([ch for ch in ann if _local(ch.tag) in ("incoming", "outgoing")]) == 0
+    edges = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNEdge"
+             and el.get("bpmnElement") == "Association_1"]
+    assert len(edges) == 1
+
+
+def test_s4w1_association_missing_artifact_ref_typed_422():
+    from app.save_services.ops_applier import OperationApplyError, apply_operations
+    with pytest.raises(OperationApplyError) as exc:
+        apply_operations(ARTIFACT_BASE_XML, [
+            {"opId": "a2", "type": "connection.create", "elementId": "Association_1",
+             "bpmnType": "bpmn:Association", "sourceId": "Task_1", "targetId": "Ghost_9",
+             "waypoints": [[1, 2], [3, 4]]},
+        ])
+    assert "target_not_found" in str(exc.value)
+
+
+def test_s4w1_text_annotation_text_update_child_element():
+    from app.save_services.ops_applier import apply_operations
+    ops = [
+        {"opId": "a1", "type": "shape.create", "elementId": "TextAnnotation_1",
+         "bpmnType": "bpmn:TextAnnotation", "x": 650, "y": 485, "width": 100, "height": 30,
+         "parentId": "Process_art"},
+        {"opId": "a3", "type": "element.updateProperties", "elementId": "TextAnnotation_1",
+         "properties": {"text": "Золотой эталон"}},
+        {"opId": "a4", "type": "element.updateProperties", "elementId": "TextAnnotation_1",
+         "properties": {"text": "Правка два"}},
+    ]
+    out = apply_operations(ARTIFACT_BASE_XML, ops)
+    root = ET.fromstring(out)
+    ann = _find_semantic_by_id(root, "TextAnnotation_1")
+    texts = [ch for ch in ann if ch.tag == f"{{{BPMN_NS}}}text"]
+    assert len(texts) == 1, "повторная правка заменяет <bpmn:text>, а не плодит"
+    assert texts[0].text == "Правка два"
+    assert ann.get("text") is None, "текст аннотации — НЕ атрибут (golden parity)"
+
+
+def test_s4w1_delete_annotation_cascades_association():
+    from app.save_services.ops_applier import apply_operations
+    ops = [
+        {"opId": "a1", "type": "shape.create", "elementId": "TextAnnotation_1",
+         "bpmnType": "bpmn:TextAnnotation", "x": 650, "y": 485, "width": 100, "height": 30,
+         "parentId": "Process_art"},
+        {"opId": "a2", "type": "connection.create", "elementId": "Association_1",
+         "bpmnType": "bpmn:Association", "sourceId": "Task_1", "targetId": "TextAnnotation_1",
+         "waypoints": [[417, 228], [684, 485]]},
+        {"opId": "a5", "type": "shape.delete", "elementId": "TextAnnotation_1"},
+    ]
+    out = apply_operations(ARTIFACT_BASE_XML, ops)
+    root = ET.fromstring(out)
+    assert _find_semantic_by_id(root, "TextAnnotation_1") is None
+    assert _find_semantic_by_id(root, "Association_1") is None
+    edges = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNEdge"
+             and el.get("bpmnElement") == "Association_1"]
+    assert len(edges) == 0
