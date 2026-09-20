@@ -37,3 +37,10 @@
 - participant/pool — cold навсегда (трансформирующая create, риск #995, PLAN §8).
 - Находки: restart api обязателен после backend-правок (uvicorn держит код в памяти, 422 на свежих типах — поймано e2e-итерациями волн 2/3).
 - e2e-гейты всех волн PASS на контейнере (create/move real-drag/delete → 0 PUT /bpmn, ≥1 POST /operations, reload server truth). Полный сьют 3997, 0 новых падений. Метрика путей 18→14.
+
+## 2026-09-20 — S5 property panel → ops (Agent 2, Executor)
+- Инвентаризация писателей первым шагом (классы A/B/B2/C, file:line в EXEC_REPORT_S5).
+- ДЫРА закрыта: documentation moddle rows молча терялись sanitize'ом → фантомный no-op op; теперь serializeDocumentationRows + backend replace-children (golden parity). camunda-атрибуты verbatim + applier xmlns-declaration (unbound prefix краш).
+- Класс C (camunda custom properties) — explicit cold (needsFullSave, #995); boundary-apply подавлен (suppressCommandStackRef) — фантомный op/двойной PUT устранены.
+- e2e по классам PASS (0 PUT / 1 ops, reload server truth). Полный сьют 4002, 0 новых падений. Метрика путей 14→13.
+- Hang-тест: transportTimeoutMs=60_000 намеренно → тест устарел, не дыра S5 (tech-debt, эскалация).
