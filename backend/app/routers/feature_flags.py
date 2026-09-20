@@ -92,6 +92,7 @@ def _reject_env_flags(keys) -> None:
 
 
 @router.patch("/api/admin/feature-flags", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin или членство в организации с нужными правами"},
     422: {"description": "Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY"},
 })
 def patch_feature_flags_endpoint(request: Request, body: Dict[str, Any]) -> Any:
@@ -109,6 +110,7 @@ def patch_feature_flags_endpoint(request: Request, body: Dict[str, Any]) -> Any:
 
 
 @router.put("/api/admin/feature-flags/{key}", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin или членство в организации с нужными правами"},
     422: {"description": "Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY"},
 })
 def put_feature_flag_endpoint(key: str, request: Request, body: Dict[str, Any]) -> Any:
@@ -124,7 +126,9 @@ def put_feature_flag_endpoint(key: str, request: Request, body: Dict[str, Any]) 
     return {"ok": True, "key": key, "value": value, "flags": _get_flags(org_id)}
 
 
-@router.get("/api/admin/feature-flags/catalog")
+@router.get("/api/admin/feature-flags/catalog", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin или членство в организации с нужными правами"},
+})
 def get_feature_flags_catalog_endpoint(request: Request) -> Any:
     user = _request_auth_user(request)
     if not bool(user.get("is_admin")):
