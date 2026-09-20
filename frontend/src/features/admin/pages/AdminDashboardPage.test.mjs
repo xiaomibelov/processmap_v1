@@ -86,6 +86,7 @@ const DASHBOARD_PAYLOAD = {
   ],
   recent_audit: [
     { id: "a1", action: "org.update", status: "ok", actor: "admin@local", ts: 1720000000 },
+    { id: "a2", action: "login", status: "ok", actor: "d1a4751e90a14f98b604066b38377bd2", ts: 1720000100 },
   ],
 };
 
@@ -218,7 +219,7 @@ test("SMOKE: Сводка рендерится без краша на пусто
     await renderPage(env, { payload: {} });
     const text = env.dom.window.document.body.textContent;
     assert.ok(text.includes("Возможности системы"));
-    assert.ok(text.includes("Сигналов нет"), "пустой attention → «Сигналов нет»");
+    assert.ok(text.includes("Всё в порядке"), "пустой attention → «Всё в порядке»");
   } finally {
     await env.cleanup();
   }
@@ -293,7 +294,7 @@ test("capability map: ссылка строки переходит по href ч�
 
 // ---------- Требует реакции ----------
 
-test("attention: рендерит сигналы с count и переходом; пусто → «Сигналов нет»", async () => {
+test("attention: slim-плашка рендерит сигналы; пусто → «Всё в порядке»", async () => {
   const env = setupDom();
   try {
     await renderPage(env);
@@ -304,7 +305,7 @@ test("attention: рендерит сигналы с count и переходом;
     const env2 = setupDom();
     try {
       await renderPage(env2, { payload: { ...DASHBOARD_PAYLOAD, attention: [] } });
-      assert.ok(env2.dom.window.document.body.textContent.includes("Сигналов нет"));
+      assert.ok(env2.dom.window.document.body.textContent.includes("Всё в порядке"));
     } finally {
       await env2.cleanup();
     }
@@ -314,6 +315,28 @@ test("attention: рендерит сигналы с count и переходом;
 });
 
 // ---------- Feature Flags (каталог) ----------
+
+test("layout: slim-плашка → система → карта+флаги → аудит (порядок секций)", async () => {
+  const env = setupDom();
+  try {
+    await renderPage(env, { payload: { ...DASHBOARD_PAYLOAD, attention: [] } });
+    const doc = env.dom.window.document;
+    const order = [
+      doc.querySelector('[data-testid="attention-strip"]'),
+      doc.querySelector('[data-testid="system-facts"]'),
+      doc.querySelector('[data-testid="capability-domain-canvas"]'),
+      doc.querySelector('[data-testid="flags-group-canvas"]'),
+      doc.querySelector("table"),
+    ];
+    assert.ok(order.every(Boolean), "все секции в DOM");
+    for (let i = 0; i < order.length - 1; i += 1) {
+      const rel = order[i].compareDocumentPosition(order[i + 1]);
+      assert.ok(rel & env.dom.window.Node.DOCUMENT_POSITION_FOLLOWING, `секция ${i} идёт перед секцией ${i + 1}`);
+    }
+  } finally {
+    await env.cleanup();
+  }
+});
 
 test("flags: рендерит группы каталога, бейджи зрелости и «Прочее» для unknown-флагов", async () => {
   const env = setupDom();
@@ -346,11 +369,21 @@ test("flags: env-флаг read-only (disabled + подсказка)", async () =
   }
 });
 
-test("flags: рендерит owner_contour и removal_criterion из каталога", async () => {
+test("flags: раскрытие строки показывает description + owner_contour + removal_criterion", async () => {
   const env = setupDom();
   try {
     await renderPage(env);
     const doc = env.dom.window.document;
+    const expand = doc.querySelector('[data-testid="flag-expand-useBpmnExtensionOverlays"]');
+    assert.ok(expand, "кнопка раскрытия строки флага");
+    assert.equal(expand.getAttribute("aria-expanded"), "false", "по умолчанию свёрнуто");
+    assert.equal(doc.querySelector('[data-testid="flag-owner-useBpmnExtensionOverlays"]'), null, "meta свёрнуты");
+
+    await act(async () => {
+      expand.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    assert.equal(expand.getAttribute("aria-expanded"), "true", "после клика раскрыто");
     const owner = doc.querySelector('[data-testid="flag-owner-useBpmnExtensionOverlays"]');
     const removal = doc.querySelector('[data-testid="flag-removal-useBpmnExtensionOverlays"]');
     assert.ok(owner, "строка владельца-контура есть");
@@ -359,7 +392,12 @@ test("flags: рендерит owner_contour и removal_criterion из катал
     assert.ok(removal, "строка критерия снятия есть");
     assert.ok(removal.textContent.includes(ru.admin.dashboardPage.featureFlags.removalCriterion), "подпись из i18n");
     assert.ok(removal.textContent.includes("2 недели без инцидентов"), "значение removal_criterion из payload");
-    // пустое removal_criterion у env-флага не рендерит строку
+    // пустое removal_criterion у env-флага не рендерит строку даже после раскрытия
+    const envExpand = doc.querySelector('[data-testid="flag-expand-FPC_ASYNC_SUBPROCESS_SYNC"]');
+    await act(async () => {
+      envExpand.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
     assert.equal(doc.querySelector('[data-testid="flag-removal-FPC_ASYNC_SUBPROCESS_SYNC"]'), null);
   } finally {
     await env.cleanup();
@@ -430,17 +468,38 @@ test("system: одна строка фактов — только присутс
   }
 });
 
-// ---------- i18n parity новых ключей ----------
+test("recent audit: actor hex-id → короткий id + title, email — целиком", async () => {
+  const env = setupDom();
+  try {
+    await renderPage(env);
+    const doc = env.dom.window.document;
+    const hexActor = doc.querySelector('tbody td span[title="d1a4751e90a14f98b604066b38377bd2"]');
+    assert.ok(hexActor, "hex-актор с title=полный id");
+    assert.equal(hexActor.textContent, "d1a4751e", "короткий id (8 символов)");
+    const emailCell = Array.from(doc.querySelectorAll("tbody td")).find((td) => td.textContent.trim() === "admin@local");
+    assert.ok(emailCell, "email-актор показан целиком");
+  } finally {
+    await env.cleanup();
+  }
+});
 
+// ---------- i18n parity новых ключей ----------
 test("i18n: секции Сводки рендерятся на en при setLocale(\"en\")", async () => {
   const env = setupDom();
   try {
     await renderPage(env, { payload: { ...DASHBOARD_PAYLOAD, attention: [] }, locale: "en" });
-    const text = env.dom.window.document.body.textContent;
+    const doc = env.dom.window.document;
+    const text = doc.body.textContent;
     assert.ok(text.includes("System capabilities"), "en-заголовок capability map");
-    assert.ok(text.includes("No signals"), "en attentionEmpty");
-    assert.ok(text.includes("Owner contour"), "en ownerContour");
+    assert.ok(text.includes("All clear"), "en attentionAllClear");
     assert.ok(text.includes("working"), "en статус ok");
+    const expand = doc.querySelector('[data-testid="flag-expand-useBpmnExtensionOverlays"]');
+    await act(async () => {
+      expand.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    assert.ok(doc.body.textContent.includes("Owner contour"), "en ownerContour в раскрытой строке");
+    assert.ok(doc.body.textContent.includes("Recent Audit"), "en recentAudit.title");
   } finally {
     await env.cleanup();
   }
@@ -448,7 +507,8 @@ test("i18n: секции Сводки рендерятся на en при setLoc
 
 test("i18n: новые ключи admin.dashboardPage есть и в ru, и в en", () => {
   const keys = [
-    "capabilitiesTitle", "attentionTitle", "attentionEmpty", "flagsTitle",
+    "capabilitiesTitle", "attentionTitle", "attentionAllClear", "flagsTitle",
+    "recentAudit.title", "recentAudit.colActor", "recentAudit.emptyTitle",
     "flagsEnvHint", "flagsToggleError", "otherGroup", "systemTitle",
     "featureFlags.ownerContour", "featureFlags.removalCriterion",
     "status.ok", "status.pilot", "status.off", "status.attention", "status.no_data",
