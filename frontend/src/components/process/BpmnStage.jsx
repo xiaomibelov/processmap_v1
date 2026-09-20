@@ -28,6 +28,7 @@ import {
 } from "../../features/process/stage/presence/softLockBus.js";
 import { getVersion as getTrackedDiagramStateVersion } from "../../lib/casVersionTracker.js";
 import { onDiagramDragEnd } from "../../features/process/bpmn/stage/diagramDragState.js";
+import { armDeferredSaveRetry } from "../../features/process/bpmn/save/deferredSaveRetry.js";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
@@ -5225,6 +5226,10 @@ const BpmnStage = forwardRef(function BpmnStage({
         && directEditingService.isActive()
       );
       if (directEditingActive && !force) {
+        // fix/ops-422 (RC2 blackhole): отложенный save обязан доехать ПО
+        // завершении direct-editing — иначе complete/cancel без изменения
+        // текста не запросит autosave ничем и правки потеряются молча.
+        armDeferredSaveRetry(activeModeler, () => { void saveFromModeler(options); });
         return { ok: true, pending: true, deferred: true, reason: "direct_editing_active" };
       }
       if (directEditingActive && force) {

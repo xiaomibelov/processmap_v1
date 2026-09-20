@@ -263,6 +263,12 @@ export default function createBpmnCoordinator(options = {}) {
       at: Date.now(),
     };
     emit("PENDING_SAVE_SET", pendingSave);
+    // fix/ops-422 (RC2): pending-replay вооружаем ДЕТЕРМИНИРОВАННО из точки
+    // постановки пендинга — раньше только applyRuntimeStatus при совпадении
+    // токена мог запустить replay, и при неприходе status-события PUT не
+    // выполнялся никогда (blackhole). Валидация токена у retain-логики
+    // по-прежнему: applyRuntimeStatus / isPendingMatch.
+    schedulePendingReplay();
   }
 
   function isPendingMatch(status) {
@@ -275,10 +281,14 @@ export default function createBpmnCoordinator(options = {}) {
 
   function schedulePendingReplay() {
     clearPendingReplayTimer();
-    pendingReplayTimer = window.setTimeout(() => {
+    // globalThis-fallback: координатор юнит-тестируется в node-окружении без
+    // window (fix/ops-422).
+    const timerHost = typeof window !== "undefined" ? window : globalThis;
+    pendingReplayTimer = timerHost.setTimeout(() => {
       pendingReplayTimer = 0;
       void flushSave("pending_replay", { fromPending: true });
     }, 90);
+    if (pendingReplayTimer && typeof pendingReplayTimer.unref === "function") pendingReplayTimer.unref();
   }
 
   async function applyRuntimeChange(ev) {

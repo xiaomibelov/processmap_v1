@@ -82,6 +82,9 @@ function sanitizeUpdateProperties(properties) {
   const out = {};
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined) continue;
+    // fix/ops-422 parity(a): ключ id НЕ уходит в op-payload — applier отверг
+    // бы батч typed 422 protected_property. Отфильтровываем на фронте.
+    if (key === "id") continue;
     if (key === "documentation") {
       const rows = serializeDocumentationRows(value);
       if (rows.needsFullSave) return { needsFullSave: true };
@@ -318,12 +321,15 @@ function mapConnectionCreate(context, inverse) {
     return { needsFullSave: true };
   }
   const wp = waypoints(connection?.waypoints);
+  // fix/ops-422 parity(b): applier требует waypoints ≥2 (missing_waypoints
+  // 422 иначе) — маппер обязан не маппить без них: честный needsFullSave.
+  if (!wp) return { needsFullSave: true };
   return {
     op: makeOp("connection.create", elementId, {
       elementType: elementTypeOf(connection) || "bpmn:SequenceFlow",
       sourceId,
       targetId,
-      ...(wp ? { waypoints: wp } : {}),
+      waypoints: wp,
       parentId: elementIdOf(context?.parent) || "",
     }),
   };
@@ -361,6 +367,60 @@ function mapConnectionReconnect(context, inverse) {
 // bounds/type/parentId/endpoints/text) — тот же compensating-create payload,
 // что и прямой undo shape.delete. Execute-путь (claim при delete) — вложенный,
 // событий не даёт; на всякий случай — needsFullSave (honest unknown).
+// Контур fix/ops-422-quick-create-property (RC1): палитра bpmn-js 18 создаёт
+// шейп командой elements.create (diagram-js batch, context.elements[] —
+// снапшот несёт id/type/bounds/parentId/sourceId/targetId/waypoints). Декомпозиция
+// в СУЩЕСТВУЮЩИЕ shape.create/connection.create ops — новых op-типов/путей НЕТ
+// (applier принимает как есть). Fail-closed: неполный elements → needsFullSave.
+function mapElementsCreate(context, inverse) {
+  const elements = Array.isArray(context?.elements) ? context.elements : [];
+  if (elements.length === 0) return { needsFullSave: true };
+  const shapeOps = [];
+  const connectionOps = [];
+  for (const ref of elements) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const elementType = asText(ref?.type || ref?.businessType || ref?.$type);
+    if (!elementType) return { needsFullSave: true };
+    if (requiresFullSaveForBpmnType(elementType)) return { needsFullSave: true };
+    const parentId = elementIdOf(context?.parent) || asText(ref?.parentId);
+    const isConnection = /sequenceflow|messageflow|association|datainputassociation|dataoutputassociation/i.test(elementType)
+      || (Array.isArray(ref?.waypoints) && !ref?.bounds);
+    if (isConnection) {
+      const sourceId = asText(ref?.sourceId);
+      const targetId = asText(ref?.targetId);
+      const wp = waypoints(ref?.waypoints);
+      // parity(b): applier требует waypoints ≥2 — без них честный needsFullSave,
+      // а не op, гарантированно падающий в 422 missing_waypoints.
+      if (!sourceId || !targetId || !wp) return { needsFullSave: true };
+      connectionOps.push(makeOp("connection.create", elementId, {
+        elementType,
+        sourceId,
+        targetId,
+        waypoints: wp,
+        parentId: parentId || "",
+      }));
+    } else {
+      const b = bounds(ref?.bounds);
+      if (!b) return { needsFullSave: true };
+      const payload = { elementType, bounds: b, parentId: parentId || "" };
+      if (/textannotation/i.test(elementType) && typeof ref?.text === "string") {
+        payload.text = ref.text;
+      }
+      shapeOps.push(makeOp("shape.create", elementId, payload));
+    }
+  }
+  if (inverse) {
+    return {
+      ops: [
+        ...shapeOps.map((op) => makeOp("shape.delete", op.elementId, {})),
+        ...connectionOps.map((op) => makeOp("connection.delete", op.elementId, {})),
+      ],
+    };
+  }
+  return { ops: [...shapeOps, ...connectionOps] };
+}
+
 function mapIdUpdateClaim(context, inverse, action) {
   // undo → compensating create (post-undo live-ref, enrichment runtime);
   // redo → повторное удаление: delete-op по __elementId (тип элемента на
@@ -573,6 +633,7 @@ const WHITELIST = Object.freeze({
   "elements.move": mapElementsMove,
   "spaceTool": mapSpaceTool,
   "id.updateClaim": mapIdUpdateClaim,
+  "elements.create": mapElementsCreate,
 });
 
 export function isReplayCommand(descriptor) {
