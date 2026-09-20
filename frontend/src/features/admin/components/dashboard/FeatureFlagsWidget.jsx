@@ -7,6 +7,7 @@ const DEFAULT_LABELS = {
   canvas_profiler_enabled: "Canvas Profiler (console metrics)",
   lightweightOverlays: "Lightweight Overlays (JSON instead of XML)",
   useBpmnExtensionOverlays: "Hybrid Overlay V2 (white cards, anchor lines)",
+  tobe_overlay_mock: "TO BE overlay (мок)",
 };
 
 export default function FeatureFlagsWidget() {
