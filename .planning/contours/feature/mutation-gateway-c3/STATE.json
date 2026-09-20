@@ -54,6 +54,24 @@
     "S8 metrics 1d"
   ],
   "slices_progress": {
+    "s2": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "keep-final positional flush → lane-семантику: armDragFinalTimer без guard saveInFlight, F3 re-arm (finally flushSave/persistExplicitXml) удалён, lane даёт детерминированный defer + base-at-send-time. Перенос БЕЗ СЪЁМА (e2e: drag→reload→элемент на месте, keep-final PUT 524мс после mouseup)",
+      "diffstat": "2 файла +248/-12 (координатор +12/-12 фактически -2 строки + новый characterization-файл +236)",
+      "tests": "coordinator-зона 91/91; полный сьют 3978, 0 новых падений vs S1-baseline",
+      "e2e_gate": "PASS 2/2 на локальном стеке ветки (COMPOSE_PROJECT_NAME=wt-mgc3-s2, API 18011, frontend 15177; чужой стек wt-audit-canvas-409 на 8011/5177 не тронут). evidence/s2/",
+      "artifacts": ["EXEC_REPORT_S2.md", "PR_S2.md"],
+      "next": "S3 op wave A: elements.move батч shape.move + backend id-индекс"
+    },
+    "s3_pinpoint": {
+      "date": "2026-09-20",
+      "finding": "elements.move commandContext = {delta, parent} — список перемещаемых элементов теряется. diagram-js Modeling.moveElements строит контекст с полем shapes (diagram-js/lib/features/modeling/Modeling.js:236-243), а snapshotCommandContext (createBpmnRuntime.js:155-190) маппит только context.elements — shapes молча пропускается; newParent доезжает через алиас parent",
+      "evidence": "evidence/s2/s2-e2e-drag-persist.mjs (rt.onChange probe на реальном drag, logs/s2-events.jsonl: pinpoint-drag-events ctxKeys=[delta,parent])",
+      "fix_in_s3": "snapshotCommandContext: добавить маппинг context.shapes (~4 строки, аналог context.elements) + маппер elements.move → батч shape.move в commandToOps; snapshotElementRef уже несёт id/bounds/waypoints — для батч-маппинга достаточно",
+      "volume": "~5-8 строк runtime + маппер + parity-тесты (S3)"
+    },
     "s1": {
       "status": "done_local",
       "date": "2026-09-20",

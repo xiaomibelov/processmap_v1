@@ -15,4 +15,11 @@
 - Цель среза: per-session mutation lane в saveCoordinator + поглощение ad-hoc взаимных исключений (busy-poll 200 мс, fullSavePreserve/manualSaveCoveredOpIds sentinel-пара, coordinator flushPromise triangulation).
 - Дизайн-решение RED-фазы: reentrancy lane — СТРОГО по явному токену chain (transport 4-й аргумент → `options.laneContext` → `payload.mutationLaneContext`); временная эвристика «вызов во время занятой lane» отвергнута — неотличима от внешнего вызова (первая итерация GREEN давала конкурентный ops-flush, поймано тестами).
 - Entry-time проверки outbox-flush (degraded/offline) перепроверяются внутри lane-task — иначе отложенный flush исполнялся по устаревшему состоянию (поймано тестом 422-bounded-retries).
-- Результат: lane-core + поглощение ad-hoc + kill-switch `fpc_gateway_lane` (default ON). Подробности: EXEC_REPORT_S1.md, PR_S1.md.
+- Результат: lane-core + поглощение ad-hoc + kill-switch `fpc_gateway_lane` (default ON). VERIFIED гейтом владельца, push: HEAD `e8919198`. Подробности: EXEC_REPORT_S1.md, PR_S1.md.
+
+## 2026-09-20 — S2 positional keep-final → lane (Agent 2, Executor)
+- Цель: keep-final flush (drag-final/positional таймеры → flushSave → rawXml) как полноценный lane-участник; ad-hoc наложение F3 (guard `!saveInFlight` + re-arm в finally ×2) удалено — lane даёт детерминированный defer, base-at-send-time из tracker.
+- RED→GREEN: latency-тест поймал F3 re-arm debounce (21 мс) → после снятия guard'а latency <10 мс; обе F3-характеризации остались зелёными без правок (контракт теперь даёт lane).
+- **Перенос без съёма** (инвариант владельца №1): e2e-гейт на ЛОКАЛЬНОМ стеке ветки 2/2 PASS — реальный drag T_5 (+60,+20 после snap), keep-final `PUT /bpmn` через 524 мс после mouseup, reload → элемент на месте, серверный XML (1360,80). Чужой стек `wt-audit-canvas-409` (8011/5177) не тронут; свой `wt-mgc3-s2` (API 18011, frontend 15177).
+- **s3_pinpoint (без фикса)**: `elements.move` context = `{delta, parent}` — `shapes` теряется: diagram-js `moveElements` кладёт `shapes` (Modeling.js:236-243), `snapshotCommandContext` маппит только `elements`. Фикс ~4-8 строк runtime в S3 + маппер батч shape.move.
+- Полный сьют: 3978 тестов, 0 новых падений vs S1-baseline. Артефакты: EXEC_REPORT_S2.md, PR_S2.md.

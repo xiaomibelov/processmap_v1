@@ -790,7 +790,12 @@ export default function createBpmnCoordinator(options = {}) {
   function armDragFinalTimer() {
     // If there are structural or positional changes that never got flushed,
     // schedule one final debounced save shortly after mouseup.
-    if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer && !saveInFlight) {
+    // C3/S2: занятость save (in-flight flush) больше не откладывает взвод
+    // таймера — keep-final flush является полноценным lane-участником:
+    // flushSave исполняется как task mutation lane и детерминированно
+    // деферится при занятой lane (ad-hoc наложение F3 «guard saveInFlight +
+    // re-arm в finally» удалено, сериализацию даёт gatewayLane).
+    if ((dragPendingStructural || pendingPositionalChange) && !dragFinalTimer) {
       dragFinalTimer = window.setTimeout(() => {
         dragFinalTimer = 0;
         const hadStructural = dragPendingStructural;
@@ -811,8 +816,8 @@ export default function createBpmnCoordinator(options = {}) {
       window.clearTimeout(dragThrottleTimer);
       dragThrottleTimer = 0;
     }
-    // Drag-end, пришедшийся на in-flight PUT, здесь таймер НЕ взводит
-    // (saveInFlight) — до-вооружение происходит в finally flushSave (F3).
+    // Таймер взводится всегда (C3/S2); занятая lane даст детерминированный
+    // defer самого flushSave — без ожидания finally in-flight PUT.
     armDragFinalTimer();
   }
 
@@ -900,11 +905,10 @@ export default function createBpmnCoordinator(options = {}) {
         }
         return result;
       } finally {
+        // C3/S2: re-arm drag-final здесь больше не нужен — таймер взводится
+        // на drag-end без guard'а saveInFlight, а lane детерминированно
+        // деферит сам flushSave (ad-hoc наложение F3 удалено).
         saveInFlight = false;
-        // Drag-end мог прийтись на in-flight PUT: notifyDragEnd не взвёл
-        // dragFinalTimer (saveInFlight), pending-флаги остались без таймера —
-        // до-вооружаем финальный flush после завершения PUT (F3).
-        armDragFinalTimer();
       }
     })();
     return run;
@@ -1043,12 +1047,8 @@ export default function createBpmnCoordinator(options = {}) {
             : null,
         };
       } finally {
+        // C3/S2: зеркально flushSave — F3-residual re-arm удалён (lane-дефер).
         saveInFlight = false;
-        // Drag-end мог прийтись на in-flight property PUT: notifyDragEnd не
-        // взвёл dragFinalTimer (saveInFlight), pending-флаги остались без
-        // таймера — до-вооружаем финальный flush после завершения explicit
-        // persist (F3-residual, зеркально finally flushSave).
-        armDragFinalTimer();
       }
     })();
     return run;
