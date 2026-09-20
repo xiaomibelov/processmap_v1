@@ -9,6 +9,8 @@ import AdminPermissionsPanel from "../components/permissions/AdminPermissionsPan
 import AdminGitMirrorPanel from "../components/gitMirror/AdminGitMirrorPanel";
 import AdminSystemPanel from "../components/system/AdminSystemPanel";
 import AdminGroupsPanel from "../components/groups/AdminGroupsPanel";
+import PublishGitMirrorWidget from "../components/dashboard/PublishGitMirrorWidget";
+import useAdminDashboardSnapshot from "../hooks/useAdminDashboardSnapshot";
 
 const ALL_ORGS_TABS = [
   { id: "users", label: "Пользователи" },
@@ -33,19 +35,20 @@ export default function AdminOrgsPage({
   onRefresh,
   recentInvite = null,
   onInviteCreated,
+  onNavigate,
 }) {
   const canManagePermissions = useMemo(() => _canManagePermissions(isAdmin, activeOrgRole), [isAdmin, activeOrgRole]);
   const visibleTabs = useMemo(
     () => ALL_ORGS_TABS.filter((t) => t.id !== "permissions" || canManagePermissions),
     [canManagePermissions]
   );
-
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return "users";
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
     return tab && visibleTabs.some((t) => t.id === tab) ? tab : "users";
   });
+  const gitMirrorDashboard = useAdminDashboardSnapshot({ enabled: activeTab === "gitMirror" });
   const effectiveOrgId = activeOrgId || payload?.active_org_id;
 
   useEffect(() => {
@@ -129,6 +132,11 @@ export default function AdminOrgsPage({
     if (activeTab === "gitMirror") {
       return (
         <div id="admin-access-git">
+          {gitMirrorDashboard.data ? (
+            <div className="mb-4">
+              <PublishGitMirrorWidget payload={gitMirrorDashboard.data?.publish_git_mirror || {}} />
+            </div>
+          ) : null}
           <AdminGitMirrorPanel
             activeOrgId={effectiveOrgId}
             activeOrgRole={activeOrgRole}
