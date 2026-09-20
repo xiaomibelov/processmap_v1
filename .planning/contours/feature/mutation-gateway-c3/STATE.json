@@ -133,6 +133,23 @@
       ],
       "next": "S5 property panel → element.updateProperties ops",
       "pushed_sha": "da4a267c"
+    },
+    "s5": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "property panel → element.updateProperties ops: класс B documentation (ДЫРА sanitize: moddle rows терялись молча → serializeDocumentationRows + backend replace-children golden-parity), класс B2 camunda-атрибуты verbatim (+applier xmlns-declaration, unbound prefix краш), класс C camunda custom properties — explicit cold (needsFullSave, причина #995) + suppression boundary-apply (фантомный op/двойной PUT устранены). sanitizeValue-контракт усилен: moddle → needsFullSave",
+      "inventory": "EXEC_REPORT_S5 §Инвентаризация (классы A/B/B2/C + file:line)",
+      "diffstat_commit": "90fcb467 (+267/-8 по 6 файлам)",
+      "tests": "backend 58+3 subtests; frontend save-зоны 553/554 (hang pre-existing); полный сьют 4002, 0 новых падений",
+      "e2e_gate": "PASS (rename/documentation/camunda:assignee → 0 PUT, 1 ops, reload server truth; контейнер 15177). evidence/s5/",
+      "hang_test_verdict": "pre-existing: transportTimeoutMs 60_000 намеренно > hang 12с теста; не дыра S5; tech-debt мини-фикс вне скоупа",
+      "paths_metric_after_s5": "14→13: documentation в ops; cold: C(#995)/participant/data-ассоциации/degrade(S6)/undo-delete(S7)/системные §9",
+      "artifacts": [
+        "EXEC_REPORT_S5.md",
+        "PR_S5.md"
+      ],
+      "next": "S6 degrade-замена + аудит прямых PUT + fpc_gateway_cold_fallback-ветки"
     }
   },
   "acceptance_metrics": {
