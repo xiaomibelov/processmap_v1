@@ -5717,7 +5717,14 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
     opsOutboxRef.current = outbox;
     // Mouseup drag-commit (UI.md §2): существующий diagramDragState bus.
-    const unsubscribeDragEnd = onDiagramDragEnd(() => outbox.commitDrag());
+    const unsubscribeDragEnd = onDiagramDragEnd(() => {
+      outbox.commitDrag();
+      // S8 (persist-латентность drag-end → server ack < 300 мс): детерминированный
+      // flush на mouseup. Debounce 2500 мс остаётся для burst-коалесценции ВО
+      // ВРЕМЯ drag/typing; semантика «keep-final at mouseup» — зеркало
+      // вытесненного keep-final full-PUT (S2). Пустой буфер — дешёвый no-op.
+      void outbox.flushNow({ reason: "drag-end" });
+    });
     // Online-триггер (step2 UI.md §3): window online → немедленный flush;
     // offline → flush suppressed + ops-local/offline status-событие.
     const uninstallNetworkTriggers = installOpsOutboxNetworkTriggers(outbox);
