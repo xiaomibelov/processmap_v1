@@ -135,7 +135,7 @@
       "pushed_sha": "da4a267c"
     },
     "s5": {
-      "status": "done_local",
+      "status": "done_pushed",
       "date": "2026-09-20",
       "executor": "Agent 2",
       "scope": "property panel → element.updateProperties ops: класс B documentation (ДЫРА sanitize: moddle rows терялись молча → serializeDocumentationRows + backend replace-children golden-parity), класс B2 camunda-атрибуты verbatim (+applier xmlns-declaration, unbound prefix краш), класс C camunda custom properties — explicit cold (needsFullSave, причина #995) + suppression boundary-apply (фантомный op/двойной PUT устранены). sanitizeValue-контракт усилен: moddle → needsFullSave",
@@ -149,7 +149,8 @@
         "EXEC_REPORT_S5.md",
         "PR_S5.md"
       ],
-      "next": "S6 degrade-замена + аудит прямых PUT + fpc_gateway_cold_fallback-ветки"
+      "next": "S6 degrade-замена + аудит прямых PUT + fpc_gateway_cold_fallback-ветки",
+      "pushed_sha": "24897363"
     }
   },
   "acceptance_metrics": {
