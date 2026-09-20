@@ -948,6 +948,9 @@ export default function createBpmnPersistence(options = {}) {
       apiPutBpmnXml,
       apiGetSessionMeta,
       rememberDiagramStateVersion: rememberExternalDiagramStateVersion,
+      // C3/S1: токен вложенной mutation-chain — rawXml-прогон обязан пройти
+      // lane inline (иначе deadlock за внешним xml-прогоном).
+      ...(options?.laneContext ? { mutationLaneContext: options.laneContext } : {}),
     });
     emit("API_PUT_BPMN_XML_RESULT", {
       sid,
