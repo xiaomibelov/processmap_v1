@@ -152,6 +152,54 @@ export default function createBpmnRuntime(options = {}) {
     return out;
   }
 
+  // S3 (op wave A): affected-connections enrichment для positional-батчей.
+  // Вложенные connection-обновления diagram-js «тихие» (commandStack.changed
+  // фаерится только на outermost action — _popAction), поэтому рантайн
+  // доснимает финальные waypoints сам: elements.move — closure.allConnections
+  // (fallback — incoming/outgoing shapes), spaceTool — инцидентные связи
+  // moving∪resizing. На undo-changed снапшот снимается с post-undo
+  // состояния — captured waypoints корректны для обоих направлений.
+  function collectIncidentConnections(rawShapes) {
+    const seen = new Map();
+    for (const shape of rawShapes) {
+      for (const list of [shape?.incoming, shape?.outgoing]) {
+        if (!Array.isArray(list)) continue;
+        for (const conn of list) {
+          if (conn && asText(conn.id) && !seen.has(conn.id)) seen.set(conn.id, conn);
+        }
+      }
+    }
+    return [...seen.values()];
+  }
+
+  function enrichPositionalSnapshot(commandRaw, rawContext, snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    const command = asText(commandRaw);
+    let connections = null;
+    if (command === "elements.move") {
+      const closureConns = rawContext?.closure?.allConnections;
+      if (closureConns && typeof closureConns === "object") {
+        connections = Object.values(closureConns);
+      } else {
+        connections = collectIncidentConnections(
+          Array.isArray(rawContext?.shapes) ? rawContext.shapes : [],
+        );
+      }
+    } else if (command === "spaceTool") {
+      connections = collectIncidentConnections([
+        ...(Array.isArray(rawContext?.movingShapes) ? rawContext.movingShapes : []),
+        ...(Array.isArray(rawContext?.resizingShapes) ? rawContext.resizingShapes : []),
+      ]);
+    }
+    if (!connections || connections.length === 0) return;
+    const snapshotConns = connections
+      .map((ref) => snapshotElementRef(ref))
+      .filter(Boolean);
+    if (snapshotConns.length > 0) {
+      snapshot.affectedConnections = snapshotConns;
+    }
+  }
+
   function snapshotCommandContext(contextRaw) {
     if (!contextRaw || typeof contextRaw !== "object") return null;
     const context = contextRaw;
@@ -167,6 +215,28 @@ export default function createBpmnRuntime(options = {}) {
     if (Array.isArray(context.elements)) {
       out.elements = context.elements.map((entry) => snapshotElementRef(entry)).filter(Boolean);
     }
+    // S3 (op wave A): diagram-js moveElements/createSpace несут списки под
+    // ключами shapes/movingShapes/resizingShapes (s3_pinpoint S2) — parity-
+    // маппинг с elements, иначе список молча теряется.
+    for (const listKey of ["shapes", "movingShapes", "resizingShapes"]) {
+      if (Array.isArray(context[listKey])) {
+        out[listKey] = context[listKey].map((entry) => snapshotElementRef(entry)).filter(Boolean);
+      }
+    }
+    // Reparent/attach-детекция для fail-closed маппера elements.move: handler
+    // диаграммы фиксирует pre-move parent в hints.oldParent (postExecute).
+    const hintsOldParent = snapshotElementRef(context?.hints?.oldParent);
+    if (hintsOldParent || context?.hints?.attach === true) {
+      out.hints = {
+        ...(hintsOldParent ? { oldParent: hintsOldParent } : {}),
+        ...(context?.hints?.attach === true ? { attach: true } : {}),
+      };
+    }
+    // S3: скаляры spaceTool-контекста (декомпозиция shape.move+shape.resize
+    // требует direction для resizeBounds-parity; start — телеметрия апplера).
+    const directionText = asText(context?.direction);
+    if (directionText) out.direction = directionText;
+    if (Number.isFinite(Number(context?.start))) out.start = Number(context.start);
     const delta = snapshotPoint(context.delta);
     if (delta) out.delta = delta;
     const newBounds = snapshotBounds(context.newBounds);
@@ -359,10 +429,12 @@ export default function createBpmnRuntime(options = {}) {
           if (!command) command = asText(actionEntry?.command || actionEntry?.id || "").trim();
           contextSource = actionEntry?.context;
         }
+        const snapshot = snapshotCommandContext(contextSource);
+        enrichPositionalSnapshot(command, contextSource, snapshot);
         notifyChange({
           command,
           action,
-          commandContext: snapshotCommandContext(contextSource),
+          commandContext: snapshot,
         });
       };
       eventBus.on("commandStack.changed", 1000, onCommandChanged);
