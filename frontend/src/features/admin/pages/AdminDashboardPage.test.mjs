@@ -22,6 +22,9 @@ const __dirname = path.dirname(__filename);
 const FRONTEND_ROOT = path.resolve(__dirname, "../../../..");
 
 let viteServer = null;
+// i18n-инстанс из графа vite (ssrLoadModule) — отдельный от node-графа теста,
+// локаль нужно переключать именно на нём.
+let viteI18n = null;
 
 async function loadPage() {
   if (!viteServer) {
@@ -33,6 +36,9 @@ async function loadPage() {
     });
   }
   const mod = await viteServer.ssrLoadModule("/src/features/admin/pages/AdminDashboardPage.jsx");
+  if (!viteI18n) {
+    viteI18n = await viteServer.ssrLoadModule("/src/shared/i18n/index.js");
+  }
   return mod.default;
 }
 
@@ -90,8 +96,8 @@ const CATALOG_PAYLOAD = {
       id: "canvas",
       label: "Canvas",
       flags: [
-        { key: "useBpmnExtensionOverlays", label: "Hybrid Overlay V2", description: "d", maturity: "stable", owner_contour: "fix/x", removal_criterion: "", source: "runtime", editable: true, value: true, default: false },
-        { key: "FPC_ASYNC_SUBPROCESS_SYNC", label: "Async subprocess sync", description: "d", maturity: "rollout", owner_contour: "fix/y", removal_criterion: "", source: "env", editable: false, value: false, default: false },
+        { key: "useBpmnExtensionOverlays", label: "Hybrid Overlay V2", description: "d", maturity: "stable", owner_contour: "fix/hybrid-overlays", removal_criterion: "2 недели без инцидентов", source: "runtime", editable: true, value: true, default: false },
+        { key: "FPC_ASYNC_SUBPROCESS_SYNC", label: "Async subprocess sync", description: "d", maturity: "rollout", owner_contour: "fix/save-pipeline", removal_criterion: "", source: "env", editable: false, value: false, default: false },
       ],
     },
     {
@@ -166,6 +172,7 @@ function setupDom({ patchStatus = 200, patchError = null } = {}) {
     globalThis.sessionStorage = previous.sessionStorage;
     globalThis.fetch = previous.fetch;
     globalThis.IS_REACT_ACT_ENVIRONMENT = previous.reactActEnv;
+    if (viteI18n) viteI18n.setLocale("ru");
   };
 
   return { dom, root, cleanup, patchCalls };
@@ -176,13 +183,15 @@ async function flush(ms = 80) {
 }
 
 async function renderPage(env, props = {}) {
+  const { locale = "ru", ...rest } = props;
   const Page = await loadPage();
+  if (viteI18n) viteI18n.setLocale(locale);
   let navigated = null;
   await act(async () => {
     env.root.render(React.createElement(Page, {
       payload: DASHBOARD_PAYLOAD,
       onNavigate: (p) => { navigated = p; },
-      ...props,
+      ...rest,
     }));
   });
   await flush();
@@ -337,6 +346,26 @@ test("flags: env-флаг read-only (disabled + подсказка)", async () =
   }
 });
 
+test("flags: рендерит owner_contour и removal_criterion из каталога", async () => {
+  const env = setupDom();
+  try {
+    await renderPage(env);
+    const doc = env.dom.window.document;
+    const owner = doc.querySelector('[data-testid="flag-owner-useBpmnExtensionOverlays"]');
+    const removal = doc.querySelector('[data-testid="flag-removal-useBpmnExtensionOverlays"]');
+    assert.ok(owner, "строка владельца-контура есть");
+    assert.ok(owner.textContent.includes(ru.admin.dashboardPage.featureFlags.ownerContour), "подпись из i18n");
+    assert.ok(owner.textContent.includes("fix/hybrid-overlays"), "значение owner_contour из payload");
+    assert.ok(removal, "строка критерия снятия есть");
+    assert.ok(removal.textContent.includes(ru.admin.dashboardPage.featureFlags.removalCriterion), "подпись из i18n");
+    assert.ok(removal.textContent.includes("2 недели без инцидентов"), "значение removal_criterion из payload");
+    // пустое removal_criterion у env-флага не рендерит строку
+    assert.equal(doc.querySelector('[data-testid="flag-removal-FPC_ASYNC_SUBPROCESS_SYNC"]'), null);
+  } finally {
+    await env.cleanup();
+  }
+});
+
 test("flags: optimistic toggle — PATCH вызывается, значение обновляется", async () => {
   const env = setupDom();
   try {
@@ -403,10 +432,25 @@ test("system: одна строка фактов — только присутс
 
 // ---------- i18n parity новых ключей ----------
 
+test("i18n: секции Сводки рендерятся на en при setLocale(\"en\")", async () => {
+  const env = setupDom();
+  try {
+    await renderPage(env, { payload: { ...DASHBOARD_PAYLOAD, attention: [] }, locale: "en" });
+    const text = env.dom.window.document.body.textContent;
+    assert.ok(text.includes("System capabilities"), "en-заголовок capability map");
+    assert.ok(text.includes("No signals"), "en attentionEmpty");
+    assert.ok(text.includes("Owner contour"), "en ownerContour");
+    assert.ok(text.includes("working"), "en статус ok");
+  } finally {
+    await env.cleanup();
+  }
+});
+
 test("i18n: новые ключи admin.dashboardPage есть и в ru, и в en", () => {
   const keys = [
     "capabilitiesTitle", "attentionTitle", "attentionEmpty", "flagsTitle",
     "flagsEnvHint", "flagsToggleError", "otherGroup", "systemTitle",
+    "featureFlags.ownerContour", "featureFlags.removalCriterion",
     "status.ok", "status.pilot", "status.off", "status.attention", "status.no_data",
   ];
   const get = (dict, kp) => kp.split(".").reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), dict);

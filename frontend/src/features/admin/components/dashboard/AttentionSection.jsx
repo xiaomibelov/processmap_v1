@@ -1,9 +1,9 @@
 import SectionCard from "../common/SectionCard";
 import { asArray, toInt, toText } from "../../utils/adminFormat";
-import { ru } from "../../../../shared/i18n/ru";
+import { dashboardDict } from "./dashboardI18n";
 
 export default function AttentionSection({ items = [], onNavigate }) {
-  const d = ru.admin.dashboardPage;
+  const d = dashboardDict();
   const rows = asArray(items);
   return (
     <SectionCard eyebrow={d.attentionEyebrow} title={d.attentionTitle} subtitle={d.attentionSubtitle}>

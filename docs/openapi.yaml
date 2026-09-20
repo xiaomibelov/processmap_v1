@@ -4719,11 +4719,7 @@ paths:
           description: 'Доступ запрещён: требуется роль admin или членство в организации
             с нужными правами'
         '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
+          description: 'Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY'
       security:
       - bearerAuth: []
       summary: Обновить частично feature flags
@@ -4789,11 +4785,7 @@ paths:
         '404':
           description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
         '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
+          description: 'Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY'
       security:
       - bearerAuth: []
       summary: Сохранить (replace) feature flags

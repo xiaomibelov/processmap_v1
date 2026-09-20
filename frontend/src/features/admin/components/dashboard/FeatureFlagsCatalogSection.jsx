@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import SectionCard from "../common/SectionCard";
 import { apiGetFeatureFlagsCatalog, apiPatchFeatureFlags } from "../../../../lib/apiModules/featureFlagsApi";
 import { asArray, toText } from "../../utils/adminFormat";
-import { ru } from "../../../../shared/i18n/ru";
+import { dashboardDict } from "./dashboardI18n";
 
 export default function FeatureFlagsCatalogSection() {
-  const d = ru.admin.dashboardPage;
+  const d = dashboardDict();
   const [groups, setGroups] = useState([]);
   const [values, setValues] = useState({});
   const [loading, setLoading] = useState(true);
@@ -105,6 +105,16 @@ export default function FeatureFlagsCatalogSection() {
                             <span className="block truncate text-sm text-slate-800">{toText(flag?.label) || key}</span>
                             {toText(flag?.description) ? (
                               <span className="block truncate text-xs text-slate-400">{toText(flag?.description)}</span>
+                            ) : null}
+                            {toText(flag?.owner_contour) ? (
+                              <span className="block truncate text-xs text-slate-400" data-testid={`flag-owner-${key}`}>
+                                {d.featureFlags.ownerContour}: {toText(flag?.owner_contour)}
+                              </span>
+                            ) : null}
+                            {toText(flag?.removal_criterion) ? (
+                              <span className="block truncate text-xs text-slate-400" data-testid={`flag-removal-${key}`}>
+                                {d.featureFlags.removalCriterion}: {toText(flag?.removal_criterion)}
+                              </span>
                             ) : null}
                           </span>
                         </label>

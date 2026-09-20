@@ -270,6 +270,10 @@ export const ru = {
       flagsEnvHint: "Задаётся через env сервера — изменение только в конфигурации",
       flagsToggleError: "Не удалось сохранить флаг. Значение возвращено.",
       otherGroup: "Прочее",
+      featureFlags: {
+        ownerContour: "Владелец-контур",
+        removalCriterion: "Критерий снятия",
+      },
       systemEyebrow: "Инфраструктура",
       systemTitle: "Система",
       systemEmpty: "Нет данных о состоянии системы.",
