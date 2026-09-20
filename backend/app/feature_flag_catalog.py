@@ -2,6 +2,14 @@
 
 Разметка зрелости зафиксирована аудитом контура audit/admin-dashboard-v2-verify
 (H8/evidence/h8-flag-consumers.md) и не меняется без нового аудита.
+
+Семантика полей записи:
+- owner_contour — логическая метка зоны-владельца флага (подсистема/контур-инициатор,
+  например "canvas/overlays"); это НЕ обязательно существующая git-ветка.
+  Новые флаги заводятся со ссылкой на реальный контур, их создавший.
+  Текущие значения — исторические зоны (контуры overlays/perf не сохранились
+  в реестре веток), поэтому могут не совпадать с именами веток.
+- removal_criterion — условие, при котором флаг можно удалить из реестра.
 """
 
 import os
@@ -14,8 +22,6 @@ FLAG_GROUPS: List[Dict[str, str]] = [
     {"id": "save", "label": "Save-пайплайн"},
 ]
 
-# Обязательные поля записи: label, description, group, maturity,
-# owner_contour, removal_criterion.
 FLAG_CATALOG: Dict[str, Dict[str, str]] = {
     "useBpmnExtensionOverlays": {
         "label": "Hybrid Overlay V2",

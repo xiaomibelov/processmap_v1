@@ -586,6 +586,10 @@ export const en = {
       flagsEnvHint: "Set via server env — change only in server configuration",
       flagsToggleError: "Failed to save the flag. Value reverted.",
       otherGroup: "Other",
+      featureFlags: {
+        ownerContour: "Owner contour",
+        removalCriterion: "Removal criterion",
+      },
       systemEyebrow: "Infrastructure",
       systemTitle: "System",
       systemEmpty: "No system state data.",

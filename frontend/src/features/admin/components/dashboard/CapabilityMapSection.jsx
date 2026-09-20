@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SectionCard from "../common/SectionCard";
 import { asArray, toText } from "../../utils/adminFormat";
-import { ru } from "../../../../shared/i18n/ru";
+import { dashboardDict } from "./dashboardI18n";
 
 const STORAGE_KEY = "pm-admin-capability-map";
 
@@ -57,7 +57,7 @@ function CapabilityLink({ href, capabilityId, label, onNavigate }) {
 }
 
 export default function CapabilityMapSection({ groups = [], onNavigate }) {
-  const d = ru.admin.dashboardPage;
+  const d = dashboardDict();
   const domains = asArray(groups);
   // stored === null → пользователь ещё не раскрывал группы: дефолт = первая раскрыта.
   const [stored, setStored] = useState(readStoredExpanded);

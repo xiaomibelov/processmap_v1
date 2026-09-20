@@ -1,6 +1,6 @@
 import SectionCard from "../common/SectionCard";
 import { toInt, toText } from "../../utils/adminFormat";
-import { ru } from "../../../../shared/i18n/ru";
+import { dashboardDict } from "./dashboardI18n";
 
 function formatGeneratedAt(raw) {
   const text = toText(raw);
@@ -10,7 +10,7 @@ function formatGeneratedAt(raw) {
 }
 
 export default function SystemFactsStrip({ payload = {} }) {
-  const d = ru.admin.dashboardPage;
+  const d = dashboardDict();
   const parts = [];
 
   const redisMode = toText(payload?.redis_health?.mode);

@@ -91,7 +91,9 @@ def _reject_env_flags(keys) -> None:
         )
 
 
-@router.patch("/api/admin/feature-flags")
+@router.patch("/api/admin/feature-flags", responses={
+    422: {"description": "Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY"},
+})
 def patch_feature_flags_endpoint(request: Request, body: Dict[str, Any]) -> Any:
     user = _request_auth_user(request)
     if not bool(user.get("is_admin")):
@@ -106,7 +108,9 @@ def patch_feature_flags_endpoint(request: Request, body: Dict[str, Any]) -> Any:
     return {"ok": True, "flags": _get_flags(org_id)}
 
 
-@router.put("/api/admin/feature-flags/{key}")
+@router.put("/api/admin/feature-flags/{key}", responses={
+    422: {"description": "Env-управляемый флаг read-only: detail.code = FEATURE_FLAG_ENV_READONLY"},
+})
 def put_feature_flag_endpoint(key: str, request: Request, body: Dict[str, Any]) -> Any:
     user = _request_auth_user(request)
     if not bool(user.get("is_admin")):
