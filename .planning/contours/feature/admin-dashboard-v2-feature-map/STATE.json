@@ -2,11 +2,24 @@
   "contour": "feature/admin-dashboard-v2-feature-map",
   "type": "feature",
   "role": "executor",
-  "phase": "EXEC_IN_PROGRESS",
+  "phase": "READY_FOR_REVIEW",
   "date": "2026-09-20",
   "baseline": "2c05188726c9228e28af0281f166c99b42e58591",
   "branch": "feature/admin-dashboard-v2-feature-map",
   "worktree": "server-backup/opt/processmap-test-worktrees/feature-admin-dashboard-v2-feature-map",
   "audit_ref": "audit/admin-dashboard-v2-verify (ACCEPTED, 14 правок учтены)",
-  "artifacts": ["PLAN.md", "RAG_PREFLIGHT_EXECUTOR.md", "EXEC_REPORT.md"]
+  "head": "8b409b4f",
+  "verification": {
+    "backend_scoped": "160 passed, 1 pre-existing failed (test_admin_agent_runs::test_active_conversation) — дельта vs main = 0",
+    "frontend_npm_test": "3981 тестов: 3903 pass / 74 fail — дельта vs baseline = 0",
+    "build": "ok",
+    "openapi_lint": "0 errors (307 paths / 389 operations)",
+    "perf_dashboard": "+1.2% vs main (порог 10%)"
+  },
+  "pending_review_focus": [
+    "приватные storage-хелперы в LLM-агрегате (_ai_execution_log_where, base.count)",
+    "owner_contour-строки в каталоге флагов",
+    "Playwright-проверки не исполнялись (зона review/приёмки)"
+  ],
+  "artifacts": ["PLAN.md", "RAG_PREFLIGHT_EXECUTOR.md", "EXEC_REPORT.md", "evidence/", "READY_FOR_REVIEW"]
 }
