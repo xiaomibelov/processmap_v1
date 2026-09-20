@@ -209,3 +209,31 @@ describe("tobeOverlayMock read-only гарантии", () => {
     }
   });
 });
+
+describe("TobeOverlayMockLayers (T6 gate)", () => {
+  it("active=false: слоёв мока нет в DOM (критерий 1 — no-regression)", async () => {
+    const { renderToString } = await import("react-dom/server");
+    const { default: TobeOverlayMockLayers } = await import("./TobeOverlayMockLayers.jsx");
+    const html = renderToString(
+      <TobeOverlayMockLayers active={false} asisRef={{ current: null }} tobeRef={{ current: null }} />,
+    );
+    expect(html).not.toContain("bpmnLayer--mockAsis");
+    expect(html).not.toContain("bpmnLayer--mockTobe");
+  });
+
+  it("active=true: ghost ниже TO BE в DOM, ghost скрывается по ghostVisible", async () => {
+    const { renderToString } = await import("react-dom/server");
+    const { default: TobeOverlayMockLayers } = await import("./TobeOverlayMockLayers.jsx");
+    const htmlOn = renderToString(
+      <TobeOverlayMockLayers active ghostVisible asisRef={{ current: null }} tobeRef={{ current: null }} />,
+    );
+    expect(htmlOn).toContain("bpmn-layer-mock-asis");
+    expect(htmlOn).toContain("bpmn-layer-mock-tobe");
+    expect(htmlOn.indexOf("bpmnLayer--mockAsis")).toBeLessThan(htmlOn.indexOf("bpmnLayer--mockTobe"));
+
+    const htmlHidden = renderToString(
+      <TobeOverlayMockLayers active ghostVisible={false} asisRef={{ current: null }} tobeRef={{ current: null }} />,
+    );
+    expect(htmlHidden).toContain("display:none");
+  });
+});
