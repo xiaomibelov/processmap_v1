@@ -151,6 +151,21 @@
       ],
       "next": "S6 degrade-замена + аудит прямых PUT + fpc_gateway_cold_fallback-ветки",
       "pushed_sha": "24897363"
+    },
+    "s6": {
+      "status": "done_local",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "degrade-замена: 9 веток → conflictStop (C2 gate+modal) / inlineStop (422/transport, backoff-retry); degrade() удалён; needsFullSave — explicit cold; UI-стадии ops-conflict/unsupported/error. Аудит PUT: все сайты lane/cold-документированы, вне lane — 0. fpc_gateway_cold_fallback в коде не существовал — смерть = удаление веток (дата 2026-10-03)",
+      "diffstat_commit": "ee044305 (+84/-44)",
+      "tests": "backend 58+3; save-зоны 553/554 (hang); полный сьют 4002, 0 новых падений; opsOutbox 163/163",
+      "e2e_gate": "undo/redo PASS; repo-спеки async-save: 5/6 PASS (same-tab 409 silent-rebase, spaceTool ops, kill-tab IDB, offline sync, exactly-once); :470 coverage FAIL 18/20 = pre-existing drift (идентично на S5, lane-фикстура, ре-базелина S8)",
+      "paths_metric_after_s6": "1+1+X, X=4: participant(навсегда)/класс C property(до S7+)/undo-of-delete(S7)/lane.updaterefs+data-ассоциации(вокабуларая волна)",
+      "artifacts": [
+        "EXEC_REPORT_S6.md",
+        "PR_S6.md"
+      ],
+      "next": "S7 undo-of-delete compensating create-op + undo coalesced journal; S8 метрики + ре-базелина coverage-спеки"
     }
   },
   "acceptance_metrics": {
