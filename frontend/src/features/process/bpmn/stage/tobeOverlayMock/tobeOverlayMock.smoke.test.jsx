@@ -41,14 +41,18 @@ function makeFakeViewer() {
     },
     listenerCount: (event) => (eventBusListeners.get(event) || []).length,
   };
+  let currentViewbox = { x: 0, y: 0, width: 1000, height: 1000, scale: 1 };
   const canvas = {
     zoom: (what) => {
       api.canvasZoomCalls.push(what);
     },
-    viewbox: {
-      set: () => {
-        api.asisViewboxSetCalls += 1;
-      },
+    // Реальный контракт diagram-js: viewbox — функция get/set.
+    // Замена аргумента = set; вызов без аргумента = get.
+    viewbox: (box) => {
+      if (box === undefined) return currentViewbox;
+      api.asisViewboxSetCalls += 1;
+      currentViewbox = box;
+      return currentViewbox;
     },
   };
   api.importXML = async (xml) => {
@@ -106,7 +110,7 @@ describe("tobeOverlayMockController", () => {
     expect(tobeHost.contains(fakeViewers.tobe.container)).toBe(true);
   });
 
-  it("viewbox-sync: one-way TO BE → ghost (spy на canvas.viewbox.set ghost)", async () => {
+  it("viewbox-sync: one-way TO BE → ghost (реальный контракт diagram-js viewbox(box))", async () => {
     const { asisHost, tobeHost } = makeHosts();
     await controller.mount({ asisContainer: asisHost, tobeContainer: tobeHost });
 
@@ -117,6 +121,8 @@ describe("tobeOverlayMockController", () => {
     const viewbox = { x: 10, y: 20, scale: 1.5 };
     fakeViewers.fake.tobe.eventBus.emit("canvas.viewbox.changed", { viewbox });
     expect(fakeViewers.fake.asis.api.asisViewboxSetCalls).toBe(1);
+    // Бокс реально применён к ghost (контракт diagram-js: viewbox() — get).
+    expect(fakeViewers.fake.asis.canvas.viewbox()).toEqual(viewbox);
 
     // Обратное направление не синкается: AS IS живёт своей жизнью (инертен).
     fakeViewers.fake.asis.eventBus.emit("canvas.viewbox.changed", { viewbox: { x: 0, y: 0, scale: 0.5 } });

@@ -20,9 +20,13 @@ export function createTobeOverlayMockController(options = {}) {
     const asisCanvas = v.asis.viewer.get("canvas");
     const onTobeViewboxChanged = (event) => {
       try {
-        asisCanvas.viewbox.set(event.viewbox);
-      } catch {
-        // ghost read-only: просадка синка не должна ломать активный слой
+        // Реальный контракт diagram-js (bpmn-js 18): canvas.viewbox — функция
+        // get/set (Canvas.js:1194-1215). Метода .set не существует (C1).
+        asisCanvas.viewbox(event.viewbox);
+      } catch (err) {
+        // ghost read-only: просадка синка не должна ломать активный слой,
+        // но молчать запрещено — маркер контура для диагностики.
+        console.warn("[tobe-overlay-mock] viewbox sync failed", err);
       }
     };
     // Односторонняя синхронизация: слушаем ТОЛЬКО TO BE (canvas.viewbox.changed
@@ -31,8 +35,8 @@ export function createTobeOverlayMockController(options = {}) {
     return () => {
       try {
         tobeEventBus.off("canvas.viewbox.changed", onTobeViewboxChanged);
-      } catch {
-        // инстанс уже уничтожен
+      } catch (err) {
+        console.warn("[tobe-overlay-mock] viewbox sync unbind failed", err);
       }
     };
   }
