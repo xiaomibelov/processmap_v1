@@ -2,7 +2,7 @@
   "contour": "feature/mutation-gateway-c3",
   "type": "feature",
   "role": "planner",
-  "phase": "PLAN_APPROVED",
+  "phase": "S8_DONE_READY_FOR_REVIEW",
   "approved_at": "2026-09-19",
   "approved_by": "владелец (explicit approve с условиями)",
   "created": "2026-09-19",
@@ -184,6 +184,21 @@
       ],
       "next": "S8 метрики приёмки (drag-замеры, оба S0-baseline'а); класс C ops-волна вне S8",
       "pushed_sha": "da179cc3"
+    },
+    "s8": {
+      "status": "done_pushed",
+      "date": "2026-09-20",
+      "executor": "Agent 2",
+      "scope": "метрики приёмки: drag-end flush (mouseup-commit); persist-латентность p50 30.3/p95 207.6/p99 329.9 мс (<300 PASS, n=20 real drags S0-методика); coverage 100% (drag 20/20 + 7 сценариев); ops 182 B vs 176 KB PUT; 0 PUT на drag; оба S0-baseline'а в отчёте (572.3 окно / ~450 PUT)",
+      "metrics_commit": "003e4cdd",
+      "tests": "backend 58+3; save-зоны 562/563 (hang); полный сьют 4011 (presence load-flaky 1 имя, изолированно 5/5); e2e async-save 6/6 (:470 20/20 putBpmn=0)",
+      "final_report": "FINAL_REPORT.md",
+      "merge": "НЕ выполнялся (prod-freeze до 22.09 ~03:11 MSK + чекпоинты +24h/+48h) — решение владельца",
+      "artifacts": [
+        "S8-METRICS.md",
+        "PR_S8.md",
+        "FINAL_REPORT.md"
+      ]
     }
   },
   "acceptance_metrics": {

@@ -57,3 +57,8 @@
 - Undo spaceTool/label-annotation: inverse по post-undo live-снапшоту (bounds/waypoints восстановлены на undo-changed), fail-closed.
 - :470 pinpoint: documentation-as-string (S5-регрессия маппера), НЕ lane.updaterefs; фикс → спека 20/20=1.00 putBpmn=0 PASS.
 - e2e undo-матрица 8 мапперов PASS (0 PUT на все фазы). X3 закрыт; класс C — cold (порт preserve/rebuild-семантики, #995). Метрика 1+1+X (X=3). Полный сьют 4011, 0 новых падений.
+
+## 2026-09-20 — S8 метрики приёмки + FINAL REPORT (Agent 2, Executor)
+- Drag-end flush (onDiagramDragEnd → flushNow): persist p50 30.3 / p95 207.6 / p99 329.9 мс (<300 PASS, n=20 real drags, 300 эл.); coverage 100%; ops ~182 B vs 176 KB PUT; 0 PUT на drag. Оба S0-baseline'а зафиксированы (572.3 окно — канвас в бэклоге; ~450 PUT → ops-ack).
+- e2e async-save 6/6 (:470 20/20). Полный сьют 4011 (presence load-flaky 1 имя, изолированно 5/5). FINAL_REPORT: цели §10 vs факт — все достигнуты. Метрика 1+1+X (X=3). Дата смерти 2026-10-03.
+- Merge НЕ выполнялся (prod-freeze до 22.09 ~03:11 MSK + чекпоинты) — решение владельца. Контур READY_FOR_REVIEW.
