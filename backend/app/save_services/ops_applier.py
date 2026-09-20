@@ -57,8 +57,9 @@ _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES = {
     f"{{{BPMN_NS}}}dataObjectReference",
     f"{{{BPMN_NS}}}dataInputAssociation",
     f"{{{BPMN_NS}}}dataOutputAssociation",
-    f"{{{BPMN_NS}}}association",
-    f"{{{BPMN_NS}}}textAnnotation",
+    # S4 волна 1: textAnnotation + association переведены в ops (golden-parity
+    # evidence/s4; fail-closed на уровне мапперов + typed 422). Волны 2/3
+    # (data-refs/lane) и participant — по-прежнему cold.
 }
 
 
@@ -379,6 +380,14 @@ def _apply_update_properties(root: ET.Element, op: Dict[str, Any],
         if name == "documentation":
             _set_documentation(element, str(value))
             continue
+        # S4 golden: текст аннотации — дочерний <bpmn:text> (не атрибут).
+        if name == "text" and element.tag == f"{{{BPMN_NS}}}textAnnotation":
+            for old in [ch for ch in element if ch.tag == f"{{{BPMN_NS}}}text"]:
+                element.remove(old)
+            text_el = ET.Element(f"{{{BPMN_NS}}}text")
+            text_el.text = _as_str(value)
+            element.append(text_el)
+            continue
         element.set(name, _as_str(value))
 
 
@@ -682,13 +691,18 @@ def _apply_connection_create(root: ET.Element, xml_text: str, op: Dict[str, Any]
         connection.set("name", name)
     parent = _find_parent(root, source) or root
     parent.append(connection)
-    # bpmn-js поддерживает incoming/outgoing дочерние элементы.
-    outgoing = ET.Element(f"{{{BPMN_NS}}}outgoing")
-    outgoing.text = connection_id
-    source.append(outgoing)
-    incoming = ET.Element(f"{{{BPMN_NS}}}incoming")
-    incoming.text = connection_id
-    target.append(incoming)
+    # bpmn-js поддерживает incoming/outgoing дочерние элементы — но НЕ для
+    # association (S4 golden: <bpmn:association sourceRef targetRef/> без
+    # incident-ссылок на endpoints; artifactRef терять запрещено, #995).
+    if tag != f"{{{BPMN_NS}}}association":
+        outgoing = ET.Element(f"{{{BPMN_NS}}}outgoing")
+        outgoing.text = connection_id
+        source.append(outgoing)
+        incoming = ET.Element(f"{{{BPMN_NS}}}incoming")
+        incoming.text = connection_id
+        target.append(incoming)
+    if index is not None:
+        index.semantic[connection_id] = connection
     _create_di_edge(root, connection_id, waypoints, op, index)
 
 

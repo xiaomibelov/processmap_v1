@@ -155,6 +155,20 @@ function mapUpdateLabel(context, inverse) {
   const elementId = elementIdOf(element);
   if (!elementId) return { needsFullSave: true };
   if (requiresFullSaveForBpmnType(elementTypeOf(element))) return { needsFullSave: true };
+  // S4 волна 1: text-правка аннотации — текст живёт в дочернем <bpmn:text>
+  // (golden full-PUT bpmn-js), а НЕ в name; UpdateLabelHandler заодно ресайзит
+  // аннотацию под текст (newBounds). Undo: oldBounds не живёт в снапшоте →
+  // честный needsFullSave (причина зафиксирована в PR_S4).
+  if (/textannotation/i.test(elementTypeOf(element))) {
+    const text = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
+    if (inverse) return { needsFullSave: true };
+    const ops = [makeOp("element.updateProperties", elementId, { properties: { text } })];
+    const nextBounds = bounds(context?.newBounds);
+    if (nextBounds) {
+      ops.push(makeOp("shape.resize", elementId, { bounds: nextBounds }));
+    }
+    return { ops };
+  }
   const name = inverse ? asText(context?.oldLabel) : asText(context?.newLabel);
   return { op: makeOp("element.updateProperties", elementId, { properties: { name } }) };
 }
@@ -195,11 +209,12 @@ function elementTypeOf(ref) {
   return asText(ref?.businessObject?.$type || ref?.businessType || ref?.type);
 }
 
-// Артефактные типы (pool/lane/data/annotation/association) не маппятся в
-// ops-payload step1: консервативно требуем полное сохранение, иначе
-// серверная apply-op потеряет artifactRef (#995).
+// Артефактные типы (pool/lane/data-refs) не маппятся в ops-payload step1: консервативно требуем полное сохранение, иначе
+// серверная apply-op потеряет artifactRef (#995). S4 выводит типы из этого
+// множества волнами (волна 1: textAnnotation+association — сняты), строго
+// парами frontend+backend с golden-parity тестами.
 const FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN =
-  /(?:participant|lane|datastorereference|dataobjectreference|datainputassociation|dataoutputassociation|textannotation|association)/i;
+  /(?:participant|lane|datastorereference|dataobjectreference|datainputassociation|dataoutputassociation)/i;
 
 function requiresFullSaveForBpmnType(typeRaw) {
   return FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN.test(String(typeRaw || ""));
