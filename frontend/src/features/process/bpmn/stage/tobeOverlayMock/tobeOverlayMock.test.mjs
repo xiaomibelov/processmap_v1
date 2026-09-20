@@ -123,3 +123,36 @@ test("store: уведомляет подписчиков об изменения
   setTobeOverlayMockActive(false);
   assert.equal(calls, 2);
 });
+
+// ---------------------------------------------------------------------------
+// T6: адаптер в BpmnStage — слои за фичатоглом, сессионные слои скрываются,
+// но НЕ сериализуются (ни importXML, ни runtime.load/onChange на mock-путях).
+// Source-guard по прецеденту BpmnStage.align-reset.test.mjs.
+// ---------------------------------------------------------------------------
+
+const bpmnStageSource = fs.readFileSync(
+  new URL("../../../../../components/process/BpmnStage.jsx", import.meta.url),
+  "utf8",
+);
+
+test("BpmnStage: mock-слои под фичатоглом tobe_overlay_mock", () => {
+  assert.match(bpmnStageSource, /useFeatureFlag\("tobe_overlay_mock"\)/);
+  assert.match(bpmnStageSource, /<TobeOverlayMockLayers/);
+  assert.match(bpmnStageSource, /tobeOverlayMockFlag && tobeMockActive/);
+});
+
+test("BpmnStage: в mock-режиме сессионные слои скрываются, но не трогаются", () => {
+  assert.match(
+    bpmnStageSource,
+    /display: tobeMockActive \? "none" : \(view === "viewer" \? "block" : "none"\)/,
+  );
+  // Жёсткое правило: внутри mock-эффекта нет обращений к сессионным
+  // modeler/viewer (importXML / runtime.load / onChange на session modeler).
+  const mockEffectMatch = bpmnStageSource.match(/\/\/ TO BE overlay mock[\s\S]*?const v2PropertyPreviewMapRef/);
+  assert.ok(mockEffectMatch, "mock-блок адаптера найден");
+  // Комментарии вырезаем: guard проверяет код, а не собственные пояснения.
+  const mockBlock = mockEffectMatch[0].split("\n").map((line) => line.replace(/\/\/.*$/, "")).join("\n");
+  assert.doesNotMatch(mockBlock, /viewerRef\.current\??\.(importXML|on|off)/);
+  assert.doesNotMatch(mockBlock, /modelerRef\.current\??\.(importXML|on|off)/);
+  assert.doesNotMatch(mockBlock, /runtime\.(load|onChange)/);
+});

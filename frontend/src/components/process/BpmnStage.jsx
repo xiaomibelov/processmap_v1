@@ -48,6 +48,12 @@ import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/tem
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
+import TobeOverlayMockLayers from "../../features/process/bpmn/stage/tobeOverlayMock/TobeOverlayMockLayers";
+import {
+  useTobeOverlayMockActive,
+  useTobeOverlayMockGhostVisible,
+} from "../../features/process/bpmn/stage/tobeOverlayMock/useTobeOverlayMock";
+import { resetTobeOverlayMockState } from "../../features/process/bpmn/stage/tobeOverlayMock/mockOverlayModeStore";
 import {
   runImmediateEditorFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
@@ -1395,6 +1401,72 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
 
   const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
+
+  // TO BE overlay mock (feature/tobe-overlay-mock-v1): слои и контроллер
+  // живут только в mock-режиме. Сессионные modeler/viewer НЕ трогаем:
+  // ни importXML, ни runtime.load/onChange в mock-режиме не вызываются —
+  // слои сессии просто скрываются (display:none, инстансы живы).
+  const tobeOverlayMockFlag = useFeatureFlag("tobe_overlay_mock");
+  const tobeMockActive = useTobeOverlayMockActive();
+  const tobeMockGhostVisible = useTobeOverlayMockGhostVisible();
+  const mockAsisHostRef = useRef(null);
+  const mockTobeHostRef = useRef(null);
+  const tobeMockControllerRef = useRef(null);
+  const tobeMockControllerSidRef = useRef(null);
+
+  useEffect(() => {
+    if (tobeOverlayMockFlag) return undefined;
+    try { tobeMockControllerRef.current?.destroy?.(); } catch {}
+    tobeMockControllerRef.current = null;
+    tobeMockControllerSidRef.current = null;
+    resetTobeOverlayMockState();
+    return undefined;
+  }, [tobeOverlayMockFlag]);
+
+  useEffect(() => {
+    if (!tobeOverlayMockFlag || !tobeMockActive) return undefined;
+    const asisEl = mockAsisHostRef.current;
+    const tobeEl = mockTobeHostRef.current;
+    if (!asisEl || !tobeEl) return undefined;
+    let cancelled = false;
+    let ctl = null;
+    (async () => {
+      const mod = await import("../../features/process/bpmn/stage/tobeOverlayMock/tobeOverlayMockController.js");
+      if (cancelled) return;
+      if (tobeMockControllerRef.current && tobeMockControllerSidRef.current === sessionId) {
+        // кэш инстансов до смены сессии: повторный вход без пересоздания
+        ctl = tobeMockControllerRef.current;
+      } else {
+        try { tobeMockControllerRef.current?.destroy?.(); } catch {}
+        ctl = mod.createTobeOverlayMockController();
+        tobeMockControllerRef.current = ctl;
+        tobeMockControllerSidRef.current = sessionId;
+      }
+      try {
+        await ctl.mount({ asisContainer: asisEl, tobeContainer: tobeEl });
+      } catch {
+        // мок не должен ломать сессионный канвас
+      }
+    })();
+    return () => {
+      cancelled = true;
+      const current = tobeMockControllerRef.current;
+      if (!current) return;
+      if (tobeMockControllerSidRef.current !== sessionId) {
+        // смена сессии — полный teardown viewer'ов мока
+        try { current.destroy(); } catch {}
+        tobeMockControllerRef.current = null;
+        tobeMockControllerSidRef.current = null;
+      } else {
+        try { current.unmount(); } catch {}
+      }
+    };
+  }, [tobeOverlayMockFlag, tobeMockActive, sessionId]);
+
+  useEffect(() => {
+    try { tobeMockControllerRef.current?.setGhostVisible?.(tobeMockGhostVisible); } catch {}
+  }, [tobeMockGhostVisible, tobeMockActive]);
+
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {
     v2PropertyPreviewMapRef.current = combineV2PropertyPreviewMap(
@@ -6474,16 +6546,22 @@ const BpmnStage = forwardRef(function BpmnStage({
           ) : null}
           <div
             className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
-            style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}
+            style={{ position: "absolute", inset: 0, display: tobeMockActive ? "none" : (view === "viewer" ? "block" : "none") }}
           >
             <div className="bpmnCanvas" ref={viewerEl} style={{ width: "100%", height: "100%" }} />
           </div>
           <div
             className={"bpmnLayer bpmnLayer--editor " + ((view === "editor" || view === "diagram") ? "on" : "off")}
-            style={{ position: "absolute", inset: 0, display: (view === "editor" || view === "diagram") ? "block" : "none" }}
+            style={{ position: "absolute", inset: 0, display: tobeMockActive ? "none" : ((view === "editor" || view === "diagram") ? "block" : "none") }}
           >
             <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
           </div>
+          <TobeOverlayMockLayers
+            active={tobeOverlayMockFlag && tobeMockActive}
+            ghostVisible={tobeMockGhostVisible}
+            asisRef={mockAsisHostRef}
+            tobeRef={mockTobeHostRef}
+          />
           <LowFpsCanvasGuard enabled={diagramReady && view !== "xml"} />
         </div>
       </DiagramLoadBoundary>
