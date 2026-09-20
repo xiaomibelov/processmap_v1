@@ -4729,6 +4729,30 @@ paths:
       summary: Обновить частично feature flags
       tags:
       - feature-flags
+  /api/admin/feature-flags/catalog:
+    get:
+      description: 'Получить catalog. Особенности: доступ: член организации с нужной
+        ролью (org-scope).'
+      operationId: get_feature_flags_catalog_endpoint_api_admin_feature_flags_catalog_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Get Feature Flags Catalog Endpoint Api Admin Feature
+                  Flags Catalog Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить catalog
+      tags:
+      - feature-flags
   /api/admin/feature-flags/{key}:
     put:
       description: 'Сохранить (replace) feature flags. Особенности: доступ: член организации
