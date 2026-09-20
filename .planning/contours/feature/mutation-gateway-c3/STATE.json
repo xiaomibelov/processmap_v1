@@ -114,7 +114,7 @@
       "pushed_sha": "00840106"
     },
     "s4": {
-      "status": "done_local",
+      "status": "done_pushed",
       "date": "2026-09-20",
       "executor": "Agent 2",
       "scope": "artifact-типы волнами: w1 textAnnotation+association (golden: <bpmn:text> child; association без incoming/outgoing; каскад delete), w2 data-refs (companion dataObject create/delete cascade), w3 lane (laneSet/processRef/isHorizontal; fail-closed lane_not_empty typed 422). participant — cold навсегда (обоснование в PR_S4)",
@@ -131,7 +131,8 @@
         "EXEC_REPORT_S4.md",
         "PR_S4.md"
       ],
-      "next": "S5 property panel → element.updateProperties ops"
+      "next": "S5 property panel → element.updateProperties ops",
+      "pushed_sha": "da4a267c"
     }
   },
   "acceptance_metrics": {
