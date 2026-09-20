@@ -56,6 +56,9 @@ const budgetForget = (sid) => {
 };
 
 saveCoordinator.registerPipeline(PIPELINE_NAME, {
+  // C3/S1: meta не участвует в mutation lane — per-pipeline очередь и
+  // disjoint-key семантика (silent-rebase контракт C2) сохраняются.
+  mutationLane: false,
   transport: async (sessionId, payload) => {
     const apiPatchSession = payload?.apiPatchSession;
     if (typeof apiPatchSession !== "function") {

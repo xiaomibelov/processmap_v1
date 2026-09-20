@@ -1,9 +1,11 @@
 /**
  * Unified save coordinator.
  *
- * Provides per-session sequential queues, per-pipeline debounce, retry with
- * exponential backoff, and a global event emitter for save status. All CAS
- * base diagram-state version updates go through casVersionTracker.
+ * Per-session mutation lane (C3/S1): один in-flight diagram-truth mutation-
+ * запрос на сессию across pipelines (ops/rawXml/xml). Per-pipeline debounce,
+ * retry with exponential backoff, and a global event emitter for save status.
+ * meta/analysis живут вне lane (mutationLane:false — disjoint-key семантика).
+ * All CAS base diagram-state version updates go through casVersionTracker.
  */
 
 import {
@@ -32,6 +34,7 @@ import {
   readAckDiagramStateVersion,
   readConflictServerCurrentVersion,
 } from "./casResponse.js";
+import { createGatewayLane } from "./gatewayLane.js";
 
 function asText(value) {
   return String(value || "").trim();
@@ -47,11 +50,11 @@ function debounceKey(pipelineName, sessionId) {
 }
 
 function queueKey(pipelineName, sessionId) {
-  // Queues are per-pipeline: the xml pipeline transport executes the rawXml
-  // pipeline from inside its own run (flushSave → saveRaw → execute), so a
-  // shared per-session queue deadlocks (xml waits transport, transport waits
-  // rawXml, rawXml waits xml). Same-pipeline runs for one session stay
-  // serialized by this lane key.
+  // Очереди запуска остаются per-pipeline: вложенный execute (xml → rawXml)
+  // той же execution-chain должен стартовать незамедлительно, не дожидаясь
+  // завершения внешнего прогона. Меж-пайплайновая сериализация мутаций одной
+  // сессии теперь даётся per-session mutation lane (C3/S1, this._lane), а не
+  // этой очередью; lane reentrant по chain — deadlock невозможен.
   return `${asText(pipelineName)}::${asText(sessionId)}`;
 }
 
@@ -77,7 +80,7 @@ function sleep(ms) {
 }
 
 class SaveCoordinator {
-  constructor() {
+  constructor(options = {}) {
     this.pipelines = new Map();
     this.sessionQueues = new Map();
     this.debounceTimers = new Map();
@@ -89,6 +92,18 @@ class SaveCoordinator {
     this.conflicts = new Map();
     /** @type {Map<string, Set<AbortController>>} session-scoped abort controllers */
     this._sessionAbortControllers = new Map();
+    // C3/S1: per-session mutation lane — один in-flight diagram-truth
+    // mutation-запрос на сессию across pipelines. Lane на уровне прогона
+    // пайплайна (mutation-intent), не вызова execute: вложенный xml→rawXml
+    // той же execution-chain проходит inline (reentrancy по chain), иначе
+    // deadlock. meta/analysis регистрируются с mutationLane:false
+    // (disjoint-key семантика + C2 silent-rebase контракт).
+    this._lane = options.lane || createGatewayLane();
+  }
+
+  /** Lane мутаций сессии (C3/S1) — точка регистрации прямых PUT участниками lane. */
+  getMutationLane() {
+    return this._lane;
   }
 
   /**
@@ -96,7 +111,10 @@ class SaveCoordinator {
    *
    * @param {string} name
    * @param {Object} config
-   * @param {Function} config.transport - (sessionId, payload) => Promise<response>
+   * @param {Function} config.transport - (sessionId, payload, signal, laneContext) => Promise<response>;
+   *   laneContext — токен mutation lane активной chain (C3/S1), пробрасывается
+   *   во вложенные save-пути (напр. xml → flushSave), чтобы они прошли lane
+   *   inline, а не встали в очередь за собой (deadlock)
    * @param {Function} [config.buildPayload] - (payload, sessionId) => request payload
    * @param {Function} [config.getBaseVersion] - (sessionId) => number | null
    * @param {Function} [config.applyBaseVersion] - mutates the transport payload with a refreshed base
@@ -114,6 +132,9 @@ class SaveCoordinator {
    *   backoff delay (default 0 = no jitter; delay *= 1 + (random*2-1)*ratio)
    * @param {Function} [config.retryJitterRandom] - jitter random source (default Math.random;
    *   pipelines may inject a deterministic source for tests)
+   * @param {boolean} [config.mutationLane] - участвует ли pipeline в per-session
+   *   mutation lane (default true). false — для meta/analysis: per-pipeline
+   *   очереди и disjoint-key семантика (C2 silent-rebase контракт).
    */
   registerPipeline(name, config = {}) {
     const pipelineName = asText(name);
@@ -143,6 +164,7 @@ class SaveCoordinator {
       maxRetryDelayMs: Math.max(0, asNumber(config.maxRetryDelayMs, 4000)),
       retryJitterRatio: Math.max(0, asNumber(config.retryJitterRatio, 0)),
       retryJitterRandom: typeof config.retryJitterRandom === "function" ? config.retryJitterRandom : Math.random,
+      mutationLane: config.mutationLane !== false,
     });
   }
 
@@ -217,12 +239,12 @@ class SaveCoordinator {
     this._sessionAbortControllers.delete(sid);
   }
 
-  _runTransportWithTimeout(pipelineName, pipeline, sessionId, payload) {
+  _runTransportWithTimeout(pipelineName, pipeline, sessionId, payload, laneContext) {
     const timeoutMs = Math.max(1000, asNumber(pipeline.transportTimeoutMs, 10000));
     const controller = new AbortController();
     this._trackAbortController(sessionId, controller);
     const transportPromise = Promise.resolve()
-      .then(() => pipeline.transport(sessionId, payload, controller.signal))
+      .then(() => pipeline.transport(sessionId, payload, controller.signal, laneContext))
       .then(
         (result) => ({ ok: true, value: result }),
         (error) => ({ ok: false, error }),
@@ -367,6 +389,12 @@ class SaveCoordinator {
     const sid = asText(sessionId);
     // Abort all in-flight HTTP requests for this session (or all sessions).
     this._abortSessionControllers(sid);
+    // C3/S1: разрыв цепочки mutation lane (уже запущенные прогоны не отменяются).
+    try {
+      this._lane?.clear?.(sid);
+    } catch {
+      // no-op
+    }
     if (!sid) {
       for (const timer of this.debounceTimers.values()) {
         clearTimeout(timer);
@@ -485,6 +513,23 @@ class SaveCoordinator {
       return result;
     }
 
+    // C3/S1: mutation lane per session (single-writer diagram truth).
+    // laneContext — токен активной chain для ВЛОЖЕННЫХ execute (xml → rawXml):
+    // проброшен через transport 4-м аргументом и payload.mutationLaneContext;
+    // без токена run всегда идёт в FIFO-очередь lane.
+    if (pipeline.mutationLane !== false) {
+      return this._lane.run(
+        sid,
+        (ctx) => this._runPipelineMutation(pipelineName, pipeline, sid, payload, ctx),
+        payload?.mutationLaneContext,
+      );
+    }
+    return this._runPipelineMutation(pipelineName, pipeline, sid, payload, null);
+  }
+
+  async _runPipelineMutation(pipelineName, pipeline, sessionId, payload, laneContext) {
+    const sid = asText(sessionId);
+
     this._setPipelineStatus(pipelineName, sid, "busy", { stage: "build" });
 
     let builtPayload = pipeline.buildPayload(payload, sid);
@@ -525,7 +570,7 @@ class SaveCoordinator {
       this._setPipelineStatus(pipelineName, sid, "busy", { stage: "transport", attempt });
 
       try {
-        lastResult = await this._runTransportWithTimeout(pipelineName, pipeline, sid, builtPayload);
+        lastResult = await this._runTransportWithTimeout(pipelineName, pipeline, sid, builtPayload, laneContext);
         lastError = null;
       } catch (error) {
         lastError = error;
@@ -800,8 +845,8 @@ class SaveCoordinator {
   }
 }
 
-export function createSaveCoordinator() {
-  return new SaveCoordinator();
+export function createSaveCoordinator(options = {}) {
+  return new SaveCoordinator(options);
 }
 
 /**
