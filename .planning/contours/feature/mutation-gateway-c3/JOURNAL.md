@@ -31,3 +31,9 @@
 - Backend: _ElementIndex (O(N)/батч, self-healing, create/delete maintenance), scale-guard 1000эл/50ops = 0.08s.
 - e2e (a)-(d) PASS на контейнере: drag/multi/spaceTool/createShape — 0 PUT /bpmn, ≥1 POST /operations, reload-равенство. Полный сьют 3988, 0 регрессий (presence-poller — load-flaky семейство, имя плавает между прогонами).
 - Метрика путей: 18→17. Артефакты: EXEC_REPORT_S3.md, PR_S3.md. evidence/s3/.
+
+## 2026-09-20 — S4 artifact-типы волнами (Agent 2, Executor)
+- w1 textAnnotation+association: golden full-PUT (lane OFF) → `<bpmn:text>` child; association без incoming/outgoing; updateLabel аннотации → text+resize ops, undo→needsFullSave. w2 data-refs: companion DataObject (golden: клиент минтит, сервер повторяет; delete каскадит). w3 lane: laneSet mint/processRef/isHorizontal; populated lane delete → typed 422 lane_not_empty.
+- participant/pool — cold навсегда (трансформирующая create, риск #995, PLAN §8).
+- Находки: restart api обязателен после backend-правок (uvicorn держит код в памяти, 422 на свежих типах — поймано e2e-итерациями волн 2/3).
+- e2e-гейты всех волн PASS на контейнере (create/move real-drag/delete → 0 PUT /bpmn, ≥1 POST /operations, reload server truth). Полный сьют 3997, 0 новых падений. Метрика путей 18→14.
