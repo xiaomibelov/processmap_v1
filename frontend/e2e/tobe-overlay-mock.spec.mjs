@@ -29,6 +29,33 @@ test.describe("tobe-overlay-mock (T7)", () => {
     const auth = await apiLogin(request, { apiBase: API_BASE });
     await setTobeOverlayMockFlag(request, auth, true);
 
+    // Network assert (review): в mock-режиме — НОЛЬ сетевых обращений
+    // к сессии (любых: чтений bpmn, мутаций, presence). За весь тест —
+    // ноль МУТАЦИЙ диаграммы (PUT/PATCH/DELETE /api/sessions/{id}).
+    // Известный не-мутационный шум приложения фиксируется отдельно:
+    //   - GET /api/sessions/{id}/bpmn* — загрузка диаграммы (load/reload);
+    //   - DELETE /api/sessions/{id}/presence — collab-lifecycle при unload.
+    const diagramMutations = [];
+    const bpmnReads = [];
+    const presenceDeletes = [];
+    const sessionRequestsWhileMockActive = [];
+    let mockActive = false;
+    page.on("request", (req) => {
+      const url = req.url();
+      if (!url.includes("/api/sessions/")) return;
+      const isSessionBpmn = /\/api\/sessions\/[^/?#]+\/bpmn/.test(url);
+      const isPresence = /\/api\/sessions\/[^/?#]+\/presence$/.test(url);
+      const isMutatingMethod = ["PUT", "PATCH", "DELETE"].includes(req.method());
+      if (mockActive) sessionRequestsWhileMockActive.push({ method: req.method(), url });
+      if (isSessionBpmn && !isMutatingMethod) {
+        bpmnReads.push({ method: req.method(), url });
+      } else if (isPresence && req.method() === "DELETE") {
+        presenceDeletes.push({ method: req.method(), url });
+      } else if (isMutatingMethod) {
+        diagramMutations.push({ method: req.method(), url });
+      }
+    });
+
     const fixture = await createFixture(request, RUN_ID, auth.headers);
     await setUiToken(page, auth.accessToken);
     const orgId = String(fixture.orgId || auth.activeOrgId || "").trim();
@@ -57,6 +84,7 @@ test.describe("tobe-overlay-mock (T7)", () => {
     // 2. Вход → mock-слои видны, ghost инертен, фикстуры отрендерены,
     //    сессионные слои скрыты (modeler/viewer не тронуты).
     await enterBtn.click();
+    mockActive = true;
     await expect(tobeLayer).toBeVisible();
     await expect(asisLayer).toBeVisible();
     await expect(tobeLayer.locator('[data-element-id="MockToBe_TaskApprove"]')).toBeVisible();
@@ -72,6 +100,7 @@ test.describe("tobe-overlay-mock (T7)", () => {
 
     // 4. Выход → слоёв мока нет, сессионный слой вернулся.
     await page.getByTestId("tobe-overlay-mock-exit").click();
+    mockActive = false;
     await expect(tobeLayer).toHaveCount(0);
     await expect(asisLayer).toHaveCount(0);
     const sessionLayerBack = (await page.locator(".bpmnLayer--editor").isVisible())
@@ -83,5 +112,12 @@ test.describe("tobe-overlay-mock (T7)", () => {
     await page.reload();
     await waitForDiagramReady(page);
     await expect(page.getByTestId("tobe-overlay-mock-enter")).toHaveCount(0);
+
+    // Network assert: за весь тест — ноль мутаций диаграммы; пока mock-режим
+    // активен — ноль вообще любых запросов к /api/sessions/* (включая чтения
+    // bpmn и presence). Шум чтений/presence только логируется для отчёта.
+    expect(diagramMutations).toEqual([]);
+    expect(sessionRequestsWhileMockActive).toEqual([]);
+    console.log(`[tobe-overlay-mock] bpmn reads: ${bpmnReads.length}, presence deletes: ${presenceDeletes.length}`);
   });
 });
