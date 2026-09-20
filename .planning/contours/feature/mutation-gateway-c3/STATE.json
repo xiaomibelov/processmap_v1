@@ -169,7 +169,7 @@
       "pushed_sha": "6dda5d91"
     },
     "s7": {
-      "status": "done_local",
+      "status": "done_pushed",
       "date": "2026-09-20",
       "executor": "Agent 2",
       "scope": "undo/redo полнота: undo delete → compensating create с id (id.updateClaim enrichment из elementRegistry; snapshotElementRef +parentId/endpoints/text; backend text-on-create); undo spaceTool/label-annotation по post-undo live-снапшоту (fail-closed); reconnect newSource/newTarget; :470 drift-фикс (documentation-string — S5-регрессия, спека 20/20 PASS); undo coalesced — needsFullSave сохранён; класс C — cold (порт preserve/rebuild-семантики, #995)",
@@ -182,7 +182,8 @@
         "EXEC_REPORT_S7.md",
         "PR_S7.md"
       ],
-      "next": "S8 метрики приёмки (drag-замеры, оба S0-baseline'а); класс C ops-волна вне S8"
+      "next": "S8 метрики приёмки (drag-замеры, оба S0-baseline'а); класс C ops-волна вне S8",
+      "pushed_sha": "da179cc3"
     }
   },
   "acceptance_metrics": {
