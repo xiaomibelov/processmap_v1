@@ -153,7 +153,7 @@
       "pushed_sha": "24897363"
     },
     "s6": {
-      "status": "done_local",
+      "status": "done_pushed",
       "date": "2026-09-20",
       "executor": "Agent 2",
       "scope": "degrade-замена: 9 веток → conflictStop (C2 gate+modal) / inlineStop (422/transport, backoff-retry); degrade() удалён; needsFullSave — explicit cold; UI-стадии ops-conflict/unsupported/error. Аудит PUT: все сайты lane/cold-документированы, вне lane — 0. fpc_gateway_cold_fallback в коде не существовал — смерть = удаление веток (дата 2026-10-03)",
@@ -165,7 +165,8 @@
         "EXEC_REPORT_S6.md",
         "PR_S6.md"
       ],
-      "next": "S7 undo-of-delete compensating create-op + undo coalesced journal; S8 метрики + ре-базелина coverage-спеки"
+      "next": "S7 undo-of-delete compensating create-op + undo coalesced journal; S8 метрики + ре-базелина coverage-спеки",
+      "pushed_sha": "6dda5d91"
     }
   },
   "acceptance_metrics": {
