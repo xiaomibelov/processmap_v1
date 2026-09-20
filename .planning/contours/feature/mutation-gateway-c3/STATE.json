@@ -94,7 +94,7 @@
       "next": "S2 positional closure (по результатам S0: удаление full-save arm createLocalMutationStaging.js:236-251)"
     },
     "s3": {
-      "status": "done_local",
+      "status": "done_pushed",
       "date": "2026-09-20",
       "executor": "Agent 2",
       "scope": "op wave A: elements.move батч shape.move (+undo -delta) + affectedConnections updateDi; spaceTool декомпозиция (move+resize+updateDi); runtime-снапшот shapes/movingShapes/resizingShapes/hints/direction/start; staging guard-перестройка (консультация outbox первой, keep-final arm гаснет при захвате — full-save arm positional-ветки вытеснен); backend id→element индекс + scale-guard 1000эл/50ops (0.08s)",
@@ -110,7 +110,8 @@
         "EXEC_REPORT_S3.md",
         "PR_S3.md"
       ],
-      "next": "S4 artifact-типы (textAnnotation/association/data-refs) обе стороны fail-closed; participant остаётся cold"
+      "next": "S4 artifact-типы (textAnnotation/association/data-refs) обе стороны fail-closed; participant остаётся cold",
+      "pushed_sha": "00840106"
     }
   },
   "acceptance_metrics": {
