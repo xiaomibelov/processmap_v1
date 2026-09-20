@@ -24,8 +24,7 @@ XML = (
 UNSAFE_CREATE_CASES = [
     "bpmn:Participant",
     "bpmn:Lane",
-    "bpmn:DataStoreReference",
-    "bpmn:DataObjectReference",
+    # S4 волна 2 сняла dataStoreReference/dataObjectReference (golden-parity).
     "bpmn:DataInputAssociation",
     "bpmn:DataOutputAssociation",
     # S4 волна 1: Association/TextAnnotation выведены в ops (golden-parity
@@ -232,3 +231,61 @@ def test_s4w1_delete_annotation_cascades_association():
     edges = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNEdge"
              and el.get("bpmnElement") == "Association_1"]
     assert len(edges) == 0
+
+
+# ---------------------------------------------------------------------------
+# Контур feature/mutation-gateway-c3 (срез S4, волна 2): dataStoreReference /
+# dataObjectReference. Golden — evidence/s4/logs/s4-wave23-golden.xml:
+# dataStoreReference — пустой leaf; dataObjectReference — dataObjectRef на
+# companion <bpmn:dataObject> (bpmn-js чистит сироту при save — backend
+# повторяет при delete).
+# ---------------------------------------------------------------------------
+
+def test_s4w2_data_store_reference_create_golden_leaf():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(ARTIFACT_BASE_XML, [
+        {"opId": "d1", "type": "shape.create", "elementId": "DataStoreReference_1",
+         "bpmnType": "bpmn:DataStoreReference", "x": 300, "y": 620, "width": 50, "height": 50,
+         "parentId": "Process_art"},
+    ])
+    root = ET.fromstring(out)
+    store = _find_semantic_by_id(root, "DataStoreReference_1")
+    assert store is not None and store.tag == f"{{{BPMN_NS}}}dataStoreReference"
+    assert len(list(store)) == 0, "golden: пустой leaf без дочерних"
+    di = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNShape"
+          and el.get("bpmnElement") == "DataStoreReference_1"]
+    assert len(di) == 1
+
+
+def test_s4w2_data_object_reference_create_companion_data_object():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(ARTIFACT_BASE_XML, [
+        {"opId": "d2", "type": "shape.create", "elementId": "DataObjectReference_1",
+         "bpmnType": "bpmn:DataObjectReference", "x": 900, "y": 620, "width": 36, "height": 50,
+         "parentId": "Process_art"},
+    ])
+    root = ET.fromstring(out)
+    ref = _find_semantic_by_id(root, "DataObjectReference_1")
+    assert ref is not None and ref.tag == f"{{{BPMN_NS}}}dataObjectReference"
+    data_object_ref = ref.get("dataObjectRef")
+    assert data_object_ref, "companion dataObjectRef обязан быть выставлен"
+    companion = _find_semantic_by_id(root, data_object_ref)
+    assert companion is not None and companion.tag == f"{{{BPMN_NS}}}dataObject"
+    di = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNShape"
+          and el.get("bpmnElement") == "DataObjectReference_1"]
+    assert len(di) == 1
+
+
+def test_s4w2_delete_data_object_reference_cascades_companion():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(ARTIFACT_BASE_XML, [
+        {"opId": "d2", "type": "shape.create", "elementId": "DataObjectReference_1",
+         "bpmnType": "bpmn:DataObjectReference", "x": 900, "y": 620, "width": 36, "height": 50,
+         "parentId": "Process_art"},
+        {"opId": "d3", "type": "shape.delete", "elementId": "DataObjectReference_1"},
+    ])
+    root = ET.fromstring(out)
+    assert _find_semantic_by_id(root, "DataObjectReference_1") is None
+    # golden bpmn-js: сирота dataObject чистится при save — backend повторяет.
+    leftovers = [el for el in root.iter() if el.tag == f"{{{BPMN_NS}}}dataObject"]
+    assert leftovers == [], f"orphan dataObject must be removed: {[el.get('id') for el in leftovers]}"

@@ -614,12 +614,10 @@ test("shape.create / connection.create of BPMN artifacts (TextAnnotation/Associa
 });
 
 test("unsafe BPMN artifact shape.create types → needsFullSave with no ops", () => {
-  // S4 волна 1 сняла TextAnnotation (теперь ops); список — остающиеся cold.
+  // S4 волны 1-2 сняли TextAnnotation и data-refs; список — остающиеся cold.
   for (const type of [
     "bpmn:Participant",
     "bpmn:Lane",
-    "bpmn:DataStoreReference",
-    "bpmn:DataObjectReference",
   ]) {
     const out = mapCommandToOps({
       command: "shape.create",
@@ -663,12 +661,11 @@ test("task shape.create still maps to op (unsafe guard does not leak)", () => {
 });
 
 test("unsafe BPMN artifact element.updateProperties types → needsFullSave with no ops", () => {
-  // S4 волна 1 сняла TextAnnotation/Association; список — остающиеся cold.
+  // S4 волны 1-2 сняли TextAnnotation/Association и data-refs; список —
+  // остающиеся cold.
   for (const type of [
     "bpmn:Participant",
     "bpmn:Lane",
-    "bpmn:DataStoreReference",
-    "bpmn:DataObjectReference",
   ]) {
     const elRef = { id: "X", businessObject: { $type: type } };
     for (const action of ["execute", "undo"]) {
@@ -1048,12 +1045,52 @@ test("S4w1: updateLabel обычного элемента не затронут 
   assert.deepEqual(out.ops[0].properties, { name: "N" });
 });
 
-test("S4w1: participant/lane/data-refs остаются cold до своих волн", () => {
-  for (const type of ["bpmn:Participant", "bpmn:Lane", "bpmn:DataStoreReference", "bpmn:DataObjectReference"]) {
+test("S4w1→w3: participant/lane остаются cold (data-refs сняты волной 2, lane — волной 3)", () => {
+  for (const type of ["bpmn:Participant", "bpmn:Lane"]) {
     const out = mapCommandToOps({
       command: "shape.create",
       action: "execute",
       context: { element: { id: "X_1", type, bounds: { x: 1, y: 2, width: 3, height: 4 } }, parent: { id: "P" } },
+    });
+    assert.equal(out.needsFullSave, true, `${type} ещё cold`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S4, волна 2): dataStoreReference /
+// dataObjectReference в ops. Golden (evidence/s4/logs/s4-wave23-golden.xml):
+// dataStoreReference — пустой leaf; dataObjectReference несёт dataObjectRef
+// на companion <bpmn:dataObject> (bpmn-js удаляет сироту при save — backend
+// повторяет). Undo-семантика: create undo → compensating delete-op; move undo
+// → -delta (S3); delete undo → needsFullSave (S7-скоуп).
+// ---------------------------------------------------------------------------
+
+test("S4w2: shape.create bpmn:DataStoreReference / bpmn:DataObjectReference → ops", () => {
+  for (const type of ["bpmn:DataStoreReference", "bpmn:DataObjectReference"]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: {
+        element: { id: `${type.split(":")[1]}_1`, type, bounds: { x: 300, y: 620, width: 36, height: 50 } },
+        parent: { id: "Process_1" },
+      },
+    });
+    assert.equal(out.needsFullSave, false, `${type} create — ops с S4 волны 2`);
+    assert.equal(out.ops.length, 1);
+    assert.equal(out.ops[0].type, "shape.create");
+    assert.equal(out.ops[0].elementType, type);
+  }
+});
+
+test("S4w2: participant/lane остаются cold (свои волны / cold-статус)", () => {
+  for (const type of ["bpmn:Participant", "bpmn:Lane"]) {
+    const out = mapCommandToOps({
+      command: "shape.create",
+      action: "execute",
+      context: {
+        element: { id: "X_1", type, bounds: { x: 1, y: 2, width: 3, height: 4 } },
+        parent: { id: "P" },
+      },
     });
     assert.equal(out.needsFullSave, true, `${type} ещё cold`);
   }
