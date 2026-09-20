@@ -52,8 +52,9 @@ _INCIDENT_REF_TAGS = ("incoming", "outgoing")
 # клиент обязан уйти в full-save fallback (потеря правок запрещена).
 _UNSAFE_FULL_SAVE_ONLY_BPMN_TYPES = {
     f"{{{BPMN_NS}}}participant",
-    f"{{{BPMN_NS}}}lane",
-    # S4 волна 2: dataStoreReference/dataObjectReference переведены в ops
+    # S4 волна 2: dataStoreReference/dataObjectReference; волна 3: lane —
+    # переведены в ops (golden-parity evidence/s4; lane: laneSet/isHorizontal,
+    # fail-closed delete populated lane). Participant — cold навсегда.
     # (golden-parity evidence/s4; companion dataObject — см. _apply_shape_create).
     f"{{{BPMN_NS}}}dataInputAssociation",
     f"{{{BPMN_NS}}}dataOutputAssociation",
@@ -521,6 +522,40 @@ def _apply_shape_create(root: ET.Element, xml_text: str, op: Dict[str, Any],
     name = str(op.get("name") or "").strip()
     if name:
         element.set("name", name)
+    # S4 волна 3 (golden evidence/s4): lane живёт в <bpmn:laneSet> process'а
+    # (laneSet минтится при отсутствии); parent participant резолвится через
+    # processRef. DI lane — isHorizontal="true".
+    if tag == f"{{{BPMN_NS}}}lane":
+        lane_host = parent
+        if lane_host.tag == f"{{{BPMN_NS}}}participant":
+            process_ref = str(lane_host.get("processRef") or "").strip()
+            resolved = _find_semantic(root, process_ref, index) if process_ref else None
+            if resolved is None:
+                raise OperationApplyError(_op_id(op), _op_type(op), f"process_ref_not_found: {process_ref}")
+            lane_host = resolved
+        lane_set = None
+        for ch in lane_host:
+            if ch.tag == f"{{{BPMN_NS}}}laneSet":
+                lane_set = ch
+                break
+        if lane_set is None:
+            import secrets as _secrets
+            lane_set = ET.Element(f"{{{BPMN_NS}}}laneSet")
+            lane_set.set("id", f"LaneSet_{_secrets.token_hex(4)}")
+            lane_host.append(lane_set)
+        lane_set.append(element)
+        if index is not None:
+            index.semantic[element_id] = element
+        _create_di_shape(
+            root, element_id,
+            bounds_values["x"], bounds_values["y"], bounds_values["width"], bounds_values["height"],
+            op,
+            index,
+        )
+        di_entries = _di_shapes_for(root, element_id, index)
+        if di_entries:
+            di_entries[0].set("isHorizontal", "true")
+        return
     # S4 волна 2 (golden): dataObjectReference несёт companion <bpmn:dataObject>
     # в process; bpmn-js чистит сироту при save — delete повторяет (см. ниже).
     if tag == f"{{{BPMN_NS}}}dataObjectReference" and not element.get("dataObjectRef"):
@@ -652,6 +687,13 @@ def _apply_shape_delete(root: ET.Element, op: Dict[str, Any],
     if _is_connection_element(element):
         _delete_connection(root, element_id, index)
         return
+    # S4 волна 3 (fail-closed): lane с flowNodeRef-children не удаляется опом —
+    # семантика переноса flowNodes в ops не покрыта; честный typed 422 →
+    # клиентский degrade в full-save.
+    if element.tag == f"{{{BPMN_NS}}}lane":
+        flow_refs = [ch for ch in element if ch.tag == f"{{{BPMN_NS}}}flowNodeRef"]
+        if flow_refs:
+            raise OperationApplyError(_op_id(op), _op_type(op), f"lane_not_empty: {element_id}")
     # S4 волна 2 (golden bpmn-js): удаление dataObjectReference чистит
     # companion dataObject (сирота не живёт в сохранённом XML).
     if element.tag == f"{{{BPMN_NS}}}dataObjectReference":

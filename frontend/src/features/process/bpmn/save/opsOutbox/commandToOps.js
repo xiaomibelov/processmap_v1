@@ -213,10 +213,10 @@ function elementTypeOf(ref) {
 // серверная apply-op потеряет artifactRef (#995). S4 выводит типы из этого
 // множества волнами (волна 1: textAnnotation+association — сняты), строго
 // парами frontend+backend с golden-parity тестами.
-// S4 волна 2 сняла data-refs; волна 3 снимет lane. Participant — cold
-// навсегда (решение контура, PR_S4).
+// S4: волны 1-3 сняли textAnnotation/association, data-refs, lane. Остаются
+// cold: participant (навсегда, решение контура) + data-ассоциации (S5+).
 const FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN =
-  /(?:participant|lane|datainputassociation|dataoutputassociation)/i;
+  /(?:participant|datainputassociation|dataoutputassociation)/i;
 
 function requiresFullSaveForBpmnType(typeRaw) {
   return FULL_SAVE_REQUIRED_BPMN_TYPE_PATTERN.test(String(typeRaw || ""));

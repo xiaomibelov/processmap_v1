@@ -23,8 +23,7 @@ XML = (
 
 UNSAFE_CREATE_CASES = [
     "bpmn:Participant",
-    "bpmn:Lane",
-    # S4 волна 2 сняла dataStoreReference/dataObjectReference (golden-parity).
+    # S4 волна 2 сняла data-refs; волна 3 — lane (golden-parity evidence/s4).
     "bpmn:DataInputAssociation",
     "bpmn:DataOutputAssociation",
     # S4 волна 1: Association/TextAnnotation выведены в ops (golden-parity
@@ -289,3 +288,92 @@ def test_s4w2_delete_data_object_reference_cascades_companion():
     # golden bpmn-js: сирота dataObject чистится при save — backend повторяет.
     leftovers = [el for el in root.iter() if el.tag == f"{{{BPMN_NS}}}dataObject"]
     assert leftovers == [], f"orphan dataObject must be removed: {[el.get('id') for el in leftovers]}"
+
+
+# ---------------------------------------------------------------------------
+# Контур feature/mutation-gateway-c3 (срез S4, волна 3): lane. Golden —
+# evidence/s4/logs/s4-wave23-golden.xml: <bpmn:laneSet><bpmn:lane/></bpmn:laneSet>
+# в process (laneset создаётся при отсутствии); DI isHorizontal="true".
+# ---------------------------------------------------------------------------
+
+POOL_BASE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Defs_pool" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_pool" isExecutable="false">
+    <bpmn:task id="Task_A" name="A" />
+  </bpmn:process>
+  <bpmn:process id="Process_part" isExecutable="false" />
+  <bpmn:collaboration id="Collab_1">
+    <bpmn:participant id="Participant_1" processRef="Process_part" />
+  </bpmn:collaboration>
+  <bpmndi:BPMNDiagram id="D1"><bpmndi:BPMNPlane id="P1" bpmnElement="Collab_1">
+    <bpmndi:BPMNShape id="Participant_1_di" bpmnElement="Participant_1"><dc:Bounds x="200" y="100" width="600" height="300" /></bpmndi:BPMNShape>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>"""
+
+
+def _lane_of(root, lane_id):
+    for el in root.iter():
+        if el.tag == f"{{{BPMN_NS}}}lane" and el.get("id") == lane_id:
+            return el
+    return None
+
+
+def test_s4w3_lane_create_into_process_lane_set_created():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(POOL_BASE_XML, [
+        {"opId": "l1", "type": "shape.create", "elementId": "Lane_1",
+         "bpmnType": "bpmn:Lane", "x": 900, "y": 210, "width": 400, "height": 100,
+         "parentId": "Process_pool"},
+    ])
+    root = ET.fromstring(out)
+    lane = _lane_of(root, "Lane_1")
+    assert lane is not None
+    lane_set = next((el for el in root.iter() if el.tag == f"{{{BPMN_NS}}}laneSet"), None)
+    assert lane_set is not None and lane in list(lane_set)
+    assert lane_set.get("id"), "laneSet минтит id (golden LaneSet_*)"
+    # golden DI: isHorizontal="true".
+    di = [el for el in root.iter() if el.tag == f"{{{BPMNDI_NS}}}BPMNShape"
+          and el.get("bpmnElement") == "Lane_1"]
+    assert len(di) == 1 and di[0].get("isHorizontal") == "true"
+
+
+def test_s4w3_lane_create_into_participant_resolves_process_ref():
+    from app.save_services.ops_applier import apply_operations
+    out = apply_operations(POOL_BASE_XML, [
+        {"opId": "l2", "type": "shape.create", "elementId": "Lane_2",
+         "bpmnType": "bpmn:Lane", "x": 220, "y": 120, "width": 400, "height": 100,
+         "parentId": "Participant_1"},
+    ])
+    root = ET.fromstring(out)
+    lane = _lane_of(root, "Lane_2")
+    assert lane is not None
+    process_part = _find_semantic_by_id(root, "Process_part")
+    lane_set = next((ch for ch in process_part if ch.tag == f"{{{BPMN_NS}}}laneSet"), None)
+    assert lane_set is not None and lane in list(lane_set), "lane participant'а живёт в processRef->laneSet"
+
+
+def test_s4w3_delete_empty_lane_ok_and_populated_lane_typed_422():
+    from app.save_services.ops_applier import OperationApplyError, apply_operations
+    ops = [
+        {"opId": "l1", "type": "shape.create", "elementId": "Lane_1",
+         "bpmnType": "bpmn:Lane", "x": 900, "y": 210, "width": 400, "height": 100,
+         "parentId": "Process_pool"},
+        {"opId": "l-del", "type": "shape.delete", "elementId": "Lane_1"},
+    ]
+    out = apply_operations(POOL_BASE_XML, ops)
+    root = ET.fromstring(out)
+    assert _lane_of(root, "Lane_1") is None
+
+    populated = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Defs_lp" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_lp" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_1"><bpmn:lane id="Lane_9" name="L"><bpmn:flowNodeRef>Task_B</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
+    <bpmn:task id="Task_B" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="D"><bpmndi:BPMNPlane id="P" bpmnElement="Process_lp"/></bpmndi:BPMNDiagram>
+</bpmn:definitions>"""
+    with pytest.raises(OperationApplyError) as exc:
+        apply_operations(populated, [
+            {"opId": "l-del2", "type": "shape.delete", "elementId": "Lane_9"},
+        ])
+    assert "lane_not_empty" in str(exc.value), "populated lane delete — typed 422 (fail-closed)"
