@@ -13,19 +13,18 @@ export default function AdminDashboardPage({
 }) {
   void canOpenApiDocs;
   return (
-    <AdminPageContainer
-      secondary={(
-        <div className="grid gap-3 lg:grid-cols-2">
-          <CapabilityMapSection groups={payload?.capability_map || []} onNavigate={onNavigate} />
-          <div className="space-y-3">
-            <AttentionSection items={payload?.attention || []} onNavigate={onNavigate} />
-            <SystemFactsStrip payload={payload} />
+    <AdminPageContainer>
+      <div className="space-y-3" data-testid="dashboard-v2">
+        <AttentionSection items={payload?.attention || []} onNavigate={onNavigate} />
+        <SystemFactsStrip payload={payload} />
+        <div className="grid items-start gap-3 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <CapabilityMapSection groups={payload?.capability_map || []} onNavigate={onNavigate} />
           </div>
+          <FeatureFlagsCatalogSection />
         </div>
-      )}
-    >
-      <FeatureFlagsCatalogSection />
-      <RecentAuditWidget items={asArray(payload?.recent_audit).slice(0, 5)} />
+        <RecentAuditWidget items={asArray(payload?.recent_audit).slice(0, 5)} />
+      </div>
     </AdminPageContainer>
   );
 }

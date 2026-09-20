@@ -12,6 +12,7 @@ export default function FeatureFlagsCatalogSection() {
   const [loadError, setLoadError] = useState("");
   const [toggleError, setToggleError] = useState("");
   const [savingKey, setSavingKey] = useState("");
+  const [expanded, setExpanded] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +54,10 @@ export default function FeatureFlagsCatalogSection() {
     setSavingKey("");
   }
 
+  function toggleExpanded(key) {
+    setExpanded((current) => ({ ...current, [key]: !current[key] }));
+  }
+
   function groupLabel(group) {
     const label = toText(group?.label);
     if (label) return label;
@@ -74,55 +79,69 @@ export default function FeatureFlagsCatalogSection() {
       ) : groups.length === 0 ? (
         <div className="text-sm text-slate-500" data-testid="flags-empty">{d.flagsEmpty}</div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {groups.map((group) => {
             const flags = asArray(group?.flags);
             if (!flags.length) return null;
             const gLabel = groupLabel(group);
             return (
               <div key={toText(group?.id) || gLabel}>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400" data-testid={`flags-group-${toText(group?.id) || "unknown"}`}>
-                  {gLabel}
+                <div className="mb-1 flex items-baseline justify-between gap-2" data-testid={`flags-group-${toText(group?.id) || "unknown"}`}>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{gLabel}</span>
+                  <span className="text-[11px] text-slate-300">{flags.length}</span>
                 </div>
-                <div className="space-y-2">
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200">
                   {flags.map((flag) => {
                     const key = toText(flag?.key);
                     const readOnly = flag?.editable === false;
                     const maturity = toText(flag?.maturity) || "experimental";
+                    const open = Boolean(expanded[key]);
                     return (
-                      <div key={key} data-flag-row="" data-testid={`flag-row-${key}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 px-3 py-2">
-                        <label className="flex min-w-0 flex-1 items-center gap-3">
-                          <input
-                            type="checkbox"
-                            data-testid={`flag-toggle-${key}`}
-                            className="h-4 w-4 rounded border-border"
-                            checked={Boolean(values[key])}
-                            disabled={readOnly || savingKey === key}
-                            title={readOnly ? d.flagsEnvHint : undefined}
-                            onChange={() => toggle(flag)}
-                          />
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm text-slate-800">{toText(flag?.label) || key}</span>
-                            {toText(flag?.description) ? (
-                              <span className="block truncate text-xs text-slate-400">{toText(flag?.description)}</span>
+                      <div key={key} data-flag-row="" data-testid={`flag-row-${key}`}>
+                        <div className="flex items-center gap-2 pr-2">
+                          <label className="flex min-h-[44px] shrink-0 items-center pl-3 pr-1" title={readOnly ? d.flagsEnvHint : undefined}>
+                            <input
+                              type="checkbox"
+                              data-testid={`flag-toggle-${key}`}
+                              className="h-4 w-4 rounded border-border"
+                              checked={Boolean(values[key])}
+                              disabled={readOnly || savingKey === key}
+                              onChange={() => toggle(flag)}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            data-testid={`flag-expand-${key}`}
+                            aria-expanded={open}
+                            aria-controls={`flag-panel-${key}`}
+                            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 py-1 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                            onClick={() => toggleExpanded(key)}
+                          >
+                            <span className="min-w-0 truncate text-sm text-slate-800">{toText(flag?.label) || key}</span>
+                            <span data-testid={`flag-maturity-${key}`} className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                              {d.maturity[maturity] || maturity}
+                            </span>
+                            {readOnly ? (
+                              <span className="hidden min-w-0 truncate text-xs text-slate-400 2xl:inline" data-testid={`flag-env-hint-${key}`}>{d.flagsEnvHint}</span>
                             ) : null}
+                            <span aria-hidden="true" className={`ml-auto shrink-0 text-xs text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+                          </button>
+                        </div>
+                        {open ? (
+                          <div id={`flag-panel-${key}`} className="space-y-1 border-t border-slate-100 px-3 py-2 pl-11 text-xs text-slate-500">
+                            {readOnly ? <div className="text-slate-400" data-testid={`flag-env-hint-panel-${key}`}>{d.flagsEnvHint}</div> : null}
+                            {toText(flag?.description) ? <div data-testid={`flag-description-${key}`}>{toText(flag?.description)}</div> : null}
                             {toText(flag?.owner_contour) ? (
-                              <span className="block truncate text-xs text-slate-400" data-testid={`flag-owner-${key}`}>
-                                {d.featureFlags.ownerContour}: {toText(flag?.owner_contour)}
-                              </span>
+                              <div data-testid={`flag-owner-${key}`}>
+                                <span className="text-slate-400">{d.featureFlags.ownerContour}:</span> {toText(flag?.owner_contour)}
+                              </div>
                             ) : null}
                             {toText(flag?.removal_criterion) ? (
-                              <span className="block truncate text-xs text-slate-400" data-testid={`flag-removal-${key}`}>
-                                {d.featureFlags.removalCriterion}: {toText(flag?.removal_criterion)}
-                              </span>
+                              <div data-testid={`flag-removal-${key}`}>
+                                <span className="text-slate-400">{d.featureFlags.removalCriterion}:</span> {toText(flag?.removal_criterion)}
+                              </div>
                             ) : null}
-                          </span>
-                        </label>
-                        <span data-testid={`flag-maturity-${key}`} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                          {d.maturity[maturity] || maturity}
-                        </span>
-                        {readOnly ? (
-                          <span className="text-xs text-slate-400" data-testid={`flag-env-hint-${key}`}>{d.flagsEnvHint}</span>
+                          </div>
                         ) : null}
                       </div>
                     );
