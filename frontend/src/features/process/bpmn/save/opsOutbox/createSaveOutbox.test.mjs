@@ -315,7 +315,7 @@ test("mutual exclusion: ops flush waits while full-save (xml pipeline) is in fli
     debounceMs: 0,
     retryCount: 0,
     // Full-save завершается ОТКАЗОМ: ack не приходит → буфер ops НЕ сбрасывается
-    // (success xml/rawXml покрывает локальные ops) → после освобождения busy
+    // (success xml/rawXml покрывает локальные ops) → после освобождения lane
     // ops-flush обязан отправить накопленное.
     transport: async () => {
       await xmlStarted;
@@ -328,19 +328,50 @@ test("mutual exclusion: ops flush waits while full-save (xml pipeline) is in fli
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(coordinator.getStatus("xml").state, "busy");
 
-  const ctx = makeOutbox(null, {
-    coordinator,
-    configOverrides: { fullSaveBusyPollMs: 20 },
-  });
+  const ctx = makeOutbox(null, { coordinator });
   pushRename(ctx.outbox, "Task_1", "A");
   void ctx.outbox.flushNow({ reason: "test" });
   await new Promise((r) => setTimeout(r, 60));
-  assert.equal(ctx.api.calls.length, 0, "ops transport must not run while full-save is busy");
+  assert.equal(ctx.api.calls.length, 0, "ops transport must not run while full-save holds the lane");
 
   resolveXml({ ok: false, status: 500, error: "full-save failed" });
   await xmlPromise;
   await new Promise((r) => setTimeout(r, 80));
   assert.equal(ctx.api.calls.length, 1, "ops flush proceeds after full-save lane frees");
+  ctx.destroy();
+});
+
+test("lane resume is deterministic: flushNow promise resolves only after the queued ops send", async () => {
+  // C3/S1: busy-poll 200 мс заменён lane-очередью — возобновление flush'а
+  // детерминировано (lane-release), flushNow не возвращает управление до
+  // фактической отправки (на baseline с busy-poll промис резолвится сразу с
+  // null, а отправка происходит позже по таймеру).
+  const coordinator = createSaveCoordinator();
+  let resolveXml;
+  const xmlStarted = new Promise((resolve) => { resolveXml = resolve; });
+  coordinator.registerPipeline("xml", {
+    debounceMs: 0,
+    retryCount: 0,
+    transport: async () => {
+      await xmlStarted;
+      return { ok: true, status: 200, diagramStateVersion: 9 };
+    },
+    getBaseVersion: (sid) => getTrackedDiagramStateVersion(sid),
+  });
+  setTrackedDiagramStateVersion("s1", 7);
+  const xmlPromise = coordinator.execute("xml", { sessionId: "s1" });
+  await new Promise((r) => setTimeout(r, 5));
+
+  const ctx = makeOutbox(null, { coordinator });
+  pushRename(ctx.outbox, "Task_1", "A");
+  const flushPromise = ctx.outbox.flushNow({ reason: "test" });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(ctx.api.calls.length, 0, "ops send is queued behind the full-save lane");
+
+  resolveXml({ ok: true, status: 200, diagramStateVersion: 9 });
+  await xmlPromise;
+  await flushPromise;
+  assert.equal(ctx.api.calls.length, 1, "ops send deterministically resumes when the lane frees");
   ctx.destroy();
 });
 

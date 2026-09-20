@@ -14,10 +14,9 @@ export const OPS_OUTBOX_CONFIG = Object.freeze({
   coalesceMsMin: 300,
   coalesceMsMax: 500,
   mouseupCommit: true,
-  // Очереди saveCoordinator per-pipeline (queueKey = pipeline::session), поэтому
-  // mutual exclusion с full-save обеспечиваем явным poll'ом busy-статуса
-  // pipelines xml/rawXml перед ops-flush.
-  fullSaveBusyPollMs: 200,
+  // C3/S1: взаимное исключение ops-flush с full-save даёт per-session mutation
+  // lane координатора (gatewayLane.js) — busy-poll 200 мс удалён как ad-hoc
+  // механизм.
   // Retry-политика pipeline "ops" (hardening fix/post-step1-load-regression):
   // экспоненциальный backoff 1s→8s (base = retryDelayMs * 2^(n-1), cap =
   // maxRetryDelayMs) с джиттером ±retryJitterRatio против синхронизации
