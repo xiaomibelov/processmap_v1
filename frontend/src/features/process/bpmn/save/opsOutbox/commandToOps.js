@@ -294,6 +294,118 @@ function mapDelete(kind) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// S3: строгий id для fail-closed мапперов — elementIdOf при пустом id
+// откатывается к String(ref) ("[object Object]") и пропускает битую запись.
+function strictIdOf(ref) {
+  return asText(typeof ref === "string" ? ref : ref?.id);
+}
+
+// S3 (op wave A): elements.move → батч shape.move + element.updateDi для
+// affectedConnections. Контекст снапшота несёт shapes-лист (S3 runtime-маппинг,
+// parity с diagram-js moveElements). Вложенные connection-обновления diagram-js
+// «тихие» (commandStack.changed — только outermost action), поэтому affected
+// connections рантайн доснимает сам: affectedConnections = финальные waypoints
+// (на undo-changed — post-undo, маппер использует captured как есть).
+// Fail-closed: непустые shapes без id / без delta, reparent (hints.oldParent ≠
+// newParent), attach → needsFullSave (молчаливая потеря запрещена).
+// ---------------------------------------------------------------------------
+
+function mapElementsMove(context, inverse) {
+  const shapes = Array.isArray(context?.shapes) ? context.shapes : [];
+  if (shapes.length === 0) return { needsFullSave: true };
+  const delta = point(context?.delta);
+  if (!delta) return { needsFullSave: true };
+
+  const oldParentId = elementIdOf(context?.hints?.oldParent);
+  const newParentId = elementIdOf(context?.newParent);
+  if (oldParentId && newParentId && oldParentId !== newParentId) {
+    // Reparent вне покрытия ops (shape.move не меняет parent).
+    return { needsFullSave: true };
+  }
+  if (context?.hints?.attach === true) {
+    // Attach (host change) — консервативно полное сохранение.
+    return { needsFullSave: true };
+  }
+
+  const finalDelta = inverse ? { x: -delta.x, y: -delta.y } : delta;
+  const ops = [];
+  for (const ref of shapes) {
+    // fail-closed: пустой/отсутствующий id НЕ должен превращаться в
+    // "[object Object]" через elementIdOf-fallback (pinpoint-урок S2).
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    ops.push(makeOp("shape.move", elementId, { delta: { ...finalDelta } }));
+  }
+  const diOps = mapAffectedConnectionDi(context);
+  if (diOps.needsFullSave) return diOps;
+  return { ops: [...ops, ...diOps.ops] };
+}
+
+function mapAffectedConnectionDi(context) {
+  const connections = Array.isArray(context?.affectedConnections)
+    ? context.affectedConnections
+    : [];
+  const ops = [];
+  for (const ref of connections) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const wp = waypoints(ref?.waypoints);
+    if (!wp) return { needsFullSave: true };
+    ops.push(makeOp("element.updateDi", elementId, { waypoints: wp }));
+  }
+  return { ops };
+}
+
+// S3: spaceTool → декомпозиция по PLAN §8. Контекст снапшота несёт
+// movingShapes/resizingShapes (S3 runtime-маппинг; diagram-js createSpace).
+// resizeBounds — parity SpaceUtil.resizeBounds (direction n/s/e/w).
+// Undo spaceTool → needsFullSave: oldBounds живёт только в handler-closure
+// диаграммы, в снапшот не попадает (полный undo-цикл — S7).
+function resizeBoundsForSpaceTool(boundsRaw, directionRaw, deltaRaw) {
+  const b = bounds(boundsRaw);
+  const d = point(deltaRaw);
+  const direction = asText(directionRaw).toLowerCase();
+  if (!b || !d) return null;
+  switch (direction) {
+    case "n":
+      return { x: b.x, y: b.y + d.y, width: b.width, height: b.height - d.y };
+    case "s":
+      return { x: b.x, y: b.y, width: b.width, height: b.height + d.y };
+    case "e":
+      return { x: b.x, y: b.y, width: b.width + d.x, height: b.height };
+    case "w":
+      return { x: b.x + d.x, y: b.y, width: b.width - d.x, height: b.height };
+    default:
+      return null;
+  }
+}
+
+function mapSpaceTool(context, inverse) {
+  if (inverse) return { needsFullSave: true };
+  const delta = point(context?.delta);
+  if (!delta) return { needsFullSave: true };
+  const ops = [];
+  const moving = Array.isArray(context?.movingShapes) ? context.movingShapes : [];
+  for (const ref of moving) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    ops.push(makeOp("shape.move", elementId, { delta: { x: delta.x, y: delta.y } }));
+  }
+  const resizing = Array.isArray(context?.resizingShapes) ? context.resizingShapes : [];
+  for (const ref of resizing) {
+    const elementId = strictIdOf(ref);
+    if (!elementId) return { needsFullSave: true };
+    const nextBounds = resizeBoundsForSpaceTool(ref?.bounds, context?.direction, delta);
+    if (!nextBounds) return { needsFullSave: true };
+    ops.push(makeOp("shape.resize", elementId, { bounds: nextBounds }));
+  }
+  if (ops.length === 0) return { needsFullSave: true };
+  const diOps = mapAffectedConnectionDi(context);
+  if (diOps.needsFullSave) return diOps;
+  return { ops: [...ops, ...diOps.ops] };
+}
+
 const WHITELIST = Object.freeze({
   "element.updateProperties": mapUpdateProperties,
   "element.updateLabel": mapUpdateLabel,
@@ -308,6 +420,8 @@ const WHITELIST = Object.freeze({
   "connection.reconnect": mapConnectionReconnect,
   "connection.reconnectStart": mapConnectionReconnect,
   "connection.reconnectEnd": mapConnectionReconnect,
+  "elements.move": mapElementsMove,
+  "spaceTool": mapSpaceTool,
 });
 
 export function isReplayCommand(descriptor) {
@@ -349,7 +463,12 @@ export function mapCommandToOps(descriptor) {
 
   const inverse = action === "undo";
   const mapped = mapper(context, inverse);
-  if (!mapped?.op) {
+  // S3: батч-мапперы (elements.move/spaceTool) возвращают {ops: [...]};
+  // одиночные — {op}. Ни op, ни ops → честный needsFullSave.
+  const mappedOps = Array.isArray(mapped?.ops) && mapped.ops.length > 0
+    ? mapped.ops
+    : (mapped?.op ? [mapped.op] : null);
+  if (!mappedOps) {
     recordCoverage(false, true);
     return { ops: [], needsFullSave: true, replay: false, action, command };
   }
@@ -357,10 +476,10 @@ export function mapCommandToOps(descriptor) {
   // Порядок spread: payload маппера побеждает — connection.reconnect несёт
   // endpoint-ids в source/target (wire-контракт applier'а), provenance
   // (user|agent|e2e) остаётся дефолтом для остальных op-типов.
-  const op = {
+  const ops = mappedOps.map((mappedOp) => ({
     source: asText(descriptor?.source) || "user",
-    ...mapped.op,
-  };
+    ...mappedOp,
+  }));
   recordCoverage(true, false);
-  return { ops: [op], needsFullSave: false, replay: false, action, command };
+  return { ops, needsFullSave: false, replay: false, action, command };
 }

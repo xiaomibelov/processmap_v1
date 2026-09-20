@@ -208,9 +208,10 @@ test("shape.delete / connection.delete → delete ops", () => {
   );
 });
 
-test("non-whitelisted commands → needsFullSave, no ops (spaceTool, lane.resize, canvas.updateRoot)", () => {
+test("non-whitelisted commands → needsFullSave, no ops (lane.resize, canvas.updateRoot)", () => {
+  // S3: spaceTool выведен в whitelist (декомпозиция); пустой контекст spaceTool
+  // по-прежнему даёт needsFullSave через fail-closed маппер (см. S3-тесты ниже).
   for (const command of [
-    "spaceTool",
     "lane.resize",
     "canvas.updateRoot",
   ]) {
@@ -774,4 +775,171 @@ test("remote-source command is suppressed like replay — no ops, no coverage co
   assert.equal(out.needsFullSave, false);
   const coverage = getOpsCoverage();
   assert.deepEqual(coverage, { total: 0, mapped: 0, fullSave: 0 }, "coverage counters untouched");
+});
+
+// ---------------------------------------------------------------------------
+// Контур feature/mutation-gateway-c3 (срез S3, op wave A):
+//  - elements.move → БАТЧ shape.move (по shapes-листу снапшота) +
+//    element.updateDi для affectedConnections (финальные waypoints;
+//    вложенные connection-обновления diagram-js «тихие» — commandStack.changed
+//    фаерится только на outermost action, S3-probe).
+//  - undo → компенсирующий батч: -delta по shapes; updateDi с captured-
+//    waypoints (на undo-changed рантайн переснимает post-undo состояние).
+//  - fail-closed: непустые shapes без id / без delta → needsFullSave;
+//    reparent (hints.oldParent ≠ newParent) и attach → needsFullSave.
+//  - spaceTool → декомпозиция: movingShapes→shape.move(delta),
+//    resizingShapes→shape.resize(resizeBounds-математика direction+delta),
+//    affectedConnections→updateDi. Undo spaceTool → needsFullSave (oldBounds
+//    не живёт в снапшоте; полный undo-цикл — S7).
+// ---------------------------------------------------------------------------
+
+function moveDescriptor(overrides = {}) {
+  return {
+    command: "elements.move",
+    action: "execute",
+    commandContext: {
+      shapes: [
+        { id: "Task_1", type: "bpmn:Task", bounds: { x: 100, y: 200, width: 120, height: 80 } },
+        { id: "Task_2", type: "bpmn:Task", bounds: { x: 300, y: 200, width: 120, height: 80 } },
+      ],
+      delta: { x: 40, y: 30 },
+      newParent: { id: "Process_1" },
+      affectedConnections: [
+        { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+test("S3: elements.move → батч shape.move по всем shapes + updateDi для affectedConnections", () => {
+  const out = mapCommandToOps(moveDescriptor());
+  assert.equal(out.needsFullSave, false);
+  const types = out.ops.map((op) => op.type);
+  assert.deepEqual(types, ["shape.move", "shape.move", "element.updateDi"]);
+  assert.equal(out.ops[0].elementId, "Task_1");
+  assert.equal(out.ops[1].elementId, "Task_2");
+  assert.deepEqual(out.ops[0].delta, { x: 40, y: 30 });
+  assert.deepEqual(out.ops[1].delta, { x: 40, y: 30 });
+  assert.equal(out.ops[2].elementId, "Flow_1");
+  assert.deepEqual(out.ops[2].waypoints, [[140, 240], [340, 230]]);
+  assert.equal(out.ops[0].source, "user");
+});
+
+test("S3: undo elements.move → компенсирующий батч (-delta) + updateDi с captured-waypoints", () => {
+  const descriptor = moveDescriptor();
+  descriptor.action = "undo";
+  const out = mapCommandToOps(descriptor);
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.move", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].delta, { x: -40, y: -30 });
+  assert.deepEqual(out.ops[1].delta, { x: -40, y: -30 });
+  // undo-changed переснимает post-undo waypoints — маппер использует captured как есть.
+  assert.deepEqual(out.ops[2].waypoints, [[140, 240], [340, 230]]);
+});
+
+test("S3: elements.move fail-closed — без shapes / без delta / shape без id → needsFullSave", () => {
+  const noShapes = mapCommandToOps(moveDescriptor({ shapes: [] }));
+  assert.equal(noShapes.needsFullSave, true, "пустой shapes-лист: честный full-save");
+  assert.equal(noShapes.ops.length, 0);
+
+  const noDelta = mapCommandToOps(moveDescriptor({ delta: null }));
+  assert.equal(noDelta.needsFullSave, true, "без delta батч неприменим");
+
+  const badId = mapCommandToOps(moveDescriptor({
+    shapes: [{ id: "", type: "bpmn:Task" }, { id: "Task_2" }],
+  }));
+  assert.equal(badId.needsFullSave, true, "shape без id — молчаливая потеря запрещена (pinpoint-урок)");
+  assert.equal(badId.ops.length, 0);
+});
+
+test("S3: elements.move reparent/attach → needsFullSave (ops не покрывают смену parent/host)", () => {
+  const reparent = mapCommandToOps(moveDescriptor({
+    hints: { oldParent: { id: "Sub_1" } },
+  }));
+  assert.equal(reparent.needsFullSave, true, "oldParent≠newParent — reparent вне ops-покрытия");
+
+  const attach = mapCommandToOps(moveDescriptor({
+    hints: { oldParent: { id: "Process_1" }, attach: true },
+  }));
+  assert.equal(attach.needsFullSave, true, "attach (host change) — консервативно full-save");
+
+  const sameParent = mapCommandToOps(moveDescriptor({
+    hints: { oldParent: { id: "Process_1" } },
+  }));
+  assert.equal(sameParent.needsFullSave, false, "same-parent drag остаётся в ops");
+});
+
+function spaceToolDescriptor(overrides = {}) {
+  return {
+    command: "spaceTool",
+    action: "execute",
+    commandContext: {
+      delta: { x: 80, y: 0 },
+      direction: "e",
+      start: 1580,
+      movingShapes: [
+        { id: "Task_8", type: "bpmn:Task", bounds: { x: 1640, y: 200, width: 120, height: 80 } },
+      ],
+      resizingShapes: [
+        { id: "Task_7", type: "bpmn:Task", bounds: { x: 1460, y: 200, width: 120, height: 80 } },
+      ],
+      affectedConnections: [
+        { id: "Flow_8", waypoints: [[1556, 240], [1640, 240]] },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+test("S3: spaceTool → декомпозиция shape.move + shape.resize (resizeBounds) + updateDi", () => {
+  const out = mapCommandToOps(spaceToolDescriptor());
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "shape.resize", "element.updateDi"]);
+  assert.equal(out.ops[0].elementId, "Task_8");
+  assert.deepEqual(out.ops[0].delta, { x: 80, y: 0 });
+  assert.equal(out.ops[1].elementId, "Task_7");
+  // direction 'e' + delta.x=80 → width +80 (SpaceUtil.resizeBounds parity).
+  assert.deepEqual(out.ops[1].bounds, { x: 1460, y: 200, width: 200, height: 80 });
+  assert.equal(out.ops[2].elementId, "Flow_8");
+  assert.deepEqual(out.ops[2].waypoints, [[1556, 240], [1640, 240]]);
+});
+
+test("S3: spaceTool resizeBounds parity для всех направлений (n/s/e/w)", () => {
+  const base = { id: "Lane_1", type: "bpmn:Task", bounds: { x: 100, y: 100, width: 200, height: 100 } };
+  const cases = [
+    ["n", { x: 0, y: -30 }, { x: 100, y: 70, width: 200, height: 130 }],
+    ["s", { x: 0, y: 30 }, { x: 100, y: 100, width: 200, height: 130 }],
+    ["e", { x: 50, y: 0 }, { x: 100, y: 100, width: 250, height: 100 }],
+    ["w", { x: -50, y: 0 }, { x: 50, y: 100, width: 250, height: 100 }],
+  ];
+  for (const [direction, delta, expected] of cases) {
+    const out = mapCommandToOps(spaceToolDescriptor({
+      delta,
+      direction,
+      movingShapes: [],
+      resizingShapes: [base],
+      affectedConnections: [],
+    }));
+    assert.equal(out.needsFullSave, false, `direction ${direction} mapped`);
+    assert.deepEqual(out.ops[0].bounds, expected, `resizeBounds parity ${direction}`);
+  }
+});
+
+test("S3: undo spaceTool → needsFullSave (oldBounds не живёт в снапшоте; полный undo-цикл — S7)", () => {
+  const descriptor = spaceToolDescriptor();
+  descriptor.action = "undo";
+  const out = mapCommandToOps(descriptor);
+  assert.equal(out.needsFullSave, true);
+  assert.equal(out.ops.length, 0);
+});
+
+test("S3: spaceTool fail-closed — без direction/bounds → needsFullSave", () => {
+  const noDirection = mapCommandToOps(spaceToolDescriptor({ direction: "" }));
+  assert.equal(noDirection.needsFullSave, true);
+
+  const noBounds = mapCommandToOps(spaceToolDescriptor({
+    resizingShapes: [{ id: "Task_7" }],
+  }));
+  assert.equal(noBounds.needsFullSave, true, "resize без bounds — молчаливая потеря запрещена");
 });
