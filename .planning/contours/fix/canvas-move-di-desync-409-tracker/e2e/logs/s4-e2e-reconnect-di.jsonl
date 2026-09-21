@@ -1,0 +1,5 @@
+{"event":"start","appBase":"http://localhost:35177","apiBase":"http://localhost:38011"}
+{"event":"fixture","sessionId":"75fb28bfdc","projectId":"479187a54d"}
+{"event":"reconnect-plan","from":{"x":735.746,"y":369.292},"to":{"x":744.6740000000001,"y":666.892},"endWp":{"x":540,"y":200,"original":{"x":600,"y":200}},"targetBounds":{"x":540,"y":360,"w":120,"h":80}}
+{"event":"reconnect-result","opsTypes":["connection.reconnect","element.updateDi"],"reconnectCount":1,"updateDiCount":1,"putCount":0,"f2_before":{"source":"Task_A","target":"Task_C","startDocked":true,"endDocked":true,"startWp":{"x":420,"y":200},"endWp":{"x":540,"y":400}},"f2_after":{"source":"Task_A","target":"Task_C","startDocked":true,"endDocked":true,"startWp":{"x":420,"y":200},"endWp":{"x":540,"y":400}},"targetMigrated":true,"dockedBeforeRestore":true,"dockedAfterReload":true}
+{"event":"VERDICT","pass":true}

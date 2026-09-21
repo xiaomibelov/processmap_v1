@@ -1,0 +1,82 @@
+{
+  "contour": "fix/canvas-move-di-desync-409-tracker",
+  "type": "fix",
+  "status": "CONTOUR_READY_FOR_REVIEW",
+  "baseline": {
+    "origin_main": "90556bae0e19e316ff8d3f22bd4e9d1f818276e5",
+    "branch": "fix/canvas-move-di-desync-409-tracker",
+    "worktree": ".wt-canvas-move-di-desync-409-tracker"
+  },
+  "source_audit": "audit/canvas-move-di-desync-422",
+  "scope": [
+    "F1",
+    "F2",
+    "F5",
+    "modal-409",
+    "F3"
+  ],
+  "order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4"
+  ],
+  "slices": {
+    "S1": {
+      "title": "F1/F2 enrichment affectedConnections (shape.move/resize)",
+      "status": "done",
+      "report": "EXEC_REPORT_S1.md",
+      "pr": "PR_S1.md"
+    },
+    "S2": {
+      "title": "F5 ops-ack adopt в casVersionTracker (вариант A) + WHY_NO_CROSS_TAB_HEAL.md",
+      "status": "done",
+      "report": "EXEC_REPORT_S2.md",
+      "pr": "PR_S2.md",
+      "artifact": "WHY_NO_CROSS_TAB_HEAL.md"
+    },
+    "S3": {
+      "title": "Модал 409: единый reader версий + clientBase + changed_keys",
+      "status": "done",
+      "report": "EXEC_REPORT_S3.md",
+      "pr": "PR_S3.md"
+    },
+    "S4": {
+      "title": "F3 reconnect companion updateDi",
+      "status": "done",
+      "report": "EXEC_REPORT_S4.md",
+      "pr": "PR_S4.md"
+    }
+  },
+  "constraints": {
+    "paths_metric": "1+1+X не растёт",
+    "backend": "unchanged",
+    "new_ops_or_flags": "запрещены",
+    "fail_closed": true
+  },
+  "tests_required": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7",
+    "T8"
+  ],
+  "soak": {
+    "battery_additions": [
+      "di-docking-after-mutations",
+      "ops-then-cold-save-no-409"
+    ],
+    "current_window": "досматривается до +24h, prod НЕ разблокирует",
+    "restart": "после stage-деплоя фикса (release-контур по approve)"
+  },
+  "gates": {
+    "merge": "explicit approve владельца",
+    "deploy": "запрещён",
+    "pr_language": "ru"
+  },
+  "updated_at": "2026-09-21T12:30:00Z",
+  "head": "230a4948d3c64423178dfc0913988d6ddf1d8aa9"
+}

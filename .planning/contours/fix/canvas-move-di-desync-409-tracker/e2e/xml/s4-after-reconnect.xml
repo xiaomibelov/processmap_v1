@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Defs_s4" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_s4" isExecutable="false">
+    <bpmn:startEvent id="Start_1"><bpmn:outgoing>F_1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:userTask id="Task_A" name="A"><bpmn:incoming>F_1</bpmn:incoming><bpmn:outgoing>F_2</bpmn:outgoing></bpmn:userTask>
+    <bpmn:userTask id="Task_B" name="B"><bpmn:outgoing>F_3</bpmn:outgoing></bpmn:userTask>
+    <bpmn:userTask id="Task_C" name="C"><bpmn:incoming>F_2</bpmn:incoming></bpmn:userTask>
+    <bpmn:endEvent id="End_1"><bpmn:incoming>F_3</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F_1" sourceRef="Start_1" targetRef="Task_A" />
+    <bpmn:sequenceFlow id="F_2" sourceRef="Task_A" targetRef="Task_C" />
+    <bpmn:sequenceFlow id="F_3" sourceRef="Task_B" targetRef="End_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="D1"><bpmndi:BPMNPlane id="P1" bpmnElement="Process_s4">
+    <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1"><dc:Bounds x="172" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Task_A_di" bpmnElement="Task_A"><dc:Bounds x="300" y="160" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Task_B_di" bpmnElement="Task_B"><dc:Bounds x="540" y="160" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Task_C_di" bpmnElement="Task_C"><dc:Bounds x="540" y="360" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="End_1_di" bpmnElement="End_1"><dc:Bounds x="780" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="F_1_di" bpmnElement="F_1"><di:waypoint x="208" y="200" /><di:waypoint x="300" y="200" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="F_2_di" bpmnElement="F_2"><di:waypoint x="420" y="200" /><di:waypoint x="480" y="200" /><di:waypoint x="480" y="400" /><di:waypoint x="540" y="400" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="F_3_di" bpmnElement="F_3"><di:waypoint x="660" y="200" /><di:waypoint x="780" y="200" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>
