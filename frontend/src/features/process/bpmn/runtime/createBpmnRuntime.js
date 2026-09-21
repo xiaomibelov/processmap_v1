@@ -11,6 +11,10 @@ import {
   snapshotWaypoints,
   enrichPositionalSnapshot,
 } from "./positionalSnapshot.js";
+import { installEventBusErrorGuard } from "./eventBusErrorGuard.js";
+import { captureCommandContextSafely } from "./commandContextCapture.js";
+import { healImportXml } from "./importDiHeal.js";
+import { recordSaveDiagnostic } from "../../../session/saveDiagnosticsTrail.js";
 
 function asMode(value) {
   return String(value || "").trim().toLowerCase() === "viewer" ? "viewer" : "modeler";
@@ -314,6 +318,11 @@ export default function createBpmnRuntime(options = {}) {
     try {
       const eventBus = instance.get("eventBus");
       if (!eventBus || typeof eventBus.on !== "function") return;
+      // P0-1 (canvas-nan-di-stuck-drag): non-finite исключение render-listener'а
+      // не должно убивать Dragging.end до cleanup (stuck drag, RC2 аудита).
+      const unbindErrorGuard = installEventBusErrorGuard(eventBus, {
+        record: recordSaveDiagnostic,
+      });
       // Команда верхнего уровня execute: вложенные behavior-команды
       // (connection.layout/lane.updateRefs/id.updateClaim/...) исполняются
       // ВНУТРИ execute внешней команды — как до её _executedAction-push
@@ -361,8 +370,15 @@ export default function createBpmnRuntime(options = {}) {
           if (!command) command = asText(actionEntry?.command || actionEntry?.id || "").trim();
           contextSource = actionEntry?.context;
         }
-        const snapshot = snapshotCommandContext(contextSource);
-        enrichPositionalSnapshot(command, contextSource, snapshot);
+        // P0-4 (canvas-nan-di-stuck-drag): enrichment не ломает каскад
+        // commandStack.changed → notifyChange → outbox.
+        const snapshot = captureCommandContextSafely({
+          command,
+          contextSource,
+          snapshot: snapshotCommandContext,
+          enrich: enrichPositionalSnapshot,
+          record: recordSaveDiagnostic,
+        });
         // S7 (undo-delete): undo delete фаерит 'id.updateClaim', чей контекст
         // — пустой дескриптор claim-сервиса (type/bounds нулевые). Recreate
         // живёт в модели: доснимаем post-undo live-ref из elementRegistry —
@@ -385,6 +401,10 @@ export default function createBpmnRuntime(options = {}) {
       unbindCommandStack = () => {
         try {
           eventBus.off?.("commandStack.changed", onCommandChanged);
+        } catch {
+        }
+        try {
+          unbindErrorGuard?.();
         } catch {
         }
         try {
@@ -459,12 +479,20 @@ export default function createBpmnRuntime(options = {}) {
     notifyStatus("load.start");
     emitTrace("load.start", { source, token: opToken, xml_len: asText(xml).length });
     muteChangeDepth += 1;
+    // P0-3 (canvas-nan-di-stuck-drag): self-heal нефинитных DI-координат ДО
+    // importXML; healedEdges — для post-import best-effort layoutConnection.
+    let healedEdges = [];
     try {
       const e2eDelay = getE2EImportDelayMs();
       if (e2eDelay > 0) {
         await new Promise((resolve) => setTimeout(resolve, e2eDelay));
       }
-      await inst.importXML(applyMessageFlowImportDialect(asText(xml)));
+      const heal = healImportXml(applyMessageFlowImportDialect(asText(xml)), {
+        record: recordSaveDiagnostic,
+        trace: emitTrace,
+      });
+      healedEdges = heal.healedEdges;
+      await inst.importXML(heal.xml);
     } catch (error) {
       if (destroyed || opToken !== activeToken || inst !== instance) {
         emitTrace("load.stale_error", { source, token: opToken });
@@ -483,6 +511,27 @@ export default function createBpmnRuntime(options = {}) {
     }
     ready = true;
     defs = hasDefinitionsLoaded(inst);
+    // P0-3: пересобранным маршрутам (синтезированным из Bounds) — best-effort
+    // layoutConnection от bpmn-js: дегенеративные/прямые заглушки заменяются
+    // каноническим маршрутом до первого сохранения.
+    if (mode === "modeler" && healedEdges.length > 0) {
+      try {
+        const modeling = inst.get?.("modeling");
+        const registry = inst.get?.("elementRegistry");
+        if (modeling && typeof modeling.layoutConnection === "function" && registry) {
+          for (const edgeId of healedEdges) {
+            try {
+              const conn = registry.get?.(edgeId);
+              if (conn) modeling.layoutConnection(conn);
+            } catch {
+              // per-edge best-effort
+            }
+          }
+        }
+      } catch {
+        // layout heal — best-effort, импорт уже состоялся
+      }
+    }
     notifyStatus("load.done");
     emitTrace("load.done", { source, token: opToken, defs: defs ? 1 : 0 });
     return defs
