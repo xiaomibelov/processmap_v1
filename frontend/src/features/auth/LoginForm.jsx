@@ -60,7 +60,7 @@ export default function LoginForm({
           ref={emailRef}
           type="email"
           autoComplete="email"
-          className="h-11 rounded-xl border border-border bg-bgSoft px-3 text-fg"
+          className="input h-11"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="admin@local"
@@ -74,7 +74,7 @@ export default function LoginForm({
         <input
           type="password"
           autoComplete="current-password"
-          className="h-11 rounded-xl border border-border bg-bgSoft px-3 text-fg"
+          className="input h-11"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder={ru.auth.passwordPlaceholder}

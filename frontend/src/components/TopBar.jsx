@@ -10,6 +10,7 @@ import {
   apiMarkNoteThreadRead,
 } from "../lib/api.js";
 import { useSessionNoteAggregate, useSessionNoteAggregates } from "../lib/sessionNoteAggregates.js";
+import { THEME_STORAGE_KEY } from "../lib/theme.js";
 import { canOpenOrgSettings as canOpenOrgSettingsRole } from "../features/admin/adminUtils";
 import { getDict } from "../shared/i18n/index.js";
 
@@ -46,6 +47,29 @@ function shortLabel(value, max = 34) {
   if (!text) return "";
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(8, max - 1)).trim()}…`;
+}
+
+function formatNotificationTime(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const diffMs = Date.now() - value;
+  if (diffMs < 60 * 1000) return "только что";
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 60) return `${minutes} мин назад`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ч назад`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "вчера";
+  if (days < 7) return `${days} дн назад`;
+  return new Date(value).toLocaleDateString("ru-RU");
+}
+
+function userInitials(user) {
+  const source = toText(user?.name) || toText(user?.email) || "П";
+  const parts = source.split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || "П";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return `${first}${last}`.toUpperCase();
 }
 
 function normalizedNotificationLabel(value) {
@@ -96,6 +120,33 @@ function UserAvatarIcon({ className = "" }) {
   );
 }
 
+function BellIcon({ className = "" }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 16v-5a6 6 0 1 1 12 0v5l1.4 1.4a.6.6 0 0 1-.42 1.03H5.02a.6.6 0 0 1-.42-1.03L6 16Z" />
+      <path strokeLinecap="round" d="M10 20a2.2 2.2 0 0 0 4 0" />
+    </svg>
+  );
+}
+
+function ThemeIcon({ className = "" }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <circle cx="12" cy="12" r="4.2" />
+      <path strokeLinecap="round" d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+    </svg>
+  );
+}
+
+function LogoutIcon({ className = "" }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4-4 4M10.5 12H21" />
+    </svg>
+  );
+}
+
 export default function TopBar({
   orgs,
   activeOrgId,
@@ -133,7 +184,13 @@ export default function TopBar({
   const draftSessionId = toText(draft?.session_id || draft?.id);
   const effectiveProjectId = toText(projectId || draftProjectId);
   const effectiveSessionId = toText(sessionId || draftSessionId);
-  const [uiTheme, setUiTheme] = useState("dark");
+  const [uiTheme, setUiTheme] = useState(() => {
+    try {
+      return document.documentElement.classList.contains("light") ? "light" : "dark";
+    } catch {
+      return "light";
+    }
+  });
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("unviewed");
@@ -154,7 +211,7 @@ export default function TopBar({
       const isLight = root.classList.contains("light");
       setUiTheme(isLight ? "light" : "dark");
     } catch {
-      setUiTheme("dark");
+      setUiTheme("light");
     }
   }, []);
 
@@ -199,7 +256,7 @@ export default function TopBar({
     try {
       document.documentElement.classList.remove("dark", "light");
       document.documentElement.classList.add(next);
-      window.localStorage.setItem("fpc_theme", next);
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
       // ignore
     }
@@ -520,83 +577,120 @@ export default function TopBar({
               className="fixed right-3 top-12 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[360px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
-              <div className="min-w-0 border-b border-border/70 px-4 py-3">
-                <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
-                  {shortLabel(userTitleFrom(user), 46)}
-                </div>
-                <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
-                {user?.groups && Array.isArray(user.groups) && user.groups.length > 0 ? (
-                  <div className="mt-2 flex min-w-0 flex-wrap gap-1" data-testid="topbar-account-groups">
-                    {user.groups.map((g, idx) => (
-                      <span
-                        key={`${g?.id || idx}_${idx}`}
-                        className="inline-flex items-center rounded-full bg-info/15 px-2 py-0.5 text-[10px] font-medium text-info"
-                        title={String(g?.description || "").trim() || undefined}
-                      >
-                        {String(g?.name || g?.group_name || g?.id || "Группа").trim()}
-                      </span>
-                    ))}
+              <div className="flex min-w-0 items-start gap-3 border-b border-border/70 px-4 py-3">
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[13px] font-bold text-accent"
+                  aria-hidden="true"
+                >
+                  {userInitials(user)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
+                    {shortLabel(userTitleFrom(user), 46)}
                   </div>
-                ) : null}
+                  {toText(user?.email) && toText(user?.email) !== toText(userTitleFrom(user)) ? (
+                    <div className="mt-0.5 truncate text-xs text-muted" title={toText(user?.email)}>
+                      {shortLabel(user?.email, 48)}
+                    </div>
+                  ) : null}
+                  {user?.groups && Array.isArray(user.groups) && user.groups.length > 0 ? (
+                    <div className="mt-2 flex min-w-0 flex-wrap gap-1" data-testid="topbar-account-groups">
+                      {user.groups.map((g, idx) => (
+                        <span
+                          key={`${g?.id || idx}_${idx}`}
+                          className="inline-flex items-center rounded-full bg-info/15 px-2 py-0.5 text-[10px] font-medium text-info"
+                          title={String(g?.description || "").trim() || undefined}
+                        >
+                          {String(g?.name || g?.group_name || g?.id || "Группа").trim()}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="secondaryBtn h-7 shrink-0 px-2 text-[11px]"
+                  disabled
+                  title="Профиль появится в одном из следующих обновлений"
+                  data-testid="topbar-account-profile-soon"
+                >
+                  Профиль · скоро
+                </button>
               </div>
               <div className="min-w-0 border-b border-border/70 px-4 py-3" data-testid="topbar-mentions-menu">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
                     <div className="text-sm font-bold leading-tight text-fg">Уведомления</div>
-                    <div className="mt-0.5 truncate text-xs text-muted" data-testid="topbar-notification-summary">
-                      {notificationSummary}
-                    </div>
+                    {accountNotificationCenter.unviewedCount > 0 ? (
+                      <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold leading-3 text-accent">
+                        {accountNotificationCenter.unviewedCount > 99 ? "99+" : accountNotificationCenter.unviewedCount}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 {hasAccountNotifications ? (
-                  <div className="mt-2 grid gap-1.5" data-testid="topbar-notification-preview-list">
-                    {accountNotificationPreviewRows.map((row) => (
-                      <button
-                        key={row.id}
-                        type="button"
-                        className="group grid min-w-0 gap-1 rounded-md border border-border/65 bg-panel2/30 px-2.5 py-2 text-left transition hover:border-info/35 hover:bg-panel2/55"
-                        onClick={openNotificationCenterPanel}
-                        data-testid="topbar-notification-preview-row"
-                      >
-                        <span className="min-w-0 truncate text-[12px] font-semibold text-fg" title={row.primaryLabel || row.title || "Обсуждение"}>
-                          {shortLabel(row.primaryLabel || row.title || "Обсуждение", 42)}
-                        </span>
-                        {row.secondaryLabel ? (
-                          <span className="min-w-0 truncate text-[11px] text-muted" title={row.secondaryLabel}>
-                            {shortLabel(row.secondaryLabel, 64)}
+                  <>
+                    <div className="mt-0.5 truncate text-xs text-muted" data-testid="topbar-notification-summary">
+                      {notificationSummary}
+                    </div>
+                    <div className="mt-2 grid gap-1.5" data-testid="topbar-notification-preview-list">
+                      {accountNotificationPreviewRows.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          className="group flex min-w-0 items-start gap-2.5 rounded-lg border border-border/65 bg-panel2/30 px-2.5 py-2 text-left transition hover:border-info/35 hover:bg-panel2/55"
+                          onClick={openNotificationCenterPanel}
+                          data-testid="topbar-notification-preview-row"
+                        >
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-info/10 text-info">
+                            <BellIcon className="h-3.5 w-3.5" />
                           </span>
-                        ) : null}
-                        <span className="flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-muted/85" data-testid="topbar-notification-preview-context">
-                          <span className="min-w-0 truncate" title={row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle)}>
-                            {shortLabel(row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle), 58)}
-                          </span>
-                          {row.badges?.[0]?.label ? (
-                            <span className="shrink-0 rounded-full border border-border/70 bg-bg/30 px-1.5 py-0 text-[9px] font-semibold leading-4 text-muted">
-                              {shortLabel(row.badges[0].label, 18)}
+                          <span className="grid min-w-0 flex-1 gap-0.5">
+                            <span className="min-w-0 truncate text-[12px] font-semibold text-fg" title={row.primaryLabel || row.title || "Обсуждение"}>
+                              {shortLabel(row.primaryLabel || row.title || "Обсуждение", 42)}
                             </span>
-                          ) : null}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                            {row.secondaryLabel ? (
+                              <span className="min-w-0 truncate text-[11px] text-muted" title={row.secondaryLabel}>
+                                {shortLabel(row.secondaryLabel, 64)}
+                              </span>
+                            ) : null}
+                            <span className="flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-muted/85" data-testid="topbar-notification-preview-context">
+                              <span className="min-w-0 truncate" title={row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle)}>
+                                {shortLabel(row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle), 58)}
+                              </span>
+                              {row.badges?.[0]?.label ? (
+                                <span className="shrink-0 rounded-full border border-border/70 bg-bg/30 px-1.5 py-0 text-[9px] font-semibold leading-4 text-muted">
+                                  {shortLabel(row.badges[0].label, 18)}
+                                </span>
+                              ) : null}
+                              {formatNotificationTime(row.timestamp) ? (
+                                <span className="shrink-0 text-muted/70">{formatNotificationTime(row.timestamp)}</span>
+                              ) : null}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 ) : (
                   <div
-                    className="mt-2 min-w-0 rounded-md border border-dashed border-border px-2 py-2 text-xs leading-snug text-muted break-words"
+                    className="mt-2 flex min-w-0 flex-col items-center gap-1.5 rounded-lg border border-dashed border-border/70 px-3 py-4 text-center"
                     data-testid="topbar-notification-empty"
                   >
-                    Нет уведомлений
+                    <BellIcon className="h-4 w-4 text-muted/70" />
+                    <span className="text-xs text-muted">Нет уведомлений</span>
                   </div>
                 )}
                 <button
                   type="button"
-                  className="secondaryBtn mt-3 h-8 w-full min-w-0 justify-center px-3 text-sm"
+                  className="secondaryBtn mt-3 h-8 w-full min-w-0 justify-center gap-2 px-3 text-sm"
                   onClick={openNotificationCenterPanel}
                   data-testid="topbar-open-notification-center"
                 >
                   Открыть центр уведомлений
                 </button>
               </div>
-              <div className="grid gap-1 p-2" data-testid="topbar-account-actions">
+              <div className="grid gap-1 border-t border-border/70 p-2" data-testid="topbar-account-actions">
                 <button
                   type="button"
                   role="switch"
@@ -608,6 +702,7 @@ export default function TopBar({
                   data-testid="topbar-theme-toggle"
                   title={uiTheme === "dark" ? "Включить светлую тему" : "Включить тёмную тему"}
                 >
+                  <ThemeIcon className="h-4 w-4 shrink-0 text-muted" />
                   <span className="shrink-0">Тема</span>
                   <span className="ml-auto min-w-0 flex-1 truncate text-right text-[11px] text-muted">{uiTheme === "dark" ? "Тёмная" : "Светлая"}</span>
                   <span className={`relative h-5 w-9 shrink-0 rounded-full border transition ${uiTheme === "light" ? "border-sky-300 bg-sky-100" : "border-border bg-bg/70"}`} aria-hidden="true">
@@ -616,7 +711,7 @@ export default function TopBar({
                 </button>
                 <button
                   type="button"
-                  className="secondaryBtn h-8 w-full min-w-0 justify-start overflow-hidden border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                  className="secondaryBtn h-8 w-full min-w-0 justify-start gap-2 overflow-hidden border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
                   onClick={() => {
                     setAccountMenuOpen(false);
                     setNotificationCenterOpen(false);
@@ -625,6 +720,7 @@ export default function TopBar({
                   title="Выйти из аккаунта"
                   data-testid="topbar-account-logout"
                 >
+                  <LogoutIcon className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 truncate">Выйти</span>
                 </button>
               </div>
