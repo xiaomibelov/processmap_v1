@@ -10,7 +10,8 @@
     <title>ProcessMap</title>
     <script>
       // UX-UPDATE boot guard: убиваем устаревший service worker / кеши и,
-      // если раздаваемая версия новее этого index.html, перезагружаемся один раз.
+      // если раздаваемая версия новее этого index.html, перезагружаемся
+      // (version boot guard — до 3 попыток на buildId, см. ниже).
       (function () {
         function clearCaches() {
           if (typeof caches === "undefined") return Promise.resolve();

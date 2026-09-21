@@ -20,7 +20,7 @@ describe("index.html boot guard source checks", () => {
     assert.match(html, /location\.href\s*=\s*url\s*\+\s*sep\s*\+\s*["']__pm_cb=["']\s*\+\s*Date\.now\(\)/);
   });
 
-  test("boot guard marks single reload per build id via sessionStorage", () => {
+  test("boot guard tracks reload attempts per build id via sessionStorage (counter, max 3)", () => {
     assert.match(html, /sessionStorage\.getItem\s*\(/);
     assert.match(html, /sessionStorage\.setItem\s*\(/);
     assert.match(html, /processmap:version-boot-reload/);
