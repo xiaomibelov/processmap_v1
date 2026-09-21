@@ -7,7 +7,7 @@ import { createFixture, openFixture } from "./helpers/processFixture.mjs";
 // держит контент свёрнутого аккордеона смонтированным с visibility:visible.
 const runId = `sidebar_overlap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-async function ensureOrgSelected(page, fixture) {
+async function ensureOrgSelected(page) {
   const defaultOrgBtn = page.getByRole("button", { name: /^Default/ }).first();
   try {
     await defaultOrgBtn.waitFor({ state: "visible", timeout: 10000 });
@@ -21,11 +21,10 @@ async function ensureOrgSelected(page, fixture) {
     const box = await defaultOrgBtn.boundingBox();
     if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     if (vp) await page.setViewportSize(vp);
-  } catch {
-    // org switcher not shown; proceed
-  }
-  if (fixture) {
-    await openFixture(page, fixture);
+  } catch (err) {
+    // org switcher not shown; proceed. Если пикер реально сломан,
+    // тест упадёт ниже на waitForSelector(Task_1) с этой причиной в логе.
+    console.warn("ensureOrgSelected: org click skipped:", String(err).slice(0, 120));
   }
   await page.waitForSelector('.djs-shape[data-element-id="Task_1"]', { timeout: 45000 });
 }
@@ -86,13 +85,17 @@ test.describe("sidebar add-property overlap (F-SIDEBAR-OVERLAP)", () => {
   test.beforeEach(async ({ page }) => {
     await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId, refreshToken: auth.refreshToken });
     await openFixture(page, fixture);
-    await ensureOrgSelected(page, fixture);
+    await ensureOrgSelected(page);
     await ensureSidebarOpen(page);
     await selectTaskOnCanvas(page, "Task_1");
     await openPropertiesAccordion(page);
   });
 
   test("user scenario: real click on «+ Добавить BPMN-свойство» adds a property row", async ({ page }) => {
+    // Parity/regression-gate: заявленный владельцем пользовательский сценарий
+    // в settled open-state. RED-доказательство контура несут unit
+    // (sidebarAccordionVisibility.test.mjs) и test2 ниже — оба падают без патча;
+    // этот тест фиксирует, что фикс не ломает штатный путь.
     const rows = page.locator(".sidebarSchemaPropertyRow");
     const rowsBefore = await rows.count();
     const addBtn = bpmnAddButton(page);
