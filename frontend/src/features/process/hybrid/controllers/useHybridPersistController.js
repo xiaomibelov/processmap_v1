@@ -10,6 +10,29 @@ import { noteSessionApiResult } from "../../../session/sessionLiveness.js";
 
 const HYBRID_CONFLICT_MESSAGE = "Conflict: session was changed in another window. Saving is paused until you resolve it.";
 
+// S3 (fix/canvas-move-di-desync-409-tracker): чистая derivation conflict-
+// нотиса hybrid-ветки. clientBaseVersion — base на момент отправки (запись
+// координатора держит base из builtPayload = tracked-версия на момент
+// отправки); changedKeys — канонически извлечённые changed_keys 409-detail.
+// Fail-open: записи/полей нет → null / [], дефолты не выдумываются.
+export function resolveHybridConflictNotice(coordinator, sessionId) {
+  const empty = { serverVersion: null, clientBaseVersion: null, changedKeys: [] };
+  let conflict = null;
+  try {
+    conflict = coordinator?.getConflict?.(sessionId) || null;
+  } catch {
+    return empty;
+  }
+  if (!conflict || typeof conflict !== "object") return empty;
+  return {
+    serverVersion: Number.isFinite(Number(conflict.serverVersion)) ? Math.round(Number(conflict.serverVersion)) : null,
+    clientBaseVersion: Number.isFinite(Number(conflict.clientBaseVersion)) ? Math.round(Number(conflict.clientBaseVersion)) : null,
+    changedKeys: Array.isArray(conflict.changedKeys)
+      ? conflict.changedKeys.map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+  };
+}
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -261,7 +284,7 @@ export default function useHybridPersistController({
       message: HYBRID_CONFLICT_MESSAGE,
       sessionId: toText(sessionId),
       pendingDraft,
-      serverVersion: saveCoordinator.getConflict(sessionId)?.serverVersion ?? null,
+      ...resolveHybridConflictNotice(saveCoordinator, sessionId),
     },
     get lastError() {
       return toText(lastError) || null;
