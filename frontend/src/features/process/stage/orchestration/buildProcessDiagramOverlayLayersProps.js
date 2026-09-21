@@ -52,12 +52,14 @@ export function buildBpmnDiagramOverlayLayersProps({
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
   showOverlaysDuringPan = false,
+  underlayAsisSid = null,
 }) {
   bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
     bpmnStageProps: {
       ref: bpmnRef,
       sessionId: sid,
+      underlayAsisSid,
       activeProjectId,
       view: tab === "xml" ? "xml" : "editor",
       draft,
