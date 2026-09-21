@@ -114,12 +114,21 @@ function point(value) {
 function bounds(value) {
   const b = sanitizeValue(value);
   if (!isPlainObject(b)) return null;
-  const out = {
-    x: Number(b.x) || 0,
-    y: Number(b.y) || 0,
-    width: Number(b.width) || 0,
-    height: Number(b.height) || 0,
-  };
+  // P0-2 (canvas-nan-di-stuck-drag): fail-closed паритет с point() (#982) —
+  // нефинитный компонент → null → needsFullSave; молчаливая коэрция NaN→0
+  // (`Number(b.x) || 0`) записывала на сервер нулевые bounds. Отсутствующие
+  // компоненты (legacy partial bounds) по-прежнему дополняются нулями.
+  const out = {};
+  for (const key of ["x", "y", "width", "height"]) {
+    const raw = b[key];
+    if (raw === undefined || raw === null) {
+      out[key] = 0;
+      continue;
+    }
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return null;
+    out[key] = num;
+  }
   return out;
 }
 
