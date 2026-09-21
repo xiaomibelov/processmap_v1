@@ -5,6 +5,7 @@ import { createSaveCoordinator } from "../../../../session/saveCoordinator.js";
 import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
+  subscribeDiagramVersionChanges,
   __resetForTests as resetCasVersionTracker,
 } from "../../../../../lib/casVersionTracker.js";
 import { createOpsOutboxConfig } from "./opsOutboxConfig.js";
@@ -953,5 +954,94 @@ test("S1: undo батча ПОСЛЕ flush → компенсирующие op �
   );
   assert.deepEqual(ctx.api.calls[1].body.operations[0].delta, { x: -40, y: -30 });
   assert.deepEqual(ctx.api.calls[1].body.operations[1].waypoints, [[100, 210], [300, 200]]);
+  ctx.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S2 (F5, вариант A).
+// Собственный ops-ack обязан adopt'ить ack-версию в casVersionTracker: без
+// этого CAS-guarded пути (full-PUT класса C, meta PATCH) после серии
+// ops-мутаций идут со stale base → ложный 409 DIAGRAM_STATE_CONFLICT.
+// adopt идемпотентен (notify/cross-tab publish только при реальном изменении),
+// монотонный guard не downgrade'ит трекер, если параллельный путь (бамп
+// координатора на completeSuccess, adopt 409-rebase) уже поднял версию выше.
+// ---------------------------------------------------------------------------
+
+test("S2: ops-ack adopt'ит ack-версию в casVersionTracker (F5)", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  // Прямой ack штатного flush-пайплайна (тот же _onAck, что дёргает
+  // dispatcher координатора после 200).
+  ctx.outbox._onAck({ ok: true, status: 200, version: 12, applied: 1, skipped: 0, diagramStateVersion: 12 });
+  assert.equal(getTrackedDiagramStateVersion("s1"), 12, "tracker обязан adopt'ить ack-версию");
+  ctx.destroy();
+});
+
+test("S2: adopt идемпотентен — повторный ack той же версии не дублирует notify (cross-tab publish 1 раз)", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => {
+    if (event.sid === "s1") events.push(event);
+  });
+  try {
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    assert.equal(getTrackedDiagramStateVersion("s1"), 12);
+    assert.equal(events.length, 1, "cross-tab publish — ровно одна публикация при повторном adopt того же значения");
+  } finally {
+    unsubscribe();
+    ctx.destroy();
+  }
+});
+
+test("S2: гонка ack + более новый adopt (409-rebase) — монотонный guard не downgrade'ит трекер", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => {
+    if (event.sid === "s1") events.push(event);
+  });
+  try {
+    // Поздний ack устаревшего батча (12) прилетает после того, как rebase/
+    // полный путь уже adopt'ил более новую версию (15).
+    setTrackedDiagramStateVersion("s1", 15);
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    assert.equal(getTrackedDiagramStateVersion("s1"), 15, "stale ack не откатывает tracked base назад");
+    assert.equal(events.length, 1, "ни одной лишней публикации от stale-ack");
+  } finally {
+    unsubscribe();
+    ctx.destroy();
+  }
+});
+
+test("S2: ack без версии в ответе — tracker не трогаем", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => {
+    if (event.sid === "s1") events.push(event);
+  });
+  try {
+    ctx.outbox._onAck({ ok: true, status: 200, applied: 1, skipped: 0 });
+    assert.equal(getTrackedDiagramStateVersion("s1"), 7, "нет версии — нет adopt");
+    assert.equal(events.length, 0);
+  } finally {
+    unsubscribe();
+    ctx.destroy();
+  }
+});
+
+test("S2: обычный flush через координатора — tracker == ack-версия (инварт сохранён, full-PUT-путь не сломан)", async () => {
+  const ctx = makeOutbox();
+  setTrackedDiagramStateVersion("s1", 7);
+  pushRename(ctx.outbox, "Task_1", "A");
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 1);
+  assert.equal(getTrackedDiagramStateVersion("s1"), 8, "после штатного ack tracker == версия сервера");
   ctx.destroy();
 });
