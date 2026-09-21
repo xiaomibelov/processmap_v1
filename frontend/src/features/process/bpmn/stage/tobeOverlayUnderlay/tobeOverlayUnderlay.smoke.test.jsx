@@ -347,3 +347,40 @@ describe("tobeOverlayUnderlayController (T5)", () => {
     expect(src).toMatch(/\[tobe-underlay\] viewbox sync failed/);
   });
 });
+
+// T5b: eventBus-канал — подписка canvas.viewbox.changed на ЖИВОМ editor
+// (новый канал влияния, mock его не трогал). Teardown обязан вернуть
+// listenerCount к baseline и держать его плоским по циклам (B3-методика).
+describe("tobeOverlayUnderlay eventBus unsubscribe (T5b)", () => {
+  it("listenerCount возвращается к baseline после destroy", async () => {
+    const editor = makeFakeEditor();
+    const baseline = editor.eventBus.listenerCount("canvas.viewbox.changed");
+    const { controller } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+    expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(baseline + 1);
+
+    controller.destroy();
+    expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(baseline);
+  });
+
+  it("20 циклов mount/destroy: listener-count плоский, контейнеры не протекают", async () => {
+    const editor = makeFakeEditor();
+    const baseline = editor.eventBus.listenerCount("canvas.viewbox.changed");
+    const hosts = [];
+    for (let i = 0; i < 20; i += 1) {
+      const { controller, ghostContainer } = makeControllerWithFakeGhost();
+      const host = document.createElement("div");
+      hosts.push(host);
+      await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+      expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(baseline + 1);
+      controller.destroy();
+      expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(baseline);
+      expect(host.childElementCount).toBe(0);
+      expect(ghostContainer.parentNode).toBeNull();
+    }
+    // Повторный emit после всех циклов — ни одного живого ghost-listener.
+    editor.eventBus.emit("canvas.viewbox.changed", { viewbox: { x: 5, y: 5, scale: 2 } });
+    expect(editor.api.editorViewboxSetCalls).toBe(0);
+  });
+});
