@@ -23,6 +23,8 @@ import {
 } from "./createBpmnCoordinator.helpers.js";
 import { applyMessageFlowExportDialect } from "../dialect/messageFlowDialect.js";
 import { saveCoordinator } from "../../../session/saveCoordinator.js";
+import { findNonFiniteDi } from "../di/diFiniteness.js";
+import { recordSaveDiagnostic } from "../../../session/saveDiagnosticsTrail.js";
 
 export default function createBpmnCoordinator(options = {}) {
   const store = options?.store;
@@ -555,6 +557,37 @@ export default function createBpmnCoordinator(options = {}) {
       bpmnMeta: options?.bpmnMeta,
     });
     let xml = prepared.xml;
+    // P0-2 (canvas-nan-di-stuck-drag, RC3 аудита): запись "NaN"/"Infinity" в
+    // PUT /bpmn запрещена — нефинитные DI-координаты fail-closed блокируют
+    // full-save с честной диагностикой, persistRaw не вызывается.
+    const nonFiniteDi = findNonFiniteDi(xml);
+    if (nonFiniteDi.length > 0) {
+      const firstDi = nonFiniteDi[0];
+      recordSaveDiagnostic("non_finite_di_blocked", {
+        sid,
+        reason,
+        rev,
+        count: nonFiniteDi.length,
+        di_kind: asText(firstDi.kind),
+        di_attr: asText(firstDi.attr),
+        di_value: asText(firstDi.value),
+        di_element: asText(firstDi.edgeId || firstDi.elementId || ""),
+      });
+      emit("SAVE_PERSIST_BLOCKED_NONFINITE_DI", {
+        sid,
+        reason,
+        rev,
+        count: nonFiniteDi.length,
+        xml_len: xml.length,
+      });
+      return {
+        ok: false,
+        rev,
+        status: 0,
+        errorCode: "non_finite_di_blocked",
+        error: `non-finite DI coordinates blocked (${nonFiniteDi.length})`,
+      };
+    }
     const currentXmlHash = fnv1aHex(xml);
     // Compare against the hash of the xml last known persisted/loaded on the
     // backend (savedHash), not against lastHash — staging snapshots overwrite
