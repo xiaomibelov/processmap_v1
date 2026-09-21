@@ -1,7 +1,7 @@
 {
   "contour": "fix/canvas-move-di-desync-409-tracker",
   "type": "fix",
-  "status": "S3_DONE_REVIEW_PENDING",
+  "status": "S4_DONE_CONTOUR_READY_FOR_REVIEW",
   "baseline": {
     "origin_main": "90556bae0e19e316ff8d3f22bd4e9d1f818276e5",
     "branch": "fix/canvas-move-di-desync-409-tracker",
@@ -43,7 +43,9 @@
     },
     "S4": {
       "title": "F3 reconnect companion updateDi",
-      "status": "pending"
+      "status": "done",
+      "report": "EXEC_REPORT_S4.md",
+      "pr": "PR_S4.md"
     }
   },
   "constraints": {
@@ -75,5 +77,5 @@
     "deploy": "запрещён",
     "pr_language": "ru"
   },
-  "updated_at": "2026-09-21T14:30:00Z"
+  "updated_at": "2026-09-21T15:30:00Z"
 }

@@ -354,9 +354,16 @@ function mapConnectionCreate(context, inverse) {
 // reconnectStart/reconnectEnd — нормализация в одну op connection.reconnect
 // (наследие п.6 §3 PLAN step2): rewrite source/target на сервере, ребро
 // перелинковывается. Undo — compensating-op со старыми source/target.
+// S4 (fix/canvas-move-di-desync-409-tracker, F3): companion element.updateDi —
+// backend _apply_connection_reconnect намеренно НЕ мигрирует DI-edge
+// (API.md §5.4): без companion-op серверный XML держит старые waypoints на
+// старые endpoints → растянутая стрелка до полного сохранения. Waypoints —
+// из снапшотного ref (post-action; на undo-changed — post-undo captured,
+// parity elements.move S7). Waypoints отсутствуют → reconnect без updateDi
+// (текущее поведение, by design); заявлены, но битые → needsFullSave.
 function mapConnectionReconnect(context, inverse) {
   const connection = context?.connection || context?.element;
-  const connectionId = elementIdOf(connection);
+  const connectionId = strictIdOf(connection);
   if (!connectionId) return { needsFullSave: true };
   const sourceRef = inverse
     ? (context?.oldSource ?? context?.old_source ?? connection?.source)
@@ -367,9 +374,13 @@ function mapConnectionReconnect(context, inverse) {
   const source = elementIdOf(sourceRef);
   const target = elementIdOf(targetRef);
   if (!source || !target) return { needsFullSave: true };
-  return {
-    op: makeOp("connection.reconnect", connectionId, { connectionId, source, target }),
-  };
+  const ops = [makeOp("connection.reconnect", connectionId, { connectionId, source, target })];
+  if (connection && connection.waypoints !== undefined) {
+    const wp = waypoints(connection.waypoints);
+    if (!wp) return { needsFullSave: true };
+    ops.push(makeOp("element.updateDi", connectionId, { waypoints: wp }));
+  }
+  return { ops };
 }
 
 // S7: undo delete → compensating create-op С СОХРАНЕНИЕМ id (контракт step2:
