@@ -25,6 +25,8 @@ import {
   readConflictChangedKeys,
 } from "../../session/casResponse.js";
 import { AUTOSAVE_CONFIG } from "../bpmn/save/autosaveConfig.js";
+import { findNonFiniteDi } from "../bpmn/di/diFiniteness.js";
+import { recordSaveDiagnostic } from "../../session/saveDiagnosticsTrail.js";
 
 const XML_PIPELINE_NAME = "xml";
 const MODELER_XML_CAPTURE_TIMEOUT_MS = 8000;
@@ -80,6 +82,23 @@ export function createXmlPipelineConfig(overrides = {}) {
         });
       }
       if (typeof payload.apiPutBpmnXml === "function") {
+        // P0-2 (canvas-nan-di-stuck-drag): прямой PUT-путь — тот же
+        // fail-closed gate, что и в coordinator doFlush: запись нефинитных
+        // DI-координат ("NaN"/"Infinity") запрещена.
+        const nonFiniteDi = findNonFiniteDi(String(payload?.xml || ""));
+        if (nonFiniteDi.length > 0) {
+          recordSaveDiagnostic("non_finite_di_blocked", {
+            sid: sessionId,
+            reason: payload?.sourceAction || "transport_put",
+            count: nonFiniteDi.length,
+          });
+          return {
+            ok: false,
+            status: 0,
+            errorCode: "non_finite_di_blocked",
+            error: `non-finite DI coordinates blocked (${nonFiniteDi.length})`,
+          };
+        }
         return payload.apiPutBpmnXml(sessionId, payload.xml, {
           sourceAction: payload.sourceAction,
           baseDiagramStateVersion: payload.baseDiagramStateVersion,
