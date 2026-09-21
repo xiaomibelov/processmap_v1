@@ -190,6 +190,14 @@ export const en = {
     later: "Later",
     laterTitle: "Hide for 30 minutes",
     iconAria: "Update available",
+    titleBlocked: "Update blocked by save state",
+    blockedReasonConflict: "Save conflict: the server rejected your changes (409).",
+    blockedReasonFailed: "Saving failed.",
+    blockedReasonStale: "Your local data is stale relative to the server.",
+    blockedReasonUnknown: "Save state is unknown.",
+    forceRefresh: "Update without saving",
+    forceRefreshTitle: "Force reload the page; unsaved changes will be lost",
+    forceConfirm: "Changes will be lost. Update anyway?",
   },
   // Diagram overflow menu actions (BPMN canvas).
   // Paired dictionary: shared/i18n/ru.js.

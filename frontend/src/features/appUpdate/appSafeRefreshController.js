@@ -107,7 +107,17 @@ export function getCurrentAppRefreshRisk() {
   }
 }
 
-export async function runSafeRefreshBeforeReload({ reason = "app_update_refresh" } = {}) {
+/** Таймаут зависшего flush (C1, fix/app-update-refresh-dead-end): если handler
+ *  не резолвит promise сохранения — возвращаем timeout вместо вечного pending
+ *  (иначе refreshBusy в хуке остаётся true навсегда и кнопка [Обновить]
+ *  мертва). Wall-clock maxWaitMs внутри flush-цикла — отдельный слой. */
+export const SAFE_REFRESH_FLUSH_TIMEOUT_MS = 12000;
+const FLUSH_TIMEOUT_SENTINEL = { __safeRefreshFlushTimeout: true };
+
+export async function runSafeRefreshBeforeReload({
+  reason = "app_update_refresh",
+  flushTimeoutMs = SAFE_REFRESH_FLUSH_TIMEOUT_MS,
+} = {}) {
   const risk = getCurrentAppRefreshRisk();
   if (!activeHandler || typeof activeHandler.flush !== "function") {
     return { ok: true, status: "clean", message: "" };
@@ -129,8 +139,22 @@ export async function runSafeRefreshBeforeReload({ reason = "app_update_refresh"
       message: risk.message || "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
     };
   }
+  const timeoutMs = Number(flushTimeoutMs) > 0 ? Number(flushTimeoutMs) : SAFE_REFRESH_FLUSH_TIMEOUT_MS;
   try {
-    return normalizeSafeRefreshResult(await activeHandler.flush({ reason }));
+    const result = await Promise.race([
+      Promise.resolve().then(() => activeHandler.flush({ reason })),
+      new Promise((resolve) => {
+        setTimeout(() => resolve(FLUSH_TIMEOUT_SENTINEL), timeoutMs);
+      }),
+    ]);
+    if (result === FLUSH_TIMEOUT_SENTINEL) {
+      return {
+        ok: false,
+        status: "timeout",
+        message: "Сохранение не ответило вовремя. Попробуйте ещё раз или обновите без сохранения.",
+      };
+    }
+    return normalizeSafeRefreshResult(result);
   } catch (error) {
     return {
       ok: false,
