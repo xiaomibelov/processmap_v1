@@ -226,6 +226,14 @@
   background: transparent !important;
 }
 
+/* fpc: bpmn_hide_powered_by_v1
+   Штатный watermark bpmn-io (.bjs-powered-by) скрыт на всех рендер-путях канваса
+   (viewer / modeler / version preview / diff overlay / stage modeler).
+   Элемент остаётся в DOM — guard'ы контекстного меню продолжают на него опираться. */
+.bjs-powered-by{
+  display: none !important;
+}
+
 /* Keep shape resize outlines alive; hide only helper outline for connections */
 .bpmnCanvas .djs-connection > .djs-outline{
   display:none !important;

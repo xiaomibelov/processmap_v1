@@ -132,127 +132,164 @@ export default function PublicHomePage({
   const loginReadonly = asText(preview?.identity?.email || invite?.email);
   const singleOrgMode = !!preview?.single_org_mode;
 
+  const brandFeatures = [
+    ru.auth.brandFeatureDiagrams,
+    ru.auth.brandFeatureAnalysis,
+    ru.auth.brandFeatureCollaboration,
+  ];
+
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-8 md:px-6">
-      <div className="w-full max-w-md -translate-y-6 rounded-2xl border border-border bg-panel p-6 shadow-panel md:-translate-y-10">
-        {mode === MODE_LOGIN ? (
-          <LoginForm
-            title={ru.auth.loginTitle}
-            subtitle=""
-            submitLabel={ru.auth.loginSubmit}
-            onSuccess={() => onAccessActivated?.({ source: "login" })}
-            onCancel={switchToInviteMode}
-            secondaryLabel={ru.auth.loginSecondaryInvite}
-            secondaryTestId="public-home-invite-mode-button"
-          />
-        ) : mode === MODE_INVITE_ENTRY ? (
-          <>
-            <h1 className="text-2xl font-semibold text-fg">{ru.auth.inviteEntryTitle}</h1>
-            <p className="mt-1 text-sm text-muted">{ru.auth.inviteEntrySubtitle}</p>
+      <div className="grid w-full max-w-4xl items-center gap-6 md:grid-cols-[1.05fr_1fr] md:gap-8">
+        <aside className="hidden min-w-0 flex-col gap-5 md:flex">
+          <div className="flex items-center gap-3">
+            <img src="/favicon.svg" alt="" aria-hidden="true" className="h-11 w-11 rounded-xl border border-border bg-panel p-1.5 shadow-panel" />
+            <div className="min-w-0">
+              <div className="text-xl font-bold tracking-[0.12em] text-fg">{ru.auth.brandName}</div>
+              <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted">{ru.auth.brandOverline}</div>
+            </div>
+          </div>
+          <p className="max-w-md text-base leading-relaxed text-muted">{ru.auth.brandTagline}</p>
+          <ul className="flex flex-col gap-2">
+            {brandFeatures.map((feature) => (
+              <li key={feature} className="flex items-center gap-2.5 text-sm text-fg">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+                {feature}
+              </li>
+            ))}
+          </ul>
+        </aside>
 
-            <label className="mt-4 flex flex-col gap-1.5 text-sm text-muted">
-              <span className="font-medium text-fg">{ru.auth.inviteKeyLabel}</span>
-              <input
-                className="input h-11"
-                value={inviteKey}
-                onChange={(event) => setInviteKey(event.target.value)}
-                placeholder={ru.auth.inviteKeyPlaceholder}
-                autoFocus
+        <div className="flex min-w-0 flex-col gap-4 md:gap-5">
+          <div className="flex items-center gap-3 md:hidden">
+            <img src="/favicon.svg" alt="" aria-hidden="true" className="h-10 w-10 rounded-xl border border-border bg-panel p-1.5 shadow-panel" />
+            <div className="min-w-0">
+              <div className="text-lg font-bold tracking-[0.12em] text-fg">{ru.auth.brandName}</div>
+              <div className="truncate text-xs text-muted">{ru.auth.brandTagline}</div>
+            </div>
+          </div>
+
+          <div className="w-full rounded-2xl border border-border bg-panel p-6 shadow-panel md:p-7">
+            {mode === MODE_LOGIN ? (
+              <LoginForm
+                title={ru.auth.loginTitle}
+                subtitle=""
+                submitLabel={ru.auth.loginSubmit}
+                onSuccess={() => onAccessActivated?.({ source: "login" })}
+                onCancel={switchToInviteMode}
+                secondaryLabel={ru.auth.loginSecondaryInvite}
+                secondaryTestId="public-home-invite-mode-button"
               />
-            </label>
+            ) : mode === MODE_INVITE_ENTRY ? (
+              <>
+                <h1 className="text-2xl font-semibold text-fg">{ru.auth.inviteEntryTitle}</h1>
+                <p className="mt-1 text-sm text-muted">{ru.auth.inviteEntrySubtitle}</p>
 
-            {error ? (
-              <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>
-            ) : null}
+                <label className="mt-4 flex flex-col gap-1.5 text-sm text-muted">
+                  <span className="font-medium text-fg">{ru.auth.inviteKeyLabel}</span>
+                  <input
+                    className="input h-11"
+                    value={inviteKey}
+                    onChange={(event) => setInviteKey(event.target.value)}
+                    placeholder={ru.auth.inviteKeyPlaceholder}
+                    autoFocus
+                  />
+                </label>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm"
-                onClick={() => void handlePreview(inviteKey)}
-                disabled={busy}
-              >
-                {busy ? ru.auth.invitePreviewBusy : ru.common.continue}
-              </button>
-              <button type="button" className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm" onClick={switchToLoginMode}>
-                {ru.auth.loginBack}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h1 className="text-2xl font-semibold text-fg">{ru.auth.inviteActivateTitle}</h1>
-            <p className="mt-1 text-sm text-muted">{ru.auth.inviteActivateSubtitle}</p>
+                {error ? (
+                  <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{error}</div>
+                ) : null}
 
-            <div className="mt-4 space-y-2 rounded-xl border border-border bg-panel2/40 p-3 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">{ru.auth.inviteReadonlyEmail}</span>
-                <span className="text-right font-semibold text-fg">{loginReadonly || "-"}</span>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">{ru.auth.inviteReadonlyName}</span>
-                <span className="text-right text-fg">{asText(invite?.full_name) || "-"}</span>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-muted">{ru.auth.inviteReadonlyJobTitle}</span>
-                <span className="text-right text-fg">{asText(invite?.job_title) || "-"}</span>
-              </div>
-              {!singleOrgMode ? (
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted">{ru.auth.inviteReadonlyOrg}</span>
-                  <span className="text-right text-fg">{asText(invite?.org_name || invite?.org_id) || "-"}</span>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm"
+                    onClick={() => void handlePreview(inviteKey)}
+                    disabled={busy}
+                  >
+                    {busy ? ru.auth.invitePreviewBusy : ru.common.continue}
+                  </button>
+                  <button type="button" className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm" onClick={switchToLoginMode}>
+                    {ru.auth.loginBack}
+                  </button>
                 </div>
-              ) : null}
-            </div>
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl font-semibold text-fg">{ru.auth.inviteActivateTitle}</h1>
+                <p className="mt-1 text-sm text-muted">{ru.auth.inviteActivateSubtitle}</p>
 
-            <form className="mt-4 space-y-3" onSubmit={handleActivate}>
-              <label className="flex flex-col gap-1.5 text-sm text-muted">
-                <span className="font-medium text-fg">{ru.common.password}</span>
-                <input
-                  type="password"
-                  className="input h-11"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={ru.auth.invitePasswordMin}
-                  autoComplete="new-password"
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm text-muted">
-                <span className="font-medium text-fg">{ru.auth.invitePasswordRepeat}</span>
-                <input
-                  type="password"
-                  className="input h-11"
-                  value={passwordConfirm}
-                  onChange={(event) => setPasswordConfirm(event.target.value)}
-                  placeholder={ru.auth.invitePasswordRepeatPlaceholder}
-                  autoComplete="new-password"
-                />
-              </label>
+                <div className="mt-4 space-y-2 rounded-xl border border-border bg-panel2/40 p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-muted">{ru.auth.inviteReadonlyEmail}</span>
+                    <span className="text-right font-semibold text-fg">{loginReadonly || "-"}</span>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-muted">{ru.auth.inviteReadonlyName}</span>
+                    <span className="text-right text-fg">{asText(invite?.full_name) || "-"}</span>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-muted">{ru.auth.inviteReadonlyJobTitle}</span>
+                    <span className="text-right text-fg">{asText(invite?.job_title) || "-"}</span>
+                  </div>
+                  {!singleOrgMode ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-muted">{ru.auth.inviteReadonlyOrg}</span>
+                      <span className="text-right text-fg">{asText(invite?.org_name || invite?.org_id) || "-"}</span>
+                    </div>
+                  ) : null}
+                </div>
 
-              {error ? (
-                <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div>
-              ) : null}
+                <form className="mt-4 space-y-3" onSubmit={handleActivate}>
+                  <label className="flex flex-col gap-1.5 text-sm text-muted">
+                    <span className="font-medium text-fg">{ru.common.password}</span>
+                    <input
+                      type="password"
+                      className="input h-11"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder={ru.auth.invitePasswordMin}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-sm text-muted">
+                    <span className="font-medium text-fg">{ru.auth.invitePasswordRepeat}</span>
+                    <input
+                      type="password"
+                      className="input h-11"
+                      value={passwordConfirm}
+                      onChange={(event) => setPasswordConfirm(event.target.value)}
+                      placeholder={ru.auth.invitePasswordRepeatPlaceholder}
+                      autoComplete="new-password"
+                    />
+                  </label>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="submit" className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy}>
-                  {busy ? ru.auth.inviteActivateBusy : ru.auth.inviteActivateSubmit}
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm"
-                  onClick={() => {
-                    setError("");
-                    resetInviteActivationState();
-                    setMode(MODE_INVITE_ENTRY);
-                  }}
-                  disabled={busy}
-                >
-                  {ru.auth.loginBack}
-                </button>
-              </div>
-            </form>
-          </>
-        )}
+                  {error ? (
+                    <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">{error}</div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="submit" className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy}>
+                      {busy ? ru.auth.inviteActivateBusy : ru.auth.inviteActivateSubmit}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm"
+                      onClick={() => {
+                        setError("");
+                        resetInviteActivationState();
+                        setMode(MODE_INVITE_ENTRY);
+                      }}
+                      disabled={busy}
+                    >
+                      {ru.auth.loginBack}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

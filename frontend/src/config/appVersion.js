@@ -1,8 +1,16 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.149",
+  currentVersion: "v1.0.150",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.150",
+      changes: [
+        "Страница входа получила бренд-панель с описанием продукта и единый визуальный язык для режимов входа по инвайту.",
+        "Светлая тема стала темой по умолчанию: тёмная включается только по явному выбору пользователя.",
+        "Меню аккаунта перерисовано: шапка профиля с аватаром, счётчик непрочитанных уведомлений, единый empty state, иконки у контролов; логотип bpmn.io скрыт с канваса.",
+      ],
+    },
     {
       version: "v1.0.149",
       changes: [
