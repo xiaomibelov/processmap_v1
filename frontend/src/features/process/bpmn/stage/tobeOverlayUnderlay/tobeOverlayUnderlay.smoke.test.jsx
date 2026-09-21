@@ -143,3 +143,207 @@ describe("T4a occlusion spike (CSS-path)", () => {
     expect(layerIdx).toBeGreaterThan(-1);
   });
 });
+
+// T5: underlay-контроллер — fake-viewers по РЕАЛЬНОМУ контракту diagram-js
+// (урок C1: canvas.viewbox — функция get/set; метод .set не существует).
+// Editor-инстанс — инъекцией в mount; подписка ровно одна, read-only.
+function makeFakeEditor() {
+  const eventBusListeners = new Map();
+  const emitLog = [];
+  const api = {
+    editorViewboxSetCalls: 0,
+    eventLog: emitLog,
+    get: null,
+  };
+  let currentViewbox = { x: 120, y: 60, width: 900, height: 640, scale: 1 };
+  const eventBus = {
+    on: (event, cb) => {
+      if (!eventBusListeners.has(event)) eventBusListeners.set(event, []);
+      eventBusListeners.get(event).push(cb);
+    },
+    off: (event, cb) => {
+      const list = eventBusListeners.get(event) || [];
+      eventBusListeners.set(event, list.filter((x) => x !== cb));
+    },
+    emit: (event, payload) => {
+      emitLog.push(event);
+      for (const cb of eventBusListeners.get(event) || []) cb(payload);
+    },
+    listenerCount: (event) => (eventBusListeners.get(event) || []).length,
+  };
+  const canvas = {
+    // Реальный контракт diagram-js: viewbox — функция get/set.
+    viewbox: (box) => {
+      if (box === undefined) return currentViewbox;
+      api.editorViewboxSetCalls += 1;
+      currentViewbox = box;
+      return currentViewbox;
+    },
+  };
+  api.get = (name) => {
+    if (name === "eventBus") return eventBus;
+    if (name === "canvas") return canvas;
+    return undefined;
+  };
+  return { api, eventBus, canvas };
+}
+
+function makeFakeGhost() {
+  const api = {
+    importXMLCalls: [],
+    destroyCalls: 0,
+    ghostViewboxSetCalls: 0,
+    // для каждого set — сколько событий editor уже было emit'нуто (порядок)
+    setEventLogLengths: [],
+    importXML: null,
+    get: null,
+    destroy: null,
+  };
+  let currentViewbox = { x: 0, y: 0, width: 1000, height: 1000, scale: 1 };
+  let editorEmitLog = [];
+  const canvas = {
+    viewbox: (box) => {
+      if (box === undefined) return currentViewbox;
+      api.ghostViewboxSetCalls += 1;
+      api.setEventLogLengths.push(editorEmitLog.length);
+      currentViewbox = box;
+      return currentViewbox;
+    },
+  };
+  const eventBus = {
+    on: () => {},
+    off: () => {},
+    emit: () => {},
+    listenerCount: () => 0,
+  };
+  api.importXML = async (xml) => {
+    api.importXMLCalls.push(xml);
+  };
+  api.get = (name) => {
+    if (name === "canvas") return canvas;
+    if (name === "eventBus") return eventBus;
+    return undefined;
+  };
+  api.destroy = () => {
+    api.destroyCalls += 1;
+  };
+  api.bindEditorLog = (log) => {
+    editorEmitLog = log;
+  };
+  return { api, canvas };
+}
+
+function makeControllerWithFakeGhost() {
+  const ghost = makeFakeGhost();
+  const container = document.createElement("div");
+  const controller = createController({
+    createViewer: async () => ({ viewer: ghost.api, container }),
+  });
+  return { controller, ghost, ghostContainer: container };
+}
+
+import { createTobeOverlayUnderlayController as createController } from "./tobeOverlayUnderlayController.js";
+
+const UNDERLAY_XML = "<bpmn:definitions xmlns:bpmn=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" id=\"U1\" />";
+
+describe("tobeOverlayUnderlayController (T5)", () => {
+  it("mount: ghost под editor-слоем, XML импортирован, начальное выравнивание ДО первого emit", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghost, ghostContainer } = makeControllerWithFakeGhost();
+    ghost.api.bindEditorLog(editor.api.eventLog);
+    const host = document.createElement("div");
+
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    expect(controller.isMounted()).toBe(true);
+    expect(ghost.api.importXMLCalls).toEqual([UNDERLAY_XML]);
+    expect(host.contains(ghostContainer)).toBe(true);
+    // Начальное выравнивание применено к ghost (контракт viewbox() — get):
+    // бокс ghost строго равен начальному боксу editor.
+    expect(ghost.canvas.viewbox()).toEqual(editor.canvas.viewbox());
+    expect(ghost.api.ghostViewboxSetCalls).toBe(1);
+    // Критический порядок: единственный set на момент mount выполнен ДО
+    // любого emit'нутого события editor (eventLog пуст).
+    expect(ghost.api.setEventLogLengths).toEqual([0]);
+    expect(editor.api.eventLog).toEqual([]);
+  });
+
+  it("viewbox-sync: one-way editor → ghost; бокс реально применён; обратного нет", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghost, ghostContainer } = makeControllerWithFakeGhost();
+    ghost.api.bindEditorLog(editor.api.eventLog);
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(1);
+
+    const box = { x: 33, y: 44, width: 500, height: 400, scale: 1.25 };
+    editor.eventBus.emit("canvas.viewbox.changed", { viewbox: box });
+    expect(ghost.canvas.viewbox()).toEqual(box);
+    expect(ghost.api.ghostViewboxSetCalls).toBe(2); // initial + sync
+
+    // Обратное направление отсутствует: ghost-инстанс никого не двигает.
+    ghost.canvas.viewbox({ x: 0, y: 0, width: 10, height: 10, scale: 0.5 });
+    expect(editor.api.editorViewboxSetCalls).toBe(0);
+  });
+
+  it("show/hide: setGhostVisible прячет и показывает ghost-контейнер", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghost, ghostContainer } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    controller.setGhostVisible(false);
+    expect(ghostContainer.style.display).toBe("none");
+    controller.setGhostVisible(true);
+    expect(ghostContainer.style.display).toBe("");
+  });
+
+  it("повторный mount того же контроллера: без повторного importXML", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghost } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+    expect(ghost.api.importXMLCalls.length).toBe(1);
+    expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(1);
+  });
+
+  it("destroy: viewer destroy + контейнер удалён + подписка снята (нет ghost-хвостов)", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghost, ghostContainer } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    controller.destroy();
+
+    expect(controller.isMounted()).toBe(false);
+    expect(controller.hasViewer()).toBe(false);
+    expect(ghost.api.destroyCalls).toBe(1);
+    expect(host.childElementCount).toBe(0);
+    expect(ghostContainer.parentNode).toBeNull();
+    expect(editor.eventBus.listenerCount("canvas.viewbox.changed")).toBe(0);
+    // После destroy emit не доходит до мёртвого ghost.
+    editor.eventBus.emit("canvas.viewbox.changed", { viewbox: { x: 1, y: 1, scale: 1 } });
+    expect(ghost.api.ghostViewboxSetCalls).toBe(1);
+  });
+
+  it("source-guard: модуль read-only по построению (ни api/save/runtime/lane)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), "src/features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlayController.js"),
+      "utf8",
+    );
+    expect(src).not.toMatch(/saveCoordinator/);
+    expect(src).not.toMatch(/apiModules|\/lib\/api/);
+    expect(src).not.toMatch(/createBpmnRuntime/);
+    expect(src).not.toMatch(/gatewayLane/);
+    expect(src).not.toMatch(/overlayLifecycle/);
+    expect(src).not.toMatch(/commandStack\.on|commandStack\.changed/);
+    // Фабрика viewer'а — только из мок-модуля (реюз, спека T5).
+    expect(src).toMatch(/from "\.\.\/tobeOverlayMock\/createMockOverlayViewers\.js"/);
+    // Маркер контура на не-молчаливый catch синка.
+    expect(src).toMatch(/\[tobe-underlay\] viewbox sync failed/);
+  });
+});
