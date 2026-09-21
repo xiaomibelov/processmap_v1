@@ -5584,6 +5584,13 @@
     background: #FAFCFF;
   }
 
+  /* Свернутый аккордеон держит контент в DOM ради grid-анимации высоты;
+     без visibility:hidden его laid-out контролы (button.sidebarAddBtn)
+     перекрываются следующими accordion head'ами и остаются фокусируемыми. */
+  .sidebarAccordion:not(.isOpen) .sidebarAccordionBody {
+    visibility: hidden;
+  }
+
   .sidebarAccordionContent {
     @apply min-w-0;
   }
