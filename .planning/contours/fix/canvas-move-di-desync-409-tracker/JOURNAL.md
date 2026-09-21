@@ -73,3 +73,9 @@
   putCount=0. VERDICT pass=true (e2e/logs/s4-e2e-reconnect-di.jsonl).
 - Контур S1–S4 DONE, готов к review. PUSH нет (оркестратор). Далее:
   review-гейт, stage-деплой + рестарт soak по approve, battery +2.
+
+## 2026-09-21 — S1–S4 DONE, контур READY FOR REVIEW
+
+- S1 abd2546b (F1/F2 + латентный outbox-batch баг C3-S3), S2 24ece1c8 (F5 adopt + WHY_NO_CROSS_TAB_HEAL), S3 f77fa4b2 (модал 409), S4 230a4948 (F3 reconnect updateDi). Все запушены.
+- Все save-спеки: фейл-сет идентичен baseline (26 pre-existing). e2e 3/3 PASS (drag/resize/reconnect, putCount=0).
+- Метрика путей 1+1+X без изменений, backend-diff 0. FINAL_REPORT.md — в коммите.
