@@ -140,11 +140,12 @@ export async function runSafeRefreshBeforeReload({
     };
   }
   const timeoutMs = Number(flushTimeoutMs) > 0 ? Number(flushTimeoutMs) : SAFE_REFRESH_FLUSH_TIMEOUT_MS;
+  let flushTimeoutId = null;
   try {
     const result = await Promise.race([
       Promise.resolve().then(() => activeHandler.flush({ reason })),
       new Promise((resolve) => {
-        setTimeout(() => resolve(FLUSH_TIMEOUT_SENTINEL), timeoutMs);
+        flushTimeoutId = setTimeout(() => resolve(FLUSH_TIMEOUT_SENTINEL), timeoutMs);
       }),
     ]);
     if (result === FLUSH_TIMEOUT_SENTINEL) {
@@ -161,6 +162,10 @@ export async function runSafeRefreshBeforeReload({
       status: "failed",
       message: toText(error?.message || error || "Не удалось безопасно обновить приложение."),
     };
+  } finally {
+    // не держим 12-секундный таймер в event loop после быстрого flush
+    // (иначе unit-прогоны «дожидаются» его до выхода процесса)
+    if (flushTimeoutId !== null) clearTimeout(flushTimeoutId);
   }
 }
 
