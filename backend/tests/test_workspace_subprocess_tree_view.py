@@ -298,6 +298,11 @@ class WorkspaceSubprocessTreeViewTest(unittest.TestCase):
         self.assertIn("tobe_overlay_mock", _DEFAULT_FLAGS)
         self.assertEqual(_DEFAULT_FLAGS["tobe_overlay_mock"], "0")
 
+    def test_feature_flag_tobe_overlay_underlay_default_is_disabled(self):
+        from app.routers.feature_flags import _DEFAULT_FLAGS
+        self.assertIn("tobe_overlay_underlay", _DEFAULT_FLAGS)
+        self.assertEqual(_DEFAULT_FLAGS["tobe_overlay_underlay"], "0")
+
 
 if __name__ == "__main__":
     unittest.main()
