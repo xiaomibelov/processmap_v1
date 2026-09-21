@@ -1,0 +1,14 @@
+/* Underlay-режим TO BE overlay (tobeOverlayUnderlay) — стилистика ghost-слоя.
+   Реальная AS IS-подложка под живым editor: инертна и приглушена.
+   ПРЕФИКС underlay* — изоляция от .bpmnLayer--mock* и существующих стилей.
+   T4a (spike окклюзии): НИ ОДНОГО background-правила здесь нет — фон
+   editor-слоя и djs-контейнеров прозрачный по legacy_bpmn.css:40-50, а
+   подложка рисуется ПЕРВЫМ слоем в DOM (ниже сессионных слоёв), поэтому
+   любой собственный фон ghost-слоя скрывал бы декоративный фон стека
+   (.bpmnStack::before, z-index 0) и был бы визуальным багом. */
+
+.bpmnLayer--underlayAsis {
+  pointer-events: none;
+  opacity: 0.3;
+  filter: grayscale(0.7) saturate(0.4);
+}
