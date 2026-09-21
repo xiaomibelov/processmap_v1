@@ -59,3 +59,17 @@
   fail «session presence default ttl», verified на чистом HEAD через stash).
 - Артефакты: EXEC_REPORT_S3.md, PR_S3.md. Коммит отдельный. PUSH нет.
   Следующий: S4 (F3 reconnect companion updateDi).
+
+## 2026-09-21 — срез S4 DONE (F3 reconnect companion updateDi, TDD, e2e PASS)
+
+- Сделано: mapConnectionReconnect эмитит companion element.updateDi
+  (waypoints из снапшотного ref, post-undo parity S7, порядок reconnect →
+  updateDi); без waypoints → reconnect only (by design); fail-closed
+  strictIdOf + битые waypoints → needsFullSave. Backend untouched.
+- Тесты: RED (3 падали), GREEN 84/84 (commandToOps), 173/173 (opsOutbox).
+- e2e (локальный стек, build s4-local, реальная мышь): reconnect F_2 на
+  Task_C → payload [connection.reconnect, element.updateDi], server truth
+  до restore: target=Task_C, endWp на грани Task_C; после reload идентично;
+  putCount=0. VERDICT pass=true (e2e/logs/s4-e2e-reconnect-di.jsonl).
+- Контур S1–S4 DONE, готов к review. PUSH нет (оркестратор). Далее:
+  review-гейт, stage-деплой + рестарт soak по approve, battery +2.

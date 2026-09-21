@@ -1617,3 +1617,98 @@ test("S1: undo shape.resize → oldBounds + updateDi с captured waypoints ка�
   assert.deepEqual(out.ops[0].bounds, { x: 100, y: 200, width: 200, height: 160 });
   assert.deepEqual(out.ops[1].waypoints, [[300, 220], [420, 220]]);
 });
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S4 (F3).
+// Backend _apply_connection_reconnect намеренно не мигрирует DI-edge
+// (API.md §5.4) → companion element.updateDi с актуальными waypoints из
+// снапшотного ref (post-action/post-undo parity, S7). Waypoints отсутствуют →
+// reconnect без updateDi (by design); waypoints битые / id не строка →
+// needsFullSave (fail-closed, strictIdOf).
+// ---------------------------------------------------------------------------
+
+test("S4: reconnect + waypoints в снапшоте → companion element.updateDi (порядок reconnect → updateDi)", () => {
+  const out = mapCommandToOps({
+    command: "connection.reconnectEnd",
+    action: "execute",
+    context: {
+      connection: {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        source: { id: "Task_3" },
+        target: { id: "Task_4" },
+        waypoints: [[420, 240], [480, 300], [540, 240]],
+      },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["connection.reconnect", "element.updateDi"]);
+  assert.equal(out.ops[0].connectionId, "Flow_1");
+  assert.equal(out.ops[0].source, "Task_3");
+  assert.equal(out.ops[0].target, "Task_4");
+  assert.equal(out.ops[1].elementId, "Flow_1");
+  assert.deepEqual(out.ops[1].waypoints, [[420, 240], [480, 300], [540, 240]]);
+});
+
+test("S4: undo reconnect → compensating reconnect(oldSource/oldTarget) + updateDi с captured post-undo waypoints", () => {
+  const out = mapCommandToOps({
+    command: "connection.reconnect",
+    action: "undo",
+    context: {
+      connection: {
+        id: "Flow_1",
+        type: "bpmn:SequenceFlow",
+        waypoints: [[420, 200], [540, 200]],
+      },
+      source: { id: "Task_3" },
+      target: { id: "Task_4" },
+      oldSource: { id: "Task_1" },
+      oldTarget: { id: "Task_2" },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["connection.reconnect", "element.updateDi"]);
+  assert.equal(out.ops[0].source, "Task_1");
+  assert.equal(out.ops[0].target, "Task_2");
+  // S7-parity: post-undo captured waypoints уходят как есть (не инвертируются).
+  assert.deepEqual(out.ops[1].waypoints, [[420, 200], [540, 200]]);
+});
+
+test("S4: reconnect без waypoints в снапшоте → reconnect только (by design, не needsFullSave)", () => {
+  const out = mapCommandToOps({
+    command: "connection.reconnect",
+    action: "execute",
+    context: {
+      connection: { id: "Flow_1", type: "bpmn:SequenceFlow", source: { id: "Task_1" }, target: { id: "Task_2" } },
+    },
+  });
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["connection.reconnect"]);
+});
+
+test("S4: reconnect fail-closed — не-строковый id связи / битые waypoints → needsFullSave", () => {
+  const badId = mapCommandToOps({
+    command: "connection.reconnect",
+    action: "execute",
+    context: {
+      connection: { id: { nested: "Flow_1" }, source: { id: "Task_1" }, target: { id: "Task_2" } },
+    },
+  });
+  assert.equal(badId.needsFullSave, true, "strictIdOf: не-строковый id не превращается в '[object Object]'");
+  assert.equal(badId.ops.length, 0);
+
+  const badWaypoints = mapCommandToOps({
+    command: "connection.reconnect",
+    action: "execute",
+    context: {
+      connection: {
+        id: "Flow_1",
+        source: { id: "Task_1" },
+        target: { id: "Task_2" },
+        waypoints: [[1, 2], ["x", 4]],
+      },
+    },
+  });
+  assert.equal(badWaypoints.needsFullSave, true, "waypoints заявлены, но битые — честный full-save, молчаливая потеря запрещена");
+  assert.equal(badWaypoints.ops.length, 0);
+});
