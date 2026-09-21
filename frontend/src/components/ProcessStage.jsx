@@ -4082,7 +4082,11 @@ function ProcessStage({
   const hybridSaveConflictOpen = !!hybridPersist.conflictNotice?.open;
   const hybridSaveConflictModalView = useMemo(() => buildSaveConflictModalView({
     conflictRaw: {
+      // S3: единый reader-источник (conflictNotice координаторной записи) —
+      // clientBase = base на момент отправки, changed_keys из detail.
       serverCurrentVersion: hybridPersist.conflictNotice?.serverVersion,
+      clientBaseVersion: hybridPersist.conflictNotice?.clientBaseVersion,
+      changedKeys: hybridPersist.conflictNotice?.changedKeys,
     },
     currentUserRaw: user,
     currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
@@ -4091,6 +4095,8 @@ function ProcessStage({
   }), [
     hybridPersist.conflictNotice?.message,
     hybridPersist.conflictNotice?.serverVersion,
+    hybridPersist.conflictNotice?.clientBaseVersion,
+    hybridPersist.conflictNotice?.changedKeys,
     toText,
     user,
     clientId,

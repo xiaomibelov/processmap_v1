@@ -33,6 +33,8 @@ import {
 import {
   readAckDiagramStateVersion,
   readConflictServerCurrentVersion,
+  readConflictChangedKeys,
+  readConflictClientBaseVersion,
 } from "./casResponse.js";
 import { createGatewayLane } from "./gatewayLane.js";
 
@@ -667,6 +669,13 @@ class SaveCoordinator {
           }
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
           const serverVersion = pickServerCurrentVersion(result);
+          // S3 (fix/canvas-move-di-desync-409-tracker): conflict-запись —
+          // единый источник версий для модала/нотисов/репорта. changed_keys и
+          // client_base_version читаются каноническими reader'ами из detail
+          // всех форм 409 (PUT /bpmn, PATCH /sessions, POST /operations).
+          const conflictChangedKeys = readConflictChangedKeys(result);
+          const conflictClientBase = builtPayload.base_diagram_state_version
+            ?? readConflictClientBaseVersion(result);
           // P1 fix: tracked-base is NOT silently adopted to the server version.
           // Arm the conflict gate so queued saves/autosave pause until the user
           // resolves the conflict (refresh/overwrite/cancel).
@@ -677,14 +686,16 @@ class SaveCoordinator {
             sessionId: sid,
             response: result,
             serverVersion,
-            clientBaseVersion: builtPayload.base_diagram_state_version ?? null,
+            clientBaseVersion: conflictClientBase ?? null,
+            changedKeys: conflictChangedKeys,
             at: Date.now(),
           });
           const conflictSnapshot = {
             sessionId: sid,
-            clientBaseVersion: builtPayload.base_diagram_state_version ?? null,
+            clientBaseVersion: conflictClientBase ?? null,
             serverCurrentVersion: serverVersion,
             serverLastWrite: result?.data?.detail?.server_last_write || null,
+            changedKeys: conflictChangedKeys,
           };
           recordSaveDiagnostic("pipeline_conflict", {
             sid,

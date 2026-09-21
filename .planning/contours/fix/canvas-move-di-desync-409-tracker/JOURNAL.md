@@ -42,3 +42,20 @@
   (opsOutbox+snapshot), полный npm test — фейл-сет как у baseline.
 - Артефакты: EXEC_REPORT_S2.md, PR_S2.md. Коммит отдельный. PUSH нет.
   Следующий: S3 (модал 409: единый reader версий + clientBase + changed_keys).
+
+## 2026-09-21 — срез S3 DONE (модал 409: единый reader + clientBase + changed_keys, TDD)
+
+- Сделано: canonical reader'ы readConflictChangedKeys /
+  readConflictClientBaseVersion (casResponse.js) — detail-вложенная (PUT /bpmn,
+  POST /operations), плоская data (meta PATCH), errorDetails; conflict-запись
+  координатора несёт changedKeys + clientBaseVersion (base на момент
+  отправки); resolveHybridConflictNotice (чистый helper) + conflictNotice
+  полный; hybrid-модал в ProcessStage получает clientBaseVersion+changedKeys;
+  saveBpmnState onConflict на canonical reader'ах + changedKeys.
+- «?» только при реальном отсутствии; легитимный null (BASE_VERSION_REQUIRED)
+  сохраняется; дефолты не выдумываются.
+- Тесты: RED (3 reader + 3 coordinator-record + 2 hybrid-notice), GREEN 27/27
+  затронутые, session-зоны 26/26, stage/ui+utils+hybrid 195 (1 pre-existing
+  fail «session presence default ttl», verified на чистом HEAD через stash).
+- Артефакты: EXEC_REPORT_S3.md, PR_S3.md. Коммит отдельный. PUSH нет.
+  Следующий: S4 (F3 reconnect companion updateDi).

@@ -179,3 +179,37 @@ test("buildSaveConflictModalView does not render missing versions as zero", () =
   assert.match(view.contextLines.join(" "), /Серверная версия: \?\. Ваша базовая версия: \?\./);
   assert.doesNotMatch(view.contextLines.join(" "), /версия: 0/);
 });
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S3 (модал 409).
+// Guard: hybrid-форма conflictRaw (serverCurrentVersion + clientBaseVersion +
+// changedKeys из conflictNotice) рендерит обе версии и summary; «?» — только
+// при реальном отсутствии.
+// ---------------------------------------------------------------------------
+
+test("S3: модал с полной hybrid-формой — обе версии и changed_keys summary, без «?»", async () => {
+  const { buildSaveConflictModalView } = await import("./saveConflictModalModel.js");
+  const view = buildSaveConflictModalView({
+    conflictRaw: {
+      serverCurrentVersion: 12,
+      clientBaseVersion: 7,
+      changedKeys: ["bpmn_xml", "bpmn_meta"],
+      at: 1720000000,
+    },
+  });
+  const text = view.contextLines.join("\n");
+  assert.match(text, /Серверная версия: 12\. Ваша базовая версия: 7\./);
+  assert.ok(!text.includes("?"), "полная форма не должна давать «?»");
+  // changed_keys уходят в humanized-summary (buildConflictChangedSummary).
+  assert.match(text, /Изменена схема/, "changed_keys summary присутствует");
+  assert.match(text, /метаданные/, "changed_keys summary присутствует");
+});
+
+test("S3: модал fail-open — отсутствующие поля → «?», без выдуманных дефолтов", async () => {
+  const { buildSaveConflictModalView } = await import("./saveConflictModalModel.js");
+  const view = buildSaveConflictModalView({
+    conflictRaw: { serverCurrentVersion: 12 },
+  });
+  const text = view.contextLines.join("\n");
+  assert.match(text, /Серверная версия: 12\. Ваша базовая версия: \?\./);
+});
