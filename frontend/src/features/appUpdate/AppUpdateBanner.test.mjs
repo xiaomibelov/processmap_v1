@@ -161,17 +161,71 @@ test("грязная TO BE (risk=dirty): текст «Сохранить и об
   }
 });
 
-test("risk=saving/conflict: [Обновить] disabled, ошибка показана честно", async () => {
+test("risk=saving: [Обновить] disabled (сохранение в полёте)", async () => {
   const mod = await loadBanner();
   const env = setupDom();
   try {
-    let doc = await renderBanner(env, mod, { refreshRisk: { status: "saving", message: "" } });
+    const doc = await renderBanner(env, mod, { refreshRisk: { status: "saving", message: "" } });
     assert.equal(doc.querySelector('[data-testid="app-update-refresh"]')?.disabled, true);
-    doc = await renderBanner(env, mod, {
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("A/B risk=conflict (blocked): danger-состояние — [Обновить] доступна для retry, причина видна, force-кнопка есть", async () => {
+  const mod = await loadBanner();
+  const env = setupDom();
+  try {
+    const doc = await renderBanner(env, mod, {
       refreshRisk: { status: "conflict", message: "конфликт сохранения" },
+      refreshError: "Не удалось безопасно обновить приложение: конфликт сохранения.",
     });
-    assert.equal(doc.querySelector('[data-testid="app-update-refresh"]')?.disabled, true);
+    const toast = doc.querySelector('[data-testid="app-update-toast"]');
+    assert.ok(toast?.className.includes("appUpdateToast--danger"), "danger-модификатор на тосте");
+    assert.equal(doc.querySelector('[data-testid="app-update-refresh"]')?.disabled, false, "retry доступен при blocked");
     assert.ok(doc.querySelector('[data-testid="app-update-error"]')?.textContent.includes("конфликт"));
+    const force = doc.querySelector('[data-testid="app-update-force"]');
+    assert.notEqual(force, null, "force-кнопка [Обновить без сохранения] показана при blocked");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("A/B force-путь двухшаговый: первый клик только армит, второй вызывает onForceRefresh ровно один раз", async () => {
+  const mod = await loadBanner();
+  const env = setupDom();
+  try {
+    let forced = 0;
+    const doc = await renderBanner(env, mod, {
+      refreshRisk: { status: "conflict", message: "конфликт сохранения" },
+      onForceRefresh: () => { forced += 1; },
+    });
+    const force = doc.querySelector('[data-testid="app-update-force"]');
+    assert.notEqual(force, null);
+    await act(async () => {
+      force.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    assert.equal(forced, 0, "случайный клик НЕ выполняет force-reload");
+    const armed = doc.querySelector('[data-testid="app-update-force"]');
+    assert.ok(armed.getAttribute("data-armed") === "true" || armed.textContent.includes("потеряны") || armed.textContent.toLowerCase().includes("lost"), "кнопка перешла в подтверждающее состояние с предупреждением о потере");
+    await act(async () => {
+      armed.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    assert.equal(forced, 1, "второй клик — подтверждение → ровно один вызов");
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test("A/B force-кнопка НЕ показана вне blocked-состояния (clean/dirty/saving)", async () => {
+  const mod = await loadBanner();
+  const env = setupDom();
+  try {
+    for (const status of ["clean", "dirty", "saving"]) {
+      const doc = await renderBanner(env, mod, { refreshRisk: { status, message: "" } });
+      assert.equal(doc.querySelector('[data-testid="app-update-force"]'), null, `force скрыта при ${status}`);
+      assert.ok(!doc.querySelector('[data-testid="app-update-toast"]')?.className.includes("appUpdateToast--danger"));
+    }
   } finally {
     await env.cleanup();
   }

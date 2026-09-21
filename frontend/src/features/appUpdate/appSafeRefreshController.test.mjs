@@ -95,3 +95,37 @@ test("safe refresh subscriptions fire on register and unregister", () => {
   assert.equal(calls, 2);
   unsubscribe();
 });
+
+test("safe refresh: зависший flush (promise не резолвится) → ok:false status timeout по flushTimeoutMs, а не вечный pending", async () => {
+  __resetAppSafeRefreshForTests();
+  registerAppSafeRefreshHandler({
+    getRisk: () => ({ status: "dirty" }),
+    flush: () => new Promise(() => {}),
+  });
+
+  const startedAt = Date.now();
+  const result = await Promise.race([
+    runSafeRefreshBeforeReload({ flushTimeoutMs: 40 }),
+    new Promise((resolve) => setTimeout(() => resolve({ __stuck: true }), 1500)),
+  ]);
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(result.__stuck, undefined, "зависший flush вернул результат по таймауту (C1), а не pending навсегда");
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "timeout");
+  assert.ok(result.message.length > 0, "message человекочитаемый");
+  assert.ok(elapsed < 2000, `таймаут сработал быстро (${elapsed}ms), а не вечный pending`);
+});
+
+test("safe refresh: flush, резолвящийся ПОСЛЕ таймаута, не переопределяет результат (ok:false timeout)", async () => {
+  __resetAppSafeRefreshForTests();
+  registerAppSafeRefreshHandler({
+    getRisk: () => ({ status: "dirty" }),
+    flush: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, status: "saved" }), 120)),
+  });
+
+  const result = await runSafeRefreshBeforeReload({ flushTimeoutMs: 40 });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "timeout");
+  await new Promise((r) => setTimeout(r, 150));
+});
