@@ -850,3 +850,108 @@ test("MAJOR-1: undo of a coalesced op (merged drag deltas) falls back to full sa
   assert.ok(ctx.fullSaveRequests.length >= 1, "honest full-save fallback requested");
   ctx.destroy();
 });
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S1 (F1/F2).
+// Батч-мапперы (S3/S1) возвращают mapped.ops НЕСКОЛЬКИХ опов (shape.move +
+// element.updateDi для affectedConnections). Outbox обязан принимать ВЕСЬ
+// батч — иначе серверный DI стрелок устаревает (F1: раньse pushCommand брал
+// только ops[0] и тихо терял updateDi-хвост — и для elements.move с C3-S3).
+// ---------------------------------------------------------------------------
+
+function pushMoveWithConnections(outbox, id, dx, dy, connections) {
+  return outbox.pushCommand({
+    command: "shape.move",
+    action: "execute",
+    context: {
+      shape: { id },
+      delta: { x: dx, y: dy },
+      affectedConnections: connections,
+    },
+  });
+}
+
+test("S1: батч shape.move + updateDi уходит на сервер ЦЕЛИКОМ (хвост батча не теряется)", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  const mapped = pushMoveWithConnections(ctx.outbox, "Task_1", 40, 30, [
+    { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+    { id: "Flow_2", waypoints: [[260, 280], [500, 400]] },
+  ]);
+  assert.equal(mapped.needsFullSave, false);
+  assert.equal(mapped.ops.length, 3, "маппер отдаёт батч из 3 ops");
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 1);
+  assert.deepEqual(
+    ctx.api.calls[0].body.operations.map((o) => `${o.type}:${o.elementId}`),
+    ["shape.move:Task_1", "element.updateDi:Flow_1", "element.updateDi:Flow_2"],
+    "все op батча в одном flush, порядок shape.move → updateDi batch",
+  );
+  ctx.destroy();
+});
+
+test("S1: undo батча, ещё не ушедшего на сервер, удаляет ВСЕ его op из буфера", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushMoveWithConnections(ctx.outbox, "Task_1", 40, 30, [
+    { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+  ]);
+  // Undo того же drag: post-undo captured waypoints.
+  const mappedUndo = ctx.outbox.pushCommand({
+    command: "shape.move",
+    action: "undo",
+    context: {
+      shape: { id: "Task_1" },
+      delta: { x: 40, y: 30 },
+      affectedConnections: [{ id: "Flow_1", waypoints: [[100, 210], [300, 200]] }],
+    },
+  });
+  assert.equal(mappedUndo.needsFullSave, false);
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 0, "батч execute+undo не ушедший — ни одной op на сервере");
+  assert.equal(ctx.fullSaveRequests.length, 0, "coalesceCount=1, full-save fallback не нужен");
+  ctx.destroy();
+});
+
+test("S1: undo батча ПОСЛЕ flush → компенсирующие op для ВСЕХ op батча", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushMoveWithConnections(ctx.outbox, "Task_1", 40, 30, [
+    { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+  ]);
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 1);
+  assert.equal(ctx.api.calls[0].body.operations.length, 2);
+
+  ctx.outbox.pushCommand({
+    command: "shape.move",
+    action: "undo",
+    context: {
+      shape: { id: "Task_1" },
+      delta: { x: 40, y: 30 },
+      affectedConnections: [{ id: "Flow_1", waypoints: [[100, 210], [300, 200]] }],
+    },
+  });
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 2, "второй flush — компенсирующий батч");
+  assert.deepEqual(
+    ctx.api.calls[1].body.operations.map((o) => `${o.type}:${o.elementId}`),
+    ["shape.move:Task_1", "element.updateDi:Flow_1"],
+    "компенсирующий батч полный: negated delta + captured waypoints",
+  );
+  assert.deepEqual(ctx.api.calls[1].body.operations[0].delta, { x: -40, y: -30 });
+  assert.deepEqual(ctx.api.calls[1].body.operations[1].waypoints, [[100, 210], [300, 200]]);
+  ctx.destroy();
+});

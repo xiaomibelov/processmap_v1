@@ -1492,3 +1492,128 @@ test("fix422: parity(b) — connection.create без waypoints → needsFullSave
 
 // Контур fix/ops-422 (RC2): deferredSaveRetry — одноразовый retry по
 // directEditing.complete/cancel.
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S1 (F1/F2).
+// Одиночный drag фаерит shape.move, resize — shape.resize; вложенные
+// connection-обновления diagram-js «тихие» (commandStack.changed — только
+// outermost action), поэтому runtime-enrichment доснимает affectedConnections
+// (positionalSnapshot.js), а мапперы добавляют updateDi-батч ПОСЛЕ shape-op.
+// Fail-closed: не-строковый id / waypoints-битые записи → needsFullSave.
+// Undo-паритет (S7-контракт): снапшот post-undo, updateDi берёт captured
+// waypoints как есть; shape.move — negated delta; shape.resize — oldBounds.
+// ---------------------------------------------------------------------------
+
+function s1MoveDescriptor(overrides = {}) {
+  return {
+    command: "shape.move",
+    action: "execute",
+    source: "user",
+    commandContext: {
+      shape: { id: "Task_1", type: "bpmn:Task", bounds: { x: 140, y: 240, width: 120, height: 80 } },
+      delta: { x: 40, y: 30 },
+      affectedConnections: [
+        { id: "Flow_1", type: "bpmn:SequenceFlow", waypoints: [[140, 240], [340, 230]] },
+        { id: "Flow_2", type: "bpmn:SequenceFlow", waypoints: [[260, 280], [500, 400]] },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+test("S1: shape.move + affectedConnections → shape.move, затем updateDi-батч (порядок ops)", () => {
+  const out = mapCommandToOps(s1MoveDescriptor());
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "element.updateDi", "element.updateDi"]);
+  assert.equal(out.ops[0].elementId, "Task_1");
+  assert.deepEqual(out.ops[0].delta, { x: 40, y: 30 });
+  assert.equal(out.ops[1].elementId, "Flow_1");
+  assert.deepEqual(out.ops[1].waypoints, [[140, 240], [340, 230]]);
+  assert.equal(out.ops[2].elementId, "Flow_2");
+  assert.deepEqual(out.ops[2].waypoints, [[260, 280], [500, 400]]);
+  assert.equal(out.ops[0].source, "user");
+});
+
+test("S1: undo shape.move → negated delta + updateDi с captured waypoints как есть", () => {
+  const descriptor = s1MoveDescriptor();
+  descriptor.action = "undo";
+  // S7: на undo-changed runtime переснимает post-undo waypoints — в дескрипторе
+  // они уже post-undo; маппер не инвертирует waypoints, только delta.
+  descriptor.commandContext.affectedConnections = [
+    { id: "Flow_1", type: "bpmn:SequenceFlow", waypoints: [[100, 210], [300, 200]] },
+  ];
+  const out = mapCommandToOps(descriptor);
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].delta, { x: -40, y: -30 });
+  assert.deepEqual(out.ops[1].waypoints, [[100, 210], [300, 200]]);
+});
+
+test("S1: shape.move без affectedConnections → одиночный shape.move (регрессии нет)", () => {
+  const out = mapCommandToOps(s1MoveDescriptor({ affectedConnections: [] }));
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.move"]);
+});
+
+test("S1: shape.move fail-closed — не-строковый id шейпа / битая запись affectedConnections → needsFullSave", () => {
+  const badShape = mapCommandToOps(s1MoveDescriptor({
+    shape: { id: { nested: "Task_1" }, type: "bpmn:Task" },
+  }));
+  assert.equal(badShape.needsFullSave, true, "не-строковый id шейпа не превращается в '[object Object]'");
+  assert.equal(badShape.ops.length, 0);
+
+  const badConnId = mapCommandToOps(s1MoveDescriptor({
+    affectedConnections: [{ id: 42, waypoints: [[1, 2], [3, 4]] }],
+  }));
+  assert.equal(badConnId.needsFullSave, true, "strictIdOf: не-строковый id связи → честный full-save");
+  assert.equal(badConnId.ops.length, 0);
+
+  const noWaypoints = mapCommandToOps(s1MoveDescriptor({
+    affectedConnections: [{ id: "Flow_1" }],
+  }));
+  assert.equal(noWaypoints.needsFullSave, true, "связь без waypoints → updateDi неприменим, full-save");
+  assert.equal(noWaypoints.ops.length, 0);
+
+  const partialWp = mapCommandToOps(s1MoveDescriptor({
+    affectedConnections: [{ id: "Flow_1", waypoints: [[1, 2], ["x", 4]] }],
+  }));
+  assert.equal(partialWp.needsFullSave, true, "битая точка waypoints → full-save");
+});
+
+function s1ResizeDescriptor(overrides = {}) {
+  return {
+    command: "shape.resize",
+    action: "execute",
+    commandContext: {
+      shape: { id: "Task_1", type: "bpmn:Task", bounds: { x: 100, y: 200, width: 200, height: 100 } },
+      newBounds: { x: 100, y: 200, width: 200, height: 100 },
+      oldBounds: { x: 100, y: 200, width: 200, height: 160 },
+      affectedConnections: [
+        { id: "Flow_1", type: "bpmn:SequenceFlow", waypoints: [[300, 250], [420, 250]] },
+      ],
+      ...overrides,
+    },
+  };
+}
+
+test("S1: shape.resize + affectedConnections → shape.resize, затем updateDi-батч", () => {
+  const out = mapCommandToOps(s1ResizeDescriptor());
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.resize", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].bounds, { x: 100, y: 200, width: 200, height: 100 });
+  assert.equal(out.ops[1].elementId, "Flow_1");
+  assert.deepEqual(out.ops[1].waypoints, [[300, 250], [420, 250]]);
+});
+
+test("S1: undo shape.resize → oldBounds + updateDi с captured waypoints как есть", () => {
+  const descriptor = s1ResizeDescriptor();
+  descriptor.action = "undo";
+  descriptor.commandContext.affectedConnections = [
+    { id: "Flow_1", type: "bpmn:SequenceFlow", waypoints: [[300, 220], [420, 220]] },
+  ];
+  const out = mapCommandToOps(descriptor);
+  assert.equal(out.needsFullSave, false);
+  assert.deepEqual(out.ops.map((op) => op.type), ["shape.resize", "element.updateDi"]);
+  assert.deepEqual(out.ops[0].bounds, { x: 100, y: 200, width: 200, height: 160 });
+  assert.deepEqual(out.ops[1].waypoints, [[300, 220], [420, 220]]);
+});
