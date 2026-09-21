@@ -78,6 +78,56 @@ export function readConflictServerCurrentVersion(response) {
   return null;
 }
 
+// detail 409-ответа: data.detail (FastAPI HTTPException) | data (плоская meta-
+// форма) | errorDetails | details. Строковый detail (частичный 409) → null.
+function conflictDetailOf(response) {
+  if (!response || typeof response !== "object") return null;
+  const candidates = [
+    response.data?.detail,
+    response.data,
+    response.errorDetails?.detail ?? response.errorDetails,
+    response.details?.detail ?? response.details,
+  ];
+  for (const raw of candidates) {
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw;
+  }
+  return null;
+}
+
+/**
+ * changed_keys из 409-detail (server_last_write.changed_keys, backend
+ * _build_server_last_write_payload). Единый reader для всех pipeline-форм
+ * (PUT /bpmn, PATCH /sessions, POST /operations). Отсутствие → [] (fail-open,
+ * модал показывает пустой список, дефолты не выдумываются).
+ * @param {Object|null} response
+ * @returns {string[]}
+ */
+export function readConflictChangedKeys(response) {
+  const detail = conflictDetailOf(response);
+  if (!detail) return [];
+  const lastWrite = detail.server_last_write && typeof detail.server_last_write === "object"
+    ? detail.server_last_write
+    : (detail.serverLastWrite && typeof detail.serverLastWrite === "object" ? detail.serverLastWrite : null);
+  const raw = lastWrite
+    ? (lastWrite.changed_keys ?? lastWrite.changedKeys)
+    : (detail.changed_keys ?? detail.changedKeys);
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+/**
+ * client_base_version из 409-detail (base отправившего клиента на момент
+ * отклонённой записи). Легитимный null (форма BASE_VERSION_REQUIRED) — null,
+ * «?» в модале, дефолт не выдумывается.
+ * @param {Object|null} response
+ * @returns {number|null}
+ */
+export function readConflictClientBaseVersion(response) {
+  const detail = conflictDetailOf(response);
+  if (!detail) return null;
+  return asNonNegativeInt(detail.client_base_version ?? detail.clientBaseVersion);
+}
+
 /**
  * Единый резолвер base version в момент отправки для всех save-pipelines:
  * 1. casVersionTracker (единственный авторитетный источник после первого ack);

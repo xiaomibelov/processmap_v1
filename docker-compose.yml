@@ -165,7 +165,7 @@ services:
   kanboard:
     image: kanboard/kanboard:latest
     ports:
-      - "3001:80"
+      - "${KANBOARD_PORT:-3001}:80"
     volumes:
       - kanboard_data:/var/www/app/data
     restart: unless-stopped

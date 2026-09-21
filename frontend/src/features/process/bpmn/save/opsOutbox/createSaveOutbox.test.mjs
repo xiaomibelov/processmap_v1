@@ -5,6 +5,7 @@ import { createSaveCoordinator } from "../../../../session/saveCoordinator.js";
 import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
+  subscribeDiagramVersionChanges,
   __resetForTests as resetCasVersionTracker,
 } from "../../../../../lib/casVersionTracker.js";
 import { createOpsOutboxConfig } from "./opsOutboxConfig.js";
@@ -848,5 +849,199 @@ test("MAJOR-1: undo of a coalesced op (merged drag deltas) falls back to full sa
   await drain();
   assert.equal(ctx.api.calls.length, 0, "no ops sent — merged delta is unrecoverable");
   assert.ok(ctx.fullSaveRequests.length >= 1, "honest full-save fallback requested");
+  ctx.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S1 (F1/F2).
+// Батч-мапперы (S3/S1) возвращают mapped.ops НЕСКОЛЬКИХ опов (shape.move +
+// element.updateDi для affectedConnections). Outbox обязан принимать ВЕСЬ
+// батч — иначе серверный DI стрелок устаревает (F1: раньse pushCommand брал
+// только ops[0] и тихо терял updateDi-хвост — и для elements.move с C3-S3).
+// ---------------------------------------------------------------------------
+
+function pushMoveWithConnections(outbox, id, dx, dy, connections) {
+  return outbox.pushCommand({
+    command: "shape.move",
+    action: "execute",
+    context: {
+      shape: { id },
+      delta: { x: dx, y: dy },
+      affectedConnections: connections,
+    },
+  });
+}
+
+test("S1: батч shape.move + updateDi уходит на сервер ЦЕЛИКОМ (хвост батча не теряется)", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  const mapped = pushMoveWithConnections(ctx.outbox, "Task_1", 40, 30, [
+    { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+    { id: "Flow_2", waypoints: [[260, 280], [500, 400]] },
+  ]);
+  assert.equal(mapped.needsFullSave, false);
+  assert.equal(mapped.ops.length, 3, "маппер отдаёт батч из 3 ops");
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 1);
+  assert.deepEqual(
+    ctx.api.calls[0].body.operations.map((o) => `${o.type}:${o.elementId}`),
+    ["shape.move:Task_1", "element.updateDi:Flow_1", "element.updateDi:Flow_2"],
+    "все op батча в одном flush, порядок shape.move → updateDi batch",
+  );
+  ctx.destroy();
+});
+
+test("S1: undo батча, ещё не ушедшего на сервер, удаляет ВСЕ его op из буфера", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushMoveWithConnections(ctx.outbox, "Task_1", 40, 30, [
+    { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+  ]);
+  // Undo того же drag: post-undo captured waypoints.
+  const mappedUndo = ctx.outbox.pushCommand({
+    command: "shape.move",
+    action: "undo",
+    context: {
+      shape: { id: "Task_1" },
+      delta: { x: 40, y: 30 },
+      affectedConnections: [{ id: "Flow_1", waypoints: [[100, 210], [300, 200]] }],
+    },
+  });
+  assert.equal(mappedUndo.needsFullSave, false);
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 0, "батч execute+undo не ушедший — ни одной op на сервере");
+  assert.equal(ctx.fullSaveRequests.length, 0, "coalesceCount=1, full-save fallback не нужен");
+  ctx.destroy();
+});
+
+test("S1: undo батча ПОСЛЕ flush → компенсирующие op для ВСЕХ op батча", async (t) => {
+  const ctx = makeOutbox(t, { configOverrides: { flushDebounceMs: 25 } });
+  setTrackedDiagramStateVersion("s1", 7);
+  pushMoveWithConnections(ctx.outbox, "Task_1", 40, 30, [
+    { id: "Flow_1", waypoints: [[140, 240], [340, 230]] },
+  ]);
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 1);
+  assert.equal(ctx.api.calls[0].body.operations.length, 2);
+
+  ctx.outbox.pushCommand({
+    command: "shape.move",
+    action: "undo",
+    context: {
+      shape: { id: "Task_1" },
+      delta: { x: 40, y: 30 },
+      affectedConnections: [{ id: "Flow_1", waypoints: [[100, 210], [300, 200]] }],
+    },
+  });
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 2, "второй flush — компенсирующий батч");
+  assert.deepEqual(
+    ctx.api.calls[1].body.operations.map((o) => `${o.type}:${o.elementId}`),
+    ["shape.move:Task_1", "element.updateDi:Flow_1"],
+    "компенсирующий батч полный: negated delta + captured waypoints",
+  );
+  assert.deepEqual(ctx.api.calls[1].body.operations[0].delta, { x: -40, y: -30 });
+  assert.deepEqual(ctx.api.calls[1].body.operations[1].waypoints, [[100, 210], [300, 200]]);
+  ctx.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// Контур fix/canvas-move-di-desync-409-tracker, срез S2 (F5, вариант A).
+// Собственный ops-ack обязан adopt'ить ack-версию в casVersionTracker: без
+// этого CAS-guarded пути (full-PUT класса C, meta PATCH) после серии
+// ops-мутаций идут со stale base → ложный 409 DIAGRAM_STATE_CONFLICT.
+// adopt идемпотентен (notify/cross-tab publish только при реальном изменении),
+// монотонный guard не downgrade'ит трекер, если параллельный путь (бамп
+// координатора на completeSuccess, adopt 409-rebase) уже поднял версию выше.
+// ---------------------------------------------------------------------------
+
+test("S2: ops-ack adopt'ит ack-версию в casVersionTracker (F5)", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  // Прямой ack штатного flush-пайплайна (тот же _onAck, что дёргает
+  // dispatcher координатора после 200).
+  ctx.outbox._onAck({ ok: true, status: 200, version: 12, applied: 1, skipped: 0, diagramStateVersion: 12 });
+  assert.equal(getTrackedDiagramStateVersion("s1"), 12, "tracker обязан adopt'ить ack-версию");
+  ctx.destroy();
+});
+
+test("S2: adopt идемпотентен — повторный ack той же версии не дублирует notify (cross-tab publish 1 раз)", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => {
+    if (event.sid === "s1") events.push(event);
+  });
+  try {
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    assert.equal(getTrackedDiagramStateVersion("s1"), 12);
+    assert.equal(events.length, 1, "cross-tab publish — ровно одна публикация при повторном adopt того же значения");
+  } finally {
+    unsubscribe();
+    ctx.destroy();
+  }
+});
+
+test("S2: гонка ack + более новый adopt (409-rebase) — монотонный guard не downgrade'ит трекер", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => {
+    if (event.sid === "s1") events.push(event);
+  });
+  try {
+    // Поздний ack устаревшего батча (12) прилетает после того, как rebase/
+    // полный путь уже adopt'ил более новую версию (15).
+    setTrackedDiagramStateVersion("s1", 15);
+    ctx.outbox._onAck({ ok: true, status: 200, diagramStateVersion: 12 });
+    assert.equal(getTrackedDiagramStateVersion("s1"), 15, "stale ack не откатывает tracked base назад");
+    assert.equal(events.length, 1, "ни одной лишней публикации от stale-ack");
+  } finally {
+    unsubscribe();
+    ctx.destroy();
+  }
+});
+
+test("S2: ack без версии в ответе — tracker не трогаем", (t) => {
+  const ctx = makeOutbox(t);
+  setTrackedDiagramStateVersion("s1", 7);
+  const events = [];
+  const unsubscribe = subscribeDiagramVersionChanges((event) => {
+    if (event.sid === "s1") events.push(event);
+  });
+  try {
+    ctx.outbox._onAck({ ok: true, status: 200, applied: 1, skipped: 0 });
+    assert.equal(getTrackedDiagramStateVersion("s1"), 7, "нет версии — нет adopt");
+    assert.equal(events.length, 0);
+  } finally {
+    unsubscribe();
+    ctx.destroy();
+  }
+});
+
+test("S2: обычный flush через координатора — tracker == ack-версия (инварт сохранён, full-PUT-путь не сломан)", async () => {
+  const ctx = makeOutbox();
+  setTrackedDiagramStateVersion("s1", 7);
+  pushRename(ctx.outbox, "Task_1", "A");
+  await ctx.outbox.flushNow({ reason: "test" });
+  await drain();
+  await new Promise((r) => setTimeout(r, 80));
+  await drain();
+  assert.equal(ctx.api.calls.length, 1);
+  assert.equal(getTrackedDiagramStateVersion("s1"), 8, "после штатного ack tracker == версия сервера");
   ctx.destroy();
 });

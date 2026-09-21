@@ -18,6 +18,12 @@ import {
   toNonNegativeIntOrNull,
   toText,
 } from "./saveBpmnState.helpers.js";
+// S3 (fix/canvas-move-di-desync-409-tracker): канонические reader'ы 409-detail
+// (server_current_version / changed_keys) — все формы трёх пайплайнов.
+import {
+  readConflictServerCurrentVersion,
+  readConflictChangedKeys,
+} from "../../session/casResponse.js";
 import { AUTOSAVE_CONFIG } from "../bpmn/save/autosaveConfig.js";
 
 const XML_PIPELINE_NAME = "xml";
@@ -316,9 +322,13 @@ export async function saveBpmnState(options = {}) {
     if (isDiagramStateConflict(saveRes)) {
       options.onConflict?.({
         sessionId: sid,
-        serverVersion: toNonNegativeIntOrNull(saveRes?.data?.detail?.server_current_version),
+        // S3: единый reader — все формы detail (PUT /bpmn FastAPI-detail,
+        // плоская meta-форма, errorDetails); раньше читался только
+        // data.detail.server_current_version.
+        serverVersion: readConflictServerCurrentVersion(saveRes),
         serverLastWrite: saveRes?.data?.detail?.server_last_write,
         clientBaseVersion: baseDiagramStateVersion,
+        changedKeys: readConflictChangedKeys(saveRes),
       });
     }
     return {
