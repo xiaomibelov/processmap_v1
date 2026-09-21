@@ -149,6 +149,7 @@ import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
+import "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlay.css";
 import {
   patchOverlaysPrototype,
   setShowOverlaysDuringPan,
@@ -6658,6 +6659,20 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       <DiagramLoadBoundary loadState={loadState} errorReason={errorReason} hasDiagram={hasDiagram}>
         <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
+          {/* T6 (tobe-overlay-underlay-v1): ghost-слой ПОД editor (первый в DOM
+              внутри .bpmnStack → session-слои рисуются поверх). ЖЁСТКИЙ
+              ИНВАРИАНТ: display-логика сессионных слоёв (.bpmnLayer--diagram/
+              --editor) НЕ трогается — в отличие от mock-режима underlay не
+              скрывает session layers; подложка добавляется третьим слоем. */}
+          {tobeOverlayUnderlayFlag && underlayActive && underlayAsisSid ? (
+            <div
+              className="bpmnLayer bpmnLayer--underlayAsis"
+              data-testid="bpmn-layer-underlay-asis"
+              style={{ position: "absolute", inset: 0 }}
+            >
+              <div className="bpmnCanvas" ref={underlayHostRef} style={{ width: "100%", height: "100%" }} />
+            </div>
+          ) : null}
           {diagramReady ? (
             <div
               data-testid="diagram-ready"
