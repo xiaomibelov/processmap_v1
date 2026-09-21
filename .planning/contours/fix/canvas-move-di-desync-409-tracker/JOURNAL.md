@@ -27,3 +27,18 @@
   доказано grep'ом по diff).
 - Артефакты: EXEC_REPORT_S1.md, PR_S1.md. Коммит S1 отдельным коммитом.
   PUSH не выполнялся (оркестратор). Следующий: S2 (F5 ops-ack adopt).
+
+## 2026-09-21 — срез S2 DONE (F5 ops-ack adopt, вариант A, TDD)
+
+- Сделано: `_onAck` adopt'ит ack-версию в casVersionTracker (идемпотентно,
+  монотонный guard против downgrade от stale-ack). syncStateStore — прежний
+  внутренний трекер outbox; вариант B НЕ реализован (отдельный approve).
+- Обязательный артефакт WHY_NO_CROSS_TAB_HEAL.md: heal adopt'ит только
+  входящие версии от другой вкладки — одиночная вкладка 2ce69bd74c не имела
+  publisher'а, adopt физически невозможен; adopt-on-clean не лечит dirty;
+  live-evidence baseSent=31 vs server 33 подтверждает инвариант-нарушение до
+  CAS-запроса. Вердикт: B не нужен как обязательный (дрейф-риск T3).
+- Тесты: RED (adopt + идемпотентность падали), GREEN 37/37 (файл), 175/175
+  (opsOutbox+snapshot), полный npm test — фейл-сет как у baseline.
+- Артефакты: EXEC_REPORT_S2.md, PR_S2.md. Коммит отдельный. PUSH нет.
+  Следующий: S3 (модал 409: единый reader версий + clientBase + changed_keys).

@@ -49,7 +49,7 @@
 //      встроена в фабрику).
 
 import { saveCoordinator } from "../../../../session/saveCoordinator.js";
-import { getVersion as getTrackedDiagramStateVersion } from "../../../../../lib/casVersionTracker.js";
+import { getVersion as getTrackedDiagramStateVersion, setVersion as setTrackedDiagramStateVersion } from "../../../../../lib/casVersionTracker.js";
 import { readAckDiagramStateVersion, readConflictServerCurrentVersion } from "../../../../../features/session/casResponse.js";
 import { recordSaveDiagnostic } from "../../../../../features/session/saveDiagnosticsTrail.js";
 import { apiPostSessionOperations } from "../../../../../lib/api.js";
@@ -726,6 +726,25 @@ export function createSaveOutbox(options = {}) {
       inFlight = false;
       consecutiveConflicts = 0;
       failureRetryCount = 0;
+      // S2 (fix/canvas-move-di-desync-409-tracker, F5, вариант A): собственный
+      // ops-ack adopt'ит ack-версию в casVersionTracker — без этого CAS-guarded
+      // пути (full-PUT класса C, meta PATCH) после серии ops-мутаций шли со
+      // stale base → ложный 409. setVersion идемпотентен (notify/cross-tab
+      // publish только при реальном изменении — casVersionTracker.js), монотонный
+      // guard не downgrade'ит трекер, если параллельный путь (bump координатора
+      // на completeSuccess, adopt 409-rebase, чужой ops_committed) уже поднял
+      // версию выше. syncStateStore остаётся внутренним трекером outbox.
+      try {
+        const ackVersion = readAckDiagramStateVersion(response);
+        if (ackVersion !== null) {
+          const tracked = getTrackedDiagramStateVersion(sessionId);
+          if (tracked === null || ackVersion > tracked) {
+            setTrackedDiagramStateVersion(sessionId, ackVersion);
+          }
+        }
+      } catch {
+        // no-op
+      }
       // Ack-wipe защита: ack покрывает ТОЛЬКО ops ушедшего батча; дописанные
       // во время полёта остаются в буфере и уходят следующим flush (иначе
       // правки пользователя во время запроса теряются молча — review BLOCKER-2).
