@@ -100,3 +100,4 @@ deploy/stage-gateway/certbot-webroot/
 deploy/prod-gateway/certs/
 deploy/prod-gateway/certbot-webroot/
 runtime/stage/
+.planning/contours/fix/canvas-move-di-desync-409-tracker/e2e/node_modules

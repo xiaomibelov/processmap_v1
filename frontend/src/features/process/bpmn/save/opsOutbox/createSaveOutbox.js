@@ -597,8 +597,13 @@ export function createSaveOutbox(options = {}) {
         return mapped;
       }
 
-      const incoming = mapped.ops[0];
-      if (!incoming) return mapped;
+      // S1 (fix/canvas-move-di-desync-409-tracker): батч-мапперы (S3/S1)
+      // возвращают НЕСКОЛЬКО op (shape.move + element.updateDi для
+      // affectedConnections). Раньse брался только ops[0] — updateDi-хвост
+      // тихо терялся (F1: серверный DI стрелок устаревал после drag). Весь
+      // батч обязан пройти в буфер с сохранением порядка.
+      const incomingOps = Array.isArray(mapped.ops) && mapped.ops.length > 0 ? mapped.ops : null;
+      if (!incomingOps) return mapped;
 
       if (mapped.action === "undo") {
         // Undo ещё не ушедшей op — удалить её из буфера (не уйдёт на сервер).
@@ -608,43 +613,52 @@ export function createSaveOutbox(options = {}) {
         // (__coalesceCount > 1) — удаление целиком теряет delta ранних
         // команд, а промежуточное состояние op не восстановить → честный
         // full-save fallback вместо молчаливой дивергенции.
+        // S1: то же для КАЖДОЙ op батча (undo drag — shape.move + updateDi
+        // пачкой): не ушедшие по key удаляем, ушедшие — compensating.
         lastCapture = { command: mapped.command, captured: true };
-        const index = buffer.map((op) => op.key).lastIndexOf(incoming.key);
-        if (index >= 0) {
-          const coalesceCount = Number(buffer[index].__coalesceCount) || 1;
-          const removed = buffer.splice(index, 1)[0];
-          journalRemove([removed.opId]);
-          if (coalesceCount > 1) {
-            needsFullSave = true;
+        for (const incoming of incomingOps) {
+          const index = buffer.map((op) => op.key).lastIndexOf(incoming.key);
+          if (index >= 0) {
+            const coalesceCount = Number(buffer[index].__coalesceCount) || 1;
+            const removed = buffer.splice(index, 1)[0];
+            journalRemove([removed.opId]);
+            if (coalesceCount > 1) {
+              needsFullSave = true;
+            }
+          } else {
+            const compensating = { ...incoming, opId: uuid(), __ts: now() };
+            buffer.push(compensating);
+            journalAppend([compensating]);
+            bumpLocalVersion();
           }
-        } else {
-          const compensating = { ...incoming, opId: uuid(), __ts: now() };
-          buffer.push(compensating);
-          journalAppend([compensating]);
-          bumpLocalVersion();
         }
         scheduleFlush();
         return mapped;
       }
 
-      const op = { ...incoming, opId: uuid(), __ts: now() };
-      lastCapture = { command: mapped.command, captured: true };
-      const coalesced = tryCoalesceIntoBuffer(buffer, op, { coalesceMs: config.coalesceMs, now: now() });
-      if (coalesced) {
-        // keep-last payload изменился — journal перезаписываем по opId
-        // якорной op (coalesce сливает incoming в существующую, opId якоря
-        // первой команды burst'а сохраняется).
-        const target = [...buffer].reverse().find((item) => item.key === op.key);
-        if (target) journalAppend([target]);
-        bumpLocalVersion();
-      } else {
-        buffer.push(op);
-        journalAppend([op]);
-        bumpLocalVersion();
-        if (buffer.length >= config.maxOpsPerFlush) {
-          void flushNow({ reason: "threshold" });
-          return mapped;
+      // S1: execute-батч — каждая op в буфер (coalesce по key якоря, порядок
+      // shape op → updateDi batch сохраняется). Одиночные мапперы — ровно
+      // прежнее поведение (батч длины 1).
+      for (const incomingOp of incomingOps) {
+        const op = { ...incomingOp, opId: uuid(), __ts: now() };
+        const coalesced = tryCoalesceIntoBuffer(buffer, op, { coalesceMs: config.coalesceMs, now: now() });
+        if (coalesced) {
+          // keep-last payload изменился — journal перезаписываем по opId
+          // якорной op (coalesce сливает incoming в существующую, opId якоря
+          // первой команды burst'а сохраняется).
+          const target = [...buffer].reverse().find((item) => item.key === op.key);
+          if (target) journalAppend([target]);
+          bumpLocalVersion();
+        } else {
+          buffer.push(op);
+          journalAppend([op]);
+          bumpLocalVersion();
         }
+      }
+      lastCapture = { command: mapped.command, captured: true };
+      if (buffer.length >= config.maxOpsPerFlush) {
+        void flushNow({ reason: "threshold" });
+        return mapped;
       }
       scheduleFlush();
       return mapped;

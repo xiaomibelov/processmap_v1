@@ -225,22 +225,38 @@ function mapUpdateLabel(context, inverse) {
   return { op: makeOp("element.updateProperties", elementId, { properties: { name } }) };
 }
 
+// S1 (fix/canvas-move-di-desync-409-tracker): shape.move допускает updateDi-
+// батч из affectedConnections (enrichment positionalSnapshot.js): одиночный
+// drag «тихо» тянет инцидентные стрелки (F1) — без батча серверный DI
+// устаревал. Порядок: shape.move → updateDi batch. Undo (S7-паритет):
+// снапшот post-undo — negated delta, updateDi берёт captured waypoints как
+// есть. Fail-closed: strictIdOf на шейпе и на каждой записи affectedConnections
+// (битый id / waypoints → needsFullSave, молчаливая потеря запрещена).
 function mapShapeMove(context, inverse) {
-  const elementId = elementIdOf(context?.shape || context?.element);
+  const elementId = strictIdOf(context?.shape || context?.element);
   if (!elementId) return { needsFullSave: true };
   const delta = point(context?.delta);
   if (!delta) return { needsFullSave: true };
   const finalDelta = inverse ? { x: -delta.x, y: -delta.y } : delta;
-  return { op: makeOp("shape.move", elementId, { delta: finalDelta }) };
+  const ops = [makeOp("shape.move", elementId, { delta: finalDelta })];
+  const diOps = mapAffectedConnectionDi(context);
+  if (diOps.needsFullSave) return diOps;
+  return { ops: [...ops, ...diOps.ops] };
 }
 
+// S1: shape.resize — тот же класс (F2, resize-down): инцидентные стрелки
+// должны быть в updateDi-батче после shape.resize. Порядок/undo/fail-closed —
+// паритет с mapShapeMove; resize absolute — inverse берёт oldBounds.
 function mapShapeResize(context, inverse) {
-  const elementId = elementIdOf(context?.shape || context?.element);
+  const elementId = strictIdOf(context?.shape || context?.element);
   if (!elementId) return { needsFullSave: true };
   const source = inverse ? context?.oldBounds : context?.newBounds;
   const b = bounds(source);
   if (!b) return { needsFullSave: true };
-  return { op: makeOp("shape.resize", elementId, { bounds: b }) };
+  const ops = [makeOp("shape.resize", elementId, { bounds: b })];
+  const diOps = mapAffectedConnectionDi(context);
+  if (diOps.needsFullSave) return diOps;
+  return { ops: [...ops, ...diOps.ops] };
 }
 
 function mapUpdateDi(context, inverse) {
@@ -485,8 +501,11 @@ function mapDeleteInversePayload(ref, context) {
 // ---------------------------------------------------------------------------
 // S3: строгий id для fail-closed мапперов — elementIdOf при пустом id
 // откатывается к String(ref) ("[object Object]") и пропускает битую запись.
+// S1: ужесточено до «только непустая строка» — не-строковый id (object/number)
+// fail-closed в needsFullSave, а не сериализуется в "[object Object]"/"42".
 function strictIdOf(ref) {
-  return asText(typeof ref === "string" ? ref : ref?.id);
+  const raw = typeof ref === "string" ? ref : ref?.id;
+  return typeof raw === "string" && raw.trim() ? raw : "";
 }
 
 // S3 (op wave A): elements.move → батч shape.move + element.updateDi для
