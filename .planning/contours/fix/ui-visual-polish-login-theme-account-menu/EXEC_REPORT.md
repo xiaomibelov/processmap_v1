@@ -46,3 +46,11 @@
 ## Осталось / риски
 - Merge/deploy — только владельцем после approve. Агент останавливается на открытом PR.
 - Pre-existing красные тесты (~77 файлов на main) вне скоупа; описаны в TESTS.md.
+
+## Разрешение конфликтов мержа (2026-09-22, после #1011/#1012/#1013/#1015)
+
+- В main вмержены соседние PR → PR #1014 получил конфликты. Выполнен `git merge origin/main` (bf6cca46) в ветку, merge-коммит `8c646d43`, push выполнен — PR обновлён.
+- Пересечение файлов: `frontend/src/config/appVersion.js` (конфликт) и `frontend/src/shared/i18n/ru.js` (auto-merge).
+- **Конфликт версии:** обе стороны подняли `currentVersion` до `v1.0.150`. Разрешение: запись main (#1012, app-update dead-end) остаётся `v1.0.150`; наша запись перенумерована в **v1.0.151** (версия не дублируется; наш PR займёт следующий номер при мерже после #1012).
+- `ru.js` смержился автоматически: наши ключи `auth.brand*/profileSoon*` и ключи main `update.titleBlocked/forceRefresh*` на месте, синтаксис проверен импортом модуля.
+- Проверки после мержа: `npm run build` — зелёный; таргетные тесты контура (theme, watermark, discussion-notifications) — 13/13; appUpdate-тесты #1012 — 58/58; `TopBar.header-meta.test.mjs` падает, но это pre-existing падение (ожидает `hasStatusAlternatives`, отсутствующий в TopBar.jsx и на старом, и на новом main).

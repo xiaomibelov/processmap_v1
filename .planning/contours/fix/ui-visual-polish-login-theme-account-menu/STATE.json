@@ -4,7 +4,7 @@
   "role": "executor",
   "branch": "fix/ui-visual-polish-login-theme-account-menu",
   "base": "origin/main",
-  "base_commit": "c5db40a9d2f46bd231f7b349b145c9b7e136baf4",
+  "base_commit": "bf6cca46cdfe841fe1c78723c45dea2568fec46a",
   "status": "READY_FOR_REVIEW",
   "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/1014",
   "fixes": [
@@ -14,15 +14,29 @@
     "bpmn-watermark-hidden"
   ],
   "backend_diff": 0,
-  "version": "v1.0.150",
+  "version": "v1.0.151",
   "tests": {
     "baseline_fail": 78,
     "after_fail": 77,
     "delta_pass_minus_fail": "+1 pass / -1 fail / 0 regressions",
-    "new_tests": ["frontend/src/lib/theme.test.mjs", "frontend/src/styles/bpmn-powered-by.test.mjs"]
+    "new_tests": [
+      "frontend/src/lib/theme.test.mjs",
+      "frontend/src/styles/bpmn-powered-by.test.mjs"
+    ]
   },
   "build": "npm run build green (vite, x3)",
   "live_verification": "vite preview :5198 -> api :8011, 15 screenshots in evidence/, watermark display=none in both themes",
   "merge_deploy": "FORBIDDEN — owner approval required; contour stops at open PR",
-  "updated_at": "2026-09-22"
+  "updated_at": "2026-09-22",
+  "merge_resolution": {
+    "merge_commit": "8c646d43",
+    "conflicts": [
+      "frontend/src/config/appVersion.js"
+    ],
+    "auto_merged": [
+      "frontend/src/shared/i18n/ru.js"
+    ],
+    "resolution": "main удержал v1.0.150 (PR #1012); наша запись перенумерована в v1.0.151 — версия не дублируется",
+    "reason": "обе стороны подняли версию до v1.0.150"
+  }
 }
