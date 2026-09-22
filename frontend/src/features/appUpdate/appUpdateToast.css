@@ -53,10 +53,48 @@
   margin-top: 2px;
 }
 
-.appUpdateToast__error {
-  font-size: 12px;
+/* A/B (fix/app-update-refresh-dead-end): blocked → danger-состояние.
+   Причина блокировки — человекочитаемая строка (не мелкая 12px-ошибка),
+   ошибку делаем заметнее, но всё на тех же токенах --pm-tobe-*. */
+.appUpdateToast--danger {
+  border-color: var(--pm-tobe-danger);
+}
+
+.appUpdateToast--danger .appUpdateToast__icon {
+  color: var(--pm-tobe-danger);
+}
+
+.appUpdateToast__reason {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--pm-tobe-danger);
   margin-top: 4px;
+}
+
+.appUpdateToast__error {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pm-tobe-danger);
+  margin-top: 4px;
+}
+
+.appUpdateToast__btn--danger {
+  background: var(--pm-tobe-bg);
+  border-color: var(--pm-tobe-danger);
+  color: var(--pm-tobe-danger);
+}
+
+.appUpdateToast__btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pm-tobe-danger) 12%, transparent);
+  border-color: var(--pm-tobe-danger);
+}
+
+/* armed: второй шаг двухшагового подтверждения — выделен сильнее,
+   чтобы случайный повторный клик был осознанным. */
+.appUpdateToast__btn--armed {
+  background: var(--pm-tobe-danger);
+  border-color: var(--pm-tobe-danger);
+  color: var(--pm-tobe-bg);
 }
 
 .appUpdateToast__actions {
