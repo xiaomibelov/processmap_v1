@@ -27,11 +27,24 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=5, minute=10),
         "options": {"queue": "celery"},
     },
+    "canvas-telemetry-aggregate": {
+        # feature/canvas-telemetry-feed: raw → витрина canvas_event_read, каждые 5 мин.
+        "task": "processmap.canvas_telemetry.aggregate_task",
+        "schedule": crontab(minute="*/5"),
+        "options": {"queue": "celery"},
+    },
+    "canvas-telemetry-cleanup": {
+        # retention canvas_event_raw, TTL 14 дней.
+        "task": "processmap.canvas_telemetry.cleanup_task",
+        "schedule": crontab(hour=5, minute=20),
+        "options": {"queue": "celery"},
+    },
 }
 app.conf.timezone = "Europe/Moscow"
 
 # Import task modules so workers discover them
 from . import tasks  # noqa: E402
+from .save_services.canvas_telemetry_aggregator import tasks as canvas_telemetry_tasks  # noqa: F401,E402
 from . import rag_tasks  # noqa: F401,E402
 from .agent_analysis import tasks as agent_analysis_tasks  # noqa: F401,E402
 from .save_services.analytics_aggregator import tasks as analytics_tasks  # noqa: F401,E402

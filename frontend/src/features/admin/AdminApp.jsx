@@ -15,6 +15,7 @@ import useAdminProjectsData from "./hooks/useAdminProjectsData";
 import useAdminSessionDetailData from "./hooks/useAdminSessionDetailData";
 import useAdminSessionsData from "./hooks/useAdminSessionsData";
 import { useAdminTelemetryErrorEventDetailData, useAdminTelemetryErrorEventsData } from "./hooks/useAdminTelemetryData";
+import { useAdminCanvasTelemetryContextData, useAdminCanvasTelemetryErrorsData } from "./hooks/useAdminCanvasTelemetryData";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminAiModulesPage from "./pages/AdminAiModulesPage";
 import AdminLlmPage from "./pages/AdminLlmPage";
@@ -33,6 +34,7 @@ import AdminProjectsPage from "./pages/AdminProjectsPage";
 import AdminSessionDetailPage from "./pages/AdminSessionDetailPage";
 import AdminSessionsPage from "./pages/AdminSessionsPage";
 import AdminTelemetryEventsPage from "./pages/AdminTelemetryEventsPage";
+import AdminCanvasTelemetryPage from "./pages/AdminCanvasTelemetryPage";
 import useAdminGraphsData from "./hooks/useAdminGraphsData";
 import {
   buildTelemetryCorrelationPivotFilters,
@@ -40,6 +42,11 @@ import {
   DEFAULT_TELEMETRY_FILTERS,
   parseTelemetryFiltersFromSearch,
 } from "./utils/adminTelemetryQuery";
+import {
+  buildCanvasTelemetrySearchPatch,
+  DEFAULT_CANVAS_TELEMETRY_FILTERS,
+  parseCanvasTelemetryFiltersFromSearch,
+} from "./utils/adminCanvasTelemetryQuery";
 import { mergeSearchParams, pageToOffset, parsePage, parsePageSize, rangeToTsFrom } from "./utils/adminQuery";
 import { ru } from "../../shared/i18n/ru";
 
@@ -96,6 +103,7 @@ function AdminAppInner({
   }, [rawSearch]);
 
   const telemetryFilters = useMemo(() => parseTelemetryFiltersFromSearch(rawSearch), [rawSearch]);
+  const canvasTelemetryFilters = useMemo(() => parseCanvasTelemetryFiltersFromSearch(rawSearch), [rawSearch]);
 
   const updateSearchState = useCallback((patch = {}, { replace = false, resetPage = false } = {}) => {
     const params = mergeSearchParams(rawSearch, patch, { resetPage });
@@ -160,6 +168,14 @@ function AdminAppInner({
     enabled: route.section === "telemetry" && Boolean(toText(telemetryFilters.event_id)),
     eventId: telemetryFilters.event_id,
   });
+  const canvasTelemetryQ = useAdminCanvasTelemetryErrorsData({
+    enabled: route.section === "canvas-telemetry",
+    filters: canvasTelemetryFilters,
+  });
+  const canvasTelemetryContextQ = useAdminCanvasTelemetryContextData({
+    enabled: route.section === "canvas-telemetry" && Boolean(toText(canvasTelemetryFilters.group_id)),
+    groupId: canvasTelemetryFilters.group_id,
+  });
   const ragQ = useAdminRagData({ enabled: route.section === "rag" });
   const ragPlanQ = useAdminRagIndexingPlan({ enabled: route.section === "rag" });
   const graphsQ = useAdminGraphsData({ enabled: route.section === "graphs" });
@@ -190,6 +206,7 @@ function AdminAppInner({
     if (route.section === "jobs") return jobsQ;
     if (route.section === "audit") return auditQ;
     if (route.section === "telemetry") return telemetryQ;
+    if (route.section === "canvas-telemetry") return canvasTelemetryQ;
     if (route.section === "ai-modules") return { loading: false, error: "", data: null };
     if (route.section === "llm") return { loading: false, error: "", data: null };
     if (route.section === "rag") return { loading: false, error: "", data: null };
@@ -382,6 +399,38 @@ function AdminAppInner({
             );
           }}
           onCloseDetail={() => updateSearchState({ event_id: "" }, { replace: false })}
+        />
+      );
+    }
+    if (route.section === "canvas-telemetry") {
+      return (
+        <AdminCanvasTelemetryPage
+          payload={canvasTelemetryQ.data || {}}
+          filters={canvasTelemetryFilters}
+          loading={canvasTelemetryQ.loading}
+          error={canvasTelemetryQ.error}
+          contextPayload={canvasTelemetryContextQ.data || null}
+          contextLoading={canvasTelemetryContextQ.loading}
+          contextError={canvasTelemetryContextQ.error}
+          selectedGroupId={toText(canvasTelemetryFilters.group_id)}
+          onFiltersChange={(next) => {
+            updateSearchState(
+              { ...buildCanvasTelemetrySearchPatch(next), group_id: "" },
+              { replace: true, resetPage: false },
+            );
+          }}
+          onFiltersReset={() => {
+            updateSearchState(
+              { ...buildCanvasTelemetrySearchPatch(DEFAULT_CANVAS_TELEMETRY_FILTERS), group_id: "" },
+              { replace: true, resetPage: false },
+            );
+          }}
+          onOpenContext={(groupId) => {
+            const id = toText(groupId);
+            if (!id) return;
+            updateSearchState({ group_id: id }, { replace: false });
+          }}
+          onCloseContext={() => updateSearchState({ group_id: "" }, { replace: false })}
         />
       );
     }

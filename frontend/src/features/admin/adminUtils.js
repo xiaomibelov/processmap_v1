@@ -72,6 +72,7 @@ export function parseAdminRoute(pathnameRaw) {
     jobs: ru.admin.sections.jobs,
     audit: ru.admin.sections.audit,
     telemetry: ru.admin.sections.telemetry,
+    "canvas-telemetry": ru.admin.sections.canvasTelemetry,
     "ai-modules": ru.admin.sections.aiModules,
     llm: ru.admin.sections.llm,
     graphs: ru.admin.sections.graphs,

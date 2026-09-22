@@ -626,3 +626,16 @@ export async function apiAdminGraphsUploadSnapshot(formData) {
   }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+export async function apiAdminListCanvasTelemetryErrors(params = {}) {
+  const endpoint = apiRoutes.admin.canvasTelemetryErrors(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetCanvasTelemetryContext(groupId) {
+  const id = String(groupId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing group_id" };
+  const r = okOrError(await request(apiRoutes.admin.canvasTelemetryContext(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

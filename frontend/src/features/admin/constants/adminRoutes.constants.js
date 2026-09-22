@@ -8,6 +8,7 @@ export const ADMIN_SECTIONS = {
   jobs: "jobs",
   audit: "audit",
   telemetry: "telemetry",
+  canvasTelemetry: "canvas-telemetry",
   aiModules: "ai-modules",
   llm: "llm",
   agentRuns: "agent-runs",
@@ -50,6 +51,11 @@ export const ADMIN_ROUTE_META = {
     title: ru.admin.route.telemetry.title,
     subtitle: ru.admin.route.telemetry.subtitle,
     path: "/admin/telemetry",
+  },
+  [ADMIN_SECTIONS.canvasTelemetry]: {
+    title: ru.admin.route.canvasTelemetry.title,
+    subtitle: ru.admin.route.canvasTelemetry.subtitle,
+    path: "/admin/canvas-telemetry",
   },
   [ADMIN_SECTIONS.aiModules]: {
     title: ru.admin.route.aiModules.title,
