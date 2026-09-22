@@ -95,7 +95,7 @@ test("E1+E2: список витрины и таймлайн 422 с контек
   await page.goto("/admin/canvas-telemetry");
   await expect(page.getByTestId("canvas-telemetry-error-list")).toBeVisible();
   await expect(page.getByText("OPERATION_UNSUPPORTED")).toBeVisible();
-  await expect(page.getByText("дивергенция")).toBeVisible();
+  await expect(page.getByTestId("canvas-telemetry-error-list").getByText("дивергенция")).toBeVisible();
 
   await page.getByRole("button", { name: "Таймлайн" }).click();
   await expect(page.getByTestId("canvas-telemetry-timeline")).toBeVisible();
@@ -104,48 +104,62 @@ test("E1+E2: список витрины и таймлайн 422 с контек
   expect(contextRequests).toBeGreaterThan(0);
 });
 
-test("E3: kill-switch __FPC_CANVAS_FEED_OFF__ не шлёт батчи", async ({ page }) => {
-  await installAuthInitScript(page);
-  let canvasEventsPosts = 0;
-  await page.route("**/*", async (route, request) => {
-    const url = new URL(request.url());
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    if (path === "/api/telemetry/canvas-events" && request.method().toUpperCase() === "POST") {
-      canvasEventsPosts += 1;
-      return route.fulfill(jsonResponse({ ok: true, accepted: 1 }, 201));
-    }
+// Живые сценарии ingest (без стаббинга canvas-events): реальный логин
+// seeded-admin, реальная сессия-фикстура, правки канваса через modeling-API,
+// реальный backend принимает батчи (201) и пишет canvas_event_raw.
+// Flush ленты — таймер 10–15 с, поэтому после правки ждём окно флаша.
+
+import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
+import { createFixture, openFixture, renameTask, seedXml } from "./helpers/processFixture.mjs";
+import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
+
+const FLUSH_WINDOW_MS = 18_000;
+
+function countCanvasEventsPosts(page, counter) {
+  return page.route("**/api/telemetry/canvas-events", async (route, request) => {
+    if (request.method().toUpperCase() === "POST") counter.posts += 1;
     return route.continue();
   });
+}
+
+async function openLiveSession({ page, request }, runId) {
+  const auth = await apiLogin(request, {});
+  const fixture = await createFixture(request, runId, auth.headers, seedXml());
+  await setUiToken(page, auth.accessToken, { activeOrgId: auth.activeOrgId || fixture.orgId });
+  await openFixture(page, fixture);
+  await waitForDiagramReady(page);
+  // viewport-сентинел не гарантирует отрисовку элементов — ждём DOM-ноду таски
+  await page.locator('[data-element-id="Task_1"]').first().waitFor({ state: "visible", timeout: 30_000 });
+  return fixture;
+}
+
+test("E3: kill-switch __FPC_CANVAS_FEED_OFF__ блокирует отправку батчей", async ({ page, request }) => {
   await page.addInitScript(() => {
     window.__FPC_CANVAS_FEED_OFF__ = true;
   });
+  const counter = { posts: 0 };
+  await countCanvasEventsPosts(page, counter);
+  await openLiveSession({ page, request }, `kill-${Date.now()}`);
 
-  await page.goto("/?session=s_1e4e833505&project=p_1");
-  await page.waitForTimeout(4000);
-  expect(canvasEventsPosts).toBe(0);
+  await renameTask(page, "Task_1", "kill-switch off");
+  await page.waitForTimeout(FLUSH_WINDOW_MS);
+  expect(counter.posts).toBe(0);
+
+  // снятие флага → лента оживает, батчи реально уходят на backend
+  await page.evaluate(() => {
+    window.__FPC_CANVAS_FEED_OFF__ = false;
+  });
+  await renameTask(page, "Task_1", "kill-switch on");
+  await page.waitForTimeout(FLUSH_WINDOW_MS);
+  expect(counter.posts).toBeGreaterThan(0);
 });
 
-test("E4: лента шлёт батчи отдельным транспортом (вне throttle error-events)", async ({ page }) => {
-  await installAuthInitScript(page);
-  const seen = { canvasEvents: 0, errorEvents: 0 };
-  await page.route("**/*", async (route, request) => {
-    const url = new URL(request.url());
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    const method = request.method().toUpperCase();
-    if (path === "/api/telemetry/canvas-events" && method === "POST") {
-      seen.canvasEvents += 1;
-      return route.fulfill(jsonResponse({ ok: true, accepted: 1 }, 201));
-    }
-    if (path === "/api/telemetry/error-events" && method === "POST") {
-      seen.errorEvents += 1;
-      return route.fulfill(jsonResponse({ ok: true }, 201));
-    }
-    return route.continue();
-  });
+test("E4: правки канваса → реальные POST canvas-events независимо от throttle error-events", async ({ page, request }) => {
+  const counter = { posts: 0 };
+  await countCanvasEventsPosts(page, counter);
+  await openLiveSession({ page, request }, `live-${Date.now()}`);
 
-  await page.goto("/?session=s_1e4e833505&project=p_1");
-  await page.waitForTimeout(4000);
-  // ingest ленты идёт своим путём; наличие канваса/модели не гарантирует события
-  // в пустой сессии, но endpoint не должен конфликтовать с error-events throttle.
-  expect(seen.canvasEvents + seen.errorEvents).toBeGreaterThanOrEqual(0);
+  await renameTask(page, "Task_1", "live edit 1");
+  await page.waitForTimeout(FLUSH_WINDOW_MS);
+  expect(counter.posts).toBeGreaterThan(0);
 });
