@@ -5701,11 +5701,17 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
     canvasTelemetryFeedRef.current = canvasFeed;
     const unbindPageErrors = installPageErrorListeners(canvasFeed);
-    // runtime создаётся лениво (ensureModeler) — подписываемся при появлении.
+    // runtime создаётся лениво (ensureModeler) и может ПЕРЕСОЗДАВАТЬСЯ
+    // (reload/reconcile/view-switch): подписываемся на КАЖДУЮ новую ссылку,
+    // со старой отписываемся — иначе лента молча перестаёт писать команды
+    // (зафиксировано инструментально: captureCount замирал после реконструкции).
     let unbindRuntime = null;
+    let watchedRuntime = null;
     const runtimeWatch = setInterval(() => {
       const runtime = modelerRuntimeRef.current;
-      if (!runtime || unbindRuntime) return;
+      if (!runtime || runtime === watchedRuntime) return;
+      if (typeof unbindRuntime === "function") unbindRuntime();
+      watchedRuntime = runtime;
       unbindRuntime = subscribeRuntimeChanges(runtime, canvasFeed) || (() => {});
     }, 2000);
     if (runtimeWatch && typeof runtimeWatch.unref === "function") runtimeWatch.unref();
