@@ -323,6 +323,7 @@ export default function AppShell({
           refreshBusy={appUpdate.refreshBusy}
           refreshError={appUpdate.refreshError}
           onRefresh={appUpdate.refresh}
+          onForceRefresh={appUpdate.forceRefresh}
           onDismiss={appUpdate.dismiss}
         />
 

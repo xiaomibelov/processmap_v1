@@ -119,11 +119,32 @@ jobs:
             echo "[deploy-stage] stage checkout: ${STAGE_DIR}"
             echo "[deploy-stage] prod checkout (untouched): ${MAIN_DIR}"
 
+            # Бounded TCP-connect к github.com: без этого оборванный connect
+            # (transient network drop) висит ~130с до системного таймаута
+            # (инцидент 2026-09-22: deploy-stage fail, ssh connect … port 22
+            # Connection timed out). Действует только на git-over-ssh этого скрипта.
+            export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o ConnectionAttempts=2"
+
+            # Retry transient-сбоев сети: fetch до 5 попыток с бэкоффом 15/30/45/60с
+            # (максимум ~2,5мин + ~3,5мин попыток ≈ 6мин, влезает в command_timeout 20m).
+            # Живая сеть: первая попытка успешна, helper прозрачен. Полный отказ сети:
+            # fail-loud как раньше (set -e нетронут).
+            git_with_retry() {
+              local attempt
+              for attempt in 1 2 3 4 5; do
+                if git "$@"; then return 0; fi
+                echo "[deploy-stage] git $* failed (attempt ${attempt}/5), retrying..." >&2
+                sleep $(( attempt * 15 ))
+              done
+              echo "[deploy-stage] ERROR: git $* failed after 5 attempts" >&2
+              return 1
+            }
+
             # Resolve the requested ref using the prod repo as the object store,
             # then materialize a detached-HEAD stage worktree at DEPLOY_SHA.
             cd "${MAIN_DIR}"
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
-            git fetch origin
+            git_with_retry fetch origin
 
             if git show-ref --verify --quiet "refs/remotes/origin/${REQUESTED_REF}" 2>/dev/null; then
               DEPLOY_SHA="$(git rev-parse --verify "origin/${REQUESTED_REF}")"
@@ -143,7 +164,7 @@ jobs:
             if git -C "${MAIN_DIR}" worktree list | grep -q "^${STAGE_DIR} "; then
               echo "[deploy-stage] reusing existing stage worktree"
               cd "${STAGE_DIR}"
-              git fetch origin
+              git_with_retry fetch origin
               git checkout -f "${DEPLOY_SHA}"
             else
               if [ -e "${STAGE_DIR}" ]; then
