@@ -45,3 +45,14 @@
 - `09-notification-center-light.png` — центр уведомлений (визуальное согласование сохранено).
 - `canvas-light.png`, `canvas-dark.png` — канвас modeler: `.bjs-powered-by` → `display=none`, rect 0×0 в **обеих** темах (проверено getComputedStyle).
 - Переключение темы → перезагрузка → тема сохраняется (light↔dark в сценарии съёмки).
+
+## Пост-мерж проверка (2026-09-22, vs bf6cca46)
+
+| Прогон | tests | pass | fail |
+|---|---|---|---|
+| pristine main bf6cca46 (baseline) | 4119 | 4038 | 77 |
+| ветка + merge 8c646d43 | 4126 | 4045 | 77 |
+
+- Регрессий нет: множество упавших файлов идентично baseline (32 файла, списки совпали `comm`).
+- Δ = +7 pass — это наши новые тесты (`theme.test.mjs` 5/5, `bpmn-powered-by.test.mjs` 2/2).
+- Таргетно после мержа: контур-тесты 13/13; appUpdate-тесты #1012 — 58/58; `npm run build` — зелёный.
