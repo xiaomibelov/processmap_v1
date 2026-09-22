@@ -293,6 +293,8 @@ export const apiRoutes = {
     audit: (params = {}) => withQuery("/api/admin/audit", params),
     errorEvents: (params = {}) => withQuery("/api/admin/error-events", params),
     errorEvent: (eventId) => `/api/admin/error-events/${encode(eventId)}`,
+    canvasTelemetryErrors: (params = {}) => withQuery("/api/admin/canvas-telemetry/errors", params),
+    canvasTelemetryContext: (groupId) => `/api/admin/canvas-telemetry/errors/${encode(groupId)}/context`,
     aiModules: () => "/api/admin/ai/modules",
     aiProviderSettings: () => "/api/admin/ai/provider-settings",
     aiProviderVerify: () => "/api/admin/ai/provider-settings/verify",
