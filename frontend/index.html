@@ -10,7 +10,8 @@
     <title>ProcessMap</title>
     <script>
       // UX-UPDATE boot guard: убиваем устаревший service worker / кеши и,
-      // если раздаваемая версия новее этого index.html, перезагружаемся один раз.
+      // если раздаваемая версия новее этого index.html, перезагружаемся
+      // (version boot guard — до 3 попыток на buildId, см. ниже).
       (function () {
         function clearCaches() {
           if (typeof caches === "undefined") return Promise.resolve();
@@ -51,19 +52,27 @@
         } catch (e) {}
 
         // 2. Version boot guard: сверяемся с /version.json и перезагружаемся,
-        // только если этот index.html устарел (один раз за сессию).
+        // только если этот index.html устарел.
+        // Gate — СЧЁТЧИК попыток (max 3 на buildId за сессию вкладки), а не boolean:
+        // при гонке деплоя (version.json уже новый, а index.html ещё старый)
+        // перезагрузка отдаёт тот же старый buildId — boolean-флаг «1» сгорал бы
+        // впустую и вкладка застревала бы на старом бандле до закрытия (C2,
+        // fix/app-update-refresh-dead-end). 3 попыток достаточно и для обновления
+        // после гонки, и цикл перезагрузок невозможен.
         try {
           var meta = document.querySelector('meta[name="processmap-build-id"]');
           var buildId = meta ? String(meta.getAttribute("content") || "").trim() : "";
           if (!buildId || buildId.indexOf("%") === 0 || buildId === "dev" || buildId === "unknown") return;
           var reloadKey = "processmap:version-boot-reload:" + buildId;
-          if (sessionStorage.getItem(reloadKey)) return;
+          var bootAttempts = parseInt(sessionStorage.getItem(reloadKey) || "0", 10);
+          if (!isFinite(bootAttempts) || bootAttempts < 0) bootAttempts = 0;
+          if (bootAttempts >= 3) return;
           fetch("/version.json?cb=" + Date.now(), { cache: "no-store" })
             .then(function (r) { return r.json().catch(function () { return null; }); })
             .then(function (data) {
               var remoteSha = String(data && (data.sha || data.commit) || "").trim();
               if (!remoteSha || remoteSha === buildId) return;
-              sessionStorage.setItem(reloadKey, "1");
+              sessionStorage.setItem(reloadKey, String(bootAttempts + 1));
               clearCaches().then(function () {
                 hardReload();
               }).catch(function () {

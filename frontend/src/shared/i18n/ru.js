@@ -1232,6 +1232,14 @@ export const ru = {
     later: "Позже",
     laterTitle: "Скрыть на 30 минут",
     iconAria: "Доступно обновление",
+    titleBlocked: "Обновление заблокировано состоянием сохранения",
+    blockedReasonConflict: "Конфликт сохранения: сервер отклонил изменения (409).",
+    blockedReasonFailed: "Сохранение не удалось.",
+    blockedReasonStale: "Локальные данные устарели относительно сервера.",
+    blockedReasonUnknown: "Состояние сохранения неизвестно.",
+    forceRefresh: "Обновить без сохранения",
+    forceRefreshTitle: "Принудительно перезагрузить страницу; несохранённые изменения будут потеряны",
+    forceConfirm: "Изменения будут потеряны. Точно обновить?",
   },
   // Diagram overflow menu actions (BPMN canvas).
   // Парный словарь: shared/i18n/en.js.
