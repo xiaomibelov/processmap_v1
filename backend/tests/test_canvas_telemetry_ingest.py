@@ -176,3 +176,26 @@ class CanvasTelemetryIngestTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CanvasTelemetrySchemaTypesTest(unittest.TestCase):
+    """Дефект #2 (живой e2e-прогон, postgres): клиент шлёт ts в миллисекундах
+    (~1.7e12), а DDL объявлял ts/first_seen/last_seen как INTEGER — в postgres
+    это int32 (max ~2.1e9) → NumericValueOutOfRange → 500. SQLite имеет 64-битный
+    INTEGER, поэтому pytest на sqlite дефект не ловил. Регрессионный стоп-кран
+    по DDL: миллисекундные колонки обязаны быть BIGINT."""
+
+    def test_millisecond_columns_are_bigint(self):
+        from pathlib import Path
+        import re
+
+        repo_src = Path(__file__).resolve().parents[1] / "app" / "domains" / "storage" / "canvas_telemetry" / "repository.py"
+        text = repo_src.read_text(encoding="utf-8")
+        for column in ("ts", "first_seen", "last_seen"):
+            match = re.search(rf'^\s*{column}\s+(\w+)', text, flags=re.MULTILINE | re.IGNORECASE)
+            self.assertIsNotNone(match, f"column {column} not found in DDL")
+            self.assertEqual(
+                match.group(1).upper(),
+                "BIGINT",
+                f"column {column} must be BIGINT (client sends ms), got {match.group(1)}",
+            )

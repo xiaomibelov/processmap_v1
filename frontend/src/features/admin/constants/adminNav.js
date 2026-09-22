@@ -1,4 +1,4 @@
-import { ADMIN_ROUTE_META, ADMIN_SECTIONS } from "./adminRoutes.constants";
+import { ADMIN_ROUTE_META, ADMIN_SECTIONS } from "./adminRoutes.constants.js";
 import { ru } from "../../../shared/i18n/ru";
 
 export const ADMIN_NAV_ITEMS = [
@@ -7,7 +7,7 @@ export const ADMIN_NAV_ITEMS = [
   { id: ADMIN_SECTIONS.jobs, label: ru.admin.nav.jobs, href: ADMIN_ROUTE_META.jobs.path, shortLabel: "З" },
   { id: ADMIN_SECTIONS.audit, label: ru.admin.nav.audit, href: ADMIN_ROUTE_META.audit.path, shortLabel: "А" },
   { id: ADMIN_SECTIONS.telemetry, label: ru.admin.nav.telemetry, href: ADMIN_ROUTE_META.telemetry.path, shortLabel: "Т" },
-  { id: ADMIN_SECTIONS.canvasTelemetry, label: ru.admin.nav.canvasTelemetry, href: ADMIN_ROUTE_META.canvasTelemetry.path, shortLabel: "ТК" },
+  { id: ADMIN_SECTIONS.canvasTelemetry, label: ru.admin.nav.canvasTelemetry, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.canvasTelemetry].path, shortLabel: "ТК" },
   { id: ADMIN_SECTIONS.llm, label: ru.admin.nav.llm, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.llm].path, shortLabel: "LLM" },
   { id: ADMIN_SECTIONS.agentRuns, label: ru.admin.nav.agentRuns, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.agentRuns].path, shortLabel: "ЗА" },
   { id: ADMIN_SECTIONS.rag, label: ru.admin.nav.rag, href: ADMIN_ROUTE_META[ADMIN_SECTIONS.rag].path, shortLabel: "RAG" },
