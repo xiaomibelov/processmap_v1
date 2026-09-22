@@ -107,7 +107,15 @@ class CanvasEventBatchIn(BaseModel):
     events: List[CanvasEventIn]
 
 
-@router.post("/api/telemetry/canvas-events", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/telemetry/canvas-events",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        401: {"description": "missing or invalid bearer token"},
+        422: {"description": "batch validation failed (count/size/kind)"},
+        429: {"description": "canvas events rate limit exceeded for session"},
+    },
+)
 def ingest_canvas_events(payload: CanvasEventBatchIn, request: Request, response: Response) -> Any:
     events = list(payload.events or [])
     if not events or len(events) > MAX_EVENTS_PER_BATCH:
@@ -190,7 +198,13 @@ def _group_item(group: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@router.get("/api/admin/canvas-telemetry/errors")
+@router.get(
+    "/api/admin/canvas-telemetry/errors",
+    responses={
+        401: {"description": "missing or invalid bearer token"},
+        403: {"description": "insufficient permissions (admin or telemetry role required)"},
+    },
+)
 def admin_canvas_telemetry_errors(
     request: Request,
     session_id: str = "",
@@ -244,7 +258,14 @@ def admin_canvas_telemetry_errors(
     }
 
 
-@router.get("/api/admin/canvas-telemetry/errors/{group_id}/context")
+@router.get(
+    "/api/admin/canvas-telemetry/errors/{group_id}/context",
+    responses={
+        401: {"description": "missing or invalid bearer token"},
+        403: {"description": "insufficient permissions (admin or telemetry role required)"},
+        404: {"description": "Group not found or belongs to another org"},
+    },
+)
 def admin_canvas_telemetry_context(group_id: str, request: Request) -> Any:
     import json as _json
 

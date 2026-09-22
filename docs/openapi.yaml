@@ -4437,8 +4437,9 @@ paths:
                   Errors Get
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: missing or invalid bearer token
+        '403':
+          description: insufficient permissions (admin or telemetry role required)
         '422':
           content:
             application/json:
@@ -4471,10 +4472,11 @@ paths:
                   Errors  Group Id  Context Get
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: missing or invalid bearer token
+        '403':
+          description: insufficient permissions (admin or telemetry role required)
         '404':
-          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+          description: Group not found or belongs to another org
         '422':
           content:
             application/json:
@@ -19414,14 +19416,11 @@ paths:
                 title: Response Ingest Canvas Events Api Telemetry Canvas Events Post
           description: Successful Response
         '401':
-          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
-            token (Authorization: Bearer)'
+          description: missing or invalid bearer token
         '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
+          description: batch validation failed (count/size/kind)
+        '429':
+          description: canvas events rate limit exceeded for session
       security:
       - bearerAuth: []
       summary: Создать/выполнить canvas events
