@@ -42,6 +42,7 @@ test("normalizeTechnicalBpmnLabelsInXml writes readable labels into existing tec
   <bpmn:process id="Process_1">
     <bpmn:task id="Activity_02r3c3z" name="Activity_02r3c3z" />
     <bpmn:task id="Activity_empty" />
+    <bpmn:task id="Activity_nonodelabel" name="Activity_nonodelabel" />
     <bpmn:exclusiveGateway id="Gateway_1" name="Gateway_1" />
   </bpmn:process>
 </bpmn:definitions>`;
@@ -51,7 +52,12 @@ test("normalizeTechnicalBpmnLabelsInXml writes readable labels into existing tec
   ]);
 
   assert.match(out, /id="Activity_02r3c3z" name="Проверить температуру"/);
-  assert.match(out, /id="Activity_empty" name="Шаг 2"/);
+  // fix/canvas-quick-create-422-ghost-naming: безымянный узел остаётся безымянным
+  // (BPMN допускает отсутствие name; ghost «Шаг N» после reload запрещён).
+  assert.doesNotMatch(out, /id="Activity_empty" name=/);
+  // Технический id без readable-лейбла в nodes — fallback «Шаг N» сохранён
+  // (счётчик по нормализуемым таскам, как до фикса).
+  assert.match(out, /id="Activity_nonodelabel" name="Шаг 2"/);
   assert.match(out, /id="Gateway_1" name="Решение 1"/);
   assert.doesNotMatch(out, /name="Activity_02r3c3z"/);
 });
