@@ -162,3 +162,73 @@ test("capture: среднее и максимум записи < 1 мс на 10k
   assert.ok(avg < 1, `avg ${avg}ms >= 1ms`);
   assert.ok(p99 < 1, `p99 ${p99}ms >= 1ms`);
 });
+
+// --- Регрессионные тесты дефекта #3 (stage: flush застрял, sent=0/failed=0 40+ мин) ---
+// RC: доставка опиралась ТОЛЬКО на wall-clock setInterval(12с) — в Chrome
+// пользователя интервал не стрелял (timer throttling / occlusion / App Nap),
+// при этом record (event-driven) работал. Защита: auto-flush по наполнению
+// буфера + таймаут транспорта + триггеры visibility/online.
+
+test("REGRESS: auto-flush при наполнении буфера — не зависит от интервала", async () => {
+  const { feed, sent } = makeFeed({ flushIntervalMs: 3_600_000 }); // интервал 1ч — не должен сработать
+  for (let i = 0; i < 25; i += 1) {
+    feed.record({ kind: "command", command: { type: "shape.move" } });
+  }
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(sent.length >= 1, "auto-flush по порогу не вызвал transport");
+  assert.equal(feed.peek().length, 0);
+});
+
+test("REGRESS: flush не залипает на вечном fetch — таймаут транспорта", async () => {
+  let calls = 0;
+  const { feed } = makeFeed({
+    flushIntervalMs: 60_000,
+    transport: async () => {
+      calls += 1;
+      return calls === 1 ? new Promise(() => {}) : { ok: true }; // первый fetch висит навсегда
+    },
+    transportTimeoutMs: 100,
+  });
+  feed.record({ kind: "command", command: { type: "shape.move" } });
+  const first = await Promise.race([
+    feed.flush("test"),
+    new Promise((r) => setTimeout(() => r({ timeout: true }), 1000)),
+  ]);
+  assert.notEqual(first.timeout, true, "flush залип на вечном fetch (нет таймаута транспорта)");
+  assert.equal(first.ok, false, "зависший транспорт должен дать ok:false по таймауту");
+  assert.equal(feed.getDebugState().failed, 1);
+  const second = await feed.flush("test");
+  assert.equal(second.ok, true, "после таймаута flush разблокирован");
+  assert.equal(feed.peek().length, 0);
+});
+
+test("REGRESS: visibilitychange→visible дёргает flush", async () => {
+  const listeners = {};
+  const fakeWin = {
+    listeners,
+    addEventListener(type, cb) { listeners[type] = cb; },
+    removeEventListener(type) { delete listeners[type]; },
+    localStorage: { getItem: () => "tok" },
+  };
+  const { feed, sent } = makeFeed({ win: fakeWin, flushIntervalMs: 3_600_000 });
+  feed.record({ kind: "command", command: { type: "shape.move" } });
+  assert.equal(typeof listeners.visibilitychange, "function", "подписка visibilitychange отсутствует");
+  listeners.visibilitychange();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(sent.length >= 1, "visibilitychange не вызвал flush");
+});
+
+test("REGRESS: событие online дёргает flush", async () => {
+  const listeners = {};
+  const fakeWin = {
+    listeners,
+    addEventListener(type, cb) { listeners[type] = cb; },
+    removeEventListener(type) { delete listeners[type]; },
+    localStorage: { getItem: () => "tok" },
+  };
+  const { feed, sent } = makeFeed({ win: fakeWin, flushIntervalMs: 3_600_000 });
+  feed.record({ kind: "command", command: { type: "shape.move" } });
+  listeners.online();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(sent.length >= 1, "online не вызвал flush");
+});

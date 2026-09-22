@@ -159,7 +159,20 @@ test("E4: правки канваса → реальные POST canvas-events н
   await countCanvasEventsPosts(page, counter);
   await openLiveSession({ page, request }, `live-${Date.now()}`);
 
-  await renameTask(page, "Task_1", "live edit 1");
+  // регрессионный стоп-кран дефекта #3 (flush-stuck): доставка должна
+  // произойти по наполнению буфера (auto-flush) БЫСТРЕЕ wall-clock
+  // интервала 12 с — на сломанном коде за 8 с постов не будет.
+  // Паузы между правками: без них серия rename порождает rebase-шторм,
+  // и команды глушатся под muteChangeDepth (replay-защита) — записей
+  // набирается меньше порога (зафиксировано инструментально).
+  for (let i = 1; i <= 28; i += 1) {
+    await renameTask(page, "Task_1", `live edit ${i}`);
+    await page.waitForTimeout(150);
+  }
+  await page.waitForTimeout(8_000);
+  expect(counter.posts).toBeGreaterThan(0);
+
+  await renameTask(page, "Task_1", "live edit final");
   await page.waitForTimeout(FLUSH_WINDOW_MS);
   expect(counter.posts).toBeGreaterThan(0);
 });
