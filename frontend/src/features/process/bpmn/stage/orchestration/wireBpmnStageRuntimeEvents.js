@@ -403,7 +403,13 @@ function bindContextMenuRuntimeEvents({
         const directEditing = inst?.get?.("directEditing");
         if (!directEditing || typeof directEditing.isActive !== "function" || !directEditing.isActive()) return;
         const targetNode = nativeEvent?.target instanceof Element ? nativeEvent.target : null;
-        if (targetNode instanceof Element && targetNode.closest?.(".djs-direct-editing-overlay")) return;
+        // Реальный DOM оверлея ввода — diagram-js-direct-editing@3.x (TextBox.js):
+        // div.djs-direct-editing-parent > div.djs-direct-editing-content[contenteditable].
+        // Класса .djs-direct-editing-overlay в 3.x НЕТ (он из прежних версий) — guard
+        // на нём никогда не срабатывал, и любой mousedown (включая клик в текст)
+        // коммитил editing до установки каретки. При апгрейде diagram-js сверять
+        // селектор с актуальным TextBox.js.
+        if (targetNode instanceof Element && targetNode.closest?.(".djs-direct-editing-parent, .djs-direct-editing-content")) return;
         directEditing.complete();
       } catch {
         // ignore DOM/service failures
