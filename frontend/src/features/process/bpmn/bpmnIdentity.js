@@ -90,7 +90,11 @@ export function normalizeTechnicalBpmnLabelsInXml(xmlText = "", nodesRaw = []) {
     const id = toText(element.getAttribute("id"));
     if (!id) return;
     const currentName = toText(element.getAttribute("name"));
-    if (currentName && !isTechnicalBpmnId(currentName)) return;
+    // fix/canvas-quick-create-422-ghost-naming: нормализуем ТОЛЬКО технические
+    // id в name. Безымянный узел (отсутствие name) — валидное состояние BPMN
+    // и НЕ получает fallback «Шаг N»: иначе пустая таска «призрачно» именуется
+    // при рендере и имя материализуется после reload/сохранения.
+    if (!isTechnicalBpmnId(currentName)) return;
     const nextCount = Number(counters.get(localName) || 0) + 1;
     counters.set(localName, nextCount);
     const fallback = fallbackLabelForElement(localName, nextCount);
