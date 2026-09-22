@@ -109,6 +109,12 @@ export function createCanvasEventFeed(options = {}) {
   const maxBatchBytes = Number(options.maxBatchBytes || 64 * 1024);
   const flushIntervalMs = Math.max(1000, Number(options.flushIntervalMs || 12_000));
   const errorFlushThrottleMs = Math.max(100, Number(options.errorFlushThrottleMs || 2_000));
+  // Дефект #3 (stage): доставка не должна зависеть только от wall-clock
+  // интервала — Chrome может троттлить/гасить таймеры (occlusion/App Nap/
+  // energy saver). Защита: auto-flush по наполнению буфера + таймаут
+  // транспорта + триггеры visibility/online.
+  const transportTimeoutMs = Math.max(50, Number(options.transportTimeoutMs || 20_000));
+  const autoFlushThreshold = Math.max(1, Number(options.autoFlushThreshold || 25));
   const now = typeof options.now === "function" ? options.now : defaultNow;
   const eventIdFactory = typeof options.eventIdFactory === "function" ? options.eventIdFactory : makeEventIdFactory();
   const win = options.win !== undefined ? options.win : typeof window !== "undefined" ? window : undefined;
@@ -124,7 +130,26 @@ export function createCanvasEventFeed(options = {}) {
   let captureMsTotal = 0;
   let captureCount = 0;
   let flushInFlight = null;
+  let autoFlushScheduled = false;
   const lastErrorFlushByCode = new Map();
+
+  function withTransportTimeout(promise) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("canvas_feed_transport_timeout")), transportTimeoutMs);
+      }),
+    ]);
+  }
+
+  function scheduleFlush(reason) {
+    if (autoFlushScheduled) return;
+    autoFlushScheduled = true;
+    setTimeout(() => {
+      autoFlushScheduled = false;
+      void flush(reason);
+    }, 0);
+  }
 
   function isEnabled() {
     if (!enabled) return false;
@@ -194,6 +219,13 @@ export function createCanvasEventFeed(options = {}) {
           // never throw from telemetry
         }
       }
+      if (buffer.length >= autoFlushThreshold) {
+        try {
+          scheduleFlush("threshold");
+        } catch {
+          // never throw from telemetry
+        }
+      }
       publishDebug();
       return entry;
     } catch {
@@ -226,7 +258,9 @@ export function createCanvasEventFeed(options = {}) {
           size = next;
         }
         if (!batch.length) return { ok: true, accepted: 0 };
-        const result = await transport({ events: batch }, { keepalive: keepalive || reason === "pagehide" });
+        const result = await withTransportTimeout(
+          transport({ events: batch }, { keepalive: keepalive || reason === "pagehide" }),
+        );
         if (result && result.ok) {
           buffer = buffer.slice(batch.length);
           sent += batch.length;
@@ -265,6 +299,45 @@ export function createCanvasEventFeed(options = {}) {
 
   let pagehideInstalled = false;
   let pagehideHandler = null;
+  let lifecycleInstalled = false;
+  const lifecycleHandlers = {};
+
+  function installLifecycleFlush() {
+    if (lifecycleInstalled || !win || typeof win.addEventListener !== "function") return;
+    lifecycleInstalled = true;
+    lifecycleHandlers.visibilitychange = () => {
+      try {
+        if (!documentHidden(win)) void flush("visibility");
+      } catch {
+        // never throw from telemetry
+      }
+    };
+    lifecycleHandlers.online = () => {
+      try {
+        void flush("online");
+      } catch {
+        // never throw from telemetry
+      }
+    };
+    win.addEventListener("visibilitychange", lifecycleHandlers.visibilitychange);
+    win.addEventListener("online", lifecycleHandlers.online);
+  }
+
+  function uninstallLifecycleFlush() {
+    if (!lifecycleInstalled || !win || typeof win.removeEventListener !== "function") return;
+    lifecycleInstalled = false;
+    if (lifecycleHandlers.visibilitychange) win.removeEventListener("visibilitychange", lifecycleHandlers.visibilitychange);
+    if (lifecycleHandlers.online) win.removeEventListener("online", lifecycleHandlers.online);
+  }
+
+  function documentHidden(w) {
+    try {
+      const doc = w?.document;
+      return doc ? doc.visibilityState === "hidden" : false;
+    } catch {
+      return false;
+    }
+  }
   function installPagehideFlush() {
     if (pagehideInstalled || !win || typeof win.addEventListener !== "function") return;
     pagehideInstalled = true;
@@ -288,12 +361,14 @@ export function createCanvasEventFeed(options = {}) {
   function destroy() {
     stop();
     uninstallPagehideFlush();
+    uninstallLifecycleFlush();
     buffer = [];
     publishDebug();
   }
 
   start();
   installPagehideFlush();
+  installLifecycleFlush();
   publishDebug();
 
   return {
