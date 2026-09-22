@@ -921,6 +921,90 @@ components:
       - name
       title: BreadcrumbItem
       type: object
+    CanvasEventBatchIn:
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/CanvasEventIn'
+          title: Events
+          type: array
+      required:
+      - events
+      title: CanvasEventBatchIn
+      type: object
+    CanvasEventIn:
+      properties:
+        command:
+          nullable: true
+          title: Command
+          type: object
+        error:
+          nullable: true
+          title: Error
+          type: object
+        event_id:
+          title: Event Id
+          type: string
+        http:
+          nullable: true
+          title: Http
+          type: object
+        kind:
+          title: Kind
+          type: string
+        meta:
+          nullable: true
+          title: Meta
+          type: object
+        op:
+          nullable: true
+          title: Op
+          type: object
+        org_id:
+          nullable: true
+          title: Org Id
+          type: string
+        project_id:
+          nullable: true
+          title: Project Id
+          type: string
+        runtime_id:
+          nullable: true
+          title: Runtime Id
+          type: string
+        seq:
+          default: 0
+          title: Seq
+          type: integer
+        session_id:
+          title: Session Id
+          type: string
+        tab_id:
+          nullable: true
+          title: Tab Id
+          type: string
+        ts:
+          default: 0
+          title: Ts
+          type: integer
+        user_id:
+          nullable: true
+          title: User Id
+          type: string
+        ux:
+          nullable: true
+          title: Ux
+          type: object
+        versions:
+          nullable: true
+          title: Versions
+          type: object
+      required:
+      - event_id
+      - kind
+      - session_id
+      title: CanvasEventIn
+      type: object
     ClipboardCopyIn:
       properties:
         element_id:
@@ -4268,6 +4352,142 @@ paths:
       summary: Получить audit
       tags:
       - admin
+  /api/admin/canvas-telemetry/errors:
+    get:
+      description: 'Получить errors. Особенности: доступ: член организации с нужной
+        ролью (org-scope).'
+      operationId: admin_canvas_telemetry_errors_api_admin_canvas_telemetry_errors_get
+      parameters:
+      - in: query
+        name: session_id
+        required: false
+        schema:
+          default: ''
+          title: Session Id
+          type: string
+      - in: query
+        name: user_id
+        required: false
+        schema:
+          default: ''
+          title: User Id
+          type: string
+      - in: query
+        name: error_class
+        required: false
+        schema:
+          default: ''
+          title: Error Class
+          type: string
+      - in: query
+        name: error_code
+        required: false
+        schema:
+          default: ''
+          title: Error Code
+          type: string
+      - in: query
+        name: converged
+        required: false
+        schema:
+          default: -1
+          title: Converged
+          type: integer
+      - in: query
+        name: last_seen_from
+        required: false
+        schema:
+          default: 0
+          title: Last Seen From
+          type: integer
+      - in: query
+        name: last_seen_to
+        required: false
+        schema:
+          default: 0
+          title: Last Seen To
+          type: integer
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: order
+        required: false
+        schema:
+          default: desc
+          title: Order
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Canvas Telemetry Errors Api Admin Canvas Telemetry
+                  Errors Get
+          description: Successful Response
+        '401':
+          description: missing or invalid bearer token
+        '403':
+          description: insufficient permissions (admin or telemetry role required)
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить errors
+      tags:
+      - canvas-telemetry
+  /api/admin/canvas-telemetry/errors/{group_id}/context:
+    get:
+      description: 'Получить context. Особенности: доступ: член организации с нужной
+        ролью (org-scope); 404 — ресурс не найден/вне scope.'
+      operationId: admin_canvas_telemetry_context_api_admin_canvas_telemetry_errors__group_id__context_get
+      parameters:
+      - in: path
+        name: group_id
+        required: true
+        schema:
+          title: Group Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Canvas Telemetry Context Api Admin Canvas Telemetry
+                  Errors  Group Id  Context Get
+          description: Successful Response
+        '401':
+          description: missing or invalid bearer token
+        '403':
+          description: insufficient permissions (admin or telemetry role required)
+        '404':
+          description: Group not found or belongs to another org
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Получить context
+      tags:
+      - canvas-telemetry
   /api/admin/dashboard:
     get:
       description: 'Получить dashboard. Особенности: доступ: администратор платформы/организации.'
@@ -19177,6 +19397,35 @@ paths:
       tags:
       - sku-bindings
       - sku-bindings
+  /api/telemetry/canvas-events:
+    post:
+      description: 'Создать/выполнить canvas events. Особенности: доступ: член организации
+        с нужной ролью (org-scope); тело валидируется схемой (422 при несоответствии).'
+      operationId: ingest_canvas_events_api_telemetry_canvas_events_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CanvasEventBatchIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                title: Response Ingest Canvas Events Api Telemetry Canvas Events Post
+          description: Successful Response
+        '401':
+          description: missing or invalid bearer token
+        '422':
+          description: batch validation failed (count/size/kind)
+        '429':
+          description: canvas events rate limit exceeded for session
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить canvas events
+      tags:
+      - canvas-telemetry
   /api/telemetry/error-events:
     post:
       description: 'Ingest an error/telemetry event.
@@ -19839,6 +20088,8 @@ tags:
   name: audit-log
 - description: Автопроход сценариев (роботизированный прогон процесса)
   name: auto-pass
+- description: canvas-telemetry
+  name: canvas-telemetry
 - description: Буфер обмена элементами диаграмм между сессиями
   name: clipboard
 - description: Уведомления о деплое/версиях платформы

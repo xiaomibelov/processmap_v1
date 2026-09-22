@@ -9,6 +9,7 @@ from .version import router as version_router
 from .api_docs import router as api_docs_router
 from .analytics import router as analytics_router
 from .clipboard import router as clipboard_router
+from .canvas_telemetry import router as canvas_telemetry_router
 from .error_events import router as error_events_router
 from .explorer import router as explorer_router
 from .org_invites import router as org_invites_router
@@ -58,6 +59,7 @@ ROUTERS = (
     (admin_testgen_router, ["admin"]),
     (llm_status_router, ["llm"]),
     (llm_feedback_router, ["llm"]),
+    (canvas_telemetry_router, ["canvas-telemetry"]),
     (error_events_router, ["error-events"]),
     (explorer_router, ["explorer"]),
     (projects_router, ["projects"]),

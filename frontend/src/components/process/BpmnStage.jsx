@@ -7,6 +7,14 @@ import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import { createSaveOutbox, installOpsOutboxNetworkTriggers } from "../../features/process/bpmn/save/opsOutbox/createSaveOutbox.js";
+import { createCanvasEventFeed } from "../../features/telemetry/canvasEventFeed.js";
+import {
+  installPageErrorListeners,
+  subscribeRuntimeChanges,
+  wrapOnStatus,
+  wrapOpsTransport,
+} from "../../features/telemetry/canvasEventCapture.js";
+import { apiPostSessionOperations } from "../../lib/api.js";
 import {
   setOpsReconcileRuntime,
 } from "../../features/process/bpmn/save/opsOutbox/persistence/reconciliation.js";
@@ -1201,6 +1209,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   // раз на сессию, teardown на unmount/смене сессии; bpmnWiring фан-аутит
   // сюда commandStack.changed-каскад (см. ensureBpmnCoordinator options).
   const opsOutboxRef = useRef(null);
+  // Лента телеметрии канваса (feature/canvas-telemetry-feed): observer-only,
+  // один инстанс на сессию, teardown вместе с outbox.
+  const canvasTelemetryFeedRef = useRef(null);
   const suppressViewboxEventRef = useRef(0);
   const modelerReadyRef = useRef(false);
   const viewerReadyRef = useRef(false);
@@ -5680,6 +5691,24 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     const sid = String(sessionId || "");
     if (!sid) return undefined;
+    // Лента телеметрии канваса (feature/canvas-telemetry-feed): observer-only
+    // захват команд/outbox/UX-статусов/pageerror. Отдельный транспорт вне
+    // throttle telemetryClient; save-пути не тронуты — только tap-обёртки
+    // публичных опций outbox и подписка runtime.onChange.
+    const canvasFeed = createCanvasEventFeed({
+      sessionId: sid,
+      projectId: String(activeProjectId || ""),
+    });
+    canvasTelemetryFeedRef.current = canvasFeed;
+    const unbindPageErrors = installPageErrorListeners(canvasFeed);
+    // runtime создаётся лениво (ensureModeler) — подписываемся при появлении.
+    let unbindRuntime = null;
+    const runtimeWatch = setInterval(() => {
+      const runtime = modelerRuntimeRef.current;
+      if (!runtime || unbindRuntime) return;
+      unbindRuntime = subscribeRuntimeChanges(runtime, canvasFeed) || (() => {});
+    }, 2000);
+    if (runtimeWatch && typeof runtimeWatch.unref === "function") runtimeWatch.unref();
     const outbox = createSaveOutbox({
       sessionId: sid,
       // Тот же full-save вход, что и у autosave-очереди: queueDiagramMutation →
@@ -5687,7 +5716,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       requestFullSave: () => {
         emitDiagramMutation("diagram.change", { source: "ops_outbox_fallback" });
       },
-      onStatus: (event) => {
+      onStatus: wrapOnStatus((event) => {
         const callback = onOpsSaveStatusRef.current;
         if (typeof callback !== "function") return;
         try {
@@ -5695,6 +5724,15 @@ const BpmnStage = forwardRef(function BpmnStage({
         } catch {
           // indicator callback must not break the save path
         }
+      }, canvasFeed),
+      // Тап-обёртка транспорта ops: latency/status → лента; результат и броски
+      // пробрасываются в outbox без изменений.
+      api: {
+        postSessionOperations: (sessionIdArg, body, opts) => wrapOpsTransport(
+          (s, b, o) => apiPostSessionOperations(s, b, o),
+          canvasFeed,
+          { endpoint: `/api/sessions/${encodeURIComponent(sid)}/operations` },
+        )(sessionIdArg, body, opts),
       },
       // Live-адаптер: modeler создаётся лениво (ensureModeler), поэтому
       // сервисы резолвим на момент rebase-replay, а не конструирования.
@@ -5796,6 +5834,11 @@ const BpmnStage = forwardRef(function BpmnStage({
       setOpsRemoteRuntime(null);
       opsOutboxRef.current = null;
       outbox.destroy();
+      clearInterval(runtimeWatch);
+      if (typeof unbindRuntime === "function") unbindRuntime();
+      unbindPageErrors();
+      canvasFeed.destroy();
+      canvasTelemetryFeedRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
