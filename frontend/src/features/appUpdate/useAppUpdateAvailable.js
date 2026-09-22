@@ -19,11 +19,15 @@ import {
   shouldShowUpdateToast,
 } from "./appUpdateModel.js";
 
-// UX-UPDATE (документ владельца): поллинг GET /version.json (cache:'no-store')
-// 5 мин + visibilitychange→visible; ошибки молча. SHA ≠ SHA бандла → тост
-// (не модалка), один раз на SHA за сессию; [Обновить] → guard (грязная TO BE
-// → requestTobeExit) → safe-flush → reload; [Позже] = snooze 30 мин.
-// Принудительного reload НЕТ нигде.
+// UX-UPDATE (документ владельца, редакция согласована approve-владельца
+// 2026-09-21, audit/app-update-refresh-dead-end): поллинг GET /version.json
+// (cache:'no-store') 5 мин + visibilitychange→visible; ошибки молча.
+// SHA ≠ SHA бандла → тост (не модалка), один раз на SHA за сессию;
+// [Обновить] → guard (грязная TO BE → requestTobeExit) → safe-flush (с
+// race-таймаутом, C1) → reload; [Позже] = snooze 30 мин.
+// Принудительный reload допустим ТОЛЬКО по явному двухшаговому подтверждению
+// пользователя в danger-состоянии тоста (blocked: conflict/failed/stale/
+// unknown) — forceRefresh → hardReloadPage напрямую, без guard и flush.
 const CURRENT_BUILD_SHA = getCurrentBuildSha({ VITE_BUILD_ID: buildInfo.buildId });
 
 function isDocumentHidden() {
@@ -31,7 +35,12 @@ function isDocumentHidden() {
   return document.visibilityState === "hidden";
 }
 
-export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
+const DEFAULT_SAFE_REFRESH_TIMEOUT_MS = 12000;
+
+export default function useAppUpdateAvailable({
+  refreshGuard = null,
+  safeRefreshTimeoutMs = DEFAULT_SAFE_REFRESH_TIMEOUT_MS,
+} = {}) {
   const inFlightRef = useRef(false);
   const [availableRuntime, setAvailableRuntime] = useState(null);
   const [refreshRisk, setRefreshRisk] = useState(() => getCurrentAppRefreshRisk());
@@ -133,7 +142,10 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
         const guarded = await refreshGuard();
         if (guarded?.ok !== true) return guarded || { ok: false, status: "cancelled" };
       }
-      const result = await runSafeRefreshBeforeReload({ reason: "app_update_refresh" });
+      const result = await runSafeRefreshBeforeReload({
+        reason: "app_update_refresh",
+        flushTimeoutMs: safeRefreshTimeoutMs,
+      });
       if (result?.ok === true) {
         void hardReloadPage(window);
         return result;
@@ -148,7 +160,14 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
     } finally {
       setRefreshBusy(false);
     }
-  }, [refreshBusy, refreshGuard]);
+  }, [refreshBusy, refreshGuard, safeRefreshTimeoutMs]);
+
+  // Force-путь (A/B): ТОЛЬКО из danger-состояния тоста — двухшаговое
+  // подтверждение пользователя (armed → confirm) в AppUpdateBanner. Без guard
+  // и без flush: пользователь явно принял потерю несохранённого.
+  const forceRefresh = useCallback(() => {
+    void hardReloadPage(window);
+  }, []);
 
   const refreshViewRisk = visibleRuntimeRisk(refreshRisk);
 
@@ -160,6 +179,7 @@ export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
     refreshError,
     dismiss,
     refresh,
+    forceRefresh,
     checkForUpdate,
   };
 }

@@ -39,15 +39,21 @@ test("хук: boot + interval(5 мин) + visibilitychange→visible, cleanup, �
   assert.doesNotMatch(hookSource, /apiMeta/, "apiMeta больше не используется");
 });
 
-test("reload через hardReloadPage ровно в двух местах (refresh после guard+flush; авто-reload в clean-состоянии); reloadPage в hook отсутствует", () => {
+test("reload через hardReloadPage ровно в трёх местах (refresh после guard+flush; авто-reload в clean-состоянии; force-путь из blocked-состояния); reloadPage в hook отсутствует", () => {
   const hardReloads = hookSource.match(/hardReloadPage\(window\)/g) || [];
-  assert.equal(hardReloads.length, 2, "hardReloadPage(window) вызывается ровно в двух местах");
+  assert.equal(hardReloads.length, 3, "hardReloadPage(window) вызывается ровно в трёх местах");
   assert.match(hookSource, /runSafeRefreshBeforeReload/);
   assert.match(hookSource, /refreshGuard/);
+  assert.match(hookSource, /forceRefresh/, "хук экспонирует forceRefresh (двухшаговый force-путь)");
   assert.doesNotMatch(hookSource, /reloadPage\(/, "обычного reloadPage в hook нет");
   // checkForUpdate НЕ вызывает reload
   const checkFn = hookSource.split("const checkForUpdate")[1]?.split("useEffect")[0] || "";
   assert.doesNotMatch(checkFn, /hardReloadPage|reloadPage/);
+});
+
+test("документ владельца (заголовок хука): принудительный reload допустим ТОЛЬКО по двухшаговому подтверждению при blocked-состоянии", () => {
+  assert.match(hookSource, /двухшагов/i, "формулировка документа обновлена (approve владельца зафиксирован в audit-контуре)");
+  assert.doesNotMatch(hookSource, /Принудительного reload НЕТ/i, "старая абсолютная формулировка заменена");
 });
 
 test("[Позже] = snooze 30 мин (новая семантика), не постоянный dismiss", () => {
@@ -89,7 +95,16 @@ test("грязная TO BE: AppShell пробрасывает appUpdateGuard; Ap
   assert.match(appSource, /requestTobeExit\(\(\) => \{\}\)/, "переиспользуем существующий guard, не дублируем");
 });
 
-test("safe-flush контроллер не изменён (грязная v1 → flush перед reload)", () => {
+test("safe-flush контроллер: flush перед reload + race-таймаут (C1)", () => {
   assert.match(controllerSource, /runSafeRefreshBeforeReload/);
   assert.match(controllerSource, /activeHandler\.flush/);
+  assert.match(controllerSource, /flushTimeoutMs/, "таймаут зависшего flush (C1)");
+  assert.match(controllerSource, /Promise\.race/, "race вокруг flush");
+});
+
+test("A/B: баннер — danger-модификатор, force-кнопка с двухшаговым подтверждением", () => {
+  assert.match(bannerSource, /appUpdateToast--danger/);
+  assert.match(bannerSource, /data-testid="app-update-force"/);
+  assert.match(bannerSource, /onForceRefresh/);
+  assert.doesNotMatch(bannerSource, /isBlocked\s*\|\|\s*isSaving/, "isBlocked не дизейблит retry-кнопку");
 });
