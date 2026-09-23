@@ -360,6 +360,23 @@ jobs:
               -p processmap_stage \
               up -d --no-deps --force-recreate -V ${UP_SERVICES}
 
+            # Gateway DNS reload (инцидент 2026-09-23, деплой #1026): nginx
+            # резолвит имена в статическом proxy_pass ОДИН раз на старте воркера,
+            # поэтому после пересоздания frontend с новым IP gateway продолжает
+            # стучаться на старый (connection refused → 502 на весь stage).
+            # reload заставляет воркеры перечитать конфиг и перерезолвить upstream;
+            # downtime — секунды. Best-effort: gateway не входит в UP_SERVICES
+            # (управляется отдельно), отсутствие контейнера — warn, не fail.
+            echo "[deploy-stage] reloading stage gateway (re-resolve upstreams)"
+            if docker ps --format '{{.Names}}' | grep -qx 'processmap_stage-stage-gateway-1'; then
+              docker exec processmap_stage-stage-gateway-1 nginx -s reload \
+                && echo "[deploy-stage] gateway reloaded" \
+                || echo "[deploy-stage] WARN: gateway reload failed (проверь upstream вручную)" >&2
+              sleep 3
+            else
+              echo "[deploy-stage] WARN: stage gateway container not running, reload skipped" >&2
+            fi
+
             # Freshness proof для не-api сервисов: каждый задеплоенный контейнер обязан
             # бежать на образе с тегом этого деплоя. Проверка /version покрывает только
             # api и маскирует протухший celery-worker (audit/prod-stage-divergence-409).
