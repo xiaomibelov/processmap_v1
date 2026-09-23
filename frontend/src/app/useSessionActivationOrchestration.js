@@ -6,7 +6,7 @@ import {
   apiListProjects,
 } from "../lib/api.js";
 import { gatewayPutBpmnXml } from "../features/session/gatewayPut.js";
-import { setVersion as setTrackedDiagramStateVersion } from "../lib/casVersionTracker.js";
+import { getVersion as getTrackedDiagramStateVersion, setVersion as setTrackedDiagramStateVersion } from "../lib/casVersionTracker.js";
 import { recordSaveDiagnostic } from "../features/session/saveDiagnosticsTrail.js";
 import {
   getLatestBpmnSnapshot,
@@ -118,6 +118,38 @@ export function buildSnapshotRestorePutOptions({
   }
   options.sourceAction = "snapshot_restore";
   return options;
+}
+
+/**
+ * F4 (fix/cold-entry-spa-tracker-seed): единая точка сидирования unified CAS
+ * tracker при входе в сессию. До фикса seed выполнялся только в ветке
+ * apiGetSession openSession — SPA-вход (options.session, клик «Открыть
+ * сессию» через openWorkspaceSession) и cache-ветка его пропускали
+ * (audit/cold-entry-arrows-lost-after-f2, D1: первый flush без base →
+ * F2-fallback из versions-head → stale-base 409, сессия 2ce96a6631).
+ * Все ветки openSession получают объект ответа GET session (options.session
+ * и cache — из непосредственного или недавнего apiGetSession), поэтому один
+ * вызов в точке сходимости веток покрывает все пути входа без копипаста.
+ *
+ * No-downgrade: passed/cached-объекты могут отставать от live dsv — валидный
+ * трекер с бо́льшей версией понижать нельзя (тот же stale-base класс, D2).
+ *
+ * @param {string} sessionId
+ * @param {object} sessionLike объект сессии (ответ GET session / его кэш)
+ * @returns {{seeded: boolean, reason: string, version?: number, tracked?: number|null}}
+ */
+export function seedTrackedDiagramStateVersionFromSession(sessionId, sessionLike) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { seeded: false, reason: "missing_session_id" };
+  const raw = Number(sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion);
+  if (!Number.isFinite(raw) || raw < 0) return { seeded: false, reason: "missing_version" };
+  const version = Math.round(raw);
+  const tracked = getTrackedDiagramStateVersion(sid);
+  if (tracked !== null && version <= tracked) {
+    return { seeded: false, reason: "tracked_not_newer", version, tracked };
+  }
+  setTrackedDiagramStateVersion(sid, version);
+  return { seeded: true, reason: "seeded", version };
 }
 
 export default function useSessionActivationOrchestration({
@@ -285,9 +317,6 @@ export default function useSessionActivationOrchestration({
       const serverDiagramStateVersion = Number(
         nextRaw?.diagram_state_version ?? nextRaw?.diagramStateVersion
       );
-      if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
-        setTrackedDiagramStateVersion(sid, serverDiagramStateVersion);
-      }
       if (sessionCacheRef?.current) {
         sessionCacheRef.current.set(sid, nextRaw);
       }
@@ -316,6 +345,12 @@ export default function useSessionActivationOrchestration({
         });
       }
     }
+    // F4 (fix/cold-entry-spa-tracker-seed): единая точка сидирования CAS
+    // трекера во ВСЕХ ветках входа (apiGetSession / options.session /
+    // useCache). До фикса seed был только в ветке apiGetSession — SPA-клик
+    // «Открыть сессию» (options.session) и cache-ветка его пропускали
+    // (audit/cold-entry-arrows-lost-after-f2, D1).
+    seedTrackedDiagramStateVersionFromSession(sid, nextRaw);
     const sidProject = String(nextRaw?.project_id || projectId || "").trim();
     if (sidProject && sidProject !== String(projectId || "").trim()) {
       setProjectId(sidProject);

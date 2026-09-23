@@ -52,7 +52,7 @@ import { saveCoordinator } from "../../../../session/saveCoordinator.js";
 import { getVersion as getTrackedDiagramStateVersion, setVersion as setTrackedDiagramStateVersion, isValidForSession } from "../../../../../lib/casVersionTracker.js";
 import { readAckDiagramStateVersion, readConflictServerCurrentVersion } from "../../../../../features/session/casResponse.js";
 import { recordSaveDiagnostic } from "../../../../../features/session/saveDiagnosticsTrail.js";
-import { apiPostSessionOperations, apiGetBpmnVersions } from "../../../../../lib/api.js";
+import { apiPostSessionOperations, apiGetSessionMeta } from "../../../../../lib/api.js";
 import { OPS_OUTBOX_CONFIG, createOpsOutboxConfig } from "./opsOutboxConfig.js";
 import { mapCommandToOps, isReplayCommand } from "./commandToOps.js";
 import {
@@ -383,21 +383,30 @@ export function createSaveOutbox(options = {}) {
   // уходит на сервер как client_base_version=0 → гарантированный 409 при
   // любом server dsv > 0 (audit/first-entry-save-error: cold entry по прямой
   // ссылке, tracker_version=null / tracker_history=[] при server=36 →
-  // баннер «Ошибка сохранения»). Гейт: не отправляем, засиживаем трекер из
-  // versions-head (canonical server dsv из GET /bpmn/versions?limit=1 —
-  // тот же источник, что опрашивает remote-poll), откладываем
-  // bounded-retry. Гейт по isValidForSession, НЕ по значению версии:
-  // base=0 инициализированного трекера (свежая сессия) валиден.
+  // баннер «Ошибка сохранения»). Гейт: не отправляем, засиживаем трекер,
+  // откладываем bounded-retry. Гейт по isValidForSession, НЕ по значению
+  // версии: base=0 инициализированного трекера (свежая сессия) валиден.
+  //
+  // F5 (fix/cold-entry-spa-tracker-seed): источник сидирования — live
+  // diagram_state_version из GET /api/sessions/{id}/meta (тот же session
+  // projection, что и deeplink-seed из GET session; server-side cache,
+  // без bpmn_xml в ответе). Прежний источник versions-head (dsv последней
+  // full-save ревизии) структурно отстаёт от live dsv на meta/ops-бампы →
+  // stale-nonzero-base → гарантированный 409 первой правки
+  // (audit/cold-entry-arrows-lost-after-f2, D2: 159 vs 164).
   // ---------------------------------------------------------------------
   let trackerInitRetryCount = 0;
   let trackerInitRetryTimer = null;
   let trackerInitFetchInFlight = null;
 
-  const fetchVersionsHead = () => {
-    if (typeof api?.getBpmnVersions === "function") {
-      return api.getBpmnVersions(sessionId, { limit: 1 });
+  const fetchLiveSessionVersion = () => {
+    // Injected api покрывает postSessionOperations (BpmnStage wiring);
+    // getSessionMeta инжектят только тесты — живой путь идёт через fallback
+    // import ниже.
+    if (typeof api?.getSessionMeta === "function") {
+      return api.getSessionMeta(sessionId);
     }
-    return apiGetBpmnVersions(sessionId, { limit: 1 });
+    return apiGetSessionMeta(sessionId);
   };
 
   const ensureTrackerInitialized = async () => {
@@ -405,22 +414,29 @@ export function createSaveOutbox(options = {}) {
     if (!trackerInitFetchInFlight) {
       const attempt = (async () => {
         try {
-          const result = await fetchVersionsHead();
-          const head = Array.isArray(result?.versions) ? result.versions[0] : null;
-          const serverVersion = Number(head?.diagram_state_version ?? head?.diagramStateVersion);
+          const result = await fetchLiveSessionVersion();
+          const serverVersion = Number(result?.diagram_state_version ?? result?.diagramStateVersion);
           if (Number.isFinite(serverVersion) && serverVersion >= 0) {
             const normalized = Math.round(serverVersion);
-            setTrackedDiagramStateVersion(sessionId, normalized);
-            recordSaveDiagnostic("ops_tracker_initialized_from_versions_head", {
+            // F5 no-downgrade: пока meta в полёте, entry-seed (F4) мог
+            // засидить трекер свежее — понижение открыло бы stale-base
+            // класс D2 заново.
+            const tracked = getTrackedDiagramStateVersion(sessionId);
+            const downgraded = tracked !== null && normalized <= tracked;
+            if (!downgraded) {
+              setTrackedDiagramStateVersion(sessionId, normalized);
+            }
+            recordSaveDiagnostic("ops_tracker_initialized_from_session_meta", {
               sid: sessionId,
               serverVersion: normalized,
+              ...(downgraded ? { skippedDowngrade: true, tracked } : {}),
             });
             trackerInitRetryCount = 0;
             return true;
           }
-          recordSaveDiagnostic("ops_tracker_init_head_missing_version", { sid: sessionId });
+          recordSaveDiagnostic("ops_tracker_init_meta_missing_version", { sid: sessionId });
         } catch (error) {
-          recordSaveDiagnostic("ops_tracker_init_head_error", {
+          recordSaveDiagnostic("ops_tracker_init_meta_error", {
             sid: sessionId,
             error: String(error?.message || error || "unknown"),
           });
@@ -611,8 +627,8 @@ export function createSaveOutbox(options = {}) {
 
       // F2: неинициализированный трекер → base=null → server видит
       // client_base_version=0 → гарантированный 409 (audit first-entry-
-      // save-error). Гейтим отправку: засиживаем трекер из versions-head,
-      // при недоступности — bounded-retry (буфер journal-durable).
+      // save-error). Гейтим отправку: засиживаем трекер из live session-meta
+      // (F5), при недоступности — bounded-retry (буфер journal-durable).
       if (!isValidForSession(sessionId)) {
         const initialized = await ensureTrackerInitialized();
         if (!initialized) {
