@@ -96,6 +96,28 @@ jobs:
             echo "agent=false" >> "${GITHUB_OUTPUT}"
           fi
 
+      # Ранний гейт ENOSPC: stage-хост уже дважды падал с диском 100%
+      # (ломались git lockfile/deploy). Проверяем свободное место ДО деплоя.
+      - name: Disk preflight on stage host
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 1m
+          script: |
+            set -euo pipefail
+            MIN_FREE_KB=5242880  # 5 GiB
+            avail_kb="$(df -k / | awk 'NR==2 {print $4}')"
+            echo "[disk-preflight] avail=${avail_kb} KiB (min=${MIN_FREE_KB} KiB)"
+            df -h /
+            if [ "${avail_kb}" -lt "${MIN_FREE_KB}" ]; then
+              echo "::error::Диск stage-хоста заполнен: свободно ${avail_kb} KiB, требуется >= 5G." \
+                "Запусти cleanup-скрипт или дождись cron */30 (retention-cleanup), затем повтори деплой." >&2
+              exit 1
+            fi
+            echo "[disk-preflight] OK"
+
       - name: Deploy to stage server
         uses: appleboy/ssh-action@v1.0.3
         with:
