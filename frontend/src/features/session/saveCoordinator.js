@@ -601,7 +601,16 @@ class SaveCoordinator {
           }
         }
         this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "success" });
-        this.emit("success", { pipeline: pipelineName, sessionId: sid, response: successResult });
+        // F1: version/clientBaseVersion/reason — ack-эквивалент full-save для
+        // телеметрического tap'а (converged-семантика витрины).
+        this.emit("success", {
+          pipeline: pipelineName,
+          sessionId: sid,
+          response: successResult,
+          clientBaseVersion: builtPayload.base_diagram_state_version ?? null,
+          version: newVersion,
+          reason: asText(payload?.reason).slice(0, 64),
+        });
         return successResult;
       };
 
@@ -632,7 +641,16 @@ class SaveCoordinator {
               // no-op
             }
           }
-          this.emit("error", { pipeline: pipelineName, sessionId: sid, response: result, guard: "xml_truth" });
+          // F1: контекст для телеметрического tap'а (subscribeSaveCoordinator-
+          // Telemetry) — идентификация пути без подмены семантики события.
+          this.emit("error", {
+            pipeline: pipelineName,
+            sessionId: sid,
+            response: result,
+            guard: "xml_truth",
+            clientBaseVersion: builtPayload.base_diagram_state_version ?? null,
+            reason: asText(payload?.reason).slice(0, 64),
+          });
           return result;
         }
         if (isConflictResponse(result)) {
@@ -719,7 +737,15 @@ class SaveCoordinator {
             }
           }
           this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "conflict" });
-          this.emit("conflict", { pipeline: pipelineName, sessionId: sid, response: result, serverVersion });
+          // F1: clientBaseVersion/reason — контекст телеметрического tap'а.
+          this.emit("conflict", {
+            pipeline: pipelineName,
+            sessionId: sid,
+            response: result,
+            serverVersion,
+            clientBaseVersion: conflictClientBase ?? null,
+            reason: asText(payload?.reason).slice(0, 64),
+          });
           return result;
         }
 
@@ -773,7 +799,14 @@ class SaveCoordinator {
           }
         }
         this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "error" });
-        this.emit("error", { pipeline: pipelineName, sessionId: sid, response: result });
+        // F1: clientBaseVersion/reason — контекст телеметрического tap'а.
+        this.emit("error", {
+          pipeline: pipelineName,
+          sessionId: sid,
+          response: result,
+          clientBaseVersion: builtPayload.base_diagram_state_version ?? null,
+          reason: asText(payload?.reason).slice(0, 64),
+        });
         return result;
       }
 

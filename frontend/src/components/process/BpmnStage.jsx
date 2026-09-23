@@ -11,9 +11,11 @@ import { createCanvasEventFeed } from "../../features/telemetry/canvasEventFeed.
 import {
   installPageErrorListeners,
   subscribeRuntimeChanges,
+  subscribeSaveCoordinatorTelemetry,
   wrapOnStatus,
   wrapOpsTransport,
 } from "../../features/telemetry/canvasEventCapture.js";
+import { saveCoordinator } from "../../features/session/saveCoordinator.js";
 import { apiPostSessionOperations } from "../../lib/api.js";
 import {
   setOpsReconcileRuntime,
@@ -5701,6 +5703,13 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
     canvasTelemetryFeedRef.current = canvasFeed;
     const unbindPageErrors = installPageErrorListeners(canvasFeed);
+    // F1 (fix/save-telemetry-full-coverage-v1): tap ВСЕХ save-путей
+    // координатора (rawXml/meta/xml/analysis, manual включённо) — failure-
+    // ветки → kind:"error" с pipeline/versions, success → save_status saved
+    // (ack-эквивалент full-save для converged). Observer-only подписка.
+    const detachSaveTelemetry = subscribeSaveCoordinatorTelemetry(saveCoordinator, canvasFeed, {
+      sessionId: sid,
+    });
     // runtime создаётся лениво (ensureModeler) и может ПЕРЕСОЗДАВАТЬСЯ
     // (reload/reconcile/view-switch): подписываемся на КАЖДУЮ новую ссылку,
     // со старой отписываемся — иначе лента молча перестаёт писать команды
@@ -5843,6 +5852,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       clearInterval(runtimeWatch);
       if (typeof unbindRuntime === "function") unbindRuntime();
       unbindPageErrors();
+      detachSaveTelemetry();
       canvasFeed.destroy();
       canvasTelemetryFeedRef.current = null;
     };
