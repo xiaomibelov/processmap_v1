@@ -127,8 +127,10 @@ function registerOpsPipeline(coordinator, config, factoryOptions = {}) {
     applyBaseVersion: (payload, baseVersion) => {
       payload.baseVersion = baseVersion;
     },
-    onSuccess: (response, sessionId) => {
-      entry.bySession.get(asText(sessionId))?._onAck(response);
+    onSuccess: (response, sessionId, payload) => {
+      // F1: payload.baseVersion — base ушедшего flush'а, для versions в
+      // ops-saved status (converged-семантика ленты).
+      entry.bySession.get(asText(sessionId))?._onAck(response, payload?.baseVersion);
     },
     on409: (response, sessionId) => {
       void entry.bySession.get(asText(sessionId))?._onConflict(response);
@@ -722,10 +724,11 @@ export function createSaveOutbox(options = {}) {
     },
 
     /** onSuccess pipeline "ops": ack снимает ТОЛЬКО детачнутый pendingAck. */
-    _onAck(response) {
+    _onAck(response, baseVersionHint) {
       inFlight = false;
       consecutiveConflicts = 0;
       failureRetryCount = 0;
+      const ackVersion = readAckDiagramStateVersion(response);
       // S2 (fix/canvas-move-di-desync-409-tracker, F5, вариант A): собственный
       // ops-ack adopt'ит ack-версию в casVersionTracker — без этого CAS-guarded
       // пути (full-PUT класса C, meta PATCH) после серии ops-мутаций шли со
@@ -735,7 +738,6 @@ export function createSaveOutbox(options = {}) {
       // на completeSuccess, adopt 409-rebase, чужой ops_committed) уже поднял
       // версию выше. syncStateStore остаётся внутренним трекером outbox.
       try {
-        const ackVersion = readAckDiagramStateVersion(response);
         if (ackVersion !== null) {
           const tracked = getTrackedDiagramStateVersion(sessionId);
           if (tracked === null || ackVersion > tracked) {
@@ -750,7 +752,6 @@ export function createSaveOutbox(options = {}) {
       // правки пользователя во время запроса теряются молча — review BLOCKER-2).
       if (pendingAck) {
         journalRemove(pendingAck.map((op) => op.opId));
-        const ackVersion = readAckDiagramStateVersion(response);
         if (ackVersion !== null) {
           try {
             const run = Promise.resolve(
@@ -768,7 +769,16 @@ export function createSaveOutbox(options = {}) {
       if (needsFullSave) {
         scheduleFlush();
       }
-      emitStatus({ stage: "ops-saved" });
+      // F1: versions в ops-saved status — converged-семантика ленты
+      // (wrapOnStatus кладёт их в payload save_status-события).
+      const flushedBase = Number.isFinite(Number(baseVersionHint))
+        ? Math.round(Number(baseVersionHint))
+        : null;
+      emitStatus({
+        stage: "ops-saved",
+        ...(flushedBase !== null ? { baseVersion: flushedBase } : {}),
+        ...(ackVersion !== null ? { serverVersion: ackVersion } : {}),
+      });
     },
 
     /** on409 pipeline "ops": same-tab race → opsRebase (UI.md §5). */

@@ -117,3 +117,136 @@ test("installPageErrorListeners: window error → pageerror событие", () 
   un();
   assert.equal(listeners.error, undefined);
 });
+
+// -- subscribeSaveCoordinatorTelemetry: tap ВСЕХ save-путей (F1) -----------------
+import {
+  resolveSavePipelineLabel,
+  subscribeSaveCoordinatorTelemetry,
+} from "../canvasEventCapture.js";
+
+function makeFakeCoordinator() {
+  const subs = [];
+  return {
+    subscribe: (cb) => {
+      subs.push(cb);
+      return () => {
+        const i = subs.indexOf(cb);
+        if (i >= 0) subs.splice(i, 1);
+      };
+    },
+    emit: (event, data) => {
+      for (const cb of [...subs]) cb(event, data);
+    },
+  };
+}
+
+test("resolveSavePipelineLabel: маппинг pipeline/reason → лейбл пути", () => {
+  assert.equal(resolveSavePipelineLabel("rawXml", "autosave"), "rawXml");
+  assert.equal(resolveSavePipelineLabel("rawXml", "manual_save"), "manual");
+  assert.equal(resolveSavePipelineLabel("xml", "property"), "property");
+  assert.equal(resolveSavePipelineLabel("meta", "autosave_projection"), "meta");
+  assert.equal(resolveSavePipelineLabel("analysis", "interview"), "analysis");
+  assert.equal(resolveSavePipelineLabel("unknownPipe", "x"), "unknownPipe");
+});
+
+test("subscribeSaveCoordinatorTelemetry: error-ветка координатора → kind:error с pipeline/versions", () => {
+  const recorded = [];
+  const feed = { record: (ev) => recorded.push(ev) };
+  const coordinator = makeFakeCoordinator();
+  const detach = subscribeSaveCoordinatorTelemetry(coordinator, feed, { sessionId: "s_1" });
+  coordinator.emit("error", {
+    pipeline: "rawXml",
+    sessionId: "s_1",
+    clientBaseVersion: 41,
+    reason: "autosave",
+    response: { ok: false, status: 500, error: "server boom" },
+  });
+  assert.equal(recorded.length, 1);
+  const ev = recorded[0];
+  assert.equal(ev.kind, "error");
+  assert.equal(ev.save.pipeline, "rawXml");
+  assert.equal(ev.http.status, 500);
+  assert.equal(ev.error.code, "http_500");
+  assert.equal(ev.versions.clientTracked, 41);
+  detach();
+  coordinator.emit("error", { pipeline: "rawXml", sessionId: "s_1", response: { status: 500 } });
+  assert.equal(recorded.length, 1, "после detach события не пишутся");
+});
+
+test("subscribeSaveCoordinatorTelemetry: manual/property/meta лейблы из pipeline+reason", () => {
+  const recorded = [];
+  const feed = { record: (ev) => recorded.push(ev) };
+  const coordinator = makeFakeCoordinator();
+  subscribeSaveCoordinatorTelemetry(coordinator, feed, { sessionId: "s_1" });
+  coordinator.emit("error", { pipeline: "rawXml", sessionId: "s_1", reason: "manual_save", response: { status: 0, error: "network down" } });
+  coordinator.emit("error", { pipeline: "xml", sessionId: "s_1", reason: "property", response: { status: 409, errorCode: "DIAGRAM_STATE_CONFLICT" } });
+  coordinator.emit("error", { pipeline: "meta", sessionId: "s_1", reason: "projection", response: { status: 503 } });
+  const pipelines = recorded.map((e) => e.save.pipeline);
+  assert.deepEqual(pipelines, ["manual", "property", "meta"]);
+  assert.equal(recorded[0].error.code, "network");
+  assert.equal(recorded[1].error.code, "DIAGRAM_STATE_CONFLICT");
+  assert.equal(recorded[1].save.errorClass, "ops_409");
+});
+
+test("subscribeSaveCoordinatorTelemetry: conflict-ветка → error с serverCurrent", () => {
+  const recorded = [];
+  const feed = { record: (ev) => recorded.push(ev) };
+  const coordinator = makeFakeCoordinator();
+  subscribeSaveCoordinatorTelemetry(coordinator, feed, { sessionId: "s_1" });
+  coordinator.emit("conflict", {
+    pipeline: "rawXml",
+    sessionId: "s_1",
+    clientBaseVersion: 36,
+    serverVersion: 37,
+    reason: "autosave",
+    response: { ok: false, status: 409 },
+  });
+  const ev = recorded.find((e) => e.kind === "error");
+  assert.ok(ev, "conflict пишет error-событие в ленту");
+  assert.equal(ev.error.code, "DIAGRAM_STATE_CONFLICT");
+  assert.equal(ev.versions.clientTracked, 36);
+  assert.equal(ev.versions.serverCurrent, 37);
+});
+
+test("subscribeSaveCoordinatorTelemetry: success → save_status saved с versions (ack-эквивалент full-save)", () => {
+  const recorded = [];
+  const feed = { record: (ev) => recorded.push(ev) };
+  const coordinator = makeFakeCoordinator();
+  subscribeSaveCoordinatorTelemetry(coordinator, feed, { sessionId: "s_1" });
+  coordinator.emit("success", {
+    pipeline: "rawXml",
+    sessionId: "s_1",
+    clientBaseVersion: 42,
+    version: 42,
+    reason: "autosave",
+  });
+  const ev = recorded.find((e) => e.kind === "save_status");
+  assert.ok(ev, "success пишет save_status saved");
+  assert.equal(ev.ux.state, "saved");
+  assert.equal(ev.save.pipeline, "rawXml");
+  assert.deepEqual(ev.versions, { clientTracked: 42, serverAck: 42 });
+});
+
+test("subscribeSaveCoordinatorTelemetry: чужая сессия фильтруется, feed не ломается", () => {
+  const recorded = [];
+  const feed = { record: (ev) => recorded.push(ev) };
+  const coordinator = makeFakeCoordinator();
+  subscribeSaveCoordinatorTelemetry(coordinator, feed, { sessionId: "s_1" });
+  coordinator.emit("error", { pipeline: "rawXml", sessionId: "s_other", response: { status: 500 } });
+  assert.equal(recorded.length, 0);
+  coordinator.emit("error", { pipeline: "rawXml", sessionId: "s_1", response: null });
+  assert.equal(recorded.length, 1, "null-response не рвёт tap");
+});
+
+test("wrapOnStatus: versions из status-события (baseVersion/serverVersion) пишутся в payload", () => {
+  const recorded = [];
+  const feed = { record: (ev) => recorded.push(ev) };
+  const cb = wrapOnStatus(() => {}, feed);
+  cb({ stage: "ops-saved", baseVersion: 41, serverVersion: 42 });
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].ux.state, "saved");
+  assert.deepEqual(recorded[0].versions, { clientTracked: 41, serverAck: 42 });
+  // без версий — ключа versions нет (backwards-compatible)
+  cb({ stage: "ops-rebase" });
+  assert.equal("versions" in recorded[1], false);
+});
