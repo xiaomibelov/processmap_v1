@@ -194,6 +194,7 @@ def _group_item(group: Dict[str, Any]) -> Dict[str, Any]:
         "last_seen": group.get("last_seen"),
         "count": group.get("count"),
         "converged": group.get("converged"),
+        "classification": group.get("classification"),
         "updated_at": group.get("updated_at"),
     }
 

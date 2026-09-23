@@ -70,6 +70,7 @@ class AdminCanvasTelemetryTest(unittest.TestCase):
         item = body["items"][0]
         self.assertEqual(item["error_class"], "ops_422")
         self.assertEqual(item["session_id"], "s_1")
+        self.assertIn(item.get("classification"), ("data_loss", "transient_noise"))
 
     def test_non_admin_forbidden(self):
         resp = self._get("/api/admin/canvas-telemetry/errors", self.user_token)
