@@ -25,12 +25,24 @@ CHECKOUT_SHA="$(git -C "${APP_DIR}" rev-parse HEAD)"
 echo "OK: checkout pristine, HEAD=${CHECKOUT_SHA}"
 
 echo "=== [preflight 2/5] alembic: single head + unique revision ids ==="
-ALEMBIC_OUT="$(docker exec app-api-1 sh -c 'cd /app/backend && python -m alembic -c alembic.ini heads' 2>&1)" \
+# Sidecar-паттерн (recon 2026-09-23): docker exec в существующие контейнеры
+# сломан на хосте (libseccomp SetSSB — см. RECON_PROD.md контура
+# prod-deploy-hygiene-rollback-audit). Те же проверки исполняем throwaway-
+# контейнером app-api:latest (образ задеплоенного релиза) с ro-mount чекаута:
+# семантика прежняя — читаем backend/ из ${APP_DIR}.
+ALEMBIC_OUT="$(docker run --rm \
+  --env-file "${ENV_FILE}" \
+  -v "${APP_DIR}/backend:/app/backend:ro" \
+  app-api:latest \
+  sh -c 'cd /app/backend && python -m alembic -c alembic.ini heads' 2>&1)" \
   || fail "alembic heads не выполнился: ${ALEMBIC_OUT}"
 echo "${ALEMBIC_OUT}"
 HEAD_COUNT="$(printf '%s\n' "${ALEMBIC_OUT}" | grep -c ' (head)' || true)"
 [ "${HEAD_COUNT}" = "1" ] || fail "alembic heads=${HEAD_COUNT}, ожидается ровно 1 (дубли revision id / несколько голов)"
-DUP_REVISIONS="$(docker exec app-api-1 sh -c 'grep -rh "^revision = " backend/alembic/versions/ | sort | uniq -d' || true)"
+DUP_REVISIONS="$(docker run --rm \
+  -v "${APP_DIR}/backend:/app/backend:ro" \
+  app-api:latest \
+  sh -c 'grep -rh "^revision = " /app/backend/alembic/versions/ | sort | uniq -d' || true)"
 [ -z "${DUP_REVISIONS}" ] || fail "дубли revision id в backend/alembic/versions: ${DUP_REVISIONS}"
 echo "OK: single head, revision ids unique"
 
