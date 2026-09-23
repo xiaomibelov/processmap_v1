@@ -24,7 +24,7 @@
     "evidence": ["evidence/deploy-stage.diff", "evidence/yaml-check.log"]
   },
   "pr": {
-    "url": "TBD",
+    "url": "https://github.com/xiaomibelov/processmap_v1/pull/1020",
     "merge": "FORBIDDEN — только после явного approve владельца"
   },
   "risks": [
