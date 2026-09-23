@@ -786,9 +786,9 @@ export function createSaveOutbox(options = {}) {
       emitStatus({ stage: "ops-rebase" });
       const pendingOps = buffer.map(toWireOp);
       // Реальный wire 409 (API.md §2): detail.server_current_version +
-      // detail.server_current_xml. Без серверного XML replay delta-ops на
-      // локальном документе небезопасен (shape.move/resize применятся второй
-      // раз) — честная деградация вместо риска дивергенции.
+      // detail.server_current_xml. Версия читается каноническим reader'ом ДО
+      // ветвления по XML (fix/post-409-reconcile-hardening): server_current_xml
+      // бэк добавляет best-effort (_conflict_with_current_xml), а версия — всегда.
       const conflictDetail = response?.data?.detail || {};
       const serverXml = conflictDetail.server_current_xml
         || conflictDetail.current_xml
@@ -796,8 +796,60 @@ export function createSaveOutbox(options = {}) {
         || response?.serverCurrentXml
         || response?.currentXml
         || null;
+      const conflictServerVersion = readConflictServerCurrentVersion(response);
       if (!serverXml) {
-        conflictStop("rebase-no-server-xml");
+        if (conflictServerVersion === null) {
+          // Версии в 409-body нет — auto-rebase невозможен, дефолт не
+          // выдумываем: диагностика + прежний conflictStop (C2-контракт).
+          try {
+            recordSaveDiagnostic("ops_409_missing_server_version", {
+              sid: sessionId,
+              reason: "rebase-no-server-xml",
+            });
+          } catch {
+            // telemetry must never break the save path
+          }
+          conflictStop("rebase-no-server-xml");
+          return;
+        }
+        // Version-only reconcile (fix/post-409-reconcile-hardening): версия
+        // сервера известна — перебазируем ожидающие ops на неё (baseVersion
+        // резолвится из tracker'а at-send-time), вместо stranded-конфликта.
+        // Клиентский replay НЕ выполняется: без серверного XML повторное
+        // применение delta-op (shape.move) к live-модели дублирует сдвиг.
+        // Точка слияния — серверный ops-applier: те же op на серверное
+        // состояние, что и после полного rebase. Безопасность от лупы —
+        // прежняя: второй подряд 409 → conflictStop("double-409").
+        try {
+          setTrackedDiagramStateVersion(sessionId, conflictServerVersion);
+        } catch {
+          // no-op
+        }
+        try {
+          const run = Promise.resolve(
+            syncStateStore.patchSyncState(sessionId, { lastServerVersion: conflictServerVersion }),
+          );
+          run.catch(() => undefined);
+        } catch {
+          // no-op
+        }
+        try {
+          recordSaveDiagnostic("ops_409_version_only_rebase", {
+            sid: sessionId,
+            serverVersion: conflictServerVersion,
+          });
+        } catch {
+          // telemetry must never break the save path
+        }
+        stage = "idle";
+        try {
+          if (coordinator.getConflict?.(sessionId)) {
+            coordinator.resolveConflict?.(sessionId, "refresh");
+          }
+        } catch {
+          // no-op
+        }
+        scheduleFlush();
         return;
       }
       try {
