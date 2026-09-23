@@ -4342,6 +4342,10 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Requ
             client_id=client_id,
         )
         st.save(s)
+        # D3 (audit/cold-entry-arrows-lost-after-f2): bump dsv без инвалидации
+        # кэшей → Redis-проекция session_cache (TTL 30 с) отдаёт stale dsv.
+        # Паритет с PUT /bpmn (:4848): инвалидация сразу после commit'а save.
+        _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
     return normalized
 
 
@@ -4383,6 +4387,8 @@ def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request:
             client_id=client_id,
         )
         st.save(s)
+        # D3: паритет с bpmn_meta_patch — инвалидация кэшей сразу после commit'а save.
+        _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
     return {"meta": normalized_meta, "inference": inference}
 
 

@@ -9,7 +9,7 @@ from .schemas.legacy_api import AnswerIn
 from .services.session_recompute import _recompute_session
 from .shared.coerce import _ensure_dict_at_path
 from .shared.entities import _ensure_loss_dict
-from .storage import get_storage
+from .storage import get_default_org_id, get_storage
 from .utils.session_helpers import (
     _mark_diagram_truth_write,
     _require_diagram_cas_or_409,
@@ -225,6 +225,12 @@ def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str,
         s,
         client_base_version=client_base_version,
     )
+    # D3 (audit/cold-entry-arrows-lost-after-f2): bump dsv без инвалидации
+    # кэшей → Redis-проекция session_cache (TTL 30 с) отдаёт stale dsv.
+    # Паритет с sessions_graph: инвалидация сразу после commit'а save.
+    from .sessions_core import _invalidate_session_caches
+
+    _invalidate_session_caches(s, org_id=getattr(s, "org_id", "") or get_default_org_id())
     return s.model_dump()
 
 
