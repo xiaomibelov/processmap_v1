@@ -1045,3 +1045,20 @@ test("S2: обычный flush через координатора — tracker =
   assert.equal(getTrackedDiagramStateVersion("s1"), 8, "после штатного ack tracker == версия сервера");
   ctx.destroy();
 });
+
+test("F1: ops-saved status carries baseVersion/serverVersion for converged tap", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const ctx = makeOutbox(t);
+    setTrackedDiagramStateVersion("s1", 7);
+    pushRename(ctx.outbox, "Task_1", "A");
+    await ctx.outbox.flushNow({ reason: "test" });
+    const saved = ctx.statuses.find((s) => s.stage === "ops-saved");
+    assert.ok(saved, "ops-saved status emitted");
+    assert.equal(saved.baseVersion, 7, "base ушедшего flush");
+    assert.equal(saved.serverVersion, 8, "ack-версия сервера");
+    ctx.destroy();
+  } finally {
+    t.mock.timers.reset();
+  }
+});

@@ -220,16 +220,25 @@ const OPS_STAGE_STATE = {
  * Tap-обёртка onStatus-callback'а outbox: UX-переходы → kind:"save_status".
  * Ошибки записи гасятся; callback вызывается с оригинальным событием, его
  * исключения не пролетают наружу (индикатор не должен ломать save path).
+ *
+ * F1: status-событие может нести versions {baseVersion, serverVersion}
+ * (ops-saved) — они уходят в payload и оживляют converged-ветку агрегатора.
  */
 export function wrapOnStatus(callback, feed) {
   return function wrappedOnStatus(event) {
     const stage = asText(event?.stage);
+    const baseVersion = Number(event?.baseVersion);
+    const serverVersion = Number(event?.serverVersion);
+    const hasVersions = Number.isFinite(baseVersion) && Number.isFinite(serverVersion);
     safeRecord(feed, {
       kind: "save_status",
       ux: {
         ...(OPS_STAGE_STATE[stage] ? { state: OPS_STAGE_STATE[stage] } : {}),
         ...(stage ? { opsStage: stage.slice(0, 64) } : {}),
       },
+      ...(hasVersions
+        ? { versions: { clientTracked: Math.round(baseVersion), serverAck: Math.round(serverVersion) } }
+        : {}),
       ...(event?.reason ? { error: { reason: asText(event.reason).slice(0, 256) } } : {}),
     });
     try {
@@ -278,4 +287,142 @@ export function installPageErrorListeners(feed, { win: injectedWin } = {}) {
       // no-op
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// F1 (fix/save-telemetry-full-coverage-v1): tap ВСЕХ save-путей через события
+// saveCoordinator. Пути P1 rawXml / P4 meta / P5 manual / P6 property (xml) /
+// P7 analysis раньше в ленту не писали ни одного события (audit
+// first-entry-save-error, Г3): баннерный путь был телеметрически слеп.
+// Здесь observer-only подписка: координатор не импортирует ленту, save-пути
+// не тронуты, instrumentation never throws.
+// ---------------------------------------------------------------------------
+
+const SAVE_PIPELINE_LABELS = {
+  rawXml: "rawXml",
+  xml: "property",
+  meta: "meta",
+  analysis: "analysis",
+};
+
+/**
+ * Лейбл save-пути для error-события: manual save идёт тем же pipeline rawXml,
+ * что autosave, и отличается только reason ("manual_save" → "manual").
+ */
+export function resolveSavePipelineLabel(pipelineName, reason) {
+  const name = asText(pipelineName).slice(0, 64);
+  if (name === "rawXml" && asText(reason).toLowerCase().includes("manual")) {
+    return "manual";
+  }
+  return SAVE_PIPELINE_LABELS[name] || name || "unknown";
+}
+
+/**
+ * Клиентский errorClass error-события (зеркало классов бэкенд-classify.py:
+ * ops_409 / ops_422 / network / timeout / unknown) — raw-событие самоописано,
+ * агрегаторная классификация остаётся на бэкенде.
+ */
+export function classifySaveErrorClass({ status = 0, code = "" } = {}) {
+  const normalizedCode = asText(code);
+  if (Number(status) === 409 || normalizedCode === "DIAGRAM_STATE_CONFLICT") return "ops_409";
+  if (Number(status) === 422 || normalizedCode === "OPERATION_UNSUPPORTED") return "ops_422";
+  if (normalizedCode === "timeout") return "timeout";
+  if (!Number(status)) return "network";
+  return "unknown";
+}
+
+function resolveSaveErrorCode(status, response) {
+  const code = asText(response?.errorCode || response?.data?.detail?.code).slice(0, 64);
+  if (code) return code;
+  if (status === 409) return "DIAGRAM_STATE_CONFLICT";
+  if (status > 0) return `http_${status}`;
+  return /timeout/i.test(asText(response?.error)) ? "timeout" : "network";
+}
+
+function finiteVersion(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+function recordCoordinatorSaveError(feed, data, { forcedCode } = {}) {
+  const response = data?.response;
+  const status = Number(response?.status || 0) || (forcedCode === "DIAGRAM_STATE_CONFLICT" ? 409 : 0);
+  const code = forcedCode || resolveSaveErrorCode(status, response);
+  const clientBase = finiteVersion(data?.clientBaseVersion);
+  const serverCurrent = forcedCode === "DIAGRAM_STATE_CONFLICT" ? finiteVersion(data?.serverVersion) : null;
+  const pipelineLabel = resolveSavePipelineLabel(data?.pipeline, data?.reason);
+  safeRecord(feed, {
+    kind: "error",
+    save: {
+      pipeline: pipelineLabel,
+      errorClass: classifySaveErrorClass({ status, code }),
+    },
+    http: {
+      status,
+      endpoint: `save:${asText(data?.pipeline).slice(0, 32) || "unknown"}`,
+    },
+    error: {
+      code,
+      message: asText(
+        response?.error || response?.data?.detail?.message || forcedCode || "save_failed",
+      ).slice(0, 256),
+    },
+    versions: {
+      ...(clientBase !== null ? { clientBase, clientTracked: clientBase } : {}),
+      ...(serverCurrent !== null ? { serverCurrent } : {}),
+    },
+  });
+}
+
+/**
+ * Подписка на события saveCoordinator → лента. Одна точка эмиссии на ВСЕ
+ * не-ops save-пути: failure-ветки (error/conflict/session_not_found) пишут
+ * kind:"error" с pipeline/errorClass/status/versions; success пишет
+ * kind:"save_status" state:"saved" с versions — ack-эквивалент full-save,
+ * оживляющий converged-ветку агрегатора. Фильтр по sessionId; возвращает
+ * detach-функцию. Не бросает при любом входе.
+ */
+export function subscribeSaveCoordinatorTelemetry(coordinator, feed, { sessionId } = {}) {
+  const sid = asText(sessionId);
+  if (!sid || !coordinator || typeof coordinator.subscribe !== "function") {
+    return () => {};
+  }
+  const handler = (event, data) => {
+    try {
+      if (asText(data?.sessionId) !== sid) return;
+      // Pipeline "ops" уже тапнут wrapOpsTransport/wrapOnStatus — пропускаем,
+      // чтобы не плодить дубли error/save_status событий на один факт.
+      if (asText(data?.pipeline) === "ops") return;
+      if (event === "error" || event === "session_not_found") {
+        recordCoordinatorSaveError(feed, data, {
+          forcedCode: event === "session_not_found" ? "session_not_found" : "",
+        });
+        return;
+      }
+      if (event === "conflict") {
+        recordCoordinatorSaveError(feed, data, { forcedCode: "DIAGRAM_STATE_CONFLICT" });
+        return;
+      }
+      if (event === "success") {
+        const clientTracked = finiteVersion(data?.clientBaseVersion);
+        const serverAck = finiteVersion(data?.version);
+        safeRecord(feed, {
+          kind: "save_status",
+          ux: { state: "saved" },
+          save: { pipeline: resolveSavePipelineLabel(data?.pipeline, data?.reason) },
+          versions: {
+            ...(clientTracked !== null ? { clientTracked } : {}),
+            ...(serverAck !== null ? { serverAck } : {}),
+          },
+        });
+      }
+    } catch {
+      // instrumentation must never break the save path
+    }
+  };
+  try {
+    return coordinator.subscribe(handler) || (() => {});
+  } catch {
+    return () => {};
+  }
 }
