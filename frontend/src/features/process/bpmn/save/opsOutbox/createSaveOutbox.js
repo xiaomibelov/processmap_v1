@@ -49,10 +49,10 @@
 //      встроена в фабрику).
 
 import { saveCoordinator } from "../../../../session/saveCoordinator.js";
-import { getVersion as getTrackedDiagramStateVersion, setVersion as setTrackedDiagramStateVersion } from "../../../../../lib/casVersionTracker.js";
+import { getVersion as getTrackedDiagramStateVersion, setVersion as setTrackedDiagramStateVersion, isValidForSession } from "../../../../../lib/casVersionTracker.js";
 import { readAckDiagramStateVersion, readConflictServerCurrentVersion } from "../../../../../features/session/casResponse.js";
 import { recordSaveDiagnostic } from "../../../../../features/session/saveDiagnosticsTrail.js";
-import { apiPostSessionOperations } from "../../../../../lib/api.js";
+import { apiPostSessionOperations, apiGetBpmnVersions } from "../../../../../lib/api.js";
 import { OPS_OUTBOX_CONFIG, createOpsOutboxConfig } from "./opsOutboxConfig.js";
 import { mapCommandToOps, isReplayCommand } from "./commandToOps.js";
 import {
@@ -67,6 +67,11 @@ import { createSyncStateStore } from "./persistence/syncStateStore.js";
 
 function asText(value) {
   return String(value || "").trim();
+}
+
+function asNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function defaultUuid() {
@@ -262,6 +267,10 @@ export function createSaveOutbox(options = {}) {
       clearTimeout(syncStateTimer);
       syncStateTimer = null;
     }
+    if (trackerInitRetryTimer) {
+      clearTimeout(trackerInitRetryTimer);
+      trackerInitRetryTimer = null;
+    }
   };
 
   const scheduleFlush = () => {
@@ -369,6 +378,87 @@ export function createSaveOutbox(options = {}) {
   };
 
   // ---------------------------------------------------------------------
+  // F2 (fix/cold-entry-version-tracker-init): первый ops-flush обязан иметь
+  // инициализированный CAS-base. Flush с неинициализированным трекером
+  // уходит на сервер как client_base_version=0 → гарантированный 409 при
+  // любом server dsv > 0 (audit/first-entry-save-error: cold entry по прямой
+  // ссылке, tracker_version=null / tracker_history=[] при server=36 →
+  // баннер «Ошибка сохранения»). Гейт: не отправляем, засиживаем трекер из
+  // versions-head (canonical server dsv из GET /bpmn/versions?limit=1 —
+  // тот же источник, что опрашивает remote-poll), откладываем
+  // bounded-retry. Гейт по isValidForSession, НЕ по значению версии:
+  // base=0 инициализированного трекера (свежая сессия) валиден.
+  // ---------------------------------------------------------------------
+  let trackerInitRetryCount = 0;
+  let trackerInitRetryTimer = null;
+  let trackerInitFetchInFlight = null;
+
+  const fetchVersionsHead = () => {
+    if (typeof api?.getBpmnVersions === "function") {
+      return api.getBpmnVersions(sessionId, { limit: 1 });
+    }
+    return apiGetBpmnVersions(sessionId, { limit: 1 });
+  };
+
+  const ensureTrackerInitialized = async () => {
+    if (isValidForSession(sessionId)) return true;
+    if (!trackerInitFetchInFlight) {
+      const attempt = (async () => {
+        try {
+          const result = await fetchVersionsHead();
+          const head = Array.isArray(result?.versions) ? result.versions[0] : null;
+          const serverVersion = Number(head?.diagram_state_version ?? head?.diagramStateVersion);
+          if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+            const normalized = Math.round(serverVersion);
+            setTrackedDiagramStateVersion(sessionId, normalized);
+            recordSaveDiagnostic("ops_tracker_initialized_from_versions_head", {
+              sid: sessionId,
+              serverVersion: normalized,
+            });
+            trackerInitRetryCount = 0;
+            return true;
+          }
+          recordSaveDiagnostic("ops_tracker_init_head_missing_version", { sid: sessionId });
+        } catch (error) {
+          recordSaveDiagnostic("ops_tracker_init_head_error", {
+            sid: sessionId,
+            error: String(error?.message || error || "unknown"),
+          });
+        }
+        return false;
+      })();
+      trackerInitFetchInFlight = attempt;
+      // Single-flight: параллельные flush-attempts ждут тот же запрос.
+      attempt.then(() => {
+        if (trackerInitFetchInFlight === attempt) trackerInitFetchInFlight = null;
+      });
+    }
+    return trackerInitFetchInFlight;
+  };
+
+  const postponeFlushForTrackerInit = () => {
+    try {
+      recordSaveDiagnostic("ops_flush_postponed_tracker_uninitialized", {
+        sid: sessionId,
+        bufferedCount: buffer.length,
+      });
+    } catch {
+      // telemetry must never break the save path
+    }
+    emitStatus({ stage: "ops-waiting-base", reason: "tracker_uninitialized" });
+    trackerInitRetryCount += 1;
+    const base = Math.max(1000, asNumber(config.retryDelayMs, 1000));
+    const cap = Math.max(base, asNumber(config.maxRetryDelayMs, 8000));
+    const delay = Math.min(cap, base * 2 ** Math.min(6, trackerInitRetryCount - 1));
+    if (trackerInitRetryTimer) clearTimeout(trackerInitRetryTimer);
+    trackerInitRetryTimer = setTimeout(() => {
+      trackerInitRetryTimer = null;
+      if (!destroyed) void flushNow({ reason: "retry-after-tracker-init" });
+    }, delay);
+    if (typeof trackerInitRetryTimer.unref === "function") trackerInitRetryTimer.unref();
+  };
+
+  // ---------------------------------------------------------------------
   // S6 (degrade-замена, PLAN §7): НИ ОДНОЙ молчаливой деградации. Две честные
   // остановки вместо degrade()→silent full-PUT:
   //  - conflictStop: координатор уже armed conflict gate (C2, 409-ветка) →
@@ -427,6 +517,21 @@ export function createSaveOutbox(options = {}) {
       // starvation класса H3); abort — best-effort, без retry (страница
       // умирает).
       if (buffer.length === 0 && !needsFullSave) return null;
+      // F2: keepalive fire-and-forget с base=null обречён на 409 (сервер
+      // трактует отсутствующий base как client_base_version=0). Ops
+      // journal-durable — новый инстанс после reload гидрирует буфер и
+      // догонит сам; мусорный запрос не отправляем.
+      if (!isValidForSession(sessionId)) {
+        try {
+          recordSaveDiagnostic("ops_keepalive_flush_skipped_tracker_uninitialized", {
+            sid: sessionId,
+            bufferedCount: buffer.length,
+          });
+        } catch {
+          // telemetry must never break the save path
+        }
+        return null;
+      }
       const { body } = buildBatchBody({
         baseVersion: getTrackedDiagramStateVersion(sessionId),
         operations: buffer.map(toWireOp),
@@ -503,6 +608,18 @@ export function createSaveOutbox(options = {}) {
       }
 
       if (buffer.length === 0) return null;
+
+      // F2: неинициализированный трекер → base=null → server видит
+      // client_base_version=0 → гарантированный 409 (audit first-entry-
+      // save-error). Гейтим отправку: засиживаем трекер из versions-head,
+      // при недоступности — bounded-retry (буфер journal-durable).
+      if (!isValidForSession(sessionId)) {
+        const initialized = await ensureTrackerInitialized();
+        if (!initialized) {
+          postponeFlushForTrackerInit();
+          return null;
+        }
+      }
 
       inFlight = true;
       // pendingAck-детач: отправленный список живёт отдельно от буфера.
@@ -710,9 +827,29 @@ export function createSaveOutbox(options = {}) {
 
     /** Транспорт pipeline "ops" (вызывается координатором). */
     async _executeTransport(payload, signal) {
-      const baseVersion = Number.isFinite(Number(payload?.baseVersion))
-        ? Math.round(Number(payload.baseVersion))
-        : null;
+      // Явный null-check ДО Number(): Number(null) === 0 скрывал
+      // неинициализированный base (audit first-entry-save-error:
+      // client_base_version=0 при tracker_version=null).
+      const rawBase = payload?.baseVersion;
+      const baseVersion = rawBase === null || rawBase === undefined || rawBase === ""
+        ? null
+        : (Number.isFinite(Number(rawBase)) ? Math.round(Number(rawBase)) : null);
+      if (baseVersion === null) {
+        // F2: payload без base НЕ отправляем — сервер обязан отклонить его
+        // 409 (отсутствующий base → client_base_version=0). Defense-in-depth
+        // поверх гейта в flushNow: диагностика + synthetic transport-failure
+        // (стандартный retry/error-путь координатора). base=0 инициализиро-
+        // ванного трекера (свежая сессия) НЕ блокируется.
+        try {
+          recordSaveDiagnostic("ops_transport_blocked_missing_base", {
+            sid: sessionId,
+            opCount: Array.isArray(payload?.operations) ? payload.operations.length : 0,
+          });
+        } catch {
+          // telemetry must never break the save path
+        }
+        return { ok: false, status: 0, error: "ops_base_uninitialized" };
+      }
       const { body } = buildBatchBody({
         baseVersion,
         operations: Array.isArray(payload?.operations) ? payload.operations : [],
