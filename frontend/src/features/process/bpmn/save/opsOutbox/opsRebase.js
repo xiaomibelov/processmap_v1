@@ -73,6 +73,27 @@ function replayFlags(op, source = "replay") {
   return { __pmOpId: asText(op?.opId), __pmOpSource: asText(source) || "replay" };
 }
 
+/**
+ * Wire-waypoints → bpmn-js {x, y} (fix/render-resync-connections-after-409).
+ * commandToOps эмитит пары [x, y]; renderer/UpdateWaypointsHandler читают
+ * waypoint.x/.y — raw-пары дают d="M,L,L,L," и исчезающие стрелки после
+ * 409-rebase replay. Fail-closed по finiteness и ≥2 точкам (паритет
+ * commandToOps.point(): нефинитный компонент → null → fuzzyMiss/full-save,
+ * молчаливая коэрция NaN→0 в модель запрещена).
+ */
+function normalizeWireWaypoints(value) {
+  if (!Array.isArray(value)) return null;
+  const pts = [];
+  for (const wp of value) {
+    const raw = Array.isArray(wp) ? { x: wp[0], y: wp[1] } : wp;
+    const x = Number(raw?.x);
+    const y = Number(raw?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    pts.push({ x, y });
+  }
+  return pts.length >= 2 ? pts : null;
+}
+
 function createShapeDescriptor(op) {
   const b = op?.bounds;
   return {
@@ -124,14 +145,14 @@ function replayCreate(modeler, op, registry, flags) {
         type: asText(op?.elementType) || "bpmn:SequenceFlow",
         source: source.element,
         target: target.element,
-        waypoints: Array.isArray(op?.waypoints) ? op.waypoints : [],
+        waypoints: normalizeWireWaypoints(op?.waypoints) || [],
       })
       : elementFactory.create("connection", {
         id: elementId,
         type: asText(op?.elementType) || "bpmn:SequenceFlow",
         source: source.element,
         target: target.element,
-        waypoints: Array.isArray(op?.waypoints) ? op.waypoints : [],
+        waypoints: normalizeWireWaypoints(op?.waypoints) || [],
       });
     return safeExecute(commandStack, "connection.create", {
       connection,
@@ -233,9 +254,11 @@ function replayOne(modeler, op, source) {
   }
   if (type === "element.updateDi") {
     if (Array.isArray(op?.waypoints)) {
+      const newWaypoints = normalizeWireWaypoints(op.waypoints);
+      if (!newWaypoints) return { ok: false, error: "invalid_waypoints", fuzzyMiss: true };
       return safeExecute(commandStack, "connection.updateWaypoints", {
         connection: element,
-        newWaypoints: op.waypoints,
+        newWaypoints,
         ...flags,
       });
     }
