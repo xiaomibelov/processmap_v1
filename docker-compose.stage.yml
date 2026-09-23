@@ -32,6 +32,15 @@ services:
     env_file:
       - .env.stage
 
+  # Beat обязан входить в stage-контур: без планировщика celery периодические
+  # задачи (canvas-telemetry aggregate */5, cleanup, rag-nightly) не выполняются —
+  # витрина canvas_event_read молча пустеет (incident canvas-telemetry-vitrina-empty,
+  # 2026-09-23). Override симметричен celery-worker; base-сервис в docker-compose.yml.
+  celery-beat:
+    image: processmap_stage-celery-beat:${STAGE_IMAGE_TAG:-local}
+    env_file:
+      - .env.stage
+
   notifications:
     image: processmap_stage-notifications:${STAGE_IMAGE_TAG:-local}
     env_file:
