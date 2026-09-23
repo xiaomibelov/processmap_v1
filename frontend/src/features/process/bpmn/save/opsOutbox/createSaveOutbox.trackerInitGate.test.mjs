@@ -8,12 +8,17 @@
 // tracker_version=null / tracker_history=[] → 409 DIAGRAM_STATE_CONFLICT →
 // баннер «Ошибка сохранения». Retry вручную через 3.3 с → 200.
 //
+// Источник сидирования (F5, fix/cold-entry-spa-tracker-seed): live
+// diagram_state_version из GET /api/sessions/{id}/meta (тот же projection,
+// что и deeplink-seed). Прежний источник versions-head структурно stale
+// (dsv последней full-save ревизии) — см.
+// createSaveOutbox.trackerInitSource.test.mjs (D2, 159 vs 164).
+//
 // Контракт фикса:
 //   - flush с НЕинициализированным трекером не уходит в сеть: op остаётся в
-//     буфере (journal-durable), трекер засиживается из versions-head
-//     (getBpmnVersions limit=1 — canonical server dsv), flush повторяется
-//     уже с валидным base;
-//   - versions-head недоступен → отложенный bounded-retry с диагностикой,
+//     буфере (journal-durable), трекер засиживается из live session-meta,
+//     flush повторяется уже с валидным base;
+//   - session-meta недоступна → отложенный bounded-retry с диагностикой,
 //     НЕ отправка base=null;
 //   - keepalive-flush при неинициализированном трекере пропускается (ops
 //     переживут reload в journal, новый инстанс догонит сам);
@@ -21,7 +26,7 @@
 //     сетевой вызов не выполняется (baseVersion=0 инициализированного
 //     трекера — валиден для свежих сессий и НЕ блокируется);
 //   - инициализированный трекер (multi-tab переключение / warm seeding) —
-//     flush идёт сразу, versions-запрос не делается.
+//     flush идёт сразу, meta/versions-запрос не делается.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -51,12 +56,14 @@ function seqUuid() {
   return () => `op-${++n}`;
 }
 
-function makeApi({ versionsResult } = {}) {
+function makeApi({ metaResult } = {}) {
   const calls = [];
   const versionsCalls = [];
+  const metaCalls = [];
   return {
     calls,
     versionsCalls,
+    metaCalls,
     postSessionOperations: async (sid, body, opts) => {
       calls.push({ sid, body, opts });
       return {
@@ -68,9 +75,15 @@ function makeApi({ versionsResult } = {}) {
         diagramStateVersion: body.baseVersion + 1,
       };
     },
+    // versions-head для seeding больше не используется (F5) — шпион остаётся,
+    // чтобы тесты могли ассертить versionsCalls === 0 (anti-regression).
     getBpmnVersions: async (sid, options) => {
       versionsCalls.push({ sid, options });
-      return versionsResult;
+      return { ok: true, status: 200, versions: [] };
+    },
+    getSessionMeta: async (sid) => {
+      metaCalls.push({ sid });
+      return metaResult;
     },
   };
 }
@@ -110,10 +123,11 @@ test("cold entry: первый flush ждёт инициализации тре�
   assert.equal(getTrackedDiagramStateVersion(sid), null);
   const coordinator = createSaveCoordinator();
   const api = makeApi({
-    versionsResult: {
+    metaResult: {
       ok: true,
       status: 200,
-      versions: [{ id: "v36", diagram_state_version: SERVER_DSV }],
+      session_id: sid,
+      diagram_state_version: SERVER_DSV,
     },
   });
   const outbox = makeOutbox({ sid, api, coordinator });
@@ -128,8 +142,8 @@ test("cold entry: первый flush ждёт инициализации тре�
   await drain();
   await drain();
 
-  assert.equal(api.versionsCalls.length, 1, "versions-head запрошен для seeding трекера");
-  assert.equal(api.versionsCalls[0].options.limit, 1);
+  assert.equal(api.metaCalls.length, 1, "live session-meta запрошена для seeding трекера");
+  assert.equal(api.versionsCalls.length, 0, "versions-head для seeding не используется (F5)");
   assert.equal(api.calls.length, 1, "ровно один ops-flush ушёл в сеть");
   assert.equal(
     api.calls[0].body.baseVersion,
@@ -141,10 +155,10 @@ test("cold entry: первый flush ждёт инициализации тре�
   outbox.destroy();
 });
 
-test("base=null не уходит в сеть: versions-head недоступен → postpone, буфер pending", async () => {
+test("base=null не уходит в сеть: session-meta недоступна → postpone, буфер pending", async () => {
   const sid = "s_cold_2";
   const coordinator = createSaveCoordinator();
-  const api = makeApi({ versionsResult: { ok: false, status: 0, error: "network-down" } });
+  const api = makeApi({ metaResult: { ok: false, status: 0, error: "network-down" } });
   const outbox = makeOutbox({ sid, api, coordinator });
 
   outbox.pushCommand({
@@ -182,9 +196,7 @@ test("multi-tab регресс: инициализированный треке�
   // трекер свежим server dsv.
   setTrackedDiagramStateVersion(sid, SERVER_DSV);
   const coordinator = createSaveCoordinator();
-  const api = makeApi({
-    versionsResult: { ok: true, status: 200, versions: [{ diagram_state_version: 99 }] },
-  });
+  const api = makeApi();
   const outbox = makeOutbox({ sid, api, coordinator });
 
   outbox.pushCommand({
@@ -205,7 +217,7 @@ test("multi-tab регресс: инициализированный треке�
 test("keepalive-flush при неинициализированном трекере пропускается (ops переживут reload в journal)", async () => {
   const sid = "s_cold_3";
   const coordinator = createSaveCoordinator();
-  const api = makeApi({ versionsResult: { ok: false, status: 0, error: "network-down" } });
+  const api = makeApi({ metaResult: { ok: false, status: 0, error: "network-down" } });
   const outbox = makeOutbox({ sid, api, coordinator });
 
   outbox.pushCommand({
