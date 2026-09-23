@@ -327,7 +327,11 @@ jobs:
             # backend/app/ai пропускал релизы, где agent-зависимости менялись
             # косвенно (смешанные стеки 2026-09-13: api d9bedacf+agent a06b9978,
             # api 26bbab34+agent d9bedacf — PR #962/#964 не трогали эти пути).
-            BUILD_SERVICES="api frontend notifications celery-worker rag-embedder agent"
+            # celery-beat собирается из того же корневого Dockerfile, что и
+            # celery-worker (весь backend): любое backend-изменение может затронуть
+            # расписание. Его отсутствие в stage-контуре = мёртвые периодические
+            # задачи и пустая витрина canvas_event_read (canvas-telemetry-vitrina-empty).
+            BUILD_SERVICES="api frontend notifications celery-worker celery-beat rag-embedder agent"
             STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
@@ -348,7 +352,7 @@ jobs:
               rm -fsv frontend 2>/dev/null || true
             docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
-            UP_SERVICES="api frontend notifications celery-worker rag-embedder agent"
+            UP_SERVICES="api frontend notifications celery-worker celery-beat rag-embedder agent"
             STAGE_IMAGE_TAG="${DEPLOY_SHA}" APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
