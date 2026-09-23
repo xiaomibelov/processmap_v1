@@ -11,10 +11,14 @@ on:
         required: false
         default: ""
 
-# Deploys to stage must never race: they queue per environment.
+# Deploys to stage must never race: newest push wins. При серии мержей в main
+# устаревшие run'ы отменяются (cancelled — нейтральный статус), а не падают на
+# sha-проверке: иначе каждый «отставший» run завершался бы failure
+# (инцидент 2026-09-23, runs 35892873035/35892896085: expected != resolved
+# из-за быстрого мержа трёх PR; реальный деплой выполнил последний run).
 concurrency:
   group: deploy-stage
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -177,10 +181,17 @@ jobs:
             echo "[deploy-stage] requested ref: ${REQUESTED_REF}"
             echo "[deploy-stage] expected sha: ${EXPECTED_SHA}"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
-            [ "${DEPLOY_SHA}" = "${EXPECTED_SHA}" ] || {
+            if [ "${DEPLOY_SHA}" != "${EXPECTED_SHA}" ]; then
+              if [ "${REQUESTED_REF}" = "main" ]; then
+                # main ушёл вперёд между стартом run'а и серверным fetch
+                # (серия быстрых мержей). Новый run уже деплоит свежий tip —
+                # этот завершаем нейтрально, без failure (см. concurrency).
+                echo "[deploy-stage] superseded: main advanced ${EXPECTED_SHA} -> ${DEPLOY_SHA}; newer run deploys. Skip." >&2
+                exit 0
+              fi
               echo "[deploy-stage] ERROR: resolved ${DEPLOY_SHA} != expected ${EXPECTED_SHA}" >&2
               exit 1
-            }
+            fi
 
             mkdir -p "$(dirname "${STAGE_DIR}")"
             if git -C "${MAIN_DIR}" worktree list | grep -q "^${STAGE_DIR} "; then
