@@ -376,18 +376,16 @@ jobs:
             # починенный для stage в #1030). HUP через docker kill — без
             # docker exec (exec сломан на текущем наборе контейнеров, см.
             # RECON_PROD.md контура), в свежесозданных контейнерах тоже OK.
-            # Пост-проверка маршрутизации: бьём в ЛОКАЛЬНЫЙ gateway через
-            # --resolve (SNI/cert processmap.ru, соединение на 127.0.0.1).
-            # NB: 443 на хосте слушает только 45.87.104.69:443 (standalone
-            # bind), curl https://127.0.0.1/ без --resolve = connection
-            # refused — ложный негатив (факт первого прогона #1031).
+            # Пост-проверка маршрутизации: публичный URL (rollback-скрипт ходит
+            # так же). NB: 443 слушает только 45.87.104.69:443 (standalone
+            # bind) — curl на 127.0.0.1/--resolve к loopback = ложный негатив
+            # (факты двух прогонов #1031, проверено read-only на хосте).
             echo "[deploy-prod] reloading gateway (re-resolve upstreams)"
             docker kill -s HUP app-gateway-1 2>/dev/null \
               && echo "[deploy-prod] gateway HUP sent" \
               || echo "[deploy-prod] WARN: gateway HUP failed (проверь upstream вручную)" >&2
             sleep 3
-            curl -fsSk -m 15 --resolve processmap.ru:443:127.0.0.1 https://processmap.ru/ \
-              | grep -q 'assets/index-' \
+            curl -fsS -m 15 https://processmap.ru/ | grep -q 'assets/index-' \
               || { echo "ERROR: served prod HTML не ссылается на assets/index-*.js (stale upstream / frontend не поднялся)" >&2; exit 1; }
             echo "OK: gateway serves fresh frontend bundle"
 
