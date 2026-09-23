@@ -18,7 +18,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from ..compat.repository import _connect, _now_ts
+from ..compat.repository import _column_exists, _connect, _now_ts
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +84,19 @@ def _ensure_schema() -> None:
                   last_seen BIGINT NOT NULL DEFAULT 0,
                   count INTEGER NOT NULL DEFAULT 1,
                   converged INTEGER NOT NULL DEFAULT 0,
+                  classification TEXT NOT NULL DEFAULT 'data_loss',
                   context_json TEXT NOT NULL DEFAULT '[]',
                   updated_at INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
+            # F1 (fix/save-telemetry-full-coverage-v1): классификатор «потеря
+            # данных vs шум» на группе. Guarded ALTER — существующие БД.
+            if not _column_exists(con, READ_TABLE, "classification"):
+                con.execute(
+                    f"ALTER TABLE {READ_TABLE} ADD COLUMN classification "
+                    "TEXT NOT NULL DEFAULT 'data_loss'"
+                )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_canvas_event_read_org_seen "
                 "ON canvas_event_read(org_id, last_seen)"
@@ -280,7 +288,7 @@ def upsert_error_group(group: Dict[str, Any]) -> str:
             con.execute(
                 f"UPDATE {READ_TABLE} SET last_seen = ?, count = ?, converged = ?, "
                 "message = ?, op_id = ?, user_id = ?, org_id = ?, project_id = ?, "
-                "context_json = ?, updated_at = ? WHERE id = ?",
+                "classification = ?, context_json = ?, updated_at = ? WHERE id = ?",
                 [
                     int(group.get("last_seen") or 0),
                     int(group.get("count") or 1),
@@ -290,6 +298,7 @@ def upsert_error_group(group: Dict[str, Any]) -> str:
                     group.get("user_id"),
                     group.get("org_id"),
                     group.get("project_id"),
+                    str(group.get("classification") or "data_loss")[:32],
                     json.dumps(group.get("context") or [], ensure_ascii=False),
                     _now_ts(),
                     gid,
@@ -302,7 +311,7 @@ def upsert_error_group(group: Dict[str, Any]) -> str:
             f"INSERT INTO {READ_TABLE} "
             "(id, org_id, session_id, user_id, project_id, error_class, error_code, "
             "op_type, op_id, message, first_seen, last_seen, count, converged, "
-            "context_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "classification, context_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 gid,
                 group.get("org_id"),
@@ -318,6 +327,7 @@ def upsert_error_group(group: Dict[str, Any]) -> str:
                 int(group.get("last_seen") or 0),
                 int(group.get("count") or 1),
                 int(group.get("converged") or 0),
+                str(group.get("classification") or "data_loss")[:32],
                 json.dumps(group.get("context") or [], ensure_ascii=False),
                 _now_ts(),
             ],
@@ -452,6 +462,7 @@ def _read_group_row_to_dict(row: Any) -> Dict[str, Any]:
         "last_seen": int(_row_value(row, "last_seen", 11) or 0),
         "count": int(_row_value(row, "count", 12) or 0),
         "converged": int(_row_value(row, "converged", 13) or 0),
-        "context_json": _row_value(row, "context_json", 14) or "[]",
-        "updated_at": int(_row_value(row, "updated_at", 15) or 0),
+        "classification": _row_value(row, "classification", 14) or "data_loss",
+        "context_json": _row_value(row, "context_json", 15) or "[]",
+        "updated_at": int(_row_value(row, "updated_at", 16) or 0),
     }

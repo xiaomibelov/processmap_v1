@@ -537,3 +537,45 @@ test("each retry attempt gets a fresh AbortController signal", async () => {
     assert.equal(sig.aborted, false, "signal should not be aborted on normal error");
   }
 });
+
+// -- F1 (fix/save-telemetry-full-coverage-v1): emit-payload'ы несут контекст ---
+test("error/conflict/success events carry clientBaseVersion, reason, version (F1 telemetry tap)", async () => {
+  const c = createSaveCoordinator();
+  const events = [];
+  c.subscribe((event, data) => events.push({ event, data }));
+  c.registerPipeline("f1pipe", {
+    retryCount: 0,
+    transport: async (sessionId, payload) => {
+      if (payload.mode === "fail") return { ok: false, status: 500, error: "boom" };
+      if (payload.mode === "conflict") return { ok: false, status: 409, data: { detail: { code: "DIAGRAM_STATE_CONFLICT", server_current_version: 7 } } };
+      return { ok: true, status: 200, diagram_state_version: payload.base_diagram_state_version };
+    },
+    getBaseVersion: () => 41,
+    onSuccess: () => {},
+    onError: () => {},
+    on409: () => {},
+  });
+
+  await c.execute("f1pipe", { sessionId: "s1", mode: "fail", reason: "autosave" });
+
+  const err = events.find((e) => e.event === "error");
+  assert.ok(err, "error event emitted");
+  assert.equal(err.data.clientBaseVersion, 41);
+  assert.equal(err.data.reason, "autosave");
+
+  await c.execute("f1pipe", { sessionId: "s1", mode: "conflict", reason: "manual_save" });
+  const conflict = events.find((e) => e.event === "conflict");
+  assert.ok(conflict, "conflict event emitted");
+  assert.equal(conflict.data.clientBaseVersion, 41);
+  assert.equal(conflict.data.reason, "manual_save");
+  assert.equal(conflict.data.serverVersion, 7);
+
+  // conflict gate armed после 409 — снимаем явным решением пользователя.
+  c.resolveConflict("s1", "refresh");
+  await c.execute("f1pipe", { sessionId: "s1", mode: "ok", reason: "autosave" });
+  const success = events.find((e) => e.event === "success");
+  assert.ok(success, "success event emitted");
+  assert.equal(success.data.clientBaseVersion, 41);
+  assert.equal(success.data.version, 41);
+  assert.equal(success.data.reason, "autosave");
+});

@@ -67,6 +67,36 @@ def _compute_converged(events: List[Dict[str, Any]], last_error_ts: int) -> int:
     return 0
 
 
+def _is_confirmation_event(row: Dict[str, Any], payload: Dict[str, Any]) -> bool:
+    """Серверное подтверждение сохранения (F1): факт успешного save/ack.
+
+    ack http.status=200 — сервер применил батч (tracker adopt'ит ack-версию);
+    save_status ux.state=saved — успешная стадия, КРОМЕ ops-local (offline:
+    локальная durability, сервер не подтверждал). Версии не обязаны совпадать:
+    успешный save по определению ре-синкает клиента с сервером (adopt dsv).
+    """
+    if row.get("kind") == "ack":
+        http = payload.get("http") if isinstance(payload.get("http"), dict) else {}
+        return int(http.get("status") or 0) == 200
+    if row.get("kind") == "save_status":
+        ux = payload.get("ux") if isinstance(payload.get("ux"), dict) else {}
+        if str(ux.get("state") or "") != "saved":
+            return False
+        return str(ux.get("opsStage") or "") != "ops-local"
+    return False
+
+
+def _compute_classification(events: List[Dict[str, Any]], group_last_seen_ts: int) -> str:
+    """«потеря данных vs шум» (F1): transient_noise, если ПОСЛЕ последней
+    ошибки группы сохранение подтвердилось сервером; иначе data_loss."""
+    for row in events:
+        if int(row.get("ts") or 0) <= group_last_seen_ts:
+            continue
+        if _is_confirmation_event(row, _payload_of(row)):
+            return "transient_noise"
+    return "data_loss"
+
+
 def aggregate_session(session_id: str) -> Dict[str, Any]:
     _ensure_schema()
     events = list_raw_events(session_id, limit=_MAX_SESSION_EVENTS)
@@ -102,6 +132,7 @@ def aggregate_session(session_id: str) -> Dict[str, Any]:
                 "last_seen": int(row.get("ts") or 0),
                 "count": 1,
                 "converged": converged,
+                "classification": _compute_classification(events, int(row.get("ts") or 0)),
                 "context": context,
             }
         else:
@@ -109,6 +140,7 @@ def aggregate_session(session_id: str) -> Dict[str, Any]:
             entry["count"] += 1
             # контекст обновляем к последнему вхождению fingerprint
             entry["context"] = context
+            entry["classification"] = _compute_classification(events, entry["last_seen"])
 
     base = events[0]
     for entry in by_fp.values():
@@ -129,6 +161,7 @@ def aggregate_session(session_id: str) -> Dict[str, Any]:
                 "last_seen": entry["last_seen"],
                 "count": entry["count"],
                 "converged": int(entry["converged"]),
+                "classification": entry["classification"],
                 "context": entry["context"],
             }
         )
