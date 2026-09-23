@@ -156,7 +156,10 @@ test("replayOpsOnModeler: updateDi op with waypoints → connection.updateWaypoi
   ]);
   assert.equal(result.ok, true);
   assert.equal(modeler.executed[0].command, "connection.updateWaypoints");
-  assert.deepEqual(modeler.executed[0].context.newWaypoints, [[0, 0], [10, 10]]);
+  // fix/render-resync-connections-after-409: bpmn-js renderer читает
+  // waypoint.x/.y — wire-пары [x,y] нормализуются в {x, y} (raw-пары давали
+  // d="M,L,L,L," и исчезающие стрелки после 409-rebase replay).
+  assert.deepEqual(modeler.executed[0].context.newWaypoints, [{ x: 0, y: 0 }, { x: 10, y: 10 }]);
 });
 
 test("replayOpsOnModeler: create op replayed through commandStack.execute path with replay flags (step2)", async () => {
@@ -297,4 +300,154 @@ test("BLOCKER-1 e2e-followup: shape.move replay context carries hints (real bpmn
   const context = modeler.executed[0].context;
   assert.ok(context.hints && typeof context.hints === "object", "hints object present (diagram-js postExecute reads hints.layout)");
   assert.equal(context.hints.layout, false, "no connection re-layout: wire op is a pure delta, server applies bounds only");
+});
+
+// ---------------------------------------------------------------------------
+// fix/render-resync-connections-after-409: wire-waypoints — пары [x, y]
+// (commandToOps.waypoints, opsOutbox/commandToOps.js). Replay должен отдавать
+// bpmn-js connection.updateWaypoints НОРМАЛИЗОВАННЫЕ {x, y}: renderer читает
+// waypoint.x/.y; raw-пары дают d="M,L,L,L," (стрелки исчезают после 409-rebase).
+// ---------------------------------------------------------------------------
+
+function makeConnection(id = "Flow_1") {
+  return { id, type: "bpmn:SequenceFlow", businessObject: { $type: "bpmn:SequenceFlow" }, waypoints: [{ x: 1, y: 2 }, { x: 3, y: 4 }] };
+}
+
+test("replay updateDi: wire pairs [[x,y]] normalize to {x,y} objects for connection.updateWaypoints", async () => {
+  const conn = makeConnection("Flow_1");
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-w1", type: "element.updateDi", elementId: "Flow_1", waypoints: [[208, 170], [234, 170], [234, 320], [820, 320]] },
+  ]);
+  assert.equal(result.ok, true);
+  const context = modeler.executed[0].context;
+  assert.equal(modeler.executed[0].command, "connection.updateWaypoints");
+  assert.deepEqual(context.newWaypoints, [
+    { x: 208, y: 170 },
+    { x: 234, y: 170 },
+    { x: 234, y: 320 },
+    { x: 820, y: 320 },
+  ], "bpmn-js renderer reads waypoint.x/.y; pairs must not pass through raw");
+});
+
+test("replay updateDi: {x,y} object waypoints stay accepted (idempotent normalize)", async () => {
+  const conn = makeConnection("Flow_1");
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-w2", type: "element.updateDi", elementId: "Flow_1", waypoints: [{ x: 10, y: 20 }, { x: 30, y: 40 }] },
+  ]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(modeler.executed[0].context.newWaypoints, [{ x: 10, y: 20 }, { x: 30, y: 40 }]);
+});
+
+test("replay updateDi: non-finite wire waypoint → fuzzyMiss fail-closed (no NaN into model, parity commandToOps.point)", async () => {
+  const conn = makeConnection("Flow_1");
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-w3", type: "element.updateDi", elementId: "Flow_1", waypoints: [["NaN", 170], [234, 170]] },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+  assert.equal(modeler.executed.length, 0, "poisoned DI never reaches the live model");
+});
+
+test("replay updateDi: fewer than 2 waypoints → fuzzyMiss (server applier parity: missing_waypoints 422)", async () => {
+  const conn = makeConnection("Flow_1");
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-w4", type: "element.updateDi", elementId: "Flow_1", waypoints: [[208, 170]] },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+  assert.equal(modeler.executed.length, 0);
+});
+
+test("replay connection.create: wire pairs normalize to {x,y} in elementFactory descriptor", async () => {
+  const created = [];
+  const elementFactory = {
+    createConnection: (descriptor) => { created.push(descriptor); return { id: descriptor.id }; },
+  };
+  const source = { id: "StartEvent_1" };
+  const target = { id: "Task_1" };
+  const modeler = makeModeler({
+    elements: { StartEvent_1: source, Task_1: target },
+    elementFactory,
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-c1",
+      type: "connection.create",
+      elementId: "Flow_9",
+      elementType: "bpmn:SequenceFlow",
+      sourceId: "StartEvent_1",
+      targetId: "Task_1",
+      waypoints: [[208, 170], [280, 170]],
+    },
+  ]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(created[0].waypoints, [{ x: 208, y: 170 }, { x: 280, y: 170 }]);
+});
+
+// Review fix/render-resync-connections-after-409 (minor-1/minor-2):
+// null-компоненты waypoints fail-closed (дивергенция Number(null)=0 vs
+// commandToOps sanitizeValue); connection.create с битыми waypoints —
+// fuzzyMiss вместо connection с waypoints:[] (parity updateDi-ветки).
+test("replay updateDi: null waypoint component → fuzzyMiss fail-closed (Number(null)=0 must not coerce into model)", async () => {
+  const conn = makeConnection("Flow_1");
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-w5", type: "element.updateDi", elementId: "Flow_1", waypoints: [[null, 170], [234, 170]] },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+  assert.equal(modeler.executed.length, 0);
+});
+
+test("replay connection.create: invalid wire waypoints → fuzzyMiss (no connection with empty waypoints)", async () => {
+  let factoryCalled = false;
+  const elementFactory = {
+    createConnection: (descriptor) => { factoryCalled = true; return { id: descriptor.id }; },
+  };
+  const modeler = makeModeler({
+    elements: { StartEvent_1: { id: "StartEvent_1" }, Task_1: { id: "Task_1" } },
+    elementFactory,
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-c2",
+      type: "connection.create",
+      elementId: "Flow_bad",
+      elementType: "bpmn:SequenceFlow",
+      sourceId: "StartEvent_1",
+      targetId: "Task_1",
+      waypoints: [["NaN", 170], [280, 170]],
+    },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+  assert.equal(factoryCalled, false, "poisoned waypoints must not reach elementFactory");
+});
+
+test("replay connection.create: absent waypoints still allowed (empty array, layout by create)", async () => {
+  const created = [];
+  const elementFactory = {
+    createConnection: (descriptor) => { created.push(descriptor); return { id: descriptor.id }; },
+  };
+  const modeler = makeModeler({
+    elements: { StartEvent_1: { id: "StartEvent_1" }, Task_1: { id: "Task_1" } },
+    elementFactory,
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-c3",
+      type: "connection.create",
+      elementId: "Flow_ok",
+      elementType: "bpmn:SequenceFlow",
+      sourceId: "StartEvent_1",
+      targetId: "Task_1",
+    },
+  ]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(created[0].waypoints, []);
 });
