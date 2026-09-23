@@ -148,6 +148,7 @@ test("threshold: 50 ops → immediate flush without waiting for debounce", async
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const ctx = makeOutbox(t);
+    setTrackedDiagramStateVersion("s1", 7);
     for (let i = 0; i < 49; i += 1) {
       pushRename(ctx.outbox, `Task_${i}`, `N${i}`);
     }
@@ -166,6 +167,7 @@ test("opId order is stable and uuids unique", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const ctx = makeOutbox(t);
+    setTrackedDiagramStateVersion("s1", 7);
     pushRename(ctx.outbox, "Task_1", "A");
     pushRename(ctx.outbox, "Task_2", "B");
     pushRename(ctx.outbox, "Task_3", "C");
@@ -459,6 +461,7 @@ test("coalesce: drag storm of shape.move within 400ms window → 1 keep-last op;
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const ctx = makeOutbox(t);
+    setTrackedDiagramStateVersion("s1", 7);
     pushMove(ctx.outbox, "Task_1", 5, 0);
     ctx.tickNow(100);
     pushMove(ctx.outbox, "Task_1", 10, 0);
@@ -492,6 +495,7 @@ test("mouseup commit freezes pending move op (no coalescing across drag end)", a
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const ctx = makeOutbox(t);
+    setTrackedDiagramStateVersion("s1", 7);
     pushMove(ctx.outbox, "Task_1", 5, 0);
     ctx.tickNow(100);
     pushMove(ctx.outbox, "Task_1", 10, 0);
