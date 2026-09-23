@@ -10,6 +10,7 @@ CI включает celery-beat — иначе витрина снова умр�
 """
 
 from pathlib import Path
+import re
 
 import yaml
 
@@ -75,13 +76,14 @@ def test_stage_compose_defines_celery_beat():
     )
 
 
-def _workflow_run_steps() -> list:
-    workflow = _load_yaml(REPO_ROOT / ".github" / "workflows" / "deploy-stage.yml")
+def _workflow_run_steps(workflow_name: str = "deploy-stage.yml") -> list:
+    workflow = _load_yaml(REPO_ROOT / ".github" / "workflows" / workflow_name)
     steps = []
     for job in (workflow.get("jobs") or {}).values():
         for step in (job.get("steps") or []):
-            # deploy-stage исполняет скрипт на хосте через appleboy/ssh-action
-            # (script внутри `with:`), локальные шаги — через `run`.
+            # deploy-stage/deploy-prod исполняют скрипт на хосте через
+            # appleboy/ssh-action (script внутри `with:`), локальные шаги —
+            # через `run`.
             body = step.get("run") or step.get("script")
             if not body:
                 with_block = step.get("with") or {}
@@ -99,3 +101,85 @@ def test_deploy_stage_workflow_builds_and_starts_celery_beat():
         "deploy-stage.yml не управляет сервисом celery-beat: beat не поднимается "
         "при деплое stage, freshness-гейт его не проверяет"
     )
+
+
+# ── Регрессия на prod-контур (recon 2026-09-23, контур
+# fix/prod-deploy-hygiene-rollback-audit): на prod beat отсутствовал, а
+# gateway без reload-шага уязвим к stale-upstream (stage-инцидент 23.09). ──
+
+
+def test_prod_compose_defines_celery_beat_on_worker_image():
+    compose = _load_compose(REPO_ROOT / "docker-compose.prod.yml")
+    beat = (compose.get("services") or {}).get("celery-beat")
+    assert beat is not None, (
+        "docker-compose.prod.yml не описывает celery-beat: на prod не будет "
+        "планировщика, витрина canvas_event_read перестанет пополняться "
+        "(prod-дефект 2, recon 2026-09-23)"
+    )
+    image = str(beat.get("image") or "")
+    assert image == "app-celery-worker:latest", (
+        f"ghcr-пакета celery-beat нет (проверено 2026-09-23) — beat обязан "
+        f"бежать на образе celery-worker, получено: {image!r}"
+    )
+    env_file = beat.get("env_file")
+    assert env_file and "/opt/processmap/env/prod.env" in str(env_file), (
+        "celery-beat prod обязан читать /opt/processmap/env/prod.env "
+        "(иначе расписание уедет на дефолты base-compose)"
+    )
+
+
+def test_deploy_prod_workflow_starts_and_freshness_checks_celery_beat():
+    steps = _workflow_run_steps("deploy-prod.yml")
+    assert steps, "deploy-prod.yml: не найдено ни одного run-шага"
+    joined = "\n".join(steps)
+    assert re.search(r"up -d --no-deps --force-recreate -V\s+.*celery-beat", joined, re.S), (
+        "deploy-prod.yml не пересоздаёт celery-beat при деплое: планировщик "
+        "останется старым/не поднимется"
+    )
+    assert "app-celery-beat-1" in joined, (
+        "deploy-prod.yml не проверяет образ celery-beat (freshness-гейт)"
+    )
+
+
+def test_deploy_prod_workflow_reloads_gateway_and_checks_routing():
+    steps = _workflow_run_steps("deploy-prod.yml")
+    joined = "\n".join(steps)
+    assert "docker kill -s HUP app-gateway-1" in joined, (
+        "deploy-prod.yml не шлёт HUP gateway после up: recreate frontend без "
+        "reload → stale upstream → 502 (stage-инцидент 23.09, #1030)"
+    )
+    assert "assets/index-" in joined, (
+        "deploy-prod.yml не проверяет, что gateway реально отдаёт свежий "
+        "frontend-бандл: stale-upstream ловит человек, а не гейт"
+    )
+
+
+def test_prod_scripts_avoid_docker_exec_in_deploy_path():
+    # docker exec сломан на прод-хосте (libseccomp SetSSB, recon 2026-09-23) —
+    # деплойный бэкап и preflight обязаны идти через sidecar docker run.
+    # Оговорка: post-up `nginx -t` через exec оставлен намеренно — к этому
+    # моменту gateway уже пересоздан в up-списке, а exec в свежих
+    # контейнерах работает (проверено probe-контейнером). Поэтому no-exec
+    # требуем только для части деплоя ДО compose up (бэкап).
+    deploy = (REPO_ROOT / ".github" / "workflows" / "deploy-prod.yml").read_text(
+        encoding="utf-8"
+    )
+    pre_up = deploy.split("up -d --no-deps --force-recreate", 1)[0]
+    deploy_cmds = [
+        line for line in pre_up.splitlines() if not line.lstrip().startswith("#")
+    ]
+    assert not any("docker exec" in line for line in deploy_cmds), (
+        "deploy-prod.yml (до compose up) всё ещё использует docker exec — на "
+        "прод-хосте он сломан (SetSSB), деплой упадёт на бэкапе"
+    )
+    preflight = (REPO_ROOT / "deploy" / "scripts" / "prod_preflight_gates.sh").read_text(
+        encoding="utf-8"
+    )
+    preflight_cmds = [
+        line for line in preflight.splitlines() if not line.lstrip().startswith("#")
+    ]
+    assert not any("docker exec" in line for line in preflight_cmds), (
+        "prod_preflight_gates.sh всё ещё использует docker exec — гейты "
+        "упадут до начала деплоя"
+    )
+    assert "docker run --rm" in preflight, "preflight alembic-гейт обязан идти через sidecar docker run"

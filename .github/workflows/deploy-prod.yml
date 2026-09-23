@@ -281,25 +281,28 @@ jobs:
             mkdir -p "${BACKUP_DIR}"
             DUMP_NAME="pre-pipeline-${TS}.dump"
             echo "[deploy-prod] pg_dump -Fc -> ${BACKUP_DIR}/${DUMP_NAME}"
-            # Detached-паттерн релиз-контура: pg_dump в фоне внутри контейнера,
-            # poll по маркеру, забор через docker cp.
-            docker exec -d app-postgres-1 sh -c \
-              "pg_dump -U fpc -d processmap -Fc -f /tmp/${DUMP_NAME} && touch /tmp/${DUMP_NAME}.done || touch /tmp/${DUMP_NAME}.fail"
-            DUMP_STATE="running"
-            for attempt in $(seq 1 60); do
-              if docker exec app-postgres-1 sh -c "test -f /tmp/${DUMP_NAME}.done" 2>/dev/null; then
-                DUMP_STATE="done"; break
-              fi
-              if docker exec app-postgres-1 sh -c "test -f /tmp/${DUMP_NAME}.fail" 2>/dev/null; then
-                DUMP_STATE="fail"; break
-              fi
-              sleep 5
-            done
-            [ "${DUMP_STATE}" = "done" ] || { echo "ERROR: pg_dump не завершился (state=${DUMP_STATE})" >&2; exit 1; }
-            docker cp "app-postgres-1:/tmp/${DUMP_NAME}" "${BACKUP_DIR}/${DUMP_NAME}"
-            docker exec app-postgres-1 rm -f "/tmp/${DUMP_NAME}" "/tmp/${DUMP_NAME}.done" "/tmp/${DUMP_NAME}.fail"
+            # Sidecar-паттерн (recon 2026-09-23): docker exec в существующие
+            # контейнеры сломан на хосте (libseccomp SetSSB, см. RECON_PROD.md
+            # контура prod-deploy-hygiene-rollback-audit) — pg_dump исполняем
+            # throwaway-контейнером postgres:16-alpine (образ присутствует
+            # локально) в сети app_default. Креды БД — из prod.env через
+            # --env-file (DATABASE_URL), в лог не попадают. Запись атомарна:
+            # .tmp + rename.
+            docker run --rm \
+              --network app_default \
+              --env-file "${ENV_FILE}" \
+              -e DUMP_NAME="${DUMP_NAME}" \
+              -v "${BACKUP_DIR}:/backup" \
+              postgres:16-alpine sh -c '
+                set -e
+                pg_dump "${DATABASE_URL}" -Fc -f "/backup/${DUMP_NAME}.tmp" \
+                  && mv "/backup/${DUMP_NAME}.tmp" "/backup/${DUMP_NAME}"
+              '
+            [ -s "${BACKUP_DIR}/${DUMP_NAME}" ] || { echo "ERROR: дамп ${BACKUP_DIR}/${DUMP_NAME} пуст или не создан" >&2; exit 1; }
             # Верификация дампа: pg_restore --list обязан распарсить оглавление.
-            docker exec -i app-postgres-1 pg_restore --list < "${BACKUP_DIR}/${DUMP_NAME}" > /dev/null \
+            docker run --rm \
+              -v "${BACKUP_DIR}:/backup:ro" \
+              postgres:16-alpine pg_restore --list "/backup/${DUMP_NAME}" > /dev/null \
               || { echo "ERROR: pg_restore --list не смог прочитать дамп ${BACKUP_DIR}/${DUMP_NAME}" >&2; exit 1; }
             echo "OK: backup verified (${BACKUP_DIR}/${DUMP_NAME})"
 
@@ -362,9 +365,29 @@ jobs:
               -f docker-compose.prod.standalone-gateway.yml \
               -p app \
               up -d --no-deps --force-recreate -V \
-                api gateway celery-worker agent notifications frontend rag-embedder
+                api gateway celery-worker celery-beat agent notifications frontend rag-embedder
 
-            # --- freshness proof: 5/5 сервисов на свежих образах ---
+            # --- gateway reload + пост-проверка маршрутизации ---
+            # Recon 2026-09-23: nginx в gateway резолвит статический
+            # proxy_pass http://frontend:80 один раз на старте воркера.
+            # Деплой пересоздаёт gateway вместе с frontend, НО тот же
+            # stale-upstream риск создаёт watchdog (cron */30, recreate
+            # frontend без recreate gateway — ровно stage-инцидент 23.09,
+            # починенный для stage в #1030). HUP через docker kill — без
+            # docker exec (exec сломан на текущем наборе контейнеров, см.
+            # RECON_PROD.md контура), в свежесозданных контейнерах тоже OK.
+            # Пост-проверка снаружи (через 127.0.0.1): freshness-гейт ловит
+            # stale-upstream сам, а не человек по 502.
+            echo "[deploy-prod] reloading gateway (re-resolve upstreams)"
+            docker kill -s HUP app-gateway-1 2>/dev/null \
+              && echo "[deploy-prod] gateway HUP sent" \
+              || echo "[deploy-prod] WARN: gateway HUP failed (проверь upstream вручную)" >&2
+            sleep 3
+            curl -fsSk -m 15 https://127.0.0.1/ | grep -q 'assets/index-' \
+              || { echo "ERROR: served prod HTML не ссылается на assets/index-*.js (stale upstream / frontend не поднялся)" >&2; exit 1; }
+            echo "OK: gateway serves fresh frontend bundle"
+
+            # --- freshness proof: 6/6 сервисов на свежих образах ---
             echo "[deploy-prod] freshness proof (container image == fresh app-<svc>:latest)"
             for svc in api celery-worker agent notifications frontend; do
               expected_img="$(docker image inspect "app-${svc}:latest" --format '{{.Id}}' 2>/dev/null || echo missing)"
@@ -375,6 +398,14 @@ jobs:
                 exit 1
               fi
             done
+            # celery-beat: ghcr-пакета beat нет — бежит на образе celery-worker.
+            beat_expected="$(docker image inspect "app-celery-worker:latest" --format '{{.Id}}' 2>/dev/null || echo missing)"
+            beat_actual="$(docker inspect "app-celery-beat-1" --format '{{.Image}}' 2>/dev/null || echo missing)"
+            echo "[deploy-prod] celery-beat: running=${beat_actual} expected(worker image)=${beat_expected}"
+            if [ "${beat_expected}" = "missing" ] || [ "${beat_actual}" != "${beat_expected}" ]; then
+              echo "ERROR: celery-beat runs stale image" >&2
+              exit 1
+            fi
             echo "OK: all prod services run freshly pulled images"
 
             # --- gateway-проверки (standalone pinned nginx) ---
