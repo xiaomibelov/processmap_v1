@@ -50,7 +50,8 @@ archive/
 backups/
 zip/
 deploy/logs/
-.agents/
+.agents/*
+!.agents/skills/
 
 # Playwright MCP artifacts
 .playwright-mcp/

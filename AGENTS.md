@@ -10,7 +10,7 @@
 
 - **`clearvestnic.ru` не существует в этом проекте.** Домен выведен навсегда и не должен использоваться в коде, конфигах, CI, документации, Obsidian, промптах и примерах. Любое упоминание — мусор, подлежащий удалению или замене.
 - **`processmap.ru` = PROD** (сервер `45.87.104.69`).
-- **`stage.processmap.ru` = STAGE**.
+- **`stage.processmap.ru` = STAGE** — отдельный хост `31.192.110.145` (ssh-алиас `stage` → root, ключ `~/.ssh/kimi_stage_31`; доступен и `deploy@31.192.110.145` тем же ключом; app dir `/opt/processmap/stage/app`; БД `processmap_stage`, user `stage_fpc`; собственный gateway `processmap_stage-stage-gateway-1` на 80/443). Prod-хост stage НЕ обслуживает; сломанное зеркало `processmap_stage-*` на нём удалено 23.09 (cleanup-контур `ops/cleanup-stage-mirror-prod-host-v1`).
 - **Других доменов/окружений нет.** Локальная разработка использует `localhost` (`frontend :5177`, `api :8011`), см. раздел 11.
 
 ## 2. Ветвление и изоляция контуров
