@@ -77,17 +77,21 @@ function replayFlags(op, source = "replay") {
  * Wire-waypoints → bpmn-js {x, y} (fix/render-resync-connections-after-409).
  * commandToOps эмитит пары [x, y]; renderer/UpdateWaypointsHandler читают
  * waypoint.x/.y — raw-пары дают d="M,L,L,L," и исчезающие стрелки после
- * 409-rebase replay. Fail-closed по finiteness и ≥2 точкам (паритет
- * commandToOps.point(): нефинитный компонент → null → fuzzyMiss/full-save,
- * молчаливая коэрция NaN→0 в модель запрещена).
+ * 409-rebase replay. Fail-closed: нефинитный/отсутствующий компонент → null
+ * → fuzzyMiss/full-save (молчаливая коэрция NaN/null→0 в модель запрещена,
+ * parity commandToOps.point/bounds fail-closed); ≥2 точки (паритет серверного
+ * applier 422 missing_waypoints).
  */
 function normalizeWireWaypoints(value) {
   if (!Array.isArray(value)) return null;
   const pts = [];
   for (const wp of value) {
     const raw = Array.isArray(wp) ? { x: wp[0], y: wp[1] } : wp;
-    const x = Number(raw?.x);
-    const y = Number(raw?.y);
+    const rx = raw?.x;
+    const ry = raw?.y;
+    if (rx == null || ry == null) return null;
+    const x = Number(rx);
+    const y = Number(ry);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     pts.push({ x, y });
   }
@@ -139,20 +143,27 @@ function replayCreate(modeler, op, registry, flags) {
     if (!source) return { ok: false, error: "create_source_not_found", fuzzyMiss: true };
     const target = resolveElementFuzzy(registry, op?.targetId, { allowConnections: true });
     if (!target) return { ok: false, error: "create_target_not_found", fuzzyMiss: true };
+    // Битые waypoints → fuzzyMiss (parity updateDi-ветки): connection с
+    // пустым/невалидным маршрутом невидим — консервативный full-save вместо
+    // порчи канваса. Отсутствующие waypoints допустимы (create layout'ит).
+    const createWaypoints = normalizeWireWaypoints(op?.waypoints);
+    if (op?.waypoints != null && !createWaypoints) {
+      return { ok: false, error: "invalid_waypoints", fuzzyMiss: true };
+    }
     const connection = typeof elementFactory.createConnection === "function"
       ? elementFactory.createConnection({
         id: elementId,
         type: asText(op?.elementType) || "bpmn:SequenceFlow",
         source: source.element,
         target: target.element,
-        waypoints: normalizeWireWaypoints(op?.waypoints) || [],
+        waypoints: createWaypoints || [],
       })
       : elementFactory.create("connection", {
         id: elementId,
         type: asText(op?.elementType) || "bpmn:SequenceFlow",
         source: source.element,
         target: target.element,
-        waypoints: normalizeWireWaypoints(op?.waypoints) || [],
+        waypoints: createWaypoints || [],
       });
     return safeExecute(commandStack, "connection.create", {
       connection,

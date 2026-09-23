@@ -388,3 +388,66 @@ test("replay connection.create: wire pairs normalize to {x,y} in elementFactory 
   assert.equal(result.ok, true);
   assert.deepEqual(created[0].waypoints, [{ x: 208, y: 170 }, { x: 280, y: 170 }]);
 });
+
+// Review fix/render-resync-connections-after-409 (minor-1/minor-2):
+// null-компоненты waypoints fail-closed (дивергенция Number(null)=0 vs
+// commandToOps sanitizeValue); connection.create с битыми waypoints —
+// fuzzyMiss вместо connection с waypoints:[] (parity updateDi-ветки).
+test("replay updateDi: null waypoint component → fuzzyMiss fail-closed (Number(null)=0 must not coerce into model)", async () => {
+  const conn = makeConnection("Flow_1");
+  const modeler = makeModeler({ elements: { Flow_1: conn } });
+  const result = await replayOpsOnModeler(modeler, [
+    { opId: "op-w5", type: "element.updateDi", elementId: "Flow_1", waypoints: [[null, 170], [234, 170]] },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+  assert.equal(modeler.executed.length, 0);
+});
+
+test("replay connection.create: invalid wire waypoints → fuzzyMiss (no connection with empty waypoints)", async () => {
+  let factoryCalled = false;
+  const elementFactory = {
+    createConnection: (descriptor) => { factoryCalled = true; return { id: descriptor.id }; },
+  };
+  const modeler = makeModeler({
+    elements: { StartEvent_1: { id: "StartEvent_1" }, Task_1: { id: "Task_1" } },
+    elementFactory,
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-c2",
+      type: "connection.create",
+      elementId: "Flow_bad",
+      elementType: "bpmn:SequenceFlow",
+      sourceId: "StartEvent_1",
+      targetId: "Task_1",
+      waypoints: [["NaN", 170], [280, 170]],
+    },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.results[0].fuzzyMiss, true);
+  assert.equal(factoryCalled, false, "poisoned waypoints must not reach elementFactory");
+});
+
+test("replay connection.create: absent waypoints still allowed (empty array, layout by create)", async () => {
+  const created = [];
+  const elementFactory = {
+    createConnection: (descriptor) => { created.push(descriptor); return { id: descriptor.id }; },
+  };
+  const modeler = makeModeler({
+    elements: { StartEvent_1: { id: "StartEvent_1" }, Task_1: { id: "Task_1" } },
+    elementFactory,
+  });
+  const result = await replayOpsOnModeler(modeler, [
+    {
+      opId: "op-c3",
+      type: "connection.create",
+      elementId: "Flow_ok",
+      elementType: "bpmn:SequenceFlow",
+      sourceId: "StartEvent_1",
+      targetId: "Task_1",
+    },
+  ]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(created[0].waypoints, []);
+});
