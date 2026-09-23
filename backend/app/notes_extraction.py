@@ -101,6 +101,11 @@ def post_notes(session_id: str, inp: NotesIn, request: Request = None) -> Dict[s
         client_id=_resolve_client_id_from_request(request),
     )
     st.save(s)
+    # D3 (audit/cold-entry-arrows-lost-after-f2): bump dsv без инвалидации
+    # кэшей → Redis-проекция session_cache (TTL 30 с) отдаёт stale dsv.
+    from .sessions_core import _invalidate_session_caches
+
+    _invalidate_session_caches(s, org_id=getattr(s, "org_id", "") or get_default_org_id())
     return s.model_dump()
 
 _NOTES_EXTRACTION_MODULE_ID = "ai.process.extract_from_notes"
@@ -402,6 +407,11 @@ def post_notes_extraction_apply(
         client_id=_resolve_client_id_from_request(request),
     )
     st.save(s)
+    # D3 (audit/cold-entry-arrows-lost-after-f2): bump dsv без инвалидации
+    # кэшей → Redis-проекция session_cache (TTL 30 с) отдаёт stale dsv.
+    from .sessions_core import _invalidate_session_caches
+
+    _invalidate_session_caches(s, org_id=getattr(s, "org_id", "") or get_default_org_id())
     session_payload = s.model_dump()
     return {
         "ok": True,

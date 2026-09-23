@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
-from ..storage import get_storage
+from ..storage import get_default_org_id, get_storage
 from ..utils.session_helpers import (
     _diagram_state_conflict_payload,
     _mark_diagram_truth_write,
@@ -186,6 +186,12 @@ def apply_approved_suggestions(
         is_admin=True,
         expected_diagram_state_version=current_version,
     )
+    # D3 (audit/cold-entry-arrows-lost-after-f2): bump dsv без инвалидации
+    # кэшей → Redis-проекция session_cache (TTL 30 с) отдаёт stale dsv.
+    # Паритет с другими dsv-writers: инвалидация сразу после commit'а save.
+    from ..sessions_core import _invalidate_session_caches
+
+    _invalidate_session_caches(session, org_id=getattr(session, "org_id", "") or get_default_org_id())
 
     # After successful application the approved suggestions are removed.
     # This keeps the suggestion table bounded and avoids double-application.
