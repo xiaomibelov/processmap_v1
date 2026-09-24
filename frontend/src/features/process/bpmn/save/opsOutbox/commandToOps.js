@@ -706,6 +706,16 @@ export function mapCommandToOps(descriptor) {
     return { ops: [], needsFullSave: false, replay: true, action, command };
   }
 
+  // align v2 (fix/canvas-align-v2): единая кастомная команда диаграммы.
+  // Не порождает ops и не триггерит full-save каскада — align сохраняет
+  // результирующий XML явным full-PUT с source_action "align" (снапшот
+  // «До выравнивания» планируется сервером в той же операции). И execute,
+  // и undo игнорируются: undo после сохранения откатывает канвас без
+  // персиста (конвергенция при следующем изменении).
+  if (command === "fpc.alignDiagram") {
+    return { ops: [], needsFullSave: false, replay: false, action, command };
+  }
+
   const mapper = WHITELIST[command];
   if (!mapper) {
     recordCoverage(false, true);

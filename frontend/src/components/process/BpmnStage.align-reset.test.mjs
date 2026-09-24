@@ -9,9 +9,17 @@ test("BpmnStage imperative API exposes alignDiagram and resetCanvas", () => {
   assert.equal(source.includes("resetCanvas"), true);
 });
 
-test("alignDiagram uses bpmn-js modeling API, persists XML via save pipeline and fits viewport", () => {
+test("alignDiagram uses one commandStack handler, no layoutConnection, persists XML and fits viewport", () => {
   assert.match(source, /modeling\s*[=:]\s*inst\.get\s*\(\s*["']modeling["']\s*\)/);
-  assert.match(source, /canonLayout|alignElements|distributeElements|createLayout/);
+  assert.match(source, /fpc\.alignDiagram/);
+  assert.match(source, /laneRowAlign/);
+  const alignStart = source.indexOf("async function alignDiagramOnInstance");
+  const alignEnd = source.indexOf("function resetCanvasOnInstance");
+  const alignBody = alignStart >= 0 && alignEnd > alignStart ? source.slice(alignStart, alignEnd) : "";
+  assert.ok(alignBody.length > 0, "align body slice found");
+  assert.equal(alignBody.includes("layoutConnection"), false, "no layoutConnection in align");
+  assert.equal(alignBody.includes("updateWaypoints"), false, "no updateWaypoints in align");
+  assert.equal(alignBody.includes("moveElements"), false, "no moveElements in align");
   assert.match(source, /saveXML|getRuntimeXmlSnapshot/);
   assert.match(source, /fit-viewport|safeFit/);
 });
