@@ -75,14 +75,28 @@ test("bounds зеркалят бэкенд (60–400 / 20–500)", () => {
   assert.deepEqual(CANVAS_GEOMETRY_BOUNDS.sequenceGap, { min: 20, max: 500 });
 });
 
-test("gate: align-модули не импортируют canvasGeometry (шаг 1 — без применения)", () => {
+test("gate: laneRowAlign не импортирует canvasGeometry (зависимость односторонняя)", () => {
+  // Шаг 2 снимает запрет шага 1 на чтение настроек из apply-потока, но
+  // инвариант направления зависимостей сохраняем: laneRowAlign — нижний слой,
+  // ничего не знает про настройки (канон — дефолтные аргументы).
   const files = [
     join(here, "laneRowAlign.js"),
     join(here, "laneRowAlign.test.mjs"),
-    join(here, "..", "..", "..", "..", "components", "process", "BpmnStage.jsx"),
   ];
   for (const file of files) {
     const src = readFileSync(file, "utf8");
     assert.ok(!src.includes("canvasGeometry"), `${file} не должен ссылаться на canvasGeometry`);
   }
+});
+
+test("gate: align-поток сам по себе на каноне — getCanvasGeometry только в apply", () => {
+  const bpmnStage = readFileSync(
+    join(here, "..", "..", "..", "..", "components", "process", "BpmnStage.jsx"), "utf8");
+  const alignStart = bpmnStage.indexOf("function alignDiagramOnInstance");
+  const alignEnd = bpmnStage.indexOf("function computeGeometryApplyPlanFromRegistry");
+  assert.ok(alignStart > 0 && alignEnd > alignStart, "регион alignDiagramOnInstance найден");
+  const alignRegion = bpmnStage.slice(alignStart, alignEnd);
+  assert.ok(!alignRegion.includes("getCanvasGeometry"), "align не читает настройки геометрии");
+  assert.ok(bpmnStage.includes("getCanvasGeometry"), "apply-поток читает настройки через getCanvasGeometry");
+  assert.ok(bpmnStage.includes("computeGeometryApplyPlan"), "apply-поток использует computeGeometryApplyPlan");
 });

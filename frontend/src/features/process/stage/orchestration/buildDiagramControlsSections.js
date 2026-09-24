@@ -302,6 +302,7 @@ const OVERFLOW_MODES_KEYS = [
   "canInsertBetween",
   "insertBetweenErrorMessage",
   "onAlignDiagram",
+  "onApplyGeometry",
   "onResetCanvas",
 ];
 

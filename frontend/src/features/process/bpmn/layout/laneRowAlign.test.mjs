@@ -186,3 +186,32 @@ test("порог 40: ноды с разрывом centerY > 40 — разные 
   assert.ok(positions.has("a1") && positions.has("a2"));
   assert.equal(positions.has("b1"), false, "b1 одиночный в своём ряду — untouched");
 });
+
+// --- canvas-geometry-apply: override канона через options ---
+
+test("options.nodeSizes + options.gap: ряд раскладывается кастомной геометрией", () => {
+  const nodeSizes = {
+    task: { width: 200, height: 120 },
+    event: { width: 56, height: 56 },
+    gateway: { width: 50, height: 50 },
+  };
+  const nodes = [
+    task("t1", 100, 100, 120, 70, { laneKey: "l" }),
+    task("t2", 400, 110, 120, 70, { laneKey: "l" }),
+  ];
+  const { positions } = computeLaneRowAlignPlan({ nodes, connections: [] }, { nodeSizes, gap: 250 });
+  const Y = roundTo10(median([135, 145]));
+  assert.deepEqual(positions.get("t1"), { x: 100, y: Y - 60, width: 200, height: 120 });
+  assert.deepEqual(positions.get("t2"), { x: roundTo10(100 + 200 + 250), y: Y - 60, width: 200, height: 120 });
+});
+
+test("options без gap / с битым gap → дефолт ALIGN_GAP", () => {
+  const nodes = [
+    task("t1", 100, 100, 130, 80, { laneKey: "l" }),
+    task("t2", 400, 100, 130, 80, { laneKey: "l" }),
+  ];
+  for (const options of [{}, { gap: NaN }, { gap: -5 }]) {
+    const { positions } = computeLaneRowAlignPlan({ nodes, connections: [] }, options);
+    assert.equal(positions.get("t2").x, roundTo10(100 + 130 + 100), `gap fallback: ${JSON.stringify(options)}`);
+  }
+});

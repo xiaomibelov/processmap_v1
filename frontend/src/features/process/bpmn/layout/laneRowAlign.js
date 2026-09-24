@@ -32,12 +32,14 @@ export function roundTo10(value) {
 
 // Участник ряда — только канон-выравниваемые типы. Подпроцессы и boundary
 // события намеренно исключены (постановка: не трогать).
-export function canonSizeForAlignType(type) {
+// sizes — опциональный override канона (контур canvas-geometry-apply);
+// дефолт CANON_NODE_SIZES, поведение align без аргумента не меняется.
+export function canonSizeForAlignType(type, sizes = CANON_NODE_SIZES) {
   if (typeof type !== "string") return null;
   if (/BoundaryEvent$/.test(type)) return null;
-  if (/Event$/.test(type)) return { ...CANON_NODE_SIZES.event };
-  if (/Gateway$/.test(type)) return { ...CANON_NODE_SIZES.gateway };
-  if (/Task$/.test(type)) return { ...CANON_NODE_SIZES.task };
+  if (/Event$/.test(type)) return { ...sizes.event };
+  if (/Gateway$/.test(type)) return { ...sizes.gateway };
+  if (/Task$/.test(type)) return { ...sizes.task };
   return null;
 }
 
@@ -82,6 +84,9 @@ function median(values) {
  *   nodes: Array<{id,type,x,y,width,height,laneKey,laneBounds?}>,
  *   connections: Array<{id,sourceId,targetId,waypoints:Array<{x,y}>}>,
  * }} input
+ * @param {{nodeSizes?: {task:{width,height},event:{width,height},gateway:{width,height}}, gap?: number}} options
+ *   Опциональный override канона (контур canvas-geometry-apply). Без options —
+ *   поведение идентично прежнему (CANON_NODE_SIZES, ALIGN_GAP).
  * @returns {{
  *   positions: Map<string,{x,y,width,height}>,
  *   nodeDeltas: Map<string,{dx,dy}>,
@@ -89,9 +94,12 @@ function median(values) {
  *   stats: {rowsAligned:number,nodesAligned:number,nodesSkipped:number},
  * }}
  */
-export function computeLaneRowAlignPlan(input) {
+export function computeLaneRowAlignPlan(input, options = {}) {
   const nodes = (input.nodes || []).filter((n) => n && n.id);
   const connections = input.connections || [];
+  const sizes = (options && options.nodeSizes) || CANON_NODE_SIZES;
+  const gapOpt = Number(options && options.gap);
+  const gap = Number.isFinite(gapOpt) && gapOpt >= 0 ? gapOpt : ALIGN_GAP;
 
   const positions = new Map();
   const nodeDeltas = new Map();
@@ -99,7 +107,7 @@ export function computeLaneRowAlignPlan(input) {
 
   const groups = new Map();
   for (const node of nodes) {
-    const size = canonSizeForAlignType(node.type);
+    const size = canonSizeForAlignType(node.type, sizes);
     if (!size) { stats.nodesSkipped += 1; continue; }
     if (!Number.isFinite(Number(node.x)) || !Number.isFinite(Number(node.y))) {
       stats.nodesSkipped += 1;
@@ -123,12 +131,12 @@ export function computeLaneRowAlignPlan(input) {
       for (const node of byX) {
         const { width, height } = node.canon;
         let target = clampIntoLane(cursor, rowCenterY - height / 2, width, height, node.laneBounds);
-        if (!target) { stats.nodesSkipped += 1; cursor = roundTo10(cursor + width + ALIGN_GAP); continue; }
+        if (!target) { stats.nodesSkipped += 1; cursor = roundTo10(cursor + width + gap); continue; }
         // Кламп мог сдвинуть x — продолжаем ось от фактической позиции.
         positions.set(node.id, { x: target.x, y: target.y, width, height });
         nodeDeltas.set(node.id, { dx: target.x - node.x, dy: target.y - node.y });
         stats.nodesAligned += 1;
-        cursor = roundTo10(target.x + width + ALIGN_GAP);
+        cursor = roundTo10(target.x + width + gap);
       }
     }
   }

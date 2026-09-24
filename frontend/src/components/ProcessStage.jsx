@@ -4920,6 +4920,24 @@ function ProcessStage({
     }
   }, [bpmnRef, hasSession, isBpmnTab, onSessionSync, setGenErr, sid]);
 
+  const handleApplyGeometry = useCallback(async () => {
+    if (!hasSession || !isBpmnTab) return;
+    const result = await Promise.resolve(bpmnRef.current?.applyGeometry?.());
+    if (!result || result.ok === false) {
+      setGenErr(shortErr(result?.error || getDict().diagram?.applyGeometryFailed || "Не удалось применить геометрию к схеме."));
+      return;
+    }
+    const xml = String(result?.xml || "");
+    if (xml) {
+      onSessionSync?.({
+        id: sid,
+        session_id: sid,
+        bpmn_xml: xml,
+        _sync_source: "canvas_apply_geometry",
+      });
+    }
+  }, [bpmnRef, hasSession, isBpmnTab, onSessionSync, setGenErr, sid]);
+
   const handleResetCanvas = useCallback(() => {
     if (!hasSession || !isBpmnTab) return;
     const confirmed = window.confirm(getDict().diagram?.resetCanvasConfirm || "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.");
@@ -8569,6 +8587,7 @@ function ProcessStage({
                     onToggleProcessman: toggleProcessman,
                     processmanNoKey: isLlmNotConfigured(processmanLlmStatus),
                     onAlignDiagram: handleAlignDiagram,
+                    onApplyGeometry: handleApplyGeometry,
                     onResetCanvas: handleResetCanvas,
   }));
 

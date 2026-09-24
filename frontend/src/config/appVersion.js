@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.154",
+  currentVersion: "v1.0.155",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.155",
+      changes: [
+        "«Применить к схеме»: разовая кнопка рядом с «Выровнять схему» — ресайзит все таски до настроенного размера (центр фигуры сохраняется) и раскладывает ряды с зазором из настроек геометрии; вся операция — один шаг отката.",
+      ],
+    },
     {
       version: "v1.0.154",
       changes: [
