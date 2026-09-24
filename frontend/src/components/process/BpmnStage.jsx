@@ -498,7 +498,7 @@ FpcAlignDiagramHandler.prototype.execute = function execute(context) {
   context.records = [];
   for (const op of context.shapeOps || []) {
     const el = op.element;
-    const di = el.businessObject && el.businessObject.di;
+    const di = el.di || null;
     const diBounds = di && di.bounds ? di.bounds : null;
     context.records.push({
       kind: "shape",
@@ -516,7 +516,7 @@ FpcAlignDiagramHandler.prototype.execute = function execute(context) {
   }
   for (const op of context.connectionOps || []) {
     const conn = op.element;
-    const di = conn.businessObject && conn.businessObject.di;
+    const di = conn.di || null;
     const diWaypoints = di && Array.isArray(di.waypoint) ? di.waypoint : null;
     context.records.push({
       kind: "connection",
@@ -543,8 +543,8 @@ FpcAlignDiagramHandler.prototype.revert = function revert(context) {
   for (const rec of context.records || []) {
     if (rec.kind === "shape") {
       rec.el.x = rec.x; rec.el.y = rec.y; rec.el.width = rec.width; rec.el.height = rec.height;
-      if (rec.di && rec.el.businessObject && rec.el.businessObject.di && rec.el.businessObject.di.bounds) {
-        const b = rec.el.businessObject.di.bounds;
+      if (rec.di && rec.el.di && rec.el.di.bounds) {
+        const b = rec.el.di.bounds;
         b.x = rec.di.x; b.y = rec.di.y; b.width = rec.di.width; b.height = rec.di.height;
       }
     } else if (rec.kind === "connection") {
@@ -554,8 +554,8 @@ FpcAlignDiagramHandler.prototype.revert = function revert(context) {
         p.x = old.x; p.y = old.y;
         if (p.original && old.original) { p.original.x = old.original.x; p.original.y = old.original.y; }
       });
-      if (rec.diWaypoints && rec.el.businessObject && rec.el.businessObject.di && Array.isArray(rec.el.businessObject.di.waypoint)) {
-        rec.el.businessObject.di.waypoint.forEach((p, i) => {
+      if (rec.diWaypoints && rec.el.di && Array.isArray(rec.el.di.waypoint)) {
+        rec.el.di.waypoint.forEach((p, i) => {
           const old = rec.diWaypoints[i];
           if (!old) return;
           p.x = old.x; p.y = old.y;
