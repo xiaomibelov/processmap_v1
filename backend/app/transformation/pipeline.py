@@ -197,7 +197,7 @@ def match_deterministic(fact: Dict[str, Any], rules: List[Dict[str, Any]]) -> Op
     return winners[0] if winners else None
 
 
-def _default_llm_call(system_prompt: str, user_prompt: str) -> str:
+def _default_llm_call(system_prompt: str, user_prompt: str, org_id: str = "") -> str:
     """LLM2 — вызов через LLM-гейтвей (feature=as_is_transform). Raises on failure
     (upstream превращает в llm_status="offline" + open_questions, как раньше).
 
@@ -205,6 +205,7 @@ def _default_llm_call(system_prompt: str, user_prompt: str) -> str:
     caller подменяется параметром llm_call (тесты, оффлайн-прогоны).
     Промт (system) — из llm_prompts(feature=as_is_transform, active), сид v1 —
     миграция 014; текст совпадает с LLM_SYSTEM_PROMPT.
+    org_id (G1): org-скопинг usage/квоты gateway; пусто → org_default (как раньше).
     """
     from ..ai import llm_internal_client
 
@@ -217,7 +218,7 @@ def _default_llm_call(system_prompt: str, user_prompt: str) -> str:
         payload = json.loads(user_prompt)
     except Exception:
         payload = {"input": user_prompt}
-    result = complete_fn(LLM_FEATURE, payload, max_tokens=LLM_MAX_TOKENS)
+    result = complete_fn(LLM_FEATURE, payload, org_id=org_id or "org_default", max_tokens=LLM_MAX_TOKENS)
     if not result.get("ok"):
         raise RuntimeError(f"llm gateway {result.get('status')}: {result.get('error')}")
     return str(result.get("text") or "")
@@ -227,15 +228,17 @@ def match_with_llm(
     facts: List[Dict[str, Any]],
     rules: List[Dict[str, Any]],
     llm_call: Optional[Callable[[str, str], str]] = None,
+    org_id: str = "",
 ) -> Tuple[Dict[str, str], str]:
     """LLM-мэтчинг нераспознанных задач. Возвращает ({element_id: rule_id}, status).
 
     status: "llm" | "offline" | "disabled". Любой сбой → offline, без исключений.
     Строгая валидация: неизвестные rule_id/element_id отбрасываются.
+    org_id передаётся только в дефолтный caller; подменённый llm_call (2-arg) не тронут.
     """
     if not facts:
         return {}, "disabled"
-    caller = llm_call or _default_llm_call
+    caller = llm_call or (lambda s, u: _default_llm_call(s, u, org_id=org_id))
     known_rules = {r["id"] for r in rules}
     requested_ids = {f["id"] for f in facts}
     user_prompt = json.dumps(
@@ -721,8 +724,12 @@ def transform_asis(
     rules: Optional[List[Dict[str, Any]]] = None,
     llm_call: Optional[Callable[[str, str], str]] = None,
     llm_enabled: bool = True,
+    org_id: str = "",
 ) -> Dict[str, Any]:
-    """Полный конвейер AS IS -> TO BE draft. Никогда не падает из-за LLM."""
+    """Полный конвейер AS IS -> TO BE draft. Никогда не падает из-за LLM.
+
+    org_id (G1): org-скопинг usage/квот LLM-gateway; пусто → org_default.
+    """
     rules = rules if rules is not None else load_rules()
     facts = extract_facts(xml_text)
 
@@ -751,7 +758,7 @@ def transform_asis(
 
     llm_status = "disabled"
     if unmatched and llm_enabled:
-        llm_matches, llm_status = match_with_llm(unmatched, rules, llm_call=llm_call)
+        llm_matches, llm_status = match_with_llm(unmatched, rules, llm_call=llm_call, org_id=org_id)
         by_id = {r["id"]: r for r in rules}
         for element_id, rule_id in llm_matches.items():
             decisions[element_id] = by_id[rule_id]
