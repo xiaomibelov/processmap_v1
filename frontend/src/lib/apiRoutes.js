@@ -330,6 +330,7 @@ export const apiRoutes = {
     featureFlags: () => "/api/admin/feature-flags",
     featureFlagsPatch: () => "/api/admin/feature-flags",
     featureFlagsCatalog: () => "/api/admin/feature-flags/catalog",
+    canvasGeometry: () => "/api/admin/canvas-geometry",
     endpointCheckRun: () => "/api/admin/endpoint-check/run",
     endpointCheckStatus: () => "/api/admin/endpoint-check/status",
     endpointCheckRuns: (params = {}) => withQuery("/api/admin/endpoint-check/runs", params),
@@ -360,6 +361,9 @@ export const apiRoutes = {
   },
   featureFlags: {
     get: () => "/api/feature-flags",
+  },
+  canvasGeometry: {
+    get: () => "/api/settings/canvas-geometry",
   },
   rag: {
     search: (params = {}) => withQuery("/api/rag/search", {

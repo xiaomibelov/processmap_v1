@@ -46,6 +46,11 @@ def _get_flags(org_id: str) -> Dict[str, bool]:
                 flags.update({k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in stored.items()})
         except Exception as exc:
             logger.warning("feature_flags: redis read failed: %s", exc)
+    # Ключи canvas-геометрии — не boolean-флаги: читаются через typed-ручку
+    # /api/settings/canvas-geometry. Иначе они попали бы в публичный payload
+    # и в админ-виджет флагов, где переключение тогла испортило бы значение.
+    for reserved in _CANVAS_GEOMETRY_FLAG_KEYS:
+        flags.pop(reserved, None)
     return {k: str(v).lower() in {"1", "true", "yes", "on"} for k, v in flags.items()}
 
 
@@ -118,6 +123,19 @@ def _reject_env_flags(keys) -> None:
                 "message": f"env-managed flag is read-only: {', '.join(env_keys)}",
             },
         )
+    reserved = [str(k) for k in keys if str(k) in _CANVAS_GEOMETRY_FLAG_KEYS]
+    if reserved:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "FEATURE_FLAG_RESERVED_KEY",
+                "message": (
+                    "canvas geometry keys are managed via "
+                    "/api/admin/canvas-geometry: "
+                    + ", ".join(reserved)
+                ),
+            },
+        )
 
 
 @router.patch("/api/admin/feature-flags", responses={
@@ -177,3 +195,121 @@ def get_feature_flags_catalog_endpoint(request: Request) -> Any:
         db_keys=list(db_flags.keys()),
         defaults=_DEFAULT_FLAGS,
     )
+
+
+# ── Canvas geometry settings ─────────────────────────────────────────────────
+# Контур feature/canvas-geometry-settings (шаг 1: хранение и чтение).
+# Переиспользуем таблицу feature_flags как key-value storage; новые ключи в
+# FLAG_CATALOG НЕ добавляются намеренно: каталог рендерит каждую запись как
+# boolean-тогл (build_catalog_payload: value=bool(flags.get(key))), числовые
+# значения дали бы ложный тогл в админ-каталоге.
+
+CANVAS_GEOMETRY_KEYS: Dict[str, str] = {
+    "task_width": "canvas_task_width",
+    "task_height": "canvas_task_height",
+    "sequence_gap": "canvas_sequence_gap",
+}
+CANVAS_GEOMETRY_BOUNDS: Dict[str, Any] = {
+    "task_width": (60, 400),
+    "task_height": (60, 400),
+    "sequence_gap": (20, 500),
+}
+CANVAS_GEOMETRY_DEFAULTS: Dict[str, int] = {
+    "task_width": 130,
+    "task_height": 80,
+    "sequence_gap": 100,
+}
+# Ключи хранения canvas-геометрии (значения CANVAS_GEOMETRY_KEYS) — зарезервированы:
+# не отдаются публичным GET /api/feature-flags и не принимаются admin PATCH/PUT
+# флагов (иначе тогл в виджете флагов перезаписал бы геометрию "1"/"0").
+_CANVAS_GEOMETRY_FLAG_KEYS = tuple(CANVAS_GEOMETRY_KEYS.values())
+
+
+def _coerce_geometry_int(raw: Any) -> Any:
+    try:
+        if isinstance(raw, bool):
+            return None
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def canvas_geometry_load() -> Dict[str, int]:
+    """Текущие настройки геометрии канваса; незаполненные/битые ключи → дефолты."""
+    try:
+        raw = dict(get_feature_flags() or {})
+    except Exception as exc:
+        logger.warning("canvas_geometry: db read failed: %s", exc)
+        raw = {}
+    settings: Dict[str, int] = {}
+    for field, key in CANVAS_GEOMETRY_KEYS.items():
+        lo, hi = CANVAS_GEOMETRY_BOUNDS[field]
+        value = _coerce_geometry_int(raw.get(key))
+        if value is None or not (lo <= value <= hi):
+            value = CANVAS_GEOMETRY_DEFAULTS[field]
+        settings[field] = value
+    return settings
+
+
+def _canvas_geometry_invalid(field: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "CANVAS_GEOMETRY_INVALID_VALUE", "field": field, "message": message},
+    )
+
+
+def _canvas_geometry_validate(body: Dict[str, Any]) -> Dict[str, int]:
+    unknown = sorted(set(body.keys()) - set(CANVAS_GEOMETRY_KEYS.keys()))
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "CANVAS_GEOMETRY_UNKNOWN_FIELD",
+                "message": f"unknown fields: {unknown}",
+            },
+        )
+    missing = [field for field in CANVAS_GEOMETRY_KEYS if field not in body]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "CANVAS_GEOMETRY_MISSING_FIELD",
+                "message": f"missing fields: {missing}",
+            },
+        )
+    parsed: Dict[str, int] = {}
+    for field in CANVAS_GEOMETRY_KEYS:
+        value = body[field]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise _canvas_geometry_invalid(field, f"{field} must be an integer")
+        lo, hi = CANVAS_GEOMETRY_BOUNDS[field]
+        if not (lo <= value <= hi):
+            raise _canvas_geometry_invalid(field, f"{field} must be between {lo} and {hi}")
+        parsed[field] = value
+    return parsed
+
+
+@router.get("/api/settings/canvas-geometry")
+def get_canvas_geometry_endpoint(request: Request) -> Any:
+    return {"ok": True, "settings": canvas_geometry_load()}
+
+
+@router.put("/api/admin/canvas-geometry", responses={
+    403: {"description": "Доступ запрещён: требуется роль admin"},
+    422: {"description": "Невалидное значение: detail.code = CANVAS_GEOMETRY_INVALID_VALUE / CANVAS_GEOMETRY_UNKNOWN_FIELD / CANVAS_GEOMETRY_MISSING_FIELD"},
+})
+def put_canvas_geometry_endpoint(request: Request, body: Dict[str, Any]) -> Any:
+    user = _request_auth_user(request)
+    if not bool(user.get("is_admin")):
+        raise HTTPException(status_code=403, detail="admin required")
+    parsed = _canvas_geometry_validate(body if isinstance(body, dict) else {})
+    for field, key in CANVAS_GEOMETRY_KEYS.items():
+        try:
+            set_feature_flag(key, str(parsed[field]))
+        except Exception as exc:
+            logger.warning("canvas_geometry: db write failed: %s", exc)
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "CANVAS_GEOMETRY_SAVE_FAILED", "message": str(exc)},
+            )
+    return {"ok": True, "settings": canvas_geometry_load()}

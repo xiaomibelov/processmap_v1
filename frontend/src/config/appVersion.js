@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.153",
+  currentVersion: "v1.0.154",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.154",
+      changes: [
+        "Настройки геометрии схемы (шаг 1): размер таски и длина секвенса хранятся в управляемых настройках и редактируются в админке, align пока использует прежний канон.",
+      ],
+    },
     {
       version: "v1.0.153",
       changes: [
