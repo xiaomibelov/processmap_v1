@@ -84,8 +84,14 @@ ops-конвейр не задействован.
 - laneRowAlign 11/11; align-reset + egress + commandToOps 103/103;
   stage/ui 152/153 (1 пре-существующий фейл sessionPresenceModel — доказан
   baseline-прогоном на origin/main).
-- Полный `npm test`: см. REVIEW_REPORT (итог PR).
-- Backend pytest (test_latest_user_facing_bpmn_version): см. REVIEW_REPORT.
+- Полный `npm test`: **контур 4253 / 4172 pass / 77 fail; baseline origin/main
+  @dbe1f174 4246 / 4164 / 78 fail — регрессий ноль** (списки уникальных фейлов:
+  ничего только в контуре; один flaky presence-тест стал зелёным). Все фейлы
+  пре-существующие (версионные пины, jsdom-окружение).
+- Backend pytest `test_latest_user_facing_bpmn_version.py`: **5 passed** (python
+  3.11 venv, актуализированное множество с "align").
+- Vitest smoke на компонентах process: 13/13 + tobeOverlayUnderlay 15/15
+  (BpmnStage.jsx парсится, импорты целы).
 
 ## Git proof
 
