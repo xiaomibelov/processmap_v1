@@ -366,6 +366,25 @@ def list_project_sessions(project_id: str, mode: str | None = None, view: str | 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
   # DEPRECATED: moved to routers/sessions.py + session_service.py
+def _initial_bpmn_meta_patch(inp: Any) -> Dict[str, Any]:
+    """Initial bpmn_meta из тела create (extra="allow" в CreateSessionIn).
+
+    fix/tobe-element-provenance-persistence-v1: канал 2 sidecar provenance
+    (bpmn_meta={"provenance": {...}}) персистится в bpmn_meta_json при create
+    без DDL. Несериализуемое значение -> 422, а не 500 при save.
+    """
+    raw = getattr(inp, "bpmn_meta", None)
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    import json as _json
+
+    try:
+        _json.dumps(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="bpmn_meta must be JSON-serializable")
+    return dict(raw)
+
+
 def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
     import app._legacy_main as _lm
     user = _request_auth_user(request) if request is not None else {}
@@ -418,8 +437,12 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
+        bpmn_meta_patch = _initial_bpmn_meta_patch(inp)
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
+        if bpmn_meta_patch:
+            sess.bpmn_meta = {**(sess.bpmn_meta or {}), **bpmn_meta_patch}
+        if prep_questions or bpmn_meta_patch:
             st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         _audit_log_safe(
             request,
@@ -455,6 +478,9 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             sess.derived_from_session_id = str(getattr(inp, "derived_from_session_id", "") or "").strip()
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
+        bpmn_meta_patch = _initial_bpmn_meta_patch(inp)
+        if bpmn_meta_patch:
+            sess.bpmn_meta = {**(sess.bpmn_meta or {}), **bpmn_meta_patch}
         st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         _audit_log_safe(
             request,
