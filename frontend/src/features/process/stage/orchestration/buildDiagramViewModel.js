@@ -393,6 +393,7 @@ export function buildDiagramHeaderView({
   saveUploadStatus,
   tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
   modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE»
+  underlayAsisSid = null, // tobe-overlay-underlay-v1: sid AS IS-подложки (to_be со связью)
   saveStatusSlotFlash = null, // П3: краткая success-индикация в слоте хедера
   asArray,
 } = {}) {
@@ -432,6 +433,7 @@ export function buildDiagramHeaderView({
     sessionPresenceView,
     tobeEntry: tobeEntry && typeof tobeEntry === "object" ? tobeEntry : null,
     modeSwitch: modeSwitch && typeof modeSwitch === "object" ? modeSwitch : null,
+    underlayAsisSid: underlayAsisSid ? String(underlayAsisSid) : null,
     saveStatusSlotFlash: saveStatusSlotFlash && typeof saveStatusSlotFlash === "object" ? saveStatusSlotFlash : null,
     asArray,
   };

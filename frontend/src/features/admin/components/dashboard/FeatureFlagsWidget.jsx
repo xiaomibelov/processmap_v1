@@ -8,6 +8,7 @@ const DEFAULT_LABELS = {
   lightweightOverlays: "Lightweight Overlays (JSON instead of XML)",
   useBpmnExtensionOverlays: "Hybrid Overlay V2 (white cards, anchor lines)",
   tobe_overlay_mock: "TO BE overlay (мок)",
+  tobe_overlay_underlay: "TO BE overlay (реальная подложка)",
 };
 
 export default function FeatureFlagsWidget() {
