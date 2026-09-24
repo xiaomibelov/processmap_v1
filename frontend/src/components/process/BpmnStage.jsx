@@ -45,6 +45,7 @@ import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/vi
 import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
 import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
+import { computeCanonLayout } from "../../features/process/bpmn/layout/canonLayout.js";
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
@@ -442,34 +443,27 @@ function isLayoutableFlowNode(element) {
   return true;
 }
 
-function computeSimpleGridLayout(registry) {
+function computeCanonAxisLayout(registry) {
   const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
-  const nodes = all.filter(isLayoutableFlowNode);
-  if (nodes.length === 0) return [];
-
-  const sorted = [...nodes].sort((a, b) => {
-    const dy = Number(a.y || 0) - Number(b.y || 0);
-    if (Math.abs(dy) > 80) return dy;
-    return Number(a.x || 0) - Number(b.x || 0);
-  });
-
-  const cols = Math.max(1, Math.ceil(Math.sqrt(sorted.length)));
-  const colWidth = 220;
-  const rowHeight = 140;
-  const startX = 150;
-  const startY = 120;
-
-  return sorted.map((el, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    return {
-      element: el,
-      delta: {
-        x: startX + col * colWidth - Number(el.x || 0),
-        y: startY + row * rowHeight - Number(el.y || 0),
-      },
-    };
-  });
+  const elements = all.filter(isLayoutableFlowNode);
+  const nodes = elements.map((el) => ({
+    id: el.id,
+    type: el.type || el.$type,
+    x: Number(el.x || 0),
+    y: Number(el.y || 0),
+    width: Number(el.width || 0),
+    height: Number(el.height || 0),
+  }));
+  const flows = all
+    .filter((el) => Array.isArray(el?.waypoints) && el.waypoints.length > 0)
+    .filter((el) => String(el.type || el.$type || "").includes("SequenceFlow"))
+    .map((el) => ({
+      id: el.id,
+      sourceId: el.source?.id || el.businessObject?.sourceRef?.id || null,
+      targetId: el.target?.id || el.businessObject?.targetRef?.id || null,
+    }))
+    .filter((f) => f.sourceId && f.targetId);
+  return computeCanonLayout({ nodes, flows });
 }
 
 async function alignDiagramOnInstance(inst, options = {}) {
@@ -479,21 +473,25 @@ async function alignDiagramOnInstance(inst, options = {}) {
     const registry = inst.get("elementRegistry");
     const canvas = inst.get("canvas");
 
-    const layout = computeSimpleGridLayout(registry);
-    for (const { element, delta } of layout) {
-      if (Math.abs(delta.x) < 2 && Math.abs(delta.y) < 2) continue;
-      modeling.moveElements([element], delta, element.parent);
-    }
+    const layout = computeCanonAxisLayout(registry);
 
-    const rowsByY = new Map();
-    for (const { element } of layout) {
-      const rowKey = Math.round(Number(element.y || 0) / 10);
-      if (!rowsByY.has(rowKey)) rowsByY.set(rowKey, []);
-      rowsByY.get(rowKey).push(element);
-    }
-    for (const rowElements of rowsByY.values()) {
-      if (rowElements.length > 1) {
-        modeling.alignElements(rowElements, "middle");
+    for (const [id, pos] of layout.positions) {
+      const element = registry.get(id);
+      if (!element) continue;
+      const newX = Number(pos.x);
+      const newY = Number(pos.y);
+      const dx = newX - Number(element.x || 0);
+      const dy = newY - Number(element.y || 0);
+      if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
+        modeling.moveElements([element], { x: dx, y: dy }, element.parent);
+      }
+      const newW = Number(pos.width);
+      const newH = Number(pos.height);
+      if (
+        Number(element.width) !== newW ||
+        Number(element.height) !== newH
+      ) {
+        modeling.resizeShape(element, { x: newX, y: newY, width: newW, height: newH });
       }
     }
 
@@ -502,7 +500,13 @@ async function alignDiagramOnInstance(inst, options = {}) {
       : [];
     for (const connection of connections) {
       try {
-        modeling.layoutConnection(connection);
+        const loopWaypoints = layout.loopWaypoints.get(connection.id);
+        if (loopWaypoints && typeof modeling.updateWaypoints === "function") {
+          // петля: ортогональная разводка по лейнам, не двигает ноды
+          modeling.updateWaypoints(connection, loopWaypoints);
+        } else {
+          modeling.layoutConnection(connection);
+        }
       } catch {
         // ignore per-connection layout failures
       }

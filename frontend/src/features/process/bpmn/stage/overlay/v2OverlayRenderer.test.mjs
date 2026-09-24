@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import { createV2OverlayHost, computeSequenceFlowMidpoint } from "./v2OverlayRenderer.js";
 
@@ -148,4 +149,27 @@ test("createV2OverlayHost: no displayName → no title, no marker class", () => 
   );
   assert.equal(result.host.classList.contains("fpc-overlay-v2-host--has-display-name"), false);
   assert.equal(findByClass(result.host, "fpc-overlay-v2-title"), null);
+});
+
+test("createV2OverlayHost: task chip sits in the 20px strip above node, width capped to node, centered via CSS", () => {
+  setupMockDom();
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    { title: "Props", properties: [{ name: "priority", value: "high" }] },
+    false
+  );
+  assert.equal(result.host.style.width, "100px");
+  assert.deepEqual(result.position, { top: -20, left: 0 });
+  // Centering/width/ellipsis contract lives in legacy_bpmn.css: the host
+  // centers its badge and caps it to the node width; rows get ellipsis.
+  const css = readFileSync(new URL("../../../../../styles/legacy/legacy_bpmn.css", import.meta.url), "utf8");
+  const hostBlock = css.match(/\.fpc-overlay-v2-host\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(hostBlock, /display:\s*flex/);
+  assert.match(hostBlock, /justify-content:\s*center/);
+  const badgeBlock = css.match(/\.fpc-overlay-v2-badge\s*\{\s*position:\s*absolute[^}]*\}/)?.[0] || "";
+  assert.match(badgeBlock, /left:\s*50%/);
+  assert.match(badgeBlock, /translateX\(-50%\)/);
+  assert.match(badgeBlock, /max-width:\s*100%/);
+  const itemBlock = css.match(/\.fpc-overlay-v2-item\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(itemBlock, /text-overflow:\s*ellipsis/);
 });
