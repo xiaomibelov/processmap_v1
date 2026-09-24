@@ -45,7 +45,7 @@ import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/vi
 import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
 import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
-import { computeCanonLayout } from "../../features/process/bpmn/layout/canonLayout.js";
+import { computeLaneRowAlignPlan } from "../../features/process/bpmn/layout/laneRowAlign.js";
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
@@ -443,74 +443,166 @@ function isLayoutableFlowNode(element) {
   return true;
 }
 
-function computeCanonAxisLayout(registry) {
+// Контейнер выравнивания: lane, иначе participant (pool), иначе дефолт.
+// Пересадка между lane/pool исключена конструкцией: группировка и кламп
+// идут строго внутри этого контейнера.
+function readAlignContainerForElement(el) {
+  let cur = (el && el.parent) || null;
+  while (cur) {
+    const bo = cur.businessObject || {};
+    const type = String(bo.$type || cur.type || "").toLowerCase();
+    if (type.includes("lane") || type.includes("participant")) {
+      const bounds = Number.isFinite(Number(cur.x)) && Number(cur.width) > 0 && Number(cur.height) > 0
+        ? { x: Number(cur.x), y: Number(cur.y), width: Number(cur.width), height: Number(cur.height) }
+        : null;
+      return { key: String(cur.id || type), bounds };
+    }
+    cur = cur.parent || null;
+  }
+  return { key: "__default__", bounds: null };
+}
+
+function computeLaneRowAlignPlanFromRegistry(registry) {
   const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
   const elements = all.filter(isLayoutableFlowNode);
-  const nodes = elements.map((el) => ({
-    id: el.id,
-    type: el.type || el.$type,
-    x: Number(el.x || 0),
-    y: Number(el.y || 0),
-    width: Number(el.width || 0),
-    height: Number(el.height || 0),
-  }));
-  const flows = all
+  const nodes = elements.map((el) => {
+    const container = readAlignContainerForElement(el);
+    return {
+      id: el.id,
+      type: el.type || el.$type,
+      x: Number(el.x || 0),
+      y: Number(el.y || 0),
+      width: Number(el.width || 0),
+      height: Number(el.height || 0),
+      laneKey: container.key,
+      laneBounds: container.bounds,
+    };
+  });
+  const connections = all
     .filter((el) => Array.isArray(el?.waypoints) && el.waypoints.length > 0)
-    .filter((el) => String(el.type || el.$type || "").includes("SequenceFlow"))
     .map((el) => ({
       id: el.id,
       sourceId: el.source?.id || el.businessObject?.sourceRef?.id || null,
       targetId: el.target?.id || el.businessObject?.targetRef?.id || null,
-    }))
-    .filter((f) => f.sourceId && f.targetId);
-  return computeCanonLayout({ nodes, flows });
+      waypoints: el.waypoints,
+    }));
+  return computeLaneRowAlignPlan({ nodes, connections });
 }
+
+// Один commandStack-хендлер на все мутации align → один шаг undo/redo.
+// Прямые мутации геометрии + DI (без modeling.*): стрелки только транслируются,
+// layoutConnection не вызывается.
+function FpcAlignDiagramHandler() {}
+FpcAlignDiagramHandler.prototype.execute = function execute(context) {
+  const changed = [];
+  context.records = [];
+  for (const op of context.shapeOps || []) {
+    const el = op.element;
+    const di = el.businessObject && el.businessObject.di;
+    const diBounds = di && di.bounds ? di.bounds : null;
+    context.records.push({
+      kind: "shape",
+      el,
+      x: el.x, y: el.y, width: el.width, height: el.height,
+      di: diBounds
+        ? { x: diBounds.x, y: diBounds.y, width: diBounds.width, height: diBounds.height }
+        : null,
+    });
+    el.x = op.x; el.y = op.y; el.width = op.width; el.height = op.height;
+    if (diBounds) {
+      diBounds.x = op.x; diBounds.y = op.y; diBounds.width = op.width; diBounds.height = op.height;
+    }
+    changed.push(el);
+  }
+  for (const op of context.connectionOps || []) {
+    const conn = op.element;
+    const di = conn.businessObject && conn.businessObject.di;
+    const diWaypoints = di && Array.isArray(di.waypoint) ? di.waypoint : null;
+    context.records.push({
+      kind: "connection",
+      el: conn,
+      waypoints: conn.waypoints.map((p) => ({
+        x: p.x, y: p.y,
+        original: p.original ? { x: p.original.x, y: p.original.y } : undefined,
+      })),
+      diWaypoints: diWaypoints ? diWaypoints.map((p) => ({ x: p.x, y: p.y })) : null,
+    });
+    for (const p of conn.waypoints) {
+      p.x += op.dx; p.y += op.dy;
+      if (p.original) { p.original.x += op.dx; p.original.y += op.dy; }
+    }
+    if (diWaypoints) {
+      for (const p of diWaypoints) { p.x += op.dx; p.y += op.dy; }
+    }
+    changed.push(conn);
+  }
+  return changed;
+};
+FpcAlignDiagramHandler.prototype.revert = function revert(context) {
+  const changed = [];
+  for (const rec of context.records || []) {
+    if (rec.kind === "shape") {
+      rec.el.x = rec.x; rec.el.y = rec.y; rec.el.width = rec.width; rec.el.height = rec.height;
+      if (rec.di && rec.el.businessObject && rec.el.businessObject.di && rec.el.businessObject.di.bounds) {
+        const b = rec.el.businessObject.di.bounds;
+        b.x = rec.di.x; b.y = rec.di.y; b.width = rec.di.width; b.height = rec.di.height;
+      }
+    } else if (rec.kind === "connection") {
+      rec.el.waypoints.forEach((p, i) => {
+        const old = rec.waypoints[i];
+        if (!old) return;
+        p.x = old.x; p.y = old.y;
+        if (p.original && old.original) { p.original.x = old.original.x; p.original.y = old.original.y; }
+      });
+      if (rec.diWaypoints && rec.el.businessObject && rec.el.businessObject.di && Array.isArray(rec.el.businessObject.di.waypoint)) {
+        rec.el.businessObject.di.waypoint.forEach((p, i) => {
+          const old = rec.diWaypoints[i];
+          if (!old) return;
+          p.x = old.x; p.y = old.y;
+        });
+      }
+    }
+    changed.push(rec.el);
+  }
+  return changed;
+};
 
 async function alignDiagramOnInstance(inst, options = {}) {
   if (!inst) return { ok: false, error: "modeler_not_ready" };
   try {
-    const modeling = inst.get("modeling");
     const registry = inst.get("elementRegistry");
     const canvas = inst.get("canvas");
 
-    const layout = computeCanonAxisLayout(registry);
+    const layout = computeLaneRowAlignPlanFromRegistry(registry);
 
+    const shapeOps = [];
     for (const [id, pos] of layout.positions) {
       const element = registry.get(id);
       if (!element) continue;
-      const newX = Number(pos.x);
-      const newY = Number(pos.y);
-      const dx = newX - Number(element.x || 0);
-      const dy = newY - Number(element.y || 0);
-      if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
-        modeling.moveElements([element], { x: dx, y: dy }, element.parent);
-      }
-      const newW = Number(pos.width);
-      const newH = Number(pos.height);
       if (
-        Number(element.width) !== newW ||
-        Number(element.height) !== newH
-      ) {
-        modeling.resizeShape(element, { x: newX, y: newY, width: newW, height: newH });
-      }
+        Number(element.x) === pos.x && Number(element.y) === pos.y &&
+        Number(element.width) === pos.width && Number(element.height) === pos.height
+      ) continue;
+      shapeOps.push({ element, x: pos.x, y: pos.y, width: pos.width, height: pos.height });
+    }
+    const connectionOps = [];
+    for (const [id, tr] of layout.connectionTranslations) {
+      if (!tr.dx && !tr.dy) continue;
+      const conn = registry.get(id);
+      if (!conn || !Array.isArray(conn.waypoints) || conn.waypoints.length === 0) continue;
+      connectionOps.push({ element: conn, dx: tr.dx, dy: tr.dy });
+    }
+    if (shapeOps.length === 0 && connectionOps.length === 0) {
+      return { ok: true, noop: true, xml: null };
     }
 
-    const connections = Array.isArray(registry?.getAll?.())
-      ? registry.getAll().filter((el) => Array.isArray(el?.waypoints) && el.waypoints.length > 0)
-      : [];
-    for (const connection of connections) {
-      try {
-        const loopWaypoints = layout.loopWaypoints.get(connection.id);
-        if (loopWaypoints && typeof modeling.updateWaypoints === "function") {
-          // петля: ортогональная разводка по лейнам, не двигает ноды
-          modeling.updateWaypoints(connection, loopWaypoints);
-        } else {
-          modeling.layoutConnection(connection);
-        }
-      } catch {
-        // ignore per-connection layout failures
-      }
+    const commandStack = inst.get("commandStack");
+    if (!commandStack) return { ok: false, error: "command_stack_unavailable" };
+    if (!commandStack.__fpcAlignHandlerRegistered && typeof commandStack.registerHandler === "function") {
+      commandStack.registerHandler("fpc.alignDiagram", FpcAlignDiagramHandler);
+      commandStack.__fpcAlignHandlerRegistered = true;
     }
+    commandStack.execute("fpc.alignDiagram", { shapeOps, connectionOps });
 
     if (canvas && typeof canvas.zoom === "function") {
       canvas.zoom("fit-viewport");
@@ -520,6 +612,23 @@ async function alignDiagramOnInstance(inst, options = {}) {
 
     const saved = await inst.saveXML({ format: true });
     const xml = applyMessageFlowExportDialect(String(saved?.xml || ""));
+
+    // Снапшот «До выравнивания» + сохранение одним full-PUT
+    // (source_action "align" → сервер атомарно планирует версию prev_xml).
+    // Снапшот/сохранение не удались → откатываем команду, align не применяется.
+    const persistXml = typeof options.persistXml === "function" ? options.persistXml : null;
+    if (persistXml) {
+      const put = await persistXml(xml, { sourceAction: "align" });
+      if (!put || put.ok === false) {
+        try { commandStack.undo(); } catch { /* undo guard */ }
+        return { ok: false, error: String(put?.error || "align_save_failed") };
+      }
+      if (!put.bpmnVersionSnapshot) {
+        try { commandStack.undo(); } catch { /* undo guard */ }
+        return { ok: false, error: "align_snapshot_missing" };
+      }
+    }
+
     return { ok: true, xml };
   } catch (error) {
     return { ok: false, error: String(error?.message || error || "align_failed") };
@@ -5294,7 +5403,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     return viewportRecovery.ensureVisibleOnInstance(createViewportCtx(), inst, options);
   }
 
-  async function persistXmlSnapshot(rawXml, hintBase = "backend") {
+  async function persistXmlSnapshot(rawXml, hintBase = "backend", options = {}) {
     const sid = String(sessionId || "");
     if (!sid) return { ok: false, error: "missing session id" };
     const out = applyMessageFlowExportDialect(String(rawXml || ""));
@@ -5320,7 +5429,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       count: persistStartCount,
     });
     logBpmnTrace("persist.put.before", out, { sid, hint: hintBase, rev });
-      const r = await ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase);
+      const r = await ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase, options && typeof options === "object" ? options : {});
     traceProcess("bpmn.persist_xml_snapshot_backend", {
       sid,
       hint: hintBase,
@@ -5389,6 +5498,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       xml: out,
       source: `${hintBase}(saved)`,
       diagramStateVersion: Number(r.diagramStateVersion || 0),
+      bpmnVersionSnapshot: r && r.bpmnVersionSnapshot ? r.bpmnVersionSnapshot : null,
     };
   }
 

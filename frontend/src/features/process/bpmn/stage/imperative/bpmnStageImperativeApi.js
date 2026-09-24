@@ -457,6 +457,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const result = await callbacks.alignDiagramOnInstance?.(inst, {
         reason: "align_diagram",
         sid: String(values.sessionId || ""),
+        persistXml: (xml, opts) => callbacks.persistXmlSnapshot?.(xml, "align_diagram", opts),
       });
       return result || { ok: false, error: "align_failed" };
     },
