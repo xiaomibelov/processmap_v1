@@ -103,6 +103,26 @@ test("extract: XML без provenance -> пустая карта", async () => {
   assert.deepEqual(provenance, {});
 });
 
+test("source=jev: решения Jev (#1033) переживают save/reload (pm:Trace + sidecar)", async () => {
+  // #1033: rule-matched записи trace_map несут поле source (decision_sources:
+  // "jev"/"deterministic"/"llm"). Jev-решения обязаны переживать персист.
+  const traceMap = [
+    { element_id: "AsIs_1", element_type: "task", name: "A", fate: "transformed_to", rule_id: "R01_move", source: "jev", draft_node_ids: ["Task_a"], note: "" },
+    { element_id: "AsIs_4", element_type: "sequenceFlow", name: "", fate: "transformed_to", rule_id: null, draft_node_ids: ["Flow_a_b"], note: "" },
+  ];
+
+  // канал 2 (sidecar): полный снапшот trace_map — source сохраняется как есть
+  const sidecar = buildProvenanceSidecar(traceMap);
+  assert.equal(sidecar.trace_map[0].source, "jev");
+
+  // канал 1 (pm:Trace): source выживает в round-trip, выравнивание с derived_from
+  const embedded = await embedProvenanceIntoBpmnXml(FIXTURE_XML, traceMap);
+  const reloaded = await extractProvenanceFromBpmnXml(embedded);
+  assert.equal(reloaded.Task_a.derived_from_source[0], "jev");
+  // запись без source (carry-over события/шлюзы, open_question) — пустая строка
+  assert.deepEqual(reloaded.Flow_a_b.derived_from_source, [""]);
+});
+
 test("round-trip: embed -> правка в моделлере -> save/reload -> provenance цел у 100% элементов", async () => {
   // 1. create TO BE из draft: встраивание provenance в XML экспорта шаблона.
   const embedded = await embedProvenanceIntoBpmnXml(FIXTURE_XML, TRACE_MAP);
