@@ -132,6 +132,24 @@ def _compute_baseline(con) -> str:
     return baseline
 
 
+def _ensure_runtime_schema() -> None:
+    """Канонический runtime-DDL (_ensure_schema) на пустой БД до alembic.
+
+    users/sessions/bpmn_versions и пр. core-таблицы исторически создаёт
+    runtime вне alembic — на свежей БД 001 (ALTER users ADD role) падает
+    до их появления (находка release/tobe-stage-wave-2026-09-24 №4:
+    fresh-volume старты api → degraded, /api/llm/status 500). Порядок
+    «runtime-DDL → alembic» повторяет состояние всех существующих БД.
+    Импорт ленивый: скрипт остаётся рабочим без app-зависимостей.
+    """
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from backend.app.domains.storage.compat import repository as compat_repository
+
+    compat_repository._ensure_schema()
+
+
 def main() -> int:
     ini = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "backend/alembic.ini")
     # script_location в ini — относительный (alembic) → работаем из backend/
@@ -147,7 +165,12 @@ def main() -> int:
     if current not in LINEAR:
         baseline = _compute_baseline(con)
         if not baseline:
-            print("[db_bootstrap] база пустая — миграции с нуля")
+            print("[db_bootstrap] база пустая — runtime-DDL схемы, затем миграции с нуля")
+            try:
+                _ensure_runtime_schema()
+            except Exception as exc:
+                print(f"[db_bootstrap] runtime schema ensure FAILED: {exc}")
+                return 1
         else:
             # Прямая запись alembic_version вместо `alembic stamp`: CLI-штамп
             # резолвит ТЕКУЩУЮ ревизию и падает на значениях вне цепочки
