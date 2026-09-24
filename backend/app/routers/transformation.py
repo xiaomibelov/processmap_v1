@@ -38,8 +38,11 @@ async def transform_asis_endpoint(
     xml_text = raw.decode("utf-8", errors="replace")
     if not xml_text.strip():
         raise HTTPException(status_code=422, detail="Пустой BPMN-файл")
+    from ..legacy.request_context import request_active_org_id
+
+    org_id = request_active_org_id(request)
     try:
-        result = transform_asis(xml_text)
+        result = transform_asis(xml_text, org_id=org_id)
     except BpmnImportError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except RulesLoadError as exc:
