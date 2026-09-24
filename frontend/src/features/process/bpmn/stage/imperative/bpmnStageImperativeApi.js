@@ -461,6 +461,16 @@ export function createBpmnStageImperativeApi(ctxBase) {
       });
       return result || { ok: false, error: "align_failed" };
     },
+    applyGeometry: async () => {
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return { ok: false, error: "modeler_not_ready" };
+      const result = await callbacks.applyGeometryOnInstance?.(inst, {
+        reason: "apply_geometry",
+        sid: String(values.sessionId || ""),
+        persistXml: (xml, opts) => callbacks.persistXmlSnapshot?.(xml, "apply_geometry", opts),
+      });
+      return result || { ok: false, error: "apply_geometry_failed" };
+    },
     resetCanvas: () => {
       const inst = getPreferredInstance("editor") || getReadyInstance("editor");
       if (!inst) return { ok: false, error: "modeler_not_ready" };

@@ -46,6 +46,8 @@ import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnV
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
 import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
 import { computeLaneRowAlignPlan } from "../../features/process/bpmn/layout/laneRowAlign.js";
+import { getCanvasGeometry } from "../../features/process/bpmn/layout/canvasGeometry.js";
+import { computeGeometryApplyPlan } from "../../features/process/bpmn/layout/canvasGeometryApply.js";
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
@@ -632,6 +634,104 @@ async function alignDiagramOnInstance(inst, options = {}) {
     return { ok: true, xml };
   } catch (error) {
     return { ok: false, error: String(error?.message || error || "align_failed") };
+  }
+}
+
+// «Применить к схеме» (canvas-geometry-apply): ресайз всех тасков до настроек
+// (центр-якорь) + раскладка рядов с зазором sequence_gap. Математика — в
+// canvasGeometryApply.js; здесь только bpmn-js-вайринг по паттерну align:
+// один commandStack.execute (хендлер FpcAlignDiagramHandler), DI только el.di/conn.di.
+function computeGeometryApplyPlanFromRegistry(registry) {
+  const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
+  const elements = all.filter(isLayoutableFlowNode);
+  const nodes = elements.map((el) => {
+    const container = readAlignContainerForElement(el);
+    return {
+      id: el.id,
+      type: el.type || el.$type,
+      x: Number(el.x || 0),
+      y: Number(el.y || 0),
+      width: Number(el.width || 0),
+      height: Number(el.height || 0),
+      laneKey: container.key,
+      laneBounds: container.bounds,
+    };
+  });
+  const connections = all
+    .filter((el) => Array.isArray(el?.waypoints) && el.waypoints.length > 0)
+    .map((el) => ({
+      id: el.id,
+      sourceId: el.source?.id || el.businessObject?.sourceRef?.id || null,
+      targetId: el.target?.id || el.businessObject?.targetRef?.id || null,
+      waypoints: el.waypoints,
+    }));
+  return computeGeometryApplyPlan({ nodes, connections }, getCanvasGeometry());
+}
+
+async function applyGeometryOnInstance(inst, options = {}) {
+  if (!inst) return { ok: false, error: "modeler_not_ready" };
+  try {
+    const registry = inst.get("elementRegistry");
+    const canvas = inst.get("canvas");
+
+    const layout = computeGeometryApplyPlanFromRegistry(registry);
+
+    const shapeOps = [];
+    for (const [id, pos] of layout.positions) {
+      const element = registry.get(id);
+      if (!element) continue;
+      if (
+        Number(element.x) === pos.x && Number(element.y) === pos.y &&
+        Number(element.width) === pos.width && Number(element.height) === pos.height
+      ) continue;
+      shapeOps.push({ element, x: pos.x, y: pos.y, width: pos.width, height: pos.height });
+    }
+    const connectionOps = [];
+    for (const [id, tr] of layout.connectionTranslations) {
+      if (!tr.dx && !tr.dy) continue;
+      const conn = registry.get(id);
+      if (!conn || !Array.isArray(conn.waypoints) || conn.waypoints.length === 0) continue;
+      connectionOps.push({ element: conn, dx: tr.dx, dy: tr.dy });
+    }
+    if (shapeOps.length === 0 && connectionOps.length === 0) {
+      return { ok: true, noop: true, xml: null };
+    }
+
+    const commandStack = inst.get("commandStack");
+    if (!commandStack) return { ok: false, error: "command_stack_unavailable" };
+    if (!commandStack.__fpcApplyGeometryHandlerRegistered && typeof commandStack.registerHandler === "function") {
+      commandStack.registerHandler("fpc.applyGeometry", FpcAlignDiagramHandler);
+      commandStack.__fpcApplyGeometryHandlerRegistered = true;
+    }
+    commandStack.execute("fpc.applyGeometry", { shapeOps, connectionOps });
+
+    if (canvas && typeof canvas.zoom === "function") {
+      canvas.zoom("fit-viewport");
+      const z = canvas.zoom();
+      if (!Number.isFinite(z) || z <= 0) canvas.zoom(1);
+    }
+
+    const saved = await inst.saveXML({ format: true });
+    const xml = applyMessageFlowExportDialect(String(saved?.xml || ""));
+
+    // Тот же persist-контракт, что у align: снапшот «до» + full-PUT;
+    // не удалось → откатываем команду, применение не остаётся.
+    const persistXml = typeof options.persistXml === "function" ? options.persistXml : null;
+    if (persistXml) {
+      const put = await persistXml(xml, { sourceAction: "align" });
+      if (!put || put.ok === false) {
+        try { commandStack.undo(); } catch { /* undo guard */ }
+        return { ok: false, error: String(put?.error || "apply_geometry_save_failed") };
+      }
+      if (!put.bpmnVersionSnapshot) {
+        try { commandStack.undo(); } catch { /* undo guard */ }
+        return { ok: false, error: "apply_geometry_snapshot_missing" };
+      }
+    }
+
+    return { ok: true, xml };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || "apply_geometry_failed") };
   }
 }
 
@@ -6732,6 +6832,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveXmlDraftText,
         seedNew,
         alignDiagramOnInstance,
+        applyGeometryOnInstance,
         resetCanvasOnInstance,
         applyXmlSnapshot,
         getBaseDiagramStateVersion: () => getBaseDiagramStateVersion?.(),

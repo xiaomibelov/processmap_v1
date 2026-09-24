@@ -204,6 +204,8 @@ export const en = {
   diagram: {
     editingSectionTitle: "Editing",
     alignDiagram: "Align diagram",
+    applyGeometry: "Apply geometry",
+    applyGeometryFailed: "Failed to apply geometry to diagram",
     resetCanvas: "Reset canvas",
     alignFailed: "Failed to align diagram",
     resetCanvasConfirm: "Are you sure? All diagram elements will be removed. This action is irreversible.",

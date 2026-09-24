@@ -332,6 +332,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setRobotMetaOverlayEnabled,
     setRobotMetaOverlayFilters,
     onAlignDiagram,
+    onApplyGeometry,
     onResetCanvas,
   } = overflowModesSection;
   const setSearchOpenSafe = typeof setDiagramActionSearchOpen === "function" ? setDiagramActionSearchOpen : () => {};
@@ -2016,6 +2017,23 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                   onAlignDiagram?.();
                 }}
                 data-testid="diagram-action-align-diagram"
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="3" width="12" height="10" rx="1" />
+                    <path d="M2 8h12" />
+                    <path d="M5.5 3v10" />
+                    <path d="M10.5 3v10" />
+                  </svg>
+                }
+                label={getDict().diagram.applyGeometry}
+                disabled={!isBpmnTab}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  onApplyGeometry?.();
+                }}
+                data-testid="diagram-action-apply-geometry"
               />
               <OverflowMenuItem
                 icon={
