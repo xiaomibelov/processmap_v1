@@ -1565,16 +1565,19 @@ function buildPropertiesOverlayGeometrySignature({ overlayGeometry, zoomBucket, 
     anchorLeft: Number(overlayGeometry?.anchorLeft || 0),
     topOffset: Number(overlayGeometry?.topOffset || 0),
     zoom: Number(zoomBucket || 0),
+    placement: String(overlayGeometry?.placement || "above"),
     hostType: isConnection ? "sequence" : "task",
   });
 }
 
 function applyPropertiesOverlayContainerStyle(container, overlayGeometry, isConnection) {
   if (!container) return;
+  const placement = !isConnection && String(overlayGeometry?.placement || "above") === "below" ? "below" : "above";
   container.className = isConnection
     ? "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--sequence"
-    : "fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--task";
+    : `fpcPropertyOverlay fpcPropertyOverlay--table fpcPropertyOverlay--task${placement === "below" ? " fpcPropertyOverlay--below" : ""}`;
   container.dataset.hostType = isConnection ? "sequence" : "task";
+  container.dataset.placement = placement;
   container.style.width = `${overlayGeometry.width}px`;
   container.style.maxWidth = `${overlayGeometry.width}px`;
   if (isConnection) {
