@@ -28,3 +28,23 @@ test("resetCanvas clears modeler and resets runtime state", () => {
   assert.match(source, /modeler\.clear\(\)|inst\.clear\(\)/);
   assert.match(source, /applyXmlSnapshot(?:\?\.)?\s*\(\s*["']\s*["']\s*,\s*["']reset_canvas["']\s*\)/);
 });
+
+test("align handler reads DI via diagram element only (no businessObject.di)", () => {
+  // bpmn-js: доступ к di через businessObject падает бросающим геттером
+  // ("Tried to access di from the businessObject"); DI — только через
+  // diagram-элемент (element.di / connection.di).
+  const handlerStart = source.indexOf("function FpcAlignDiagramHandler");
+  const handlerEnd = source.indexOf("async function alignDiagramOnInstance");
+  const handlerBody = handlerStart >= 0 && handlerEnd > handlerStart
+    ? source.slice(handlerStart, handlerEnd)
+    : "";
+  assert.ok(handlerBody.length > 0, "align handler slice found");
+  assert.equal(
+    handlerBody.includes("businessObject.di"),
+    false,
+    "no businessObject.di in align handler (bpmn-js throwing getter)",
+  );
+  assert.match(handlerBody, /\bel\.di\b/);
+  assert.match(handlerBody, /\bconn\.di\b/);
+  assert.match(handlerBody, /\brec\.el\.di\b/);
+});
