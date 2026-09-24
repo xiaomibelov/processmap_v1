@@ -1712,3 +1712,14 @@ test("S4: reconnect fail-closed — не-строковый id связи / би
   assert.equal(badWaypoints.needsFullSave, true, "waypoints заявлены, но битые — честный full-save, молчаливая потеря запрещена");
   assert.equal(badWaypoints.ops.length, 0);
 });
+
+test("align v2: fpc.alignDiagram не порождает ops и не дёргает full-save (execute и undo)", () => {
+  __resetOpsCoverageForTests();
+  const execute = mapCommandToOps({ command: "fpc.alignDiagram", action: "execute", context: {} });
+  assert.deepEqual(execute.ops, []);
+  assert.equal(execute.needsFullSave, false);
+  assert.equal(execute.replay, false);
+  const undo = mapCommandToOps({ command: "fpc.alignDiagram", action: "undo", context: {} });
+  assert.deepEqual(undo.ops, []);
+  assert.equal(undo.needsFullSave, false);
+});

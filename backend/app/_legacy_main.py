@@ -4509,6 +4509,7 @@ _USER_FACING_BPMN_VERSION_ACTIONS = {
     "restore_revision",
     "restore_bpmn_version",
     "session.bpmn_restore",
+    "align",
 }
 
 
