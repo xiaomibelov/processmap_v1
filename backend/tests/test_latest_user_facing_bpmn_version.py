@@ -19,6 +19,7 @@ _USER_FACING = {
     "restore_revision",
     "restore_bpmn_version",
     "session.bpmn_restore",
+    "align",
 }
 
 _XML = "<bpmn:definitions xmlns:bpmn='http://www.omg.org/spec/BPMN/20100524/MODEL' id='Defs_1'/>"

@@ -36,10 +36,10 @@ test("persistXmlSnapshot re-injects dialect before saveRaw", () => {
   );
 });
 
-test("alignDiagramOnInstance returns re-injected dialect XML (onSessionSync egress)", () => {
+test("alignDiagramOnInstance returns re-injected dialect XML (persist/onSessionSync egress)", () => {
   assert.match(
     source,
-    /const xml = applyMessageFlowExportDialect\(String\(saved\?\.xml \|\| ""\)\);\s*return \{ ok: true, xml \};/,
-    "align_diagram sync must send server-dialect XML",
+    /const xml = applyMessageFlowExportDialect\(String\(saved\?\.xml \|\| ""\)\);[\s\S]*?sourceAction: "align"[\s\S]*?return \{ ok: true, xml \};/,
+    "align_diagram must persist server-dialect XML with sourceAction align",
   );
 });

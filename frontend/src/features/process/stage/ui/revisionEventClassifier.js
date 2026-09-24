@@ -15,6 +15,7 @@ const MEANINGFUL_ACTION_KIND_BY_ACTION = new Map([
   ["restore_revision", "restore"],
   ["restore_bpmn_version", "restore"],
   ["session.bpmn_restore", "restore"],
+  ["align", "align"],
 ]);
 
 const TECHNICAL_ACTION_KIND_BY_ACTION = new Map([
@@ -92,6 +93,7 @@ export function localizeRevisionEventAction(actionRaw) {
   if (classification.actionKind === "import") return "Импорт BPMN";
   if (classification.actionKind === "restore") return "Восстановление BPMN";
   if (classification.actionKind === "publish") return "Ручная публикация";
+  if (classification.actionKind === "align") return "До выравнивания";
   if (classification.actionKind === "save_runtime") return "Техническое сохранение";
   return toText(classification.action) || "Неизвестное действие";
 }

@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.152",
+  currentVersion: "v1.0.153",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.153",
+      changes: [
+        "«Выровнять схему» стало безопасным: выравнивание работает строго внутри лайнов, стрелки только сдвигаются без переразводки, вся операция — один шаг отката.",
+        "Перед выравниванием автоматически создаётся версия «До выравнивания»: если сохранение не удалось, выравнивание откатывается и схема остаётся прежней.",
+      ],
+    },
     {
       version: "v1.0.152",
       changes: [
