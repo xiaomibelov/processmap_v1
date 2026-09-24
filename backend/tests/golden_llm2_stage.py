@@ -47,9 +47,36 @@ def _http(method, path, body=None, token=None, raw=False):
     return data if raw else json.loads(data)
 
 
+def _stage_credentials() -> tuple:
+    """Креды stage — ТОЛЬКО из env (Правило секретов; контур fix/stage-secret-cleanup-v1).
+
+    Заведите ВЫДЕЛЕННУЮ СЕРВИСНУЮ учётку (не личную!):
+      1. На stage создайте пользователя, напр. svc-golden-llm2@local
+         (админ: Users → приглашение/создание; либо SQL-insert в users с хешем пароля
+         через backend.app.auth.hash_password).
+      2. Права — минимально необходимые: доступ к transform-asis (transform_asis),
+         чтение process-templates; НЕ admin, НЕ org_admin.
+      3. Выдайте агенту/раннеру через env на время прогона:
+           STAGE_GOLDEN_EMAIL=...  STAGE_GOLDEN_PASSWORD=...
+    """
+    email = os.environ.get("STAGE_GOLDEN_EMAIL", "").strip()
+    password = os.environ.get("STAGE_GOLDEN_PASSWORD", "")
+    missing = [
+        name for name, value in (("STAGE_GOLDEN_EMAIL", email), ("STAGE_GOLDEN_PASSWORD", password))
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Не заданы env: " + ", ".join(missing) + ". "
+            "Креды stage передаются только через env (см. docstring golden_llm2_stage.py)."
+        )
+    return email, password
+
+
 def main() -> int:
+    email, password = _stage_credentials()
     token = _http("POST", "/api/auth/login", json.dumps({
-        "email": "d.belov@automacon.ru", "password": "Beelive12!",
+        "email": email, "password": password,
     }).encode())["access_token"]
 
     xml = _load_fixture("itmo_razogrev_v02.bpmn")
