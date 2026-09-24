@@ -977,6 +977,7 @@ export default function NotesPanel({
   onToBeLayerEnabledChange,
   toBeDocuments = [],
   onToBeDocumentsChange,
+  onTobeDocumentPreview,
   overlayHiddenFields = null,
   onOverlayFieldToggle,
   onGoToDiagram,
@@ -3293,6 +3294,7 @@ export default function NotesPanel({
                   <TobeDocumentsSection
                     documents={toBeDocuments}
                     onDocumentsChange={onToBeDocumentsChange}
+                    onDocumentClick={(doc) => void onTobeDocumentPreview?.(doc, { view: "popover" })}
                     selectedElementId={isElementMode ? selectedElementId : ""}
                     disabled={!!disabled}
                   />

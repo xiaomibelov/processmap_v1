@@ -8,6 +8,7 @@ import { normalizeTobeDocument } from "./tobeDocumentModel.js";
 export default function TobeDocumentsSection({
   documents = [],
   onDocumentsChange,
+  onDocumentClick,
   selectedElementId = "",
   disabled = false,
 }) {
@@ -38,7 +39,14 @@ export default function TobeDocumentsSection({
         <ul className="grid gap-1" data-testid="tobe-docs-list">
           {docs.map((doc) => (
             <li key={doc.id} className="truncate text-xs" title={doc.url || ""}>
-              {doc.title || doc.url}
+              <button
+                type="button"
+                className="w-full truncate text-left hover:underline"
+                onClick={() => onDocumentClick?.(doc)}
+                data-testid={`tobe-doc-open-${doc.id}`}
+              >
+                {doc.title || doc.url}
+              </button>
             </li>
           ))}
         </ul>

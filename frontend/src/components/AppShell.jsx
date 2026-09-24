@@ -142,6 +142,7 @@ export default function AppShell({
   onShowV2OverlaysExpandedChange,
   toBeLayerEnabled = false,
   toBeDocuments = [],
+  onTobeDocumentClick = null,
   drawioCompanionFocusIntent = null,
   discussionLinkedElementFocusIntent = null,
   onDiscussionLinkedElementFocusResult = null,
@@ -379,6 +380,7 @@ export default function AppShell({
               v2OverlaysExpanded={v2OverlaysExpanded}
               toBeLayerEnabled={toBeLayerEnabled}
               toBeDocuments={toBeDocuments}
+              onTobeDocumentClick={onTobeDocumentClick}
               drawioCompanionFocusIntent={drawioCompanionFocusIntent}
               discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}

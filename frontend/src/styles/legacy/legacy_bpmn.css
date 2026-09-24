@@ -429,6 +429,17 @@
   color: #334155;
 }
 
+/* Rows whose value links to a Google Doc open the document preview: subtle
+   affordance on top of the existing row colors (no layout change). */
+.fpc-overlay-v2-item--doc-link {
+  cursor: pointer;
+}
+
+.fpc-overlay-v2-item--doc-link .fpc-overlay-v2-value {
+  text-decoration: underline dotted var(--fpc-property-accent, #64748b);
+  text-underline-offset: 2px;
+}
+
 /* Derived display name (v0.3 P1B): in idle/compact mode the one-line name
    replaces the raw rows list; on hover/expand the full rows return with the
    name as the card's first (title) line. */

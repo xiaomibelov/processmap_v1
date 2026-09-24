@@ -149,3 +149,56 @@ test("createV2OverlayHost: no displayName → no title, no marker class", () => 
   assert.equal(result.host.classList.contains("fpc-overlay-v2-host--has-display-name"), false);
   assert.equal(findByClass(result.host, "fpc-overlay-v2-title"), null);
 });
+
+test("createV2OverlayHost: row with a Google Docs URL value is marked as a doc link", () => {
+  setupMockDom();
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    {
+      title: "Props",
+      properties: [
+        { name: "regulation", value: "см. https://docs.google.com/document/d/ABC123/edit?usp=sharing (регламент)" },
+        { name: "owner", value: "team" },
+      ],
+    },
+    false
+  );
+  const list = findByClass(result.host, "fpc-overlay-v2-list");
+  const [docRow, plainRow] = list.children;
+  assert.ok(docRow.classList.contains("fpc-overlay-v2-item--doc-link"));
+  assert.equal(docRow.dataset.fpcDocUrl, "https://docs.google.com/document/d/ABC123/edit?usp=sharing");
+  assert.equal(docRow.dataset.fpcDocTitle, "regulation");
+  assert.equal(plainRow.classList.contains("fpc-overlay-v2-item--doc-link"), false);
+  assert.equal(plainRow.dataset.fpcDocUrl, undefined);
+});
+
+test("createV2OverlayHost: doc link is detected even in a value truncated for display", () => {
+  setupMockDom();
+  const long = `https://docs.google.com/document/d/ABC123/edit ${"x".repeat(120)}`;
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    { title: "Props", properties: [{ name: "spec", value: long }] },
+    false
+  );
+  const list = findByClass(result.host, "fpc-overlay-v2-list");
+  assert.ok(list.children[0].classList.contains("fpc-overlay-v2-item--doc-link"));
+});
+
+test("createV2OverlayHost: non-Google URLs are not marked", () => {
+  setupMockDom();
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    {
+      title: "Props",
+      properties: [
+        { name: "sheet", value: "https://docs.google.com/spreadsheets/d/ABC/edit" },
+        { name: "site", value: "https://example.com/document/d/ABC" },
+      ],
+    },
+    false
+  );
+  const list = findByClass(result.host, "fpc-overlay-v2-list");
+  list.children.forEach((row) => {
+    assert.equal(row.classList.contains("fpc-overlay-v2-item--doc-link"), false);
+  });
+});
