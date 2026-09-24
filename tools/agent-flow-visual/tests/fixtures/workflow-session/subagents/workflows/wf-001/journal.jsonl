@@ -1,0 +1,2 @@
+{"type":"started","key":"wf-start","agentId":"sub1"}
+{"type":"result","key":"wf-end","agentId":"sub1","result":"success"}

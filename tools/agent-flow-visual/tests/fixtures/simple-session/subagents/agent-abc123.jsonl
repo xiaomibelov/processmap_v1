@@ -1,0 +1,2 @@
+{"type":"assistant","agentId":"abc123","isSidechain":true,"timestamp":"2026-08-26T10:00:05.000Z","sessionId":"simple-session","message":{"role":"assistant","model":"claude-sonnet-4","content":[{"type":"text","text":"Exploring files."},{"type":"tool_use","id":"tu-sub-bash","name":"Bash","input":{"command":"find . -name '*.ts'"}}]}}
+{"type":"user","agentId":"abc123","isSidechain":true,"timestamp":"2026-08-26T10:00:06.000Z","sessionId":"simple-session","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-sub-bash","content":"./src/index.ts"}]}}

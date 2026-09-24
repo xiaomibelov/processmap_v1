@@ -1,0 +1,6 @@
+
+{"type":"assistant","uuid":"m1","parentUuid":null,"timestamp":"2026-08-26T12:00:00.000Z","sessionId":"malformed","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}
+{"type":"user","uuid":"m2","parentUuid":"m1","timestamp":"2026-08-26T12:00:01.000Z","sessionId":"malformed","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-1","content":"ok"}]}}
+{this is not valid json
+{"type":"unicorn","magic":true}
+{"type":"system","subtype":"ping","timestamp":"2026-08-26T12:00:02.000Z","sessionId":"malformed"}
