@@ -34,6 +34,14 @@ const pmModdleDescriptor = {
           type: "String",
         },
         {
+          // параллельно derived_from (index-aligned): decision_sources из
+          // pipeline.py ("jev"/"deterministic"/"llm"); пустая строка, если
+          // у записи trace_map source нет (carry-over, open_question).
+          name: "derived_from_source",
+          isMany: true,
+          type: "String",
+        },
+        {
           name: "fate",
           isAttr: true,
           type: "String",

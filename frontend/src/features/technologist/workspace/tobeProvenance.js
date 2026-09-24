@@ -46,7 +46,9 @@ function cloneJson(value) {
 
 // trace_map (transformation/pipeline.py): element_id = AS IS-элемент,
 // draft_node_ids = TO BE-узлы, произведённые из него. Инверсия: TO BE id ->
-// { derivedFrom: [AS IS ids] (порядок следования в trace_map), fate, ruleId }.
+// { derivedFrom: [AS IS ids] (порядок следования в trace_map),
+//   sources: [decision_sources parallel к derivedFrom; "" если source нет],
+//   fate, ruleId }.
 export function buildProvenanceByTobeId(traceMapRaw) {
   const out = {};
   for (const tr of asArray(traceMapRaw)) {
@@ -55,8 +57,11 @@ export function buildProvenanceByTobeId(traceMapRaw) {
     const draftNodeIds = Array.isArray(tr?.draft_node_ids) ? tr.draft_node_ids : [];
     const tobeIds = draftNodeIds.map(asText).filter(Boolean);
     for (const tobeId of tobeIds) {
-      const entry = out[tobeId] || (out[tobeId] = { derivedFrom: [], fate: "", ruleId: "" });
-      if (!entry.derivedFrom.includes(asIsId)) entry.derivedFrom.push(asIsId);
+      const entry = out[tobeId] || (out[tobeId] = { derivedFrom: [], sources: [], fate: "", ruleId: "" });
+      if (!entry.derivedFrom.includes(asIsId)) {
+        entry.derivedFrom.push(asIsId);
+        entry.sources.push(asText(tr?.source));
+      }
       // consolidated N→1: судьбу/правило берём от первого непустого источника
       if (!entry.fate) entry.fate = asText(tr?.fate);
       if (!entry.ruleId) entry.ruleId = asText(tr?.rule_id);
@@ -99,6 +104,9 @@ function upsertTraceExtension(moddle, bo, prov) {
   const ext = bo.get("extensionElements") || moddle.create("bpmn:ExtensionElements", { values: [] });
   const values = asArray(ext.get("values")).filter((v) => String(v?.$type || "") !== "pm:Trace");
   const attrs = { derived_from: prov.derivedFrom.slice() };
+  if (Array.isArray(prov.sources) && prov.sources.some(Boolean)) {
+    attrs.derived_from_source = prov.sources.slice();
+  }
   if (prov.fate) attrs.fate = prov.fate;
   if (prov.ruleId) attrs.rule_id = prov.ruleId;
   values.push(moddle.create("pm:Trace", attrs));
@@ -135,8 +143,13 @@ export async function extractProvenanceFromBpmnXml(xml) {
     const values = asArray(bo.get?.("extensionElements")?.get?.("values"));
     const trace = values.find((v) => String(v?.$type || "") === "pm:Trace");
     if (!trace) return;
+    const derivedFrom = asArray(trace.get?.("derived_from")).map(String);
     out[id] = {
-      derived_from: asArray(trace.get?.("derived_from")).map(String),
+      derived_from: derivedFrom,
+      // старые XML без derived_from_source: выравниваем пустыми строками
+      derived_from_source: derivedFrom.length
+        ? derivedFrom.map((_, i) => String(asArray(trace.get?.("derived_from_source"))[i] ?? ""))
+        : [],
       fate: String(trace.get?.("fate") || ""),
       rule_id: String(trace.get?.("rule_id") || ""),
     };
