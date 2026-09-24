@@ -2,29 +2,39 @@ import { useState } from "react";
 
 import { normalizeTobeDocument } from "./tobeDocumentModel.js";
 
-// Phase 1 minimal add form: URL + title, anchor = currently selected element
-// (or free-floating when nothing is selected). Submit appends a normalized
-// document to the layer state; BpmnStage remounts from the new list.
+// Phase 1 minimal add form: URL + title. Submit starts ghost placement on
+// the canvas (when onGhostStart is wired): the inputs stay filled so an
+// Escape cancel loses nothing, and the button is disabled while the ghost is
+// active (single ghost at a time). Without onGhostStart it falls back to the
+// legacy immediate add (anchor = currently selected element).
 export default function TobeDocumentsSection({
   documents = [],
   onDocumentsChange,
   onDocumentClick,
   selectedElementId = "",
   disabled = false,
+  ghostActive = false,
+  onGhostStart = null,
 }) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
 
   const docs = Array.isArray(documents) ? documents : [];
   const anchorId = String(selectedElementId || "").trim();
-  const canSubmit = url.trim().length > 0 && !disabled;
+  const canSubmit = url.trim().length > 0 && !disabled && !ghostActive;
 
   function handleSubmit(event) {
     event.preventDefault();
     if (!canSubmit) return;
+    const cleanUrl = url.trim();
+    const cleanTitle = title.trim() || cleanUrl;
+    if (typeof onGhostStart === "function") {
+      onGhostStart({ url: cleanUrl, title: cleanTitle });
+      return;
+    }
     const doc = normalizeTobeDocument({
-      url,
-      title: title.trim() || url.trim(),
+      url: cleanUrl,
+      title: cleanTitle,
       anchorElementId: anchorId || null,
     });
     setUrl("");
@@ -74,7 +84,7 @@ export default function TobeDocumentsSection({
           disabled={!canSubmit}
           data-testid="tobe-doc-add"
         >
-          {anchorId ? "+ Документ к выделенному" : "+ Документ"}
+          {ghostActive ? "Кликните на диаграмму · Esc — отмена" : (anchorId ? "+ Документ к выделенному" : "+ Документ")}
         </button>
       </form>
     </div>

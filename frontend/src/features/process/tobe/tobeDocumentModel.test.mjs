@@ -14,6 +14,8 @@ test("normalizeTobeDocument: fills defaults for an empty record", () => {
   assert.equal(doc.url, "");
   assert.equal(doc.docId, "");
   assert.equal(doc.color, null);
+  assert.equal(doc.width, 240);
+  assert.equal(doc.height, 160);
   assert.equal(doc.visible, true);
 });
 
@@ -35,6 +37,27 @@ test("normalizeTobeDocument: keeps provided fields and derives docId from url", 
   assert.equal(doc.docId, "ABC123");
   assert.equal(doc.color, "#2563eb");
   assert.equal(doc.visible, true);
+});
+
+test("normalizeTobeDocument: keeps provided width/height", () => {
+  const doc = normalizeTobeDocument({ id: "d", width: 320, height: 200 });
+  assert.equal(doc.width, 320);
+  assert.equal(doc.height, 200);
+});
+
+test("normalizeTobeDocument: legacy records without size fall back to defaults", () => {
+  // Backward compat: records persisted before width/height existed have no
+  // (or invalid) size fields and must render at the default shape size.
+  assert.deepEqual(
+    (() => {
+      const doc = normalizeTobeDocument({ id: "d", url: "https://example.com" });
+      return { width: doc.width, height: doc.height };
+    })(),
+    { width: 240, height: 160 },
+  );
+  const invalid = normalizeTobeDocument({ id: "d", width: "abc", height: -5 });
+  assert.equal(invalid.width, 240);
+  assert.equal(invalid.height, 160);
 });
 
 test("normalizeTobeDocument: visible=false is preserved", () => {

@@ -13,6 +13,19 @@ function generateDocId() {
   return `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Canvas shape geometry: documents render as static cards of this size
+// unless the record carries its own width/height (older records without
+// these fields keep working — they fall back to the defaults).
+export const TOBE_DOC_DEFAULT_WIDTH = 240;
+export const TOBE_DOC_DEFAULT_HEIGHT = 160;
+export const TOBE_DOC_MIN_WIDTH = 160;
+export const TOBE_DOC_MIN_HEIGHT = 100;
+
+function asSize(value, fallback) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
 // Google Docs document id lives in the `/document/d/{id}/` path segment.
 // Accepted: /edit, /preview, /export?..., query-only, or bare id URLs.
 export function extractGoogleDocId(urlRaw) {
@@ -46,6 +59,8 @@ export function normalizeTobeDocument(raw) {
     url,
     docId: asText(src.docId) || extractGoogleDocId(url),
     color: asText(src.color) || null,
+    width: asSize(src.width, TOBE_DOC_DEFAULT_WIDTH),
+    height: asSize(src.height, TOBE_DOC_DEFAULT_HEIGHT),
     visible: src.visible !== false,
   };
 }
