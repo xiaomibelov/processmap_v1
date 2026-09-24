@@ -26,6 +26,16 @@ export interface ArtifactChip {
 }
 
 /**
+ * File discovered while scanning a contour directory.
+ */
+export interface ScannedFile {
+  name: string;
+  path: string;
+  size: number;
+  mtime: string;
+}
+
+/**
  * A single tool call observed while a step is running.
  */
 export interface ToolCallInfo {
@@ -70,11 +80,12 @@ export interface ContourModel {
   name: string;
   branch: string;
   runId: string;
-  status: "running" | "finished" | "blocked" | "cancelled";
+  status: "running" | "finished" | "blocked" | "cancelled" | "unknown";
   startedAt: string;
   finishedAt: string | null;
   steps: RegulationStep[];
   approvalGates: ApprovalGate[];
+  files?: ScannedFile[];
 }
 
 /**
@@ -108,6 +119,7 @@ export interface LayoutNode {
   interactive: boolean;
   parentId: string | null;
   chips: ArtifactChip[];
+  files?: ScannedFile[];
 }
 
 /**
