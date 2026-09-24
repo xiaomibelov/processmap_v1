@@ -19,15 +19,76 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function readNodeBounds(nodeRaw) {
+const OFFSET_LAYOUT_MARKER = "offset.v1";
+
+function readNodeOffsetBounds(nodeRaw) {
+  const node = asObject(nodeRaw);
+  const di = asObject(node.di);
+  const dx = Number(di.dx);
+  const dy = Number(di.dy);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+  const w = Math.max(24, toFinite(di.w ?? di.width, 140));
+  const h = Math.max(24, toFinite(di.h ?? di.height, 80));
+  return { x: dx, y: dy, w, h };
+}
+
+function readNodeAbsBounds(nodeRaw) {
   const node = asObject(nodeRaw);
   const di = asObject(node.di);
   const x = toFinite(di.x, Number.NaN);
   const y = toFinite(di.y, Number.NaN);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   const w = Math.max(24, toFinite(di.w ?? di.width, 140));
   const h = Math.max(24, toFinite(di.h ?? di.height, 80));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return { x, y, w, h };
+}
+
+function readNodeBounds(nodeRaw) {
+  return readNodeOffsetBounds(nodeRaw) || readNodeAbsBounds(nodeRaw);
+}
+
+// Lazy-миграция legacy-паков с абсолютными di: пересчитываем dx/dy от якоря
+// (entry-нода, иначе верхняя левая) и ставим маркер layout. Идемпотентно:
+// паки уже с маркером offset.v1 проходят без изменений.
+function migrateNodesToOffsetLayout(nodes, entryNodeIdRaw) {
+  const entryNodeId = toText(entryNodeIdRaw);
+  const findNode = (id) => nodes.find((node) => toText(node?.id) === id) || null;
+  let anchorNode = entryNodeId ? findNode(entryNodeId) : null;
+  if (!anchorNode) {
+    let best = null;
+    nodes.forEach((node) => {
+      const bounds = readNodeBounds(node);
+      if (!bounds) return;
+      if (!best || bounds.y < best.y || (bounds.y === best.y && bounds.x < best.x)) {
+        best = { node, y: bounds.y, x: bounds.x };
+      }
+    });
+    anchorNode = best ? best.node : null;
+  }
+  if (!anchorNode) return { nodes, anchorNodeId: "", anchorAbs: null };
+  const anchorAbsBounds = readNodeAbsBounds(anchorNode) || readNodeOffsetBounds(anchorNode);
+  const anchorX = anchorAbsBounds ? anchorAbsBounds.x : 0;
+  const anchorY = anchorAbsBounds ? anchorAbsBounds.y : 0;
+  const migratedNodes = nodes.map((node) => {
+    if (readNodeOffsetBounds(node)) return node;
+    const abs = readNodeAbsBounds(node);
+    if (!abs) return node;
+    const di = asObject(node?.di);
+    return {
+      ...node,
+      di: {
+        dx: abs.x - anchorX,
+        dy: abs.y - anchorY,
+        w: Math.max(24, toFinite(di.w ?? di.width, 140)),
+        h: Math.max(24, toFinite(di.h ?? di.height, 80)),
+      },
+    };
+  });
+  return {
+    nodes: migratedNodes,
+    anchorNodeId: toText(anchorNode?.id),
+    anchorAbs: { x: anchorX, y: anchorY },
+  };
 }
 
 export function normalizeTemplatePack(packRaw) {
@@ -36,11 +97,21 @@ export function normalizeTemplatePack(packRaw) {
   const nodes = asArray(fragment.nodes).map((row) => asObject(row)).filter((row) => readNodeBounds(row));
   const edges = asArray(fragment.edges).map((row) => asObject(row));
   if (!nodes.length) return null;
+  const fragmentMeta = {};
+  let normalizedNodes = nodes;
+  if (toText(fragment.layout) !== OFFSET_LAYOUT_MARKER) {
+    const migrated = migrateNodesToOffsetLayout(nodes, pack.entryNodeId);
+    normalizedNodes = migrated.nodes;
+    fragmentMeta.layout = OFFSET_LAYOUT_MARKER;
+    if (migrated.anchorNodeId) fragmentMeta.anchorNodeId = migrated.anchorNodeId;
+    if (migrated.anchorAbs) fragmentMeta.anchorAbs = migrated.anchorAbs;
+  }
   return {
     ...pack,
     fragment: {
       ...fragment,
-      nodes,
+      ...fragmentMeta,
+      nodes: normalizedNodes,
       edges,
     },
     entryNodeId: toText(pack.entryNodeId),
