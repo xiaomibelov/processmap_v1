@@ -680,10 +680,18 @@
 .fpcPropertyOverlay {
   pointer-events: none;
   display: block;
-  max-width: 216px;
-  transform: translate(-50%, calc(-100% - 12px));
+  /* Above-node placement: element top sits 20px above the node
+     (geometry topOffset = -20); -100% lifts it by its own height, so the
+     chip bottom lands exactly at nodeTop − 20. */
+  transform: translate(-50%, -100%);
   z-index: 17;
   cursor: default;
+}
+
+/* Below-node placement (node at the canvas/viewport top): element top is
+   nodeBottom + 20 (geometry topOffset = height + 20), no vertical shift. */
+.fpcPropertyOverlay--below {
+  transform: translate(-50%, 0);
 }
 
 .fpcPropertyOverlay--table {

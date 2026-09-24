@@ -211,10 +211,46 @@ function sortTemplateNodes(nodesRaw) {
       const a = asObject(aRaw);
       const b = asObject(bRaw);
       return Number(a.nestingDepth || 0) - Number(b.nestingDepth || 0)
-        || Number(a?.di?.x || 0) - Number(b?.di?.x || 0)
-        || Number(a?.di?.y || 0) - Number(b?.di?.y || 0)
+        || Number(a?.di?.x ?? a?.di?.dx ?? 0) - Number(b?.di?.x ?? b?.di?.dx ?? 0)
+        || Number(a?.di?.y ?? a?.di?.dy ?? 0) - Number(b?.di?.y ?? b?.di?.dy ?? 0)
         || toText(a.id).localeCompare(toText(b.id));
     });
+}
+
+const TEMPLATE_PACK_OFFSET_LAYOUT = "offset.v1";
+
+// Offset-модель layout: координаты узлов хранятся как {dx, dy} от якоря
+// (entry-нода, иначе верхняя левая). Вызывается на capture, когда di ещё
+// абсолютные; якорь сохраняется в fragment.anchorNodeId / anchorAbs.
+function applyOffsetLayoutToPackFragment(fragment, anchorNodeIdRaw) {
+  const nodes = asArray(fragment?.nodes);
+  if (!nodes.length) return;
+  const findNode = (id) => nodes.find((node) => toText(node?.id) === id) || null;
+  let anchorNode = toText(anchorNodeIdRaw) ? findNode(anchorNodeIdRaw) : null;
+  if (!anchorNode) {
+    let best = null;
+    nodes.forEach((node) => {
+      const x = Number(node?.di?.x || 0);
+      const y = Number(node?.di?.y || 0);
+      if (!best || y < best.y || (y === best.y && x < best.x)) best = { node, x, y };
+    });
+    anchorNode = best ? best.node : null;
+  }
+  if (!anchorNode) return;
+  const anchorX = Number(anchorNode?.di?.x || 0);
+  const anchorY = Number(anchorNode?.di?.y || 0);
+  nodes.forEach((node) => {
+    const di = asObject(node?.di);
+    node.di = {
+      dx: Number(di.x || 0) - anchorX,
+      dy: Number(di.y || 0) - anchorY,
+      w: Number(di.w || 140),
+      h: Number(di.h || 80),
+    };
+  });
+  fragment.anchorNodeId = toText(anchorNode?.id);
+  fragment.anchorAbs = { x: anchorX, y: anchorY };
+  fragment.layout = TEMPLATE_PACK_OFFSET_LAYOUT;
 }
 
 function sortTemplateEdges(edgesRaw) {
@@ -332,17 +368,20 @@ function buildSubprocessTemplatePack(inst, subprocessElement, options = {}, deps
     nestingDepth: 1,
   });
 
+  const fragment = {
+    nodes: sortTemplateNodes(state.nodes).filter((item) => toText(item.id)),
+    edges: sortTemplateEdges(state.edges),
+    annotations: [],
+  };
+  applyOffsetLayoutToPackFragment(fragment, subprocessId);
+
   return {
     title: String(options?.title || "").trim() || createTemplateTitle([subprocessElement]),
     tags: ["subprocess", "subtree"],
     captureMode: "subprocess_subtree",
     sourceRootId: subprocessId,
     sourceDescriptorIds: Array.from(state.sourceIds),
-    fragment: {
-      nodes: sortTemplateNodes(state.nodes).filter((item) => toText(item.id)),
-      edges: sortTemplateEdges(state.edges),
-      annotations: [],
-    },
+    fragment,
     entryNodeId: subprocessId,
     exitNodeId: subprocessId,
     hints: {
@@ -683,6 +722,7 @@ export function createTemplatePackAdapter(deps = {}) {
         suggestedInsertMode: "after",
       },
     };
+    applyOffsetLayoutToPackFragment(pack.fragment, pack.entryNodeId);
 
     logPackDebug("capture", {
       sid: String(getSessionId() || "-"),
@@ -965,8 +1005,12 @@ export function createTemplatePackAdapter(deps = {}) {
       if (width > 0) shapeAttrs.width = width;
       if (height > 0) shapeAttrs.height = height;
       if (isSubprocessType(type)) shapeAttrs.isExpanded = true;
-      const relX = Number(node?.di?.x || 0) - minX;
-      const relY = Number(node?.di?.y || 0) - minY;
+      const relX = Number.isFinite(Number(node?.di?.dx))
+        ? Number(node.di.dx)
+        : Number(node?.di?.x || 0) - minX;
+      const relY = Number.isFinite(Number(node?.di?.dy))
+        ? Number(node.di.dy)
+        : Number(node?.di?.y || 0) - minY;
       const shape = modeling.createShape(
         elementFactory.createShape(shapeAttrs),
         {

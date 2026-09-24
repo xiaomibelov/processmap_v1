@@ -247,13 +247,18 @@
 }
 
 /* V2 checkbox-driven overlay: compact badge centered above the element in idle,
-   expands upward and sideways on hover to show the full property list. */
+   expands upward and sideways on hover to show the full property list.
+   The badge itself is absolutely centered (left: 50% + translateX(-50%)) and
+   capped to the host width (= node width via inline style); flex centering on
+   the host keeps any in-flow chip content centered on the node axis as well. */
 .fpc-overlay-v2-host {
   position: absolute;
   top: -20px;
   left: 0;
   width: 100%;
   height: 20px;
+  display: flex;
+  justify-content: center;
   z-index: 1000;
   pointer-events: auto;
   transition: opacity 0.25s ease, filter 0.25s ease;

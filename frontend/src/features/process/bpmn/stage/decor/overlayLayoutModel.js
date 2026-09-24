@@ -95,15 +95,22 @@ export function readOverlayCanvasZoom(inst) {
   }
 }
 
-export function buildOverlayGeometry({ element, isConnection = false, canvasZoom = 1 } = {}) {
+export function buildOverlayGeometry({
+  element,
+  isConnection = false,
+  canvasZoom = 1,
+  preferBelow = false,
+  viewportTopLimit = null,
+} = {}) {
   const zoom = clampNumber(asFiniteNumber(canvasZoom, 1), 0.2, 4);
   const bounds = readElementBounds(element);
   if (!bounds) {
     return {
       width: isConnection ? 58 : 72,
       anchorLeft: isConnection ? 29 : 36,
-      topOffset: isConnection ? 0 : -14,
+      topOffset: isConnection ? 0 : -20,
       zoom,
+      placement: "above",
     };
   }
 
@@ -111,15 +118,31 @@ export function buildOverlayGeometry({ element, isConnection = false, canvasZoom
     const centerX = bounds.x + bounds.width / 2;
     const elementX = asFiniteNumber(element?.x, bounds.x);
     const anchorLeft = Math.round(Math.max(0, centerX - elementX));
-    // Task overlays should stay readable, but not dominate the task box.
+    // Chip width follows the on-screen node width (maxWidth = node width);
+    // keep a floor so narrow nodes do not collapse the chip.
     const visualWidth = bounds.width * zoom;
-    // Widen task overlays by ~20% total (about +10% per side).
-    const width = Math.round(clampNumber((visualWidth * 0.66 + 24) * 1.2, 76, 192));
+    const width = Math.round(clampNumber(visualWidth, 76, Number.MAX_SAFE_INTEGER));
+    // Above by default; below when the node sits so high that the chip would
+    // leave the viewport/canvas top. Reserve = chip height + the 20px gap;
+    // without an explicit viewport edge (bounds.y < 40) covers the
+    // "node at the very top" case deterministically.
+    const topLimit = asFiniteNumber(viewportTopLimit, null);
+    const clipsTop = topLimit !== null
+      ? bounds.y - 20 < topLimit
+      : bounds.y < 40;
+    const placement = preferBelow || clipsTop ? "below" : "above";
+    // Element-local offsets: CSS translate(-50%, -100%) lifts the chip by its
+    // own height, so top = -20 puts the chip bottom at nodeTop − 20; below
+    // uses translate(-50%, 0), so top = height + 20 clears nodeBottom + 20.
+    const topOffset = placement === "below"
+      ? Math.round(bounds.height + 20)
+      : -20;
     return {
       width,
       anchorLeft,
-      topOffset: -14,
+      topOffset,
       zoom,
+      placement,
     };
   }
 

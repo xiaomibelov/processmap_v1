@@ -390,6 +390,86 @@ test("captureTemplatePackOnModeler returns pack with selected nodes and edges", 
   assert.equal(result.pack.fragment.edges[0].targetId, "Task_B");
 });
 
+test("captureTemplatePackOnModeler stores nodes as offsets relative to entry anchor node", async () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 320, 120, "B");
+  const ab = createSequence("Flow_AB", a, b);
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [a, b],
+    registryItems: [a, b, ab],
+  });
+
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Offset pack" });
+  assert.equal(result?.ok, true);
+  const fragment = result?.pack?.fragment || {};
+  assert.equal(fragment.layout, "offset.v1");
+  assert.equal(fragment.anchorNodeId, "Task_A");
+  assert.deepEqual(fragment.anchorAbs, { x: 120, y: 80 });
+  const nodeA = fragment.nodes.find((node) => node.id === "Task_A");
+  const nodeB = fragment.nodes.find((node) => node.id === "Task_B");
+  assert.deepEqual(nodeA?.di, { dx: 0, dy: 0, w: 140, h: 80 });
+  assert.deepEqual(nodeB?.di, { dx: 200, dy: 40, w: 140, h: 80 });
+  assert.equal(nodeA?.di?.x, undefined);
+  assert.equal(nodeB?.di?.y, undefined);
+});
+
+test("captureTemplatePackOnModeler anchors offsets to entry node even when it is not top-left", async () => {
+  const a = createShape("Task_A", 120, 80, "A");
+  const b = createShape("Task_B", 320, 120, "B");
+  const ba = createSequence("Flow_BA", b, a);
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [a, b],
+    registryItems: [a, b, ba],
+  });
+
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Entry anchored pack" });
+  assert.equal(result?.ok, true);
+  const fragment = result?.pack?.fragment || {};
+  assert.equal(result?.pack?.entryNodeId, "Task_B");
+  assert.equal(fragment.layout, "offset.v1");
+  assert.equal(fragment.anchorNodeId, "Task_B");
+  assert.deepEqual(fragment.anchorAbs, { x: 320, y: 120 });
+  const nodeA = fragment.nodes.find((node) => node.id === "Task_A");
+  const nodeB = fragment.nodes.find((node) => node.id === "Task_B");
+  assert.deepEqual(nodeB?.di, { dx: 0, dy: 0, w: 140, h: 80 });
+  assert.deepEqual(nodeA?.di, { dx: -200, dy: -40, w: 140, h: 80 });
+});
+
+test("captureTemplatePackOnModeler stores subprocess subtree nodes as offsets relative to subprocess", async () => {
+  const innerStart = {
+    id: "StartEvent_1",
+    type: "bpmn:StartEvent",
+    x: 150,
+    y: 170,
+    width: 36,
+    height: 36,
+    businessObject: { id: "StartEvent_1", $type: "bpmn:StartEvent", name: "Start" },
+    outgoing: [],
+  };
+  const innerTask = createShape("InnerTask_1", 240, 150, "Inner task");
+  innerTask.parent = { id: "SubProcess_1" };
+  const subprocess = createSubprocess("SubProcess_1", 120, 120, "Expanded subprocess", [
+    { id: "StartEvent_1", $type: "bpmn:StartEvent", name: "Start" },
+    { id: "InnerTask_1", $type: "bpmn:Task", name: "Inner task" },
+  ]);
+  innerStart.parent = subprocess;
+  const { adapter, inst } = createModelerWithServices({
+    selectionItems: [subprocess],
+    registryItems: [subprocess, innerStart, innerTask],
+  });
+
+  const result = await adapter.captureTemplatePackOnModeler(inst, { title: "Subprocess offset pack" });
+  assert.equal(result?.ok, true);
+  const fragment = result?.pack?.fragment || {};
+  assert.equal(fragment.layout, "offset.v1");
+  assert.equal(fragment.anchorNodeId, "SubProcess_1");
+  assert.deepEqual(fragment.anchorAbs, { x: 120, y: 120 });
+  const rootNode = fragment.nodes.find((node) => node.id === "SubProcess_1");
+  const innerNode = fragment.nodes.find((node) => node.id === "InnerTask_1");
+  assert.deepEqual(rootNode?.di, { dx: 0, dy: 0, w: 320, h: 220 });
+  assert.deepEqual(innerNode?.di, { dx: 120, dy: 30, w: 140, h: 80 });
+});
+
 test("captureTemplatePackOnModeler captures sequenceFlow semantic payload beyond thin edge fields", async () => {
   const a = createShape("Task_A", 120, 80, "A");
   const b = createShape("Task_B", 320, 120, "B");
@@ -918,6 +998,74 @@ test("insertTemplatePackOnModeler creates nodes, connects sequence flows and emi
   assert.equal(connectCalls.length, 2);
   assert.equal(emitCalls.length, 1);
   assert.equal(emitCalls[0][0], "diagram.template_insert");
+});
+
+test("insertTemplatePackOnModeler places offset-layout nodes at target anchor plus exact offsets", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, createShapeCalls } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_offset_layout",
+      entryNodeId: "N1",
+      exitNodeId: "N2",
+      fragment: {
+        layout: "offset.v1",
+        anchorNodeId: "N1",
+        anchorAbs: { x: 10, y: 20 },
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "First", di: { dx: 0, dy: 0, w: 140, h: 80 } },
+          { id: "N2", type: "bpmn:Task", name: "Second", di: { dx: 200, dy: 40, w: 140, h: 80 } },
+        ],
+        edges: [{ id: "E1", sourceId: "N1", targetId: "N2" }],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  assert.equal(result?.createdNodes, 2);
+  // target anchor = anchor.right + 220 = 100 + 140 + 220 = 460, anchor.y - 16 = 84
+  assert.deepEqual(
+    createShapeCalls.map((call) => [call.pos.x, call.pos.y]),
+    [[460, 84], [660, 124]],
+  );
+});
+
+test("insertTemplatePackOnModeler keeps geometry distances for entry-anchored legacy absolute packs", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, createShapeCalls } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_abs_geometry",
+      entryNodeId: "N1",
+      exitNodeId: "N2",
+      fragment: {
+        nodes: [
+          { id: "N1", type: "bpmn:Task", name: "First", di: { x: 500, y: 300, w: 140, h: 80 } },
+          { id: "N2", type: "bpmn:Task", name: "Second", di: { x: 700, y: 340, w: 140, h: 80 } },
+        ],
+        edges: [{ id: "E1", sourceId: "N1", targetId: "N2" }],
+      },
+    },
+  };
+
+  const result = await adapter.insertTemplatePackOnModeler(payload);
+  assert.equal(result?.ok, true);
+  // target anchor = 460/84; relative distances (200, 40) must be preserved
+  assert.deepEqual(
+    createShapeCalls.map((call) => [call.pos.x, call.pos.y]),
+    [[460, 84], [660, 124]],
+  );
 });
 
 test("insertTemplatePackOnModeler reapplies sequenceFlow semantic payload to created connection", async () => {
