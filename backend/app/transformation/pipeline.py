@@ -32,6 +32,7 @@ from ..process_template.bpmn_import import (
     parse_bpmn,
 )
 from ..validation.service import validate_ui_model
+from . import jev
 from .rules_loader import load_rules, rule_summary
 
 # camunda:property значения-заглушки AS IS — не переносим в draft.
@@ -736,6 +737,7 @@ def transform_asis(
     decisions: Dict[str, Optional[Dict[str, Any]]] = {}
     decision_sources: Dict[str, str] = {}
     unmatched: List[Dict[str, Any]] = []
+    tie_candidates: Dict[str, List[str]] = {}
     for fact in facts["elements"]:
         if fact["bpmn_type"] not in _TASK_LIKE:
             continue
@@ -747,6 +749,7 @@ def transform_asis(
             # LLM2: tie между правилами → LLM-арбитр (не угадываем первым по списку);
             # оффлайн/низкий confidence → open_question
             decisions[fact["id"]] = None
+            tie_candidates[fact["id"]] = [w["id"] for w in winners]
             unmatched.append(fact)
         else:
             decisions[fact["id"]] = None
@@ -755,6 +758,22 @@ def transform_asis(
                 decision_sources[fact["id"]] = "unmatched"
             else:
                 unmatched.append(fact)
+
+    # Jev (ADR): точка A — «0 winners» и tie-арбитр. Автопринятие только при
+    # conf ≥ JEV_AUTO_CONFIDENCE; иначе факт остаётся в unmatched и уходит в
+    # существующий LLM-каскад ниже. При любом сбое Jev — поведение битово сегодняшнее.
+    if unmatched and jev.jev_enabled():
+        jev_matches = jev.match_with_jev(unmatched, rules, tie_candidates=tie_candidates)
+        by_id = {r["id"]: r for r in rules}
+        jev_remaining: List[Dict[str, Any]] = []
+        for fact in unmatched:
+            choice = jev_matches.get(fact["id"])
+            if choice is not None and choice.confidence >= jev.JEV_AUTO_CONFIDENCE and choice.rule_id in by_id:
+                decisions[fact["id"]] = by_id[choice.rule_id]
+                decision_sources[fact["id"]] = "jev"
+            else:
+                jev_remaining.append(fact)
+        unmatched = jev_remaining
 
     llm_status = "disabled"
     if unmatched and llm_enabled:
