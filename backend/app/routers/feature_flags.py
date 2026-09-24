@@ -18,6 +18,8 @@ _DEFAULT_FLAGS: Dict[str, str] = {
     "workspace_session_tree_view": "0",
     "workspace_auto_expand_steps": "0",
     "workspace_tobe_overview": "0",
+    "tobe_overlay_mock": "0",
+    "tobe_overlay_underlay": "0",
 }
 
 

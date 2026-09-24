@@ -201,6 +201,7 @@ import {
   deriveRemoteVersionActor,
 } from "../features/process/stage/remoteSessionUpdateToast";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
+import { deriveUnderlayAsisSid } from "../features/process/bpmn/stage/tobeOverlayUnderlay/deriveUnderlayAsisSid.js";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
 import ProcessStageDeadSessionModal from "../features/process/stage/ui/ProcessStageDeadSessionModal";
@@ -687,6 +688,33 @@ function ProcessStage({
   const versionHeadSidRef = useRef("");
   const clientId = useMemo(() => getOrCreateClientId(), []);
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
+  // T3 (tobe-overlay-underlay-v1): мета текущей сессии для underlay-гейта.
+  // Гейт строго за флагом: при flag off ни одного лишнего GET (критерий 1 —
+  // main бит-в-бит). Списочная проекция SessionItem не содержит
+  // derived_from_session_id, поэтому читаем session-record (apiGetSession).
+  const [underlaySessionMeta, setUnderlaySessionMeta] = useState(null);
+  useEffect(() => {
+    if (!featureFlags?.tobe_overlay_underlay || !sid) {
+      setUnderlaySessionMeta(null);
+      return undefined;
+    }
+    let cancelled = false;
+    apiGetSession(sid)
+      .then((r) => {
+        if (cancelled) return;
+        setUnderlaySessionMeta(r?.ok ? (r.session || r.result || null) : null);
+      })
+      .catch(() => {
+        if (!cancelled) setUnderlaySessionMeta(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [featureFlags?.tobe_overlay_underlay, sid]);
+  const underlayAsisSid = useMemo(
+    () => deriveUnderlayAsisSid(underlaySessionMeta),
+    [underlaySessionMeta],
+  );
   const [bpmnFileDragActive, setBpmnFileDragActive] = useState(false);
   const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -8000,6 +8028,7 @@ function ProcessStage({
     childSessionDiscussionAggregates,
     withHybridOverlayGuard,
     showOverlaysDuringPan,
+    underlayAsisSid,
   });
 
   const templateSelectionCount = Math.max(
@@ -8230,6 +8259,7 @@ function ProcessStage({
   } = shellVm.shellProps;
   const headerView = buildDiagramHeaderView({
     featureFlags,
+    underlayAsisSid,
     shellProps: {
       ...shellVm.shellProps,
       sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,

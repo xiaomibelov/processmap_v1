@@ -2,6 +2,8 @@ import { Fragment } from "react";
 import ProcessPanels from "./ProcessPanels";
 import DiagramToolbarSaveStatusSlot from "./DiagramToolbarSaveStatusSlot";
 import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
+import TobeOverlayMockControls from "../../bpmn/stage/tobeOverlayMock/TobeOverlayMockControls";
+import TobeOverlayUnderlayControls from "../../bpmn/stage/tobeOverlayUnderlay/TobeOverlayUnderlayControls.jsx";
 import ModeSwitchSegment from "../../../../components/ModeSwitchSegment";
 import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
@@ -87,6 +89,7 @@ export default function ProcessStageHeader({ view = {} }) {
     topPanelsView,
     sessionPresenceView,
     featureFlags,
+    underlayAsisSid, // tobe-overlay-underlay-v1: sid AS IS-подложки (null — гейт закрыт)
     tobeEntry,
     modeSwitch, // UXF addendum-3: сегмент «Схема | TO BE» справа от вкладки Diagram
     saveStatusSlotFlash, // П3: краткая success-индикация в слоте вместо floating-тоста
@@ -196,6 +199,16 @@ export default function ProcessStageHeader({ view = {} }) {
           {featureFlags?.bpmn_fps_meter_enabled ? (
             <div className="ml-2" style={{ display: "inline-block", verticalAlign: "middle" }}>
               <BpmnFpsMeter enabled={true} />
+            </div>
+          ) : null}
+          {featureFlags?.tobe_overlay_mock && hasSession ? (
+            <div className="ml-2 flex items-center gap-1" style={{ verticalAlign: "middle" }}>
+              <TobeOverlayMockControls />
+            </div>
+          ) : null}
+          {featureFlags?.tobe_overlay_underlay && hasSession ? (
+            <div className="ml-2 flex items-center gap-1" style={{ verticalAlign: "middle" }}>
+              <TobeOverlayUnderlayControls underlayAsisSid={underlayAsisSid} />
             </div>
           ) : null}
         </div>
