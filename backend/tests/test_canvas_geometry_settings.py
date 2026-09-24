@@ -190,6 +190,43 @@ class CanvasGeometrySettingsTests(unittest.TestCase):
         settings = self._get()["settings"]
         self.assertEqual(settings["sequence_gap"], 100)
 
+    def test_canvas_keys_hidden_from_public_feature_flags(self):
+        from app.routers.feature_flags import get_feature_flags_endpoint
+
+        self._put({"task_width": 200, "task_height": 120, "sequence_gap": 250})
+        result = get_feature_flags_endpoint(_DummyRequest(self.admin, active_org_id=self.org_id))
+        self.assertTrue(result.get("ok"))
+        for key in ("canvas_task_width", "canvas_task_height", "canvas_sequence_gap"):
+            self.assertNotIn(key, result["flags"], msg=f"key={key}")
+        # boolean-флаги по-прежнему на месте
+        self.assertIn("bpmn_fps_meter_enabled", result["flags"])
+
+    def test_flag_patch_rejects_canvas_geometry_keys(self):
+        from fastapi import HTTPException
+
+        from app.routers.feature_flags import (
+            patch_feature_flags_endpoint,
+            put_feature_flag_endpoint,
+        )
+
+        request = _DummyRequest(self.admin, active_org_id=self.org_id)
+        with self.assertRaises(HTTPException) as ctx:
+            patch_feature_flags_endpoint(request, {"flags": {"canvas_task_width": True}})
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail["code"], "FEATURE_FLAG_RESERVED_KEY")
+
+        with self.assertRaises(HTTPException) as ctx:
+            put_feature_flag_endpoint("canvas_sequence_gap", request, {"value": True})
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail["code"], "FEATURE_FLAG_RESERVED_KEY")
+
+        # Отклонённые записи не появились в хранилище.
+        from app.storage import get_feature_flags
+
+        stored = get_feature_flags() or {}
+        self.assertNotIn("canvas_task_width", stored)
+        self.assertNotIn("canvas_sequence_gap", stored)
+
 
 if __name__ == "__main__":
     unittest.main()

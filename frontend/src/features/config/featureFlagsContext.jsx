@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { apiGetCanvasGeometry, apiGetFeatureFlags } from "../../lib/api";
+import { apiGetFeatureFlags } from "../../lib/api";
+import { apiGetCanvasGeometry } from "../../lib/apiModules/canvasGeometryApi";
 import { initCanvasGeometry } from "../process/bpmn/layout/canvasGeometry.js";
 
 const FeatureFlagsContext = createContext({ flags: {}, loading: true });
@@ -10,10 +11,13 @@ export function FeatureFlagsProvider({ children }) {
 
   useEffect(() => {
     // Настройки геометрии канваса: при недоступности/битости ответа
-    // initCanvasGeometry оставляет дефолты канона (fallback в самом модуле).
-    apiGetCanvasGeometry().then((res) => {
-      if (res.ok && res.settings) initCanvasGeometry(res.settings);
-    });
+    // initCanvasGeometry не вызывается и getter держит дефолты канона.
+    // .catch гасит unhandled rejection при недоступности сети/API.
+    apiGetCanvasGeometry()
+      .then((res) => {
+        if (res.ok && res.settings) initCanvasGeometry(res.settings);
+      })
+      .catch(() => {});
     apiGetFeatureFlags().then((res) => {
       setFlags(res.ok ? res.flags : {});
       setLoading(false);

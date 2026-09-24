@@ -46,6 +46,11 @@ def _get_flags(org_id: str) -> Dict[str, bool]:
                 flags.update({k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in stored.items()})
         except Exception as exc:
             logger.warning("feature_flags: redis read failed: %s", exc)
+    # Ключи canvas-геометрии — не boolean-флаги: читаются через typed-ручку
+    # /api/settings/canvas-geometry. Иначе они попали бы в публичный payload
+    # и в админ-виджет флагов, где переключение тогла испортило бы значение.
+    for reserved in _CANVAS_GEOMETRY_FLAG_KEYS:
+        flags.pop(reserved, None)
     return {k: str(v).lower() in {"1", "true", "yes", "on"} for k, v in flags.items()}
 
 
@@ -116,6 +121,19 @@ def _reject_env_flags(keys) -> None:
             detail={
                 "code": "FEATURE_FLAG_ENV_READONLY",
                 "message": f"env-managed flag is read-only: {', '.join(env_keys)}",
+            },
+        )
+    reserved = [str(k) for k in keys if str(k) in _CANVAS_GEOMETRY_FLAG_KEYS]
+    if reserved:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "FEATURE_FLAG_RESERVED_KEY",
+                "message": (
+                    "canvas geometry keys are managed via "
+                    "/api/admin/canvas-geometry: "
+                    + ", ".join(reserved)
+                ),
             },
         )
 
@@ -201,6 +219,10 @@ CANVAS_GEOMETRY_DEFAULTS: Dict[str, int] = {
     "task_height": 80,
     "sequence_gap": 100,
 }
+# Ключи хранения canvas-геометрии (значения CANVAS_GEOMETRY_KEYS) — зарезервированы:
+# не отдаются публичным GET /api/feature-flags и не принимаются admin PATCH/PUT
+# флагов (иначе тогл в виджете флагов перезаписал бы геометрию "1"/"0").
+_CANVAS_GEOMETRY_FLAG_KEYS = tuple(CANVAS_GEOMETRY_KEYS.values())
 
 
 def _coerce_geometry_int(raw: Any) -> Any:
