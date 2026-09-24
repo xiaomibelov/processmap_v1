@@ -1,0 +1,14 @@
+/* Mock-режим TO BE overlay (tobeOverlayMock) — стилистика слоёв.
+   AS IS ghost-подложка: инертна и приглушена; TO BE — активный read-only
+   NavigatedViewer слой. .djs-overlay-container и overlay-подсистемы на
+   mock-инстансы не монтируются (контроллер их не трогает). */
+
+.bpmnLayer--mockAsis {
+  pointer-events: none;
+  opacity: 0.3;
+  filter: grayscale(0.7) saturate(0.4);
+}
+
+.bpmnLayer--mockTobe {
+  pointer-events: auto;
+}

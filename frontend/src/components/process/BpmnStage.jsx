@@ -48,6 +48,20 @@ import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/tem
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
 import { createAiQuestionPanelAdapter } from "../../features/process/bpmn/stage/ai/aiQuestionPanelAdapter";
 import { createBpmnStageImperativeApi } from "../../features/process/bpmn/stage/imperative/bpmnStageImperativeApi";
+import TobeOverlayMockLayers from "../../features/process/bpmn/stage/tobeOverlayMock/TobeOverlayMockLayers";import {
+  useTobeOverlayMockActive,
+  useTobeOverlayMockGhostVisible,
+} from "../../features/process/bpmn/stage/tobeOverlayMock/useTobeOverlayMock";
+import { resetTobeOverlayMockState } from "../../features/process/bpmn/stage/tobeOverlayMock/mockOverlayModeStore";
+import {
+  resetTobeOverlayUnderlayState,
+  setTobeOverlayUnderlayActive,
+  setTobeOverlayUnderlayAvailable,
+} from "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlayStore";
+import {
+  useTobeOverlayUnderlayActive,
+  useTobeOverlayUnderlayVisible,
+} from "../../features/process/bpmn/stage/tobeOverlayUnderlay/useTobeOverlayUnderlay";
 import {
   runImmediateEditorFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
@@ -135,6 +149,7 @@ import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
+import "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlay.css";
 import {
   patchOverlaysPrototype,
   setShowOverlaysDuringPan,
@@ -1051,6 +1066,7 @@ async function ensureCanvasVisibleAndFit(inst, tag = "", sid = "", options = {})
 
 const BpmnStage = forwardRef(function BpmnStage({
   sessionId,
+  underlayAsisSid = null, // tobe-overlay-underlay-v1: sid AS IS-источника подложки
   activeProjectId,
   view,
   draft,
@@ -1395,6 +1411,191 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
 
   const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
+
+  // TO BE overlay mock (feature/tobe-overlay-mock-v1): слои и контроллер
+  // живут только в mock-режиме. Сессионные modeler/viewer НЕ трогаем:
+  // ни importXML, ни runtime.load/onChange в mock-режиме не вызываются —
+  // слои сессии просто скрываются (display:none, инстансы живы).
+  const tobeOverlayMockFlag = useFeatureFlag("tobe_overlay_mock");
+  const tobeMockActive = useTobeOverlayMockActive();
+  const tobeMockGhostVisible = useTobeOverlayMockGhostVisible();
+  const mockAsisHostRef = useRef(null);
+  const mockTobeHostRef = useRef(null);
+  const tobeMockControllerRef = useRef(null);
+  const tobeMockControllerSidRef = useRef(null);
+
+  useEffect(() => {
+    if (tobeOverlayMockFlag) return undefined;
+    try { tobeMockControllerRef.current?.destroy?.(); } catch {}
+    tobeMockControllerRef.current = null;
+    tobeMockControllerSidRef.current = null;
+    resetTobeOverlayMockState();
+    return undefined;
+  }, [tobeOverlayMockFlag]);
+
+  useEffect(() => {
+    if (!tobeOverlayMockFlag || !tobeMockActive) return undefined;
+    const asisEl = mockAsisHostRef.current;
+    const tobeEl = mockTobeHostRef.current;
+    if (!asisEl || !tobeEl) return undefined;
+    let cancelled = false;
+    let ctl = null;
+    (async () => {
+      const mod = await import("../../features/process/bpmn/stage/tobeOverlayMock/tobeOverlayMockController.js");
+      if (cancelled) return;
+      if (tobeMockControllerRef.current && tobeMockControllerSidRef.current === sessionId) {
+        // кэш инстансов до смены сессии: повторный вход без пересоздания
+        ctl = tobeMockControllerRef.current;
+      } else {
+        try { tobeMockControllerRef.current?.destroy?.(); } catch {}
+        ctl = mod.createTobeOverlayMockController();
+        tobeMockControllerRef.current = ctl;
+        tobeMockControllerSidRef.current = sessionId;
+      }
+      try {
+        await ctl.mount({ asisContainer: asisEl, tobeContainer: tobeEl });
+      } catch {
+        // мок не должен ломать сессионный канвас
+      }
+    })();
+    return () => {
+      cancelled = true;
+      const current = tobeMockControllerRef.current;
+      if (!current) return;
+      if (tobeMockControllerSidRef.current !== sessionId) {
+        // смена сессии — полный teardown viewer'ов мока
+        try { current.destroy(); } catch {}
+        tobeMockControllerRef.current = null;
+        tobeMockControllerSidRef.current = null;
+      } else {
+        try { current.unmount(); } catch {}
+      }
+    };
+  }, [tobeOverlayMockFlag, tobeMockActive, sessionId]);
+
+  useEffect(() => {
+    try { tobeMockControllerRef.current?.setGhostVisible?.(tobeMockGhostVisible); } catch {}
+  }, [tobeMockGhostVisible, tobeMockActive]);
+
+  // TO BE overlay underlay (feature/tobe-overlay-underlay-v1): реальная AS IS-
+  // подложка ПОД живым editor. Принципиальное отличие от mock-режима:
+  // сессионные слои НЕ скрываются (display-логика session layers не трогается).
+  // Fetch XML — ТОЛЬКО здесь (api-модуль уже импортирован BpmnStage); сам
+  // underlay-модуль api/save/runtime/lane не импортирует (guard-testable
+  // граница, та же дисциплина, что у мок-модуля).
+  const tobeOverlayUnderlayFlag = useFeatureFlag("tobe_overlay_underlay");
+  const underlayActive = useTobeOverlayUnderlayActive();
+  const underlayVisible = useTobeOverlayUnderlayVisible();
+  const underlayHostRef = useRef(null);
+  const underlayControllerRef = useRef(null);
+  const underlayControllerSidRef = useRef(null);
+  const underlayXmlCacheRef = useRef(new Map());
+
+  useEffect(() => {
+    if (tobeOverlayUnderlayFlag) return undefined;
+    try { underlayControllerRef.current?.destroy?.(); } catch {}
+    underlayControllerRef.current = null;
+    underlayControllerSidRef.current = null;
+    underlayXmlCacheRef.current.clear();
+    resetTobeOverlayUnderlayState();
+    return undefined;
+  }, [tobeOverlayUnderlayFlag]);
+
+  useEffect(() => {
+    try { underlayControllerRef.current?.setGhostVisible?.(underlayVisible); } catch {}
+  }, [underlayVisible, underlayActive]);
+
+  // T4: lazy fetch-адаптер. Гейт: флаг + связанный underlayAsisSid +
+  // diagramReady основной схемы; дальше — requestIdleCallback (прецедент
+  // useDeferredDecorFanout.js): подложка вне critical path загрузки сессии.
+  // Кэш XML per underlayAsisSid — ровно один fetch на смену источника;
+  // при смене sid прежний ghost уничтожается ДО старта нового fetch
+  // (mid-flight: нельзя показывать чужую AS IS поверх новой TO BE, UI.md).
+  useEffect(() => {
+    const enabled = !!(tobeOverlayUnderlayFlag && underlayAsisSid);
+    setTobeOverlayUnderlayActive(enabled);
+    if (!enabled) {
+      try { underlayControllerRef.current?.destroy?.(); } catch {}
+      underlayControllerRef.current = null;
+      underlayControllerSidRef.current = null;
+      setTobeOverlayUnderlayAvailable(true);
+      return undefined;
+    }
+    const sidKey = String(underlayAsisSid);
+    if (underlayControllerSidRef.current !== sidKey) {
+      try { underlayControllerRef.current?.destroy?.(); } catch {}
+      underlayControllerRef.current = null;
+      underlayControllerSidRef.current = null;
+    }
+    if (!diagramReady) return undefined;
+    const host = underlayHostRef.current;
+    if (!host) return undefined;
+    let cancelled = false;
+    const cancelSchedule = (() => {
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+        const handle = window.requestIdleCallback(runFetch, { timeout: 2000 });
+        return () => {
+          try { window.cancelIdleCallback?.(handle); } catch {}
+        };
+      }
+      const timer = setTimeout(runFetch, 0);
+      return () => clearTimeout(timer);
+    })();
+    function runFetch() {
+      if (cancelled) return;
+      void (async () => {
+        let xml = underlayXmlCacheRef.current.get(sidKey);
+        if (xml === undefined) {
+          try {
+            // Обязательные параметры (аудит Q2.3): raw=1&include_overlay=0 —
+            // без Celery-аннотаций и overlay-разметки; assert в e2e.
+            const r = await apiGetBpmnXml(sidKey, { raw: true, includeOverlay: false, cacheBust: true });
+            if (cancelled) return;
+            if (!r?.ok) {
+              setTobeOverlayUnderlayAvailable(false);
+              return;
+            }
+            xml = String(r.xml || "");
+            underlayXmlCacheRef.current.set(sidKey, xml);
+          } catch {
+            if (!cancelled) setTobeOverlayUnderlayAvailable(false);
+            return;
+          }
+        }
+        if (cancelled) return;
+        setTobeOverlayUnderlayAvailable(true);
+        try {
+          const mod = await import("../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlayController.js");
+          if (cancelled) return;
+          if (!underlayControllerRef.current || underlayControllerSidRef.current !== sidKey) {
+            underlayControllerRef.current = mod.createTobeOverlayUnderlayController();
+            underlayControllerSidRef.current = sidKey;
+          }
+          const editor = modelerRef.current || viewerRef.current;
+          if (!editor) return;
+          await underlayControllerRef.current.mount({ container: host, xml, editor });
+        } catch (err) {
+          // подложка не должна ломать сессионный канвас; молчать запрещено
+          console.warn("[tobe-underlay] mount failed", err);
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+    };
+  }, [tobeOverlayUnderlayFlag, underlayAsisSid, diagramReady, sessionId, underlayActive]);
+
+  // Unmount BpmnStage (уход со сцены): обязательный destroy ghost —
+  // иначе listener на editor-eventBus удерживает ghost-viewer от GC.
+  useEffect(() => {
+    return () => {
+      try { underlayControllerRef.current?.destroy?.(); } catch {}
+      underlayControllerRef.current = null;
+      underlayControllerSidRef.current = null;
+    };
+  }, []);
+
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {
     v2PropertyPreviewMapRef.current = combineV2PropertyPreviewMap(
@@ -6458,6 +6659,20 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       <DiagramLoadBoundary loadState={loadState} errorReason={errorReason} hasDiagram={hasDiagram}>
         <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
+          {/* T6 (tobe-overlay-underlay-v1): ghost-слой ПОД editor (первый в DOM
+              внутри .bpmnStack → session-слои рисуются поверх). ЖЁСТКИЙ
+              ИНВАРИАНТ: display-логика сессионных слоёв (.bpmnLayer--diagram/
+              --editor) НЕ трогается — в отличие от mock-режима underlay не
+              скрывает session layers; подложка добавляется третьим слоем. */}
+          {tobeOverlayUnderlayFlag && underlayActive && underlayAsisSid ? (
+            <div
+              className="bpmnLayer bpmnLayer--underlayAsis"
+              data-testid="bpmn-layer-underlay-asis"
+              style={{ position: "absolute", inset: 0 }}
+            >
+              <div className="bpmnCanvas" ref={underlayHostRef} style={{ width: "100%", height: "100%" }} />
+            </div>
+          ) : null}
           {diagramReady ? (
             <div
               data-testid="diagram-ready"
@@ -6474,16 +6689,22 @@ const BpmnStage = forwardRef(function BpmnStage({
           ) : null}
           <div
             className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
-            style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}
+            style={{ position: "absolute", inset: 0, display: tobeMockActive ? "none" : (view === "viewer" ? "block" : "none") }}
           >
             <div className="bpmnCanvas" ref={viewerEl} style={{ width: "100%", height: "100%" }} />
           </div>
           <div
             className={"bpmnLayer bpmnLayer--editor " + ((view === "editor" || view === "diagram") ? "on" : "off")}
-            style={{ position: "absolute", inset: 0, display: (view === "editor" || view === "diagram") ? "block" : "none" }}
+            style={{ position: "absolute", inset: 0, display: tobeMockActive ? "none" : ((view === "editor" || view === "diagram") ? "block" : "none") }}
           >
             <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
           </div>
+          <TobeOverlayMockLayers
+            active={tobeOverlayMockFlag && tobeMockActive}
+            ghostVisible={tobeMockGhostVisible}
+            asisRef={mockAsisHostRef}
+            tobeRef={mockTobeHostRef}
+          />
           <LowFpsCanvasGuard enabled={diagramReady && view !== "xml"} />
         </div>
       </DiagramLoadBoundary>
