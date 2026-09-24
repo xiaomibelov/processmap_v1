@@ -312,12 +312,51 @@ test("properties overlay decor coexists with notes/time/robot overlay positions"
     applyPropertiesOverlayDecor(fixture.ctx);
     const addCall = fixture.overlays.addCalls[0];
     assert.equal(addCall.elementId, "Task_1");
-    assert.equal(addCall.payload.position.top, -14);
+    // Canonical above-node placement: bottom = nodeTop − 20 (chip is lifted by
+    // its own height via CSS translate(-50%, -100%)).
+    assert.equal(addCall.payload.position.top, -20);
     assert.equal(addCall.payload.position.left, 70);
     assert.equal(addCall.payload.scale, false);
     assert.equal(addCall.overlayType, "fpc-properties");
     assert.equal(String(addCall.payload.html.className || "").includes("fpcPropertyOverlay--task"), true);
+    assert.equal(String(addCall.payload.html.className || "").includes("fpcPropertyOverlay--below"), false);
     assert.equal(addCall.payload.html?.dataset?.hostType, "task");
+    assert.equal(addCall.payload.html?.dataset?.placement, "above");
+    // Chip width follows the node width (140px at zoom 1), maxWidth = node width.
+    assert.equal(addCall.payload.html?.style?.width, "140px");
+  });
+});
+
+test("properties overlay decor places chip below node with modifier class when node is at canvas top", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: {
+      elementId: "Task_1",
+      enabled: true,
+      hiddenCount: 0,
+      items: [{ label: "Емкость", value: "Лоток 150x55" }],
+    },
+    elements: [
+      {
+        id: "Task_1",
+        type: "bpmn:Task",
+        x: 100,
+        y: 10,
+        width: 140,
+        height: 80,
+        businessObject: { id: "Task_1", $type: "bpmn:Task" },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    const addCall = fixture.overlays.addCalls[0];
+    assert.equal(addCall.elementId, "Task_1");
+    // Below-node placement: top = nodeBottom + 20 (element-local coords).
+    assert.equal(addCall.payload.position.top, 100);
+    assert.equal(addCall.payload.position.left, 70);
+    assert.equal(String(addCall.payload.html.className || "").includes("fpcPropertyOverlay--task"), true);
+    assert.equal(String(addCall.payload.html.className || "").includes("fpcPropertyOverlay--below"), true);
+    assert.equal(addCall.payload.html?.dataset?.placement, "below");
   });
 });
 
