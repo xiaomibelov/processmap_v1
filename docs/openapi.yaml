@@ -4356,6 +4356,40 @@ paths:
       summary: Получить audit
       tags:
       - admin
+  /api/admin/canvas-geometry:
+    put:
+      description: 'Сохранить (replace) canvas geometry. Особенности: доступ: член
+        организации с нужной ролью (org-scope); тело валидируется схемой (422 при
+        несоответствии).'
+      operationId: put_canvas_geometry_endpoint_api_admin_canvas_geometry_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              title: Body
+              type: object
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Put Canvas Geometry Endpoint Api Admin Canvas Geometry
+                  Put
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin'
+        '422':
+          description: 'Невалидное значение: detail.code = CANVAS_GEOMETRY_INVALID_VALUE
+            / CANVAS_GEOMETRY_UNKNOWN_FIELD / CANVAS_GEOMETRY_MISSING_FIELD'
+      security:
+      - bearerAuth: []
+      summary: Сохранить (replace) canvas geometry
+      tags:
+      - feature-flags
   /api/admin/canvas-telemetry/errors:
     get:
       description: 'Получить errors. Особенности: доступ: член организации с нужной
@@ -19035,6 +19069,30 @@ paths:
       summary: Создать/выполнить сессии процессов
       tags:
       - sessions
+  /api/settings/canvas-geometry:
+    get:
+      description: 'Получить canvas geometry. Особенности: доступ: член организации
+        с нужной ролью (org-scope).'
+      operationId: get_canvas_geometry_endpoint_api_settings_canvas_geometry_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Get Canvas Geometry Endpoint Api Settings Canvas Geometry
+                  Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить canvas geometry
+      tags:
+      - feature-flags
   /api/settings/llm:
     get:
       description: Получить llm.

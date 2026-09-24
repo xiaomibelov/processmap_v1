@@ -3,6 +3,7 @@ import AdminTabs from "../common/AdminTabs";
 import SectionCard from "../common/SectionCard";
 import StatusPill from "../common/StatusPill";
 import FeatureFlagsWidget from "../dashboard/FeatureFlagsWidget";
+import CanvasGeometryWidget from "../dashboard/CanvasGeometryWidget";
 import DeploymentNoticesTab from "./DeploymentNoticesTab";
 import { apiAdminGetDashboard } from "../../../../lib/api";
 import { ru } from "../../../../shared/i18n/ru";
@@ -91,9 +92,14 @@ function LogsTab({ payload }) {
 
 function SettingsTab() {
   return (
-    <SectionCard eyebrow="Settings" title="Feature Flags" subtitle="Runtime toggles returned by /api/feature-flags">
-      <FeatureFlagsWidget />
-    </SectionCard>
+    <>
+      <SectionCard eyebrow="Settings" title="Feature Flags" subtitle="Runtime toggles returned by /api/feature-flags">
+        <FeatureFlagsWidget />
+      </SectionCard>
+      <SectionCard eyebrow="Settings" title="Геометрия схемы" subtitle="Канон-размер таски и длина секвенса (canvas-geometry)">
+        <CanvasGeometryWidget />
+      </SectionCard>
+    </>
   );
 }
 

@@ -2325,6 +2325,23 @@ export async function apiPatchFeatureFlags(flags) {
   return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
 }
 
+// ------- Canvas geometry settings (feature/canvas-geometry-settings) -------
+export async function apiGetCanvasGeometry() {
+  const r = okOrError(await request(apiRoutes.canvasGeometry.get()));
+  return r.ok ? { ok: true, settings: r.data?.settings || null } : r;
+}
+
+export async function apiPutCanvasGeometry(settings) {
+  const r = okOrError(
+    await request(apiRoutes.admin.canvasGeometry(), {
+      method: "PUT",
+      body: JSON.stringify(settings || {}),
+      headers: { "Content-Type": "application/json" },
+    })
+  );
+  return r.ok ? { ok: true, settings: r.data?.settings || null } : r;
+}
+
 // ------- Analytics (backend-driven) -------
 function unwrapAnalyticsData(response) {
   if (!response || !response.ok) return null;
