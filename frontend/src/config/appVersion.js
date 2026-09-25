@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.155",
+  currentVersion: "v1.0.156",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.156",
+      changes: [
+        "«Применить к схеме» больше не ломает длинные цепочки: вместо глобальной перекладки рядов — локальная нормализация зазоров вдоль потока; y-координаты узлов сохраняются, вертикальные ветки едут с родительской цепочкой, boundary events следуют за хостом.",
+        "Стрелки с разными сдвигами концов переразводятся (manhattan между границами фигур) вместо растяжения ломаной; вся операция по-прежнему один шаг отката.",
+      ],
+    },
     {
       version: "v1.0.155",
       changes: [

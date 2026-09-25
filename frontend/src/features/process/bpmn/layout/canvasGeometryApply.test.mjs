@@ -11,7 +11,6 @@ import {
   sanitizeCanvasGeometry,
 } from "./canvasGeometryApply.js";
 import { CANON_GEOMETRY_DEFAULTS } from "./canvasGeometry.js";
-import { CANON_NODE_SIZES } from "./laneRowAlign.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -77,25 +76,38 @@ test("ресайз: все подтипы покрыты, не-таски и NaN
 
 // --- computeGeometryApplyPlan ---
 
-test("композиция: ряд тасков → позиции и размеры из настроек, зазор = sequenceGap", () => {
+// ПРИЧИНА ПЕРЕЗАПИСИ: глобальная перекладка рядов (computeLaneRowAlignPlan)
+// удалена контуром fix/canvas-geometry-apply-topology — она схлопывала длинные
+// цепочки к левому краю, затирала y медианой ряда и поглощала вертикальные
+// ветки. Новая семантика: центр-якорный ресайз тасок + локальная нормализация
+// зазоров вдоль flow-рёбер; y (точнее centerY) узлов неизменны.
+
+test("композиция: цепочка тасков → размеры из настроек, зазор = sequenceGap, centerY сохранён", () => {
   const nodes = [
-    task("t1", 100, 100, 120, 70, { laneKey: "l" }),
-    task("t2", 400, 110, 120, 70, { laneKey: "l" }),
-    task("t3", 700, 105, 120, 70, { laneKey: "l" }),
+    task("t1", 100, 100, 120, 70),
+    task("t2", 400, 110, 120, 70),
+    task("t3", 700, 105, 120, 70),
+  ];
+  const connections = [
+    { id: "c12", sourceId: "t1", targetId: "t2", waypoints: [{ x: 220, y: 135 }, { x: 400, y: 145 }] },
+    { id: "c23", sourceId: "t2", targetId: "t3", waypoints: [{ x: 520, y: 145 }, { x: 700, y: 140 }] },
   ];
   const g = { taskWidth: 200, taskHeight: 120, sequenceGap: 250 };
-  const { positions, stats } = computeGeometryApplyPlan({ nodes, connections: [] }, g);
-  const y = positions.get("t1").y;
+  const { positions, stats } = computeGeometryApplyPlan({ nodes, connections }, g);
   for (const id of ["t1", "t2", "t3"]) {
     assert.equal(positions.get(id).width, 200, `${id} width`);
     assert.equal(positions.get(id).height, 120, `${id} height`);
   }
-  const x1 = positions.get("t1").x;
-  assert.equal(positions.get("t2").x, Math.round((x1 + 200 + 250) / 10) * 10, "зазор 250");
-  assert.equal(positions.get("t3").x, Math.round((positions.get("t2").x + 200 + 250) / 10) * 10);
-  assert.equal(positions.get("t1").y + 60, positions.get("t2").y + 60, "ряд по центру Y");
+  const gap1 = positions.get("t2").x - (positions.get("t1").x + 200);
+  const gap2 = positions.get("t3").x - (positions.get("t2").x + 200);
+  assert.equal(gap1, 250, "зазор 250");
+  assert.equal(gap2, 250, "зазор 250");
+  // centerY сохраняются (центр-якорь), y не выравниваются по медиане ряда
+  assert.equal(positions.get("t1").y + 60, 135, "t1 centerY");
+  assert.equal(positions.get("t2").y + 60, 145, "t2 centerY");
+  assert.equal(positions.get("t3").y + 60, 140, "t3 centerY");
   assert.equal(stats.tasksResized, 3);
-  assert.equal(stats.rowsAligned, 1);
+  assert.equal(stats.nodesShifted, 2, "t2 и t3 сдвинуты каскадом");
 });
 
 test("композиция: одиночная таска вне ряда → только ресайз, центр сохранён", () => {
@@ -107,25 +119,34 @@ test("композиция: одиночная таска вне ряда → т
   assert.equal(positions.get("solo").y + 60, 777 + 35, "центр Y сохранён");
   assert.equal(connectionTranslations.size, 0);
   assert.equal(stats.tasksResized, 1);
-  assert.equal(stats.nodesAligned, 0);
+  assert.equal(stats.nodesShifted, 0, "одиночная таска без рёбер не сдвигается");
 });
 
-test("стрелки: сдвинутый ряд → translation по дельтам (правила align)", () => {
+// ПРИЧИНА ПЕРЕЗАПИСИ (fix/canvas-geometry-apply-topology): трансляция на дельту
+// одного конца при разных дельтах заменена переразводкой waypoints; translation
+// — только когда оба конца на одной дельте.
+test("стрелки: оба конца на одной дельте → чистая translation {dx,dy}", () => {
+  // s толкает a (горизонтальное ребро с дефицитом зазора), b — вертикальная
+  // ветка от a: оба наследуют один и тот же сдвиг → ребро a→b транслируется.
   const nodes = [
-    task("t1", 103, 100, 130, 80, { laneKey: "l" }),
-    task("t2", 333, 100, 130, 80, { laneKey: "l" }),
+    task("s", -300, 100, 130, 80),
+    task("a", 100, 100, 130, 80),
+    task("b", 100, 400, 130, 80),
   ];
-  const connections = [{
-    id: "c1", sourceId: "t1", targetId: "t2",
-    waypoints: [{ x: 233, y: 140 }, { x: 333, y: 140 }],
-  }];
-  const { positions, connectionTranslations } = computeGeometryApplyPlan({ nodes, connections }, {
-    taskWidth: 130, taskHeight: 80, sequenceGap: 100,
+  const connections = [
+    { id: "csa", sourceId: "s", targetId: "a", waypoints: [{ x: -170, y: 140 }, { x: 100, y: 140 }] },
+    { id: "cab", sourceId: "a", targetId: "b", waypoints: [{ x: 165, y: 180 }, { x: 165, y: 400 }] },
+  ];
+  const { positions, connectionTranslations, connectionWaypoints } = computeGeometryApplyPlan({ nodes, connections }, {
+    taskWidth: 130, taskHeight: 80, sequenceGap: 400,
   });
-  const d1 = positions.get("t1").x - 103;
-  const tr = connectionTranslations.get("c1");
-  assert.ok(tr, "translation for c1");
-  assert.equal(tr.dx, d1);
+  const shiftA = positions.get("a").x - 100;
+  assert.ok(shiftA > 0, "a сдвинута дефицитом зазора");
+  const tr = connectionTranslations.get("cab");
+  assert.ok(tr, "translation for cab");
+  assert.equal(tr.dx, shiftA, "оба конца на дельте a");
+  assert.equal(tr.dy, 0, "dy всегда 0");
+  assert.equal(connectionWaypoints.has("cab"), false, "общая дельта — без reroute");
 });
 
 test("стрелки к таске, у которой только ресайз (центр не сдвинут), не трогаются", () => {
@@ -147,7 +168,10 @@ test("стрелки к таске, у которой только ресайз 
   assert.equal(connectionTranslations.size, 0, "waypoints без изменений");
 });
 
-test("события/шлюзы в ряду — канон-размеры независимо от настроек таски", () => {
+// ПРИЧИНА ПЕРЕЗАПИСИ (fix/canvas-geometry-apply-topology): события и шлюзы
+// больше не пересаживаются на канон-размеры и не перекладываются по рядам —
+// настройки геометрии их не касаются, сдвигаются только по x вместе с потоком.
+test("события/шлюзы: настройки таски не касаются — не ресайзятся и не сдвигаются без потока", () => {
   const nodes = [
     { id: "e1", type: "bpmn:StartEvent", x: 100, y: 100, width: 36, height: 36, laneKey: "l" },
     { id: "e2", type: "bpmn:EndEvent", x: 300, y: 100, width: 36, height: 36, laneKey: "l" },
@@ -155,8 +179,8 @@ test("события/шлюзы в ряду — канон-размеры нез
   const { positions } = computeGeometryApplyPlan({ nodes, connections: [] }, {
     taskWidth: 400, taskHeight: 400, sequenceGap: 20,
   });
-  assert.equal(positions.get("e1").width, CANON_NODE_SIZES.event.width);
-  assert.equal(positions.get("e1").height, CANON_NODE_SIZES.event.height);
+  assert.equal(positions.has("e1"), false, "событие без сдвига не трогаем");
+  assert.equal(positions.has("e2"), false, "событие без сдвига не трогаем");
 });
 
 test("граничные: пустая схема → noop, схема без тасков → noop", () => {
@@ -176,12 +200,15 @@ test("граничные: пустая схема → noop, схема без т
   assert.equal(noTasks.noop, true, "без тасков — нечего ресайзить, align-рядов нет");
 });
 
-test("граничные: невалидные настройки → дефолты канона, результат = канон-геометрия", () => {
+test("граничные: невалидные настройки → дефолты канона, зазор = дефолт канона", () => {
   const nodes = [
-    task("t1", 100, 100, 120, 70, { laneKey: "l" }),
-    task("t2", 400, 110, 120, 70, { laneKey: "l" }),
+    task("t1", 100, 100, 120, 70),
+    task("t2", 280, 100, 120, 70),
   ];
-  const { positions } = computeGeometryApplyPlan({ nodes, connections: [] }, {
+  const connections = [
+    { id: "c12", sourceId: "t1", targetId: "t2", waypoints: [{ x: 220, y: 135 }, { x: 280, y: 135 }] },
+  ];
+  const { positions } = computeGeometryApplyPlan({ nodes, connections }, {
     taskWidth: "junk", taskHeight: -5, sequenceGap: 99999,
   });
   assert.equal(positions.get("t1").width, CANON_GEOMETRY_DEFAULTS.taskWidth);
@@ -328,12 +355,14 @@ test("gate: в коде применения DI доступен только ч
   assert.ok(!applyRegion.includes("businessObject.di"), "BpmnStage: регион applyGeometry без businessObject.di");
 });
 
-test("gate: laneRowAlign.js и canvasGeometry.js не импортируют canvasGeometryApply (направление зависимостей)", () => {
+test("gate: направление зависимостей — apply не зависит от laneRowAlign (глобальная перекладка рядов удалена)", () => {
   for (const f of ["laneRowAlign.js", "canvasGeometry.js"]) {
     const src = readFileSync(join(HERE, f), "utf8");
     assert.ok(!src.includes("canvasGeometryApply"), `${f} не зависит от apply-модуля`);
   }
   const applySrc = readFileSync(join(HERE, "canvasGeometryApply.js"), "utf8");
   assert.ok(applySrc.includes('from "./canvasGeometry.js"'), "apply → canvasGeometry");
-  assert.ok(applySrc.includes('from "./laneRowAlign.js"'), "apply → laneRowAlign");
+  // ПРИЧИНА (fix/canvas-geometry-apply-topology): computeLaneRowAlignPlan
+  // удалён из apply — перекладка рядов ломала длинные цепочки; регресс align = 0.
+  assert.ok(!applySrc.includes("laneRowAlign"), "apply не импортирует laneRowAlign");
 });
