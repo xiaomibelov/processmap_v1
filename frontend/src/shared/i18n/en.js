@@ -206,6 +206,7 @@ export const en = {
     alignDiagram: "Align diagram",
     applyGeometry: "Apply geometry",
     applyGeometryFailed: "Failed to apply geometry to diagram",
+    applyGeometryResult: "Geometry applied: {shifted} nodes shifted, {rerouted} connections rerouted, {skipped} skipped (nodes/connections)",
     resetCanvas: "Reset canvas",
     alignFailed: "Failed to align diagram",
     resetCanvasConfirm: "Are you sure? All diagram elements will be removed. This action is irreversible.",

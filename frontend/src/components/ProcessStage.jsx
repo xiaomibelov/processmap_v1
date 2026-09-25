@@ -80,7 +80,7 @@ import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanEr
 import { isLlmNotConfigured } from "../features/process/processman/processmanView";
 import { opToFlashType } from "../features/process/processman/canvas/agentEditHighlight";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
-import { getDict } from "../shared/i18n/index.js";
+import { getDict, tf } from "../shared/i18n/index.js";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
 import {
@@ -4927,6 +4927,21 @@ function ProcessStage({
       setGenErr(shortErr(result?.error || getDict().diagram?.applyGeometryFailed || "Не удалось применить геометрию к схеме."));
       return;
     }
+    // Пропуски без молчания: после не-noop apply показываем stats
+    // (warning-тон уходит в toast-стек, success — в статус-слот хедера).
+    if (result.noop !== true && result.stats && typeof window !== "undefined") {
+      const stats = result.stats;
+      const skipped = (Number(stats.nodesSkipped) || 0) + (Number(stats.connectionsSkipped) || 0);
+      showSaveAckToast(
+        tf("diagram.applyGeometryResult", {
+          shifted: Number(stats.nodesShifted) || 0,
+          rerouted: Number(stats.connectionsRerouted) || 0,
+          skipped,
+        }),
+        skipped > 0 ? "warning" : "success",
+        "apply_geometry"
+      );
+    }
     const xml = String(result?.xml || "");
     if (xml) {
       onSessionSync?.({
@@ -4936,7 +4951,7 @@ function ProcessStage({
         _sync_source: "canvas_apply_geometry",
       });
     }
-  }, [bpmnRef, hasSession, isBpmnTab, onSessionSync, setGenErr, sid]);
+  }, [bpmnRef, hasSession, isBpmnTab, onSessionSync, setGenErr, showSaveAckToast, sid]);
 
   const handleResetCanvas = useCallback(() => {
     if (!hasSession || !isBpmnTab) return;

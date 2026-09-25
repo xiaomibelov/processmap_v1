@@ -725,7 +725,7 @@ async function applyGeometryOnInstance(inst, options = {}) {
       connectionOps.push({ element: conn, waypoints: pts });
     }
     if (shapeOps.length === 0 && connectionOps.length === 0) {
-      return { ok: true, noop: true, xml: null };
+      return { ok: true, noop: true, xml: null, stats: layout.stats || null };
     }
 
     const commandStack = inst.get("commandStack");
@@ -760,7 +760,7 @@ async function applyGeometryOnInstance(inst, options = {}) {
       }
     }
 
-    return { ok: true, xml };
+    return { ok: true, xml, stats: layout.stats || null };
   } catch (error) {
     return { ok: false, error: String(error?.message || error || "apply_geometry_failed") };
   }

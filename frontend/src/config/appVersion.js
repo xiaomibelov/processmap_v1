@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.156",
+  currentVersion: "v1.0.157",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.157",
+      changes: [
+        "«Применить к схеме» переразводит стрелки с обходом препятствий: grid-A* роутинг с каналами ≥10px — стрелки больше не проходят сквозь фигуры и не накладываются друг на друга; невалидные связи честно пропускаются со статистикой в уведомлении.",
+      ],
+    },
     {
       version: "v1.0.156",
       changes: [

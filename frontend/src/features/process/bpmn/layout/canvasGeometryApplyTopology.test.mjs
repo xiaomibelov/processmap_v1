@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 import * as applyModule from "./canvasGeometryApply.js";
 
-const { computeGeometryApplyPlan, computeReroutedWaypoints } = applyModule;
+const { computeGeometryApplyPlan } = applyModule;
 import {
   nodes as FIXTURE_NODES,
   connections as FIXTURE_CONNECTIONS,
@@ -173,7 +173,10 @@ test("golden: rerouted waypoints — manhattan, целые, кроп к гран
     const c = byId.get(id);
     const s = rects.get(c.sourceId);
     const t = rects.get(c.targetId);
-    assert.ok(pts.length >= 2 && pts.length <= 4, `${id}: L/Z-маршрут, точек ${pts.length}`);
+    // Число точек не ограничиваем сверху: grid-A* роутер (контур
+    // fix/canvas-geometry-apply-routing) закладывает повороты по обходу
+    // препятствий — инварианты: ортогональность, границы, manhattan-длина.
+    assert.ok(pts.length >= 2, `${id}: маршрут из ≥2 точек, точек ${pts.length}`);
     for (const p of pts) {
       assert.ok(Number.isInteger(p.x) && Number.isInteger(p.y), `${id}: целые координаты`);
     }
@@ -185,7 +188,12 @@ test("golden: rerouted waypoints — manhattan, целые, кроп к гран
     assert.ok(onRectBoundary(pts[pts.length - 1], t), `${id}: последняя точка на границе цели`);
     const manhattan =
       Math.abs(pts[pts.length - 1].x - pts[0].x) + Math.abs(pts[pts.length - 1].y - pts[0].y);
-    assert.equal(polylineLength(pts), manhattan, `${id}: маршрут не длиннее manhattan`);
+    // Допуск на обход препятствий: минимальный детур ≈ 2×(2×margin) — bend-штраф
+    // может выбрать маршрут на ≤40 длиннее прямого manhattan (grid-A* роутер).
+    assert.ok(
+      polylineLength(pts) <= manhattan + 40,
+      `${id}: маршрут не длиннее manhattan+40 (got ${polylineLength(pts)}, manhattan ${manhattan})`
+    );
   }
   assert.equal(plan.stats.connectionsRerouted, plan.connectionWaypoints.size);
 });
@@ -255,39 +263,10 @@ test("safety-regression (B1): запиненный downstream не наслед�
   assert.equal(c.x, 800, "C не тронут");
 });
 
-// --- computeReroutedWaypoints: unit ---
-
-test("computeReroutedWaypoints: target справа → выход восточный, вход западный, L-маршрут", () => {
-  const s = { x: 100, y: 100, width: 170, height: 100 };
-  const t = { x: 500, y: 100, width: 170, height: 100 };
-  const pts = computeReroutedWaypoints(s, t);
-  assert.deepEqual(pts, [{ x: 270, y: 150 }, { x: 500, y: 150 }]);
-});
-
-test("computeReroutedWaypoints: target справа-вверху → L через угол, точки на границах", () => {
-  const s = { x: 100, y: 400, width: 170, height: 100 };
-  const t = { x: 600, y: 100, width: 170, height: 100 };
-  const pts = computeReroutedWaypoints(s, t);
-  assert.deepEqual(pts[0], { x: 270, y: 450 }, "выход — восточная грань источника");
-  assert.deepEqual(pts[pts.length - 1], { x: 600, y: 150 }, "вход — западная грань цели");
-  assert.equal(polylineLength(pts), Math.abs(600 - 270) + Math.abs(150 - 450), "manhattan");
-});
-
-test("computeReroutedWaypoints: перекрытие по x (review m1) — ни одна точка не внутри чужого bbox", () => {
-  const s = { x: 100, y: 100, width: 170, height: 100 }; // 100..270
-  const t = { x: 200, y: 100, width: 360, height: 100 }; // 200..560, перекрытие 200..270
-  const pts = computeReroutedWaypoints(s, t);
-  const inside = (p, r) => p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height;
-  for (const p of pts) {
-    assert.ok(!inside(p, s), `точка ${JSON.stringify(p)} строго внутри источника`);
-    assert.ok(!inside(p, t), `точка ${JSON.stringify(p)} строго внутри цели`);
-  }
-  assert.ok(onRectBoundary(pts[0], s), "первая точка на границе источника");
-  assert.ok(onRectBoundary(pts[pts.length - 1], t), "последняя точка на границе цели");
-  for (let i = 1; i < pts.length; i += 1) {
-    assert.ok(pts[i].x === pts[i - 1].x || pts[i].y === pts[i - 1].y, `сегмент ${i} не ортогонален`);
-  }
-});
+// ПРИЧИНА УДАЛЕНИЯ (контур fix/canvas-geometry-apply-routing): юниты
+// computeReroutedWaypoints (manhattan-L) вышли из состава — функция удалена,
+// её семантику полностью замещает grid-A* роутер canvasGeometryRouting.js
+// (unit-тесты: canvasGeometryRouting.test.mjs). Ниже — только gate-тесты.
 
 
 // --- gate: один undo-шаг с reroute-стрелками; revert побайтово ---
