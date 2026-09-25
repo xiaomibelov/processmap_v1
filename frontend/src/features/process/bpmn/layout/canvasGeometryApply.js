@@ -335,6 +335,10 @@ export function computeGeometryApplyPlan(input, geometry) {
   // reroute → откат к трансляции; невалидная трансляция → связь без изменений
   // + stats.connectionsSkipped. Пост-проход разводит остаточные конфликты
   // каналов (коллинеарные наложения / параллельные ближе 10px).
+  // Anchor spreading (контур gateway-fan): роутеру передаются разделяемые
+  // anchorRegistry (занятые якоря вдоль грани, шаг = канальный зазор, порядок
+  // слотов — по id связи) и anchorOccupied (клетки занятых якорей — hard-block,
+  // точка привязки тоже канал); откат при невалидном reroute — releaseOccupancy.
   // Boundary-исходящие связи (контур fix/canvas-geometry-routing-boundary-host):
   // хост boundary-эвента — препятствие как для всех, КРОМЕ коридора выхода —
   // полосы от якоря эвента до выхода за пределы inflate'd bbox хоста
@@ -351,6 +355,12 @@ export function computeGeometryApplyPlan(input, geometry) {
   const connectionWaypoints = new Map();
   const occupied = new Set();
   const occupiedKeysByConn = new Map();
+  // Anchor spreading (контур gateway-fan): реестр занятых якорей и hard-block
+  // клеток endpoint'ов общие на весь пул — порядок значим, детерминирован
+  // сортировкой sortedConns по id связи. Откат — releaseOccupancy (claim'ы).
+  const anchorRegistry = new Map();
+  const anchorOccupied = new Set();
+  const anchorClaimsByConn = new Map();
 
   const hostExitFor = (conn, firstWaypoint) => {
     const hostId = attachedHost.get(conn.sourceId);
@@ -394,6 +404,7 @@ export function computeGeometryApplyPlan(input, geometry) {
   const routeWithOccupancy = (conn, blockedRects = []) => {
     const before = occupied.size;
     const exitHostId = attachedHost.get(conn.sourceId);
+    const anchorClaims = [];
     const pts = routeConnection({
       source: finalRects.get(conn.sourceId),
       target: finalRects.get(conn.targetId),
@@ -401,14 +412,28 @@ export function computeGeometryApplyPlan(input, geometry) {
       occupied,
       blockedRects,
       exitHost: exitHostId ? finalRects.get(exitHostId) : null,
+      sourceId: conn.sourceId,
+      targetId: conn.targetId,
+      anchorRegistry,
+      anchorOccupied,
+      anchorClaims,
     });
     if (!pts) return null;
     occupiedKeysByConn.set(conn.id, [...occupied].slice(before));
+    anchorClaimsByConn.set(conn.id, anchorClaims);
     return pts;
   };
   const releaseOccupancy = (connId) => {
     for (const k of occupiedKeysByConn.get(connId) || []) occupied.delete(k);
     occupiedKeysByConn.delete(connId);
+    for (const c of anchorClaimsByConn.get(connId) || []) {
+      const set = anchorRegistry.get(c.key);
+      if (set) {
+        set.delete(c.value);
+        if (set.size === 0) anchorRegistry.delete(c.key);
+      }
+    }
+    anchorClaimsByConn.delete(connId);
   };
 
   const sortedConns = connections

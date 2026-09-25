@@ -258,3 +258,146 @@ test("boundary-host: коридор занят occupied → null (честный
   const pts = routeConnection({ source: be, target: t, foreignRects: [], exitHost: host, occupied: occ3 });
   assert.equal(pts, null, "тупик: коридор и выходы заняты → null");
 });
+
+// --- anchor spreading (контур fix/canvas-geometry-routing-gateway-fan) ---
+
+function gatewayFanPool() {
+  // Минимальная модель дефекта «Лагмана»: fan-in×2 + fan-out×1 через шлюз G.
+  const G = { x: 400, y: 300, width: 50, height: 50 };
+  const A = { x: 100, y: 400, width: 130, height: 80 }; // cx 165 < G.cx → west
+  const B = { x: 100, y: 180, width: 130, height: 80 }; // cx 165 < G.cx → west
+  const C = { x: 280, y: 600, width: 130, height: 80 }; // cx 345 < G.cx → west (fan-out)
+  const conns = [
+    { id: "c1", sourceId: "A", targetId: "G", source: A, target: G },
+    { id: "c2", sourceId: "B", targetId: "G", source: B, target: G },
+    { id: "c3", sourceId: "G", targetId: "C", source: G, target: C },
+  ];
+  return { G, A, B, C, conns };
+}
+
+function routeFanPool(conns) {
+  const occupied = new Set();
+  const anchorRegistry = new Map();
+  const anchorOccupied = new Set();
+  const out = new Map();
+  for (const conn of conns.sort((a, b) => a.id.localeCompare(b.id))) {
+    const foreignRects = conns
+      .filter((c) => c !== conn)
+      .flatMap((c) => [c.source, c.target])
+      .filter((r) => r !== conn.source && r !== conn.target);
+    const pts = routeConnection({
+      source: conn.source,
+      target: conn.target,
+      foreignRects,
+      occupied,
+      sourceId: conn.sourceId,
+      targetId: conn.targetId,
+      anchorRegistry,
+      anchorOccupied,
+    });
+    out.set(conn.id, pts);
+  }
+  return out;
+}
+
+test("gateway-fan: fan-in×2 + fan-out×1 через одну сторону — якоря разнесены ≥10px, 0 конфликтов", () => {
+  const { G, conns } = gatewayFanPool();
+  const routed = routeFanPool(conns);
+  const anchorsOnG = [];
+  for (const [id, pts] of routed) {
+    assert.ok(pts, `связь ${id} разведена`);
+    const onG = id === "c3" ? pts[0] : pts[pts.length - 1];
+    anchorsOnG.push({ id, p: onG });
+    // якорь на грани G
+    const onFace = (onG.x === G.x || onG.x === G.x + G.width ||
+      onG.y === G.y || onG.y === G.y + G.height) &&
+      onG.x >= G.x && onG.x <= G.x + G.width && onG.y >= G.y && onG.y <= G.y + G.height;
+    assert.ok(onFace, `якорь связи ${id} на грани G`);
+  }
+  for (let i = 0; i < anchorsOnG.length; i += 1) {
+    for (let j = i + 1; j < anchorsOnG.length; j += 1) {
+      const d = Math.hypot(
+        anchorsOnG[i].p.x - anchorsOnG[j].p.x,
+        anchorsOnG[i].p.y - anchorsOnG[j].p.y,
+      );
+      assert.ok(
+        d >= ROUTING_GRID,
+        `якоря ${anchorsOnG[i].id}/${anchorsOnG[j].id} разнесены ≥10px (факт ${d})`,
+      );
+    }
+  }
+  assert.equal(findChannelConflicts(routed).length, 0, "канал-конфликтов нет");
+});
+
+test("gateway-fan: детерминизм — повторный прогон пула даёт те же маршруты", () => {
+  const { conns } = gatewayFanPool();
+  const first = routeFanPool(conns.map((c) => ({ ...c })));
+  const second = routeFanPool(conns.map((c) => ({ ...c })));
+  assert.deepEqual([...second.values()], [...first.values()]);
+});
+
+test("gateway-fan: занятые якоря — hard-block, реестр освобождается удалением claim'ов", () => {
+  const { G, A, B } = gatewayFanPool();
+  const occupied = new Set();
+  const anchorRegistry = new Map();
+  const anchorOccupied = new Set();
+  const claims2 = [];
+  const p1 = routeConnection({
+    source: A, target: G, foreignRects: [], occupied,
+    sourceId: "A", targetId: "G", anchorRegistry, anchorOccupied,
+  });
+  assert.ok(p1);
+  const anchor1 = p1[p1.length - 1];
+  // та же точка привязки для второй связи → занята (registry + occupied-ячея)
+  const p2 = routeConnection({
+    source: B, target: G, foreignRects: [], occupied,
+    sourceId: "B", targetId: "G", anchorRegistry, anchorOccupied, anchorClaims: claims2,
+  });
+  assert.ok(p2, "вторая связь разводится соседним слотом");
+  const anchor2 = p2[p2.length - 1];
+  assert.ok(
+    Math.hypot(anchor1.x - anchor2.x, anchor1.y - anchor2.y) >= ROUTING_GRID,
+    "второй якорь не совпадает с первым",
+  );
+  // откат (как releaseOccupancy в плане): claim'ы удалены → слот снова свободен
+  for (const c of claims2) {
+    const set = anchorRegistry.get(c.key);
+    if (set) { set.delete(c.value); if (set.size === 0) anchorRegistry.delete(c.key); }
+  }
+  const p3 = routeConnection({
+    source: B, target: G, foreignRects: [], occupied: new Set(),
+    sourceId: "B", targetId: "G", anchorRegistry, anchorOccupied: new Set(),
+  });
+  assert.ok(p3);
+  const anchor3 = p3[p3.length - 1];
+  assert.deepEqual(anchor3, anchor2, "после освобождения claim'ов освободившийся слот снова доступен");
+});
+
+test("gateway-fan: короткая грань — слоты схлопнуты, связь уходит на другую сторону (не падает)", () => {
+  // событие 36×36: inset GRID даёт диапазон [y+10, y+26] — три уникальных слота
+  const E = { x: 400, y: 300, width: 36, height: 36 };
+  const sources = [0, 1, 2, 3].map((i) => ({ x: 100, y: 260 + i * 60, width: 130, height: 80 }));
+  const occupied = new Set();
+  const anchorRegistry = new Map();
+  const anchorOccupied = new Set();
+  const anchors = [];
+  for (let i = 0; i < sources.length; i += 1) {
+    const pts = routeConnection({
+      source: sources[i], target: E, foreignRects: [], occupied,
+      sourceId: `S${i}`, targetId: "E", anchorRegistry, anchorOccupied,
+    });
+    assert.ok(pts, `fan-in ${i} разведён (fallback-сторона или слот)`);
+    const a = pts[pts.length - 1];
+    anchors.push(a);
+    const onFace = a.x >= E.x && a.x <= E.x + E.width && a.y >= E.y && a.y <= E.y + E.height &&
+      (a.x === E.x || a.x === E.x + E.width || a.y === E.y || a.y === E.y + E.height);
+    assert.ok(onFace, `якорь ${i} на грани E`);
+  }
+  for (let i = 0; i < anchors.length; i += 1) {
+    for (let j = i + 1; j < anchors.length; j += 1) {
+      const d = Math.hypot(anchors[i].x - anchors[j].x, anchors[i].y - anchors[j].y);
+      assert.ok(d > 0, "якоря не совпадают (кламп может давать <10px — инвариант: 0 канал-конфликтов)");
+    }
+  }
+  assert.ok(anchors.length === 4);
+});

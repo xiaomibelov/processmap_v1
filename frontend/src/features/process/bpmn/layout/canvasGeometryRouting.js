@@ -14,6 +14,10 @@
 //   - occupancy: ячейки занятых каналов (+соседи, ≥10px разнос) блокируются
 //     для последующих связей; порядок разводки — сортировка по id связи
 //     (детерминизм, важен для undo/тестов);
+//   - anchor spreading (контур gateway-fan): связи через одну сторону одной
+//     фигуры (fan-in/fan-out шлюза) получают разнесённые якоря вдоль грани
+//     (шаг = канальный зазор) через разделяемый anchorRegistry; занятые якоря
+//     — hard-block (anchorOccupied), точка привязки — тоже канал;
 //   - бюджет расширений узлов: при исчерпании → null (честный пропуск,
 //     решает вызывающая сторона через connectivity-gate).
 //
@@ -258,6 +262,63 @@ function sideAnchors(rect, toward) {
   return [toward.y >= cy ? south : north, toward.y >= cy ? north : south, east, west];
 }
 
+// --- anchor spreading: разнесение якорей вдоль грани (контур gateway-fan) ---
+// Несколько связей через одну сторону одной фигуры (fan-in/fan-out шлюза)
+// получают разнесённые точки привязки: слоты вдоль грани с шагом
+// ROUTING_CHANNEL_DISTANCE (0, +10, −10, +20, −20, …), порядок выбора слота —
+// по порядку вызовов routeConnection (план вызывает в сортировке по id связи).
+// Якоря остаются на грани (кламп внутрь грани; inset GRID, для коротких граней
+// — inset 0). Реестр общий на пул вызовов: занятые координатные слоты не
+// переиспользуются; записывается ТОЛЬКО при успешном маршруте (откаты план
+// делает через releaseOccupancy → удаление claim'ов из реестра).
+
+const ANCHOR_SLOT_LIMIT = 6; // максимум перебираемых смещений вдоль грани
+
+function slotOffset(k) {
+  const half = Math.ceil(k / 2);
+  return (k % 2 === 1 ? 1 : -1) * half * ROUTING_CHANNEL_DISTANCE;
+}
+
+function spreadAnchor(anchor, rect, offset) {
+  if (!offset) return anchor;
+  if (anchor.side === "w" || anchor.side === "e") {
+    const inset = rect.height >= 3 * ROUTING_GRID ? ROUTING_GRID : 0;
+    const lo = rect.y + inset;
+    const hi = rect.y + rect.height - inset;
+    return { ...anchor, y: Math.min(hi, Math.max(lo, snap(anchor.y + offset))) };
+  }
+  const inset = rect.width >= 3 * ROUTING_GRID ? ROUTING_GRID : 0;
+  const lo = rect.x + inset;
+  const hi = rect.x + rect.width - inset;
+  return { ...anchor, x: Math.min(hi, Math.max(lo, snap(anchor.x + offset))) };
+}
+
+function anchorKey(a) {
+  return `${Math.round(a.x)},${Math.round(a.y)}`;
+}
+
+// Вариант якоря для попытки: слот 0 = midpoint (прежнее поведение); если
+// midpoint занят реестром — первый свободный слот вдоль грани. Сторона занята
+// целиком → пустой массив (сторона пропускается). Ровно один вариант на
+// якорь: spreading не меняет выбор якоря, пока сторона не разделяется.
+function anchorVariants(nodeId, rect, base, registry) {
+  if (!nodeId || !registry) return [base];
+  const used = registry.get(`${nodeId}:${base.side}`) || new Set();
+  for (let k = 0; k <= ANCHOR_SLOT_LIMIT; k += 1) {
+    const a = spreadAnchor(base, rect, slotOffset(k));
+    if (!used.has(anchorKey(a))) return [a];
+  }
+  return [];
+}
+
+function claimAnchor(registry, nodeId, anchor, claims) {
+  const k = `${nodeId}:${anchor.side}`;
+  const key = anchorKey(anchor);
+  if (!registry.has(k)) registry.set(k, new Set());
+  registry.get(k).add(key);
+  if (claims) claims.push({ key: k, value: key });
+}
+
 /**
  * Разводка одной связи ортогональным маршрутом с обходом препятствий.
  * @param {{
@@ -276,6 +337,17 @@ function sideAnchors(rect, toward) {
  *                                        // foreignRects; его ячейки блокируются
  *                                        // кроме коридора выхода (computeExitCorridor
  *                                        // от выбранного якоря — единый источник)
+ *   sourceId?: string, targetId?: string, // id endpoint-фигур — ключи anchorRegistry
+ *                                        // (spreading). Без id/registry — прежнее
+ *                                        // поведение (midpoint-якоря).
+ *   anchorRegistry?: Map<string,Set<string>>, // "nodeId:side" → занятые "x,y"
+ *                                        // (мутируется при успехе; откат — через
+ *                                        // anchorClaims у вызывающей стороны)
+ *   anchorOccupied?: Set<string>,       // "i,j" клетки занятых якорей: hard-block
+ *                                        // даже внутри своей фигуры (точка
+ *                                        // привязки — тоже канал). КОНТРАКТ как у
+ *                                        // occupied (review n2): общий grid-origin.
+ *   anchorClaims?: Array<{key:string,value:string}>, // сюда пишутся claim'ы успеха
  *   expansionBudget?: number,
  * }} input
  * @returns {Array<{x,y}>|null} waypoints (кратны сетке) или null.
@@ -286,6 +358,9 @@ export function routeConnection(input) {
   const extra = (input.blockedRects || []).map((r) => inflateRect(r, ROUTING_GRID));
   const exitHost = input.exitHost || null;
   const occupied = input.occupied || new Set();
+  const anchorRegistry = input.anchorRegistry || null;
+  const anchorOccupied = input.anchorOccupied || null;
+  const anchorClaims = input.anchorClaims || null;
   const budget = input.expansionBudget ?? ROUTING_EXPANSION_BUDGET;
 
   const allRects = [source, target, ...(input.foreignRects || [])];
@@ -321,6 +396,9 @@ export function routeConnection(input) {
 
   const blockedAt = (i, j) => {
     if (i < 0 || j < 0 || i >= w || j >= h) return true;
+    // занятый якорь — sacred: блокирует даже клетки своей фигуры (иначе
+    // параллельные связи одного узла стартуют коллинеарно — контур gateway-fan)
+    if (anchorOccupied && anchorOccupied.has(`${i},${j}`)) return true;
     if (base[j * w + i]) return !insideOwn(i, j);
     if (occupied.has(`${i},${j}`)) return !insideOwn(i, j);
     return false;
@@ -360,17 +438,23 @@ export function routeConnection(input) {
   const starts = sideAnchors(source, { x: target.x + target.width / 2, y: target.y + target.height / 2 });
   const stops = sideAnchors(target, { x: source.x + source.width / 2, y: source.y + source.height / 2 });
 
-  for (const start of starts) {
-    // boundary-host: коридор выхода от выбранного якоря; якорь вне граней —
-    // не подходит (выход только через коридор).
-    let corridor = null;
-    if (exitHost) {
-      corridor = computeExitCorridor(exitHost, start);
-      if (!corridor) continue;
-    }
-    for (const stop of stops) {
-      const [si, sj] = cellOf(start);
-      const [ti, tj] = cellOf(stop);
+  for (const startBase of starts) {
+    // anchor spreading: варианты якоря вдоль грани (слоты из реестра)
+    for (const start of anchorVariants(input.sourceId, source, startBase, anchorRegistry)) {
+      // boundary-host: коридор выхода от выбранного якоря; якорь вне граней —
+      // не подходит (выход только через коридор).
+      let corridor = null;
+      if (exitHost) {
+        corridor = computeExitCorridor(exitHost, start);
+        if (!corridor) continue;
+      }
+      for (const stopBase of stops) {
+        for (const stop of anchorVariants(input.targetId, target, stopBase, anchorRegistry)) {
+          const [si, sj] = cellOf(start);
+          const [ti, tj] = cellOf(stop);
+          // занятые якоря не переиспользуются даже соседними слотами
+          if (anchorOccupied &&
+              (anchorOccupied.has(`${si},${sj}`) || anchorOccupied.has(`${ti},${tj}`))) continue;
       // grid-subtraction коридора: ячейки внутри corridor-rect разблокируются
       const cleared = [];
       if (corridor) {
@@ -471,7 +555,20 @@ export function routeConnection(input) {
           }
         }
       }
+      // anchor spreading: занятые якори регистрируются (откат плана — удаление
+      // claim'ов из реестра) и становятся hard-block для чужих связей. Клетки
+      // обоих endpoint'ов уже входят в cells → освобождаются вместе с occupied.
+      if (anchorRegistry) {
+        if (input.sourceId) claimAnchor(anchorRegistry, input.sourceId, start, anchorClaims);
+        if (input.targetId) claimAnchor(anchorRegistry, input.targetId, stop, anchorClaims);
+      }
+      if (anchorOccupied) {
+        anchorOccupied.add(`${si},${sj}`);
+        anchorOccupied.add(`${ti},${tj}`);
+      }
       return pts;
+        }
+      }
     }
   }
   return null;
