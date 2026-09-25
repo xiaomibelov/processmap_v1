@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 
-import { apiPatchSession } from "../../lib/api/sessionApi";
+import { apiGetSessionMeta, apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
@@ -65,6 +65,10 @@ import {
   useTobeOverlayUnderlayActive,
   useTobeOverlayUnderlayVisible,
 } from "../../features/process/bpmn/stage/tobeOverlayUnderlay/useTobeOverlayUnderlay";
+import {
+  loadProvenanceForSession,
+  resetProvenanceSessionState,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeOverlayProvenanceStore.js";
 import {
   runImmediateEditorFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
@@ -1839,6 +1843,50 @@ const BpmnStage = forwardRef(function BpmnStage({
       underlayControllerSidRef.current = null;
     };
   }, []);
+
+  // TO BE provenance (feature/tobe-overlay-visibility-provenance-v1, T8): lazy
+  // fetch индекса происхождения (raw XML TO BE + meta.sidecar) по образцу
+  // underlay-адаптера: флаг подложки + active + diagramReady →
+  // requestIdleCallback. Кэш/сброс и mid-flight-гард — в
+  // tobeOverlayProvenanceStore (per sessionId); fetch-функции — инъекцией
+  // (store unit-тестируется без сети). Гейт тот же, что у подложки:
+  // provenance бесполезна без ghost-слоя AS IS.
+  useEffect(() => {
+    const enabled = !!(tobeOverlayUnderlayFlag && underlayActive && sessionId && diagramReady);
+    if (!enabled) return undefined;
+    let cancelled = false;
+    const cancelSchedule = (() => {
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+        const handle = window.requestIdleCallback(runLoad, { timeout: 2000 });
+        return () => {
+          try { window.cancelIdleCallback?.(handle); } catch {}
+        };
+      }
+      const timer = setTimeout(runLoad, 0);
+      return () => clearTimeout(timer);
+    })();
+    function runLoad() {
+      if (cancelled) return;
+      void loadProvenanceForSession({
+        sessionId,
+        fetchXml: (sid) => apiGetBpmnXml(sid, { raw: true, includeOverlay: false, cacheBust: true }),
+        fetchMeta: (sid) => apiGetSessionMeta(sid),
+      });
+    }
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+    };
+  }, [tobeOverlayUnderlayFlag, underlayActive, sessionId, diagramReady]);
+
+  // T8 teardown: смена сессии — полный сброс provenance-состояния (кэш +
+  // индекс). Поздний in-flight ответ прежней сессии не применится: store
+  // сверяет sessionKey на момент resolve.
+  useEffect(() => {
+    return () => {
+      resetProvenanceSessionState();
+    };
+  }, [sessionId]);
 
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {

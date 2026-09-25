@@ -1774,6 +1774,9 @@ export async function apiGetSessionMeta(sessionId) {
     bpmn_xml_version: Number(payload.bpmn_xml_version || 0),
     diagram_state_version: Number(payload.diagram_state_version || 0),
     version: Number(payload.version || 0),
+    // fix/tobe-element-provenance-persistence-v1: sidecar provenance TO BE
+    // (trace_map-снапшот; класс removed). Канал 2 индекса provenance (T8).
+    provenance: payload.provenance ?? null,
   };
 }
 
