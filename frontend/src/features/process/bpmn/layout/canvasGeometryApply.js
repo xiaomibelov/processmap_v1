@@ -1,34 +1,36 @@
 // canvasGeometryApply.js — применение настроек геометрии канваса к схеме
 // (контур feature/canvas-geometry-apply, шаг 2; фаза 2 переписана контуром
-// fix/canvas-geometry-apply-topology).
+// fix/canvas-geometry-apply-topology; фаза стрелок — контуром
+// fix/canvas-geometry-apply-routing: grid-A* роутинг вместо manhattan-L).
 //
 // Чистые функции без bpmn-js-вайринга (тестируемы через node --test).
-// Зависимости направлены строго в одну сторону: canvasGeometryApply →
-// canvasGeometry (циклов нет; align-ряды больше не используются — глобальная
-// перекладка рядов удалена, регресс align = 0, gate-тест следит за импортами).
+// Зависимости направлены строго в одну сторону:
+//   canvasGeometryApply → canvasGeometryRouting, canvasGeometry
+// (циклов нет; align-ряды больше не используются — глобальная перекладка
+// рядов удалена topology-контуром, регресс align = 0, gate-тест следит).
 //
-// Состав операции «Применить к схеме» (постановка fix/canvas-geometry-apply-topology):
+// Состав операции «Применить к схеме»:
 // 1. Ресайз ВСЕХ тасков (bpmn:Task и подтипы, /Task$/) до настроенного
 //    taskWidth × taskHeight, якорь — центр фигуры (канон-ресайз align).
-// 2. Локальная нормализация зазоров вдоль потока: обработка в порядке x
-//    по возрастанию; по горизонтальному flow-ребру s→t
-//    shift(t) ≥ shift(s) + max(0, sequenceGap − actualGap); по любому другому
-//    flow-ребру shift(t) ≥ shift(s) (вертикальные ветки едут с родителем).
-//    Никакой глобальной перекладки рядов, курсорного сжатия и затирания y:
-//    y-координаты всех узлов не меняются никогда.
-// 3. Безопасность: если сдвиг узла даёт пересечение bbox с узлом, не
-//    являющимся его downstream и сдвинутым меньше него, — узел пропускается
-//    (shift = 0, stats.nodesSkipped), каскад пересчитывается один раз.
+// 2. Локальная нормализация зазоров вдоль потока (см. контур topology):
+//    сдвиги каскадируются вправо по flow-рёбрам, y не меняются никогда.
+// 3. Safety: небезопасные сдвиги отменяются (stats.nodesSkipped).
 // 4. Boundary events наследуют сдвиг хоста (attachedTo), не ресайзятся.
 // 5. Стрелки: оба конца на одной дельте → чистая трансляция {dx,dy};
-//    дельты разные / один конец → переразводка waypoints (manhattan L
-//    между кропнутыми точками привязки пост-сдвига фигур), НЕ трансляция
-//    на чужую дельту.
+//    дельты разные / один конец → переразводка grid-A* роутером с обходом
+//    препятствий и occupancy-каналами (canvasGeometryRouting.js);
+//    connectivity-gate fail-closed: невалидный reroute → трансляция,
+//    невалидная трансляция → связь без изменений + stats.connectionsSkipped.
 
 import {
   CANON_GEOMETRY_DEFAULTS,
   CANVAS_GEOMETRY_BOUNDS,
 } from "./canvasGeometry.js";
+import {
+  findChannelConflicts,
+  routeConnection,
+  validateConnectionGeometry,
+} from "./canvasGeometryRouting.js";
 
 // Ребро считается горизонтальным, только если цель начинается строго за
 // правой гранью источника (по пост-ресайз геометрии) и стоит на той же
@@ -110,6 +112,18 @@ export function computeTaskResizePlan(nodes, geometry) {
 
 function centerX(rect) { return rect.x + rect.width / 2; }
 function centerY(rect) { return rect.y + rect.height / 2; }
+
+function emptyStats() {
+  return {
+    tasksResized: 0,
+    nodesShifted: 0,
+    nodesSkipped: 0,
+    connectionsTranslated: 0,
+    connectionsRerouted: 0,
+    connectionsSkipped: 0,
+    connectionsChannelConflicts: 0,
+  };
+}
 
 function rectsOverlap(a, b) {
   return a.x < b.x + b.width && b.x < a.x + a.width &&
@@ -208,88 +222,7 @@ function findSafetyViolators(postRects, flowEdges, shift, pinned) {
   return violators;
 }
 
-// --- Фаза 5: переразводка стрелок (manhattan L между кропнутыми точками) ---
-
-function strictlyInside(p, r) {
-  return p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height;
-}
-
-/**
- * Чистая manhattan-переразводка между двумя пост-сдвига прямоугольниками.
- * Сторона выхода — правая, если target справа, иначе нижняя/верхняя по dy;
- * сторона входа симметрична. Кроп от центра фигуры до границы (прямоугольник).
- * @returns {Array<{x:number,y:number}>} целые координаты, 2-3 точки.
- */
-export function computeReroutedWaypoints(source, target) {
-  const sCx = centerX(source);
-  const sCy = centerY(source);
-  const tCx = centerX(target);
-  const tCy = centerY(target);
-  const targetRight = tCx > sCx + 1;
-  const targetBelow = tCy >= sCy;
-
-  let out = targetRight
-    ? { x: source.x + source.width, y: sCy }
-    : targetBelow
-      ? { x: sCx, y: source.y + source.height }
-      : { x: sCx, y: source.y };
-  let inp = targetRight
-    ? { x: target.x, y: tCy }
-    : targetBelow
-      ? { x: tCx, y: target.y }
-      : { x: tCx, y: target.y + target.height };
-
-  // Гард (review m1): при перекрытии по x выбранная точка может лежать строго
-  // внутри чужого bbox (s 100..270, t 200..560) — тогда L-маршрут идёт через
-  // тело фигуры. Переносим точку на торец, свободный от чужой фигуры.
-  if (strictlyInside(out, target)) {
-    out = targetBelow
-      ? { x: sCx, y: source.y + source.height }
-      : { x: sCx, y: source.y };
-    if (strictlyInside(out, target)) {
-      out = targetBelow ? { x: sCx, y: source.y } : { x: sCx, y: source.y + source.height };
-    }
-  }
-  if (strictlyInside(inp, source)) {
-    inp = targetBelow
-      ? { x: tCx, y: target.y }
-      : { x: tCx, y: target.y + target.height };
-    if (strictlyInside(inp, source)) {
-      inp = targetBelow ? { x: tCx, y: target.y + target.height } : { x: tCx, y: target.y };
-    }
-  }
-
-  const pts = [{ x: Math.round(out.x), y: Math.round(out.y) }];
-  let mid = { x: Math.round(inp.x), y: Math.round(out.y) };
-  if (strictlyInside(mid, source) || strictlyInside(mid, target)) {
-    // Угол L в чужом теле — обходим сбоку по x правее обеих фигур…
-    const sideX = Math.max(source.x + source.width, target.x + target.width);
-    const side = { x: sideX, y: out.y };
-    if (!strictlyInside(side, source) && !strictlyInside(side, target)) {
-      mid = side;
-    } else {
-      // …либо, если и там чужие тела, — вертикальная разводка вне обеих фигур.
-      const sideY = targetBelow
-        ? Math.max(source.y + source.height, target.y + target.height) + 20
-        : Math.min(source.y, target.y) - 20;
-      const detour = [
-        { x: Math.round(out.x), y: Math.round(out.y) },
-        { x: Math.round(out.x), y: Math.round(sideY) },
-        { x: Math.round(inp.x), y: Math.round(sideY) },
-        { x: Math.round(inp.x), y: Math.round(inp.y) },
-      ];
-      const result = [detour[0]];
-      for (const p of detour.slice(1)) {
-        if (p.x !== result[result.length - 1].x || p.y !== result[result.length - 1].y) result.push(p);
-      }
-      return result;
-    }
-  }
-  const last = { x: Math.round(inp.x), y: Math.round(inp.y) };
-  if (mid.x !== pts[0].x || mid.y !== pts[0].y) pts.push(mid);
-  if (last.x !== pts[pts.length - 1].x || last.y !== pts[pts.length - 1].y) pts.push(last);
-  return pts;
-}
+// --- Фаза 5: переразводка стрелок — grid-A* роутер (canvasGeometryRouting.js) ---
 
 /**
  * Полный план «Применить к схеме».
@@ -315,7 +248,7 @@ export function computeGeometryApplyPlan(input, geometry) {
       positions: new Map(),
       connectionTranslations: new Map(),
       connectionWaypoints: new Map(),
-      stats: { tasksResized: 0, nodesShifted: 0, nodesSkipped: 0, connectionsTranslated: 0, connectionsRerouted: 0 },
+      stats: emptyStats(),
       noop: true,
     };
   }
@@ -363,7 +296,8 @@ export function computeGeometryApplyPlan(input, geometry) {
   const SAFETY_MAX_ITERATIONS = 3;
   const pinned = new Set();
   let shift = computeShifts(postRects, flowEdges, g.sequenceGap, pinned);
-  const stats = { tasksResized: resizePlan.size, nodesShifted: 0, nodesSkipped: 0, connectionsTranslated: 0, connectionsRerouted: 0 };
+  const stats = emptyStats();
+  stats.tasksResized = resizePlan.size;
   for (let iter = 0; iter < SAFETY_MAX_ITERATIONS; iter += 1) {
     const violators = findSafetyViolators(postRects, flowEdges, shift, pinned);
     if (violators.size === 0) break;
@@ -372,15 +306,22 @@ export function computeGeometryApplyPlan(input, geometry) {
   }
   stats.nodesSkipped = pinned.size;
 
-  // Позиции: ресайз-геометрия + shift по x; события/шлюзы — исходный размер
-  // + shift по x; y НЕ меняется никогда. В positions попадают только узлы,
-  // чей финальный прямоугольник отличается от исходного.
-  const positions = new Map();
+  // Финальные прямоугольники всех нод (пост-ресайз + применённый сдвиг) —
+  // используются роутером и гейтом.
+  const finalRects = new Map();
   for (const node of nodes) {
     const base = postRects.get(node.id);
     if (!base) continue;
+    finalRects.set(node.id, { ...base, x: base.x + (shift.get(node.id) || 0) });
+  }
+
+  // Позиции: в positions попадают только узлы, чей финальный прямоугольник
+  // отличается от исходного (y НЕ меняется никогда).
+  const positions = new Map();
+  for (const node of nodes) {
+    const final = finalRects.get(node.id);
+    if (!final) continue;
     const dx = shift.get(node.id) || 0;
-    const final = { ...base, x: base.x + dx };
     if (final.x !== Number(node.x) || final.y !== Number(node.y) ||
         final.width !== Number(node.width) || final.height !== Number(node.height)) {
       positions.set(node.id, final);
@@ -388,27 +329,169 @@ export function computeGeometryApplyPlan(input, geometry) {
     if (dx !== 0) stats.nodesShifted += 1;
   }
 
-  // Фаза 5 — стрелки: чистая трансляция при общей дельте, иначе переразводка.
+  // Фаза 5 — стрелки. Детерминированный порядок (сортировка по id связи),
+  // grid-A* с occupancy-каналами; connectivity-gate fail-closed: невалидный
+  // reroute → откат к трансляции; невалидная трансляция → связь без изменений
+  // + stats.connectionsSkipped. Пост-проход разводит остаточные конфликты
+  // каналов (коллинеарные наложения / параллельные ближе 10px).
+  // Boundary-исходящие связи: хост boundary-эвента не считается препятствием
+  // (круг boundary сидит на границе хоста — выход из-под тела хоста легален
+  // по семантике BPMN; строгий запрет стены делает такие связи неразводимыми).
+  // Осознанное ограничение (review n1): исключение bbox-wide — маршрут BE→X
+  // теоретически может пройти ТЕЛОМ через bbox хоста (не только «выходом из-под
+  // него»); якоря sideAnchors + inflate делают это маловероятным, валидация
+  // согласована (хост исключён из foreign для таких связей).
+  const attachedHost = new Map();
+  for (const node of nodes) {
+    if (node.attachedTo && finalRects.has(node.attachedTo)) attachedHost.set(node.id, node.attachedTo);
+  }
+
   const connectionTranslations = new Map();
   const connectionWaypoints = new Map();
-  for (const conn of connections) {
-    if (!conn || !conn.id) continue;
-    const dS = postRects.has(conn.sourceId) ? (shift.get(conn.sourceId) || 0) : null;
-    const dT = postRects.has(conn.targetId) ? (shift.get(conn.targetId) || 0) : null;
-    if (dS === null || dT === null) continue;
-    if (dS === 0 && dT === 0) continue;
-    if (dS === dT) {
-      connectionTranslations.set(conn.id, { dx: dS, dy: 0 });
+  const occupied = new Set();
+  const occupiedKeysByConn = new Map();
+
+  const foreignFor = (conn) => {
+    const out = [];
+    const hostOfSource = attachedHost.get(conn.sourceId);
+    const hostOfTarget = attachedHost.get(conn.targetId);
+    for (const [id, r] of finalRects) {
+      if (id === conn.sourceId || id === conn.targetId) continue;
+      if (id === hostOfSource || id === hostOfTarget) continue;
+      out.push({ id, ...r });
+    }
+    return out;
+  };
+  const translateWaypoints = (conn, dx) =>
+    (conn.waypoints || []).map((p) => ({ x: p.x + dx, y: p.y }));
+  const validateReroute = (conn, pts) =>
+    validateConnectionGeometry({
+      source: finalRects.get(conn.sourceId),
+      target: finalRects.get(conn.targetId),
+      waypoints: pts,
+      foreignRects: foreignFor(conn),
+      tolerance: 1,
+      endSlack: 0,
+    }).ok;
+  const validateTranslation = (conn, pts) =>
+    validateConnectionGeometry({
+      source: finalRects.get(conn.sourceId),
+      target: finalRects.get(conn.targetId),
+      waypoints: pts,
+      foreignRects: foreignFor(conn),
+      tolerance: 1,
+      endSlack: 20, // трансляция сохраняет исходную форму: мелкий дрейф endpoint'ов после ресайза кропится отрисовкой
+    }).ok;
+  const routeWithOccupancy = (conn, blockedRects = []) => {
+    const before = occupied.size;
+    const pts = routeConnection({
+      source: finalRects.get(conn.sourceId),
+      target: finalRects.get(conn.targetId),
+      foreignRects: foreignFor(conn),
+      occupied,
+      blockedRects,
+    });
+    if (!pts) return null;
+    occupiedKeysByConn.set(conn.id, [...occupied].slice(before));
+    return pts;
+  };
+  const releaseOccupancy = (connId) => {
+    for (const k of occupiedKeysByConn.get(connId) || []) occupied.delete(k);
+    occupiedKeysByConn.delete(connId);
+  };
+
+  const sortedConns = connections
+    .filter((c) => c && c.id && Array.isArray(c.waypoints) &&
+      finalRects.has(c.sourceId) && finalRects.has(c.targetId))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+  for (const conn of sortedConns) {
+    const dS = shift.get(conn.sourceId) || 0;
+    const dT = shift.get(conn.targetId) || 0;
+    if (dS === 0 && dT === 0) continue; // без дельт связь не трогаем
+    let op = null;
+    if (dS !== dT) {
+      const pts = routeWithOccupancy(conn);
+      if (pts && validateReroute(conn, pts)) {
+        op = { kind: "reroute", pts };
+      } else {
+        if (pts) releaseOccupancy(conn.id);
+        const tr = { dx: dS, dy: 0 };
+        if (validateTranslation(conn, translateWaypoints(conn, dS))) op = { kind: "translate", tr };
+      }
+    } else {
+      const tr = { dx: dS, dy: 0 };
+      if (validateTranslation(conn, translateWaypoints(conn, dS))) {
+        op = { kind: "translate", tr };
+      } else {
+        const pts = routeWithOccupancy(conn);
+        if (pts && validateReroute(conn, pts)) op = { kind: "reroute", pts };
+        else if (pts) releaseOccupancy(conn.id);
+      }
+    }
+    if (!op) {
+      stats.connectionsSkipped += 1; // честный пропуск: ни reroute, ни трансляция не валидны
+      continue;
+    }
+    if (op.kind === "translate") {
+      connectionTranslations.set(conn.id, op.tr);
       stats.connectionsTranslated += 1;
     } else {
-      const s = positions.get(conn.sourceId) || postRects.get(conn.sourceId);
-      const t = positions.get(conn.targetId) || postRects.get(conn.targetId);
-      connectionWaypoints.set(conn.id, computeReroutedWaypoints(s, t));
+      connectionWaypoints.set(conn.id, op.pts);
       stats.connectionsRerouted += 1;
     }
   }
 
+  // Пост-проход каналов (вынесен в чистую функцию — тестируем напрямую).
+  const remainingConflicts = resolveChannelConflicts(connectionWaypoints, (offenderId, corridor) => {
+    const conn = sortedConns.find((c) => c.id === offenderId);
+    if (!conn) return null;
+    releaseOccupancy(offenderId);
+    const pts = routeWithOccupancy(conn, [corridor]);
+    if (pts && validateReroute(conn, pts)) return pts;
+    if (pts) releaseOccupancy(offenderId);
+    return null; // развести не удалось — прежний маршрут, конфликт честно в stats
+  });
+  stats.connectionsChannelConflicts = remainingConflicts.length;
+
   const noop = positions.size === 0 &&
     connectionTranslations.size === 0 && connectionWaypoints.size === 0;
   return { positions, connectionTranslations, connectionWaypoints, stats, noop };
+}
+
+// resolveChannelConflicts — пост-проход каналов: развести остаточные конфликты
+// (коллинеарные наложения / параллельные ближе 10px) между уже разведёнными
+// связями. Максимум 3 попытки; на каждой нарушитель (связь с большим id —
+// позже разводилась) переразводится с блокировкой коридора ПРОТИВНИКА.
+// Ворк-эффекты (occupancy/валидация) — на tryReroute; здесь только стратегия.
+// В плане конфликт сюда обычно не доходит (occupancy разносит каналы ≥10px) —
+// это fail-visible слой на случай будущих изменений роутинга.
+export function resolveChannelConflicts(connectionWaypoints, tryReroute) {
+  let conflicts = findChannelConflicts(connectionWaypoints);
+  let attempts = 0;
+  while (conflicts.length > 0 && attempts < 3) {
+    attempts += 1;
+    const conf = conflicts[0];
+    const offender = String(conf.a).localeCompare(String(conf.b)) >= 0 ? conf.a : conf.b;
+    const other = offender === conf.a ? conf.b : conf.a;
+    const otherPts = connectionWaypoints.get(other);
+    if (!otherPts) break;
+    // Индекс сегмента ПРОТИВНИКА (не нарушителя): коридор строим по чужому
+    // сегменту, иначе при разном числе сегментов получим undefined/NaN (review r1).
+    const segIdx = offender === conf.a ? conf.bSeg : conf.aSeg;
+    const a = otherPts[segIdx];
+    const b = otherPts[segIdx + 1];
+    if (!a || !b) break;
+    const corridor = {
+      x: Math.min(a.x, b.x) - 1,
+      y: Math.min(a.y, b.y) - 1,
+      width: Math.abs(a.x - b.x) + 2,
+      height: Math.abs(a.y - b.y) + 2,
+    };
+    const pts = tryReroute(offender, corridor);
+    if (!pts) break;
+    connectionWaypoints.set(offender, pts);
+    conflicts = findChannelConflicts(connectionWaypoints);
+  }
+  return conflicts;
 }

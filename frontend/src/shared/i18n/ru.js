@@ -1316,6 +1316,7 @@ export const ru = {
     alignDiagram: "Выровнять схему",
     applyGeometry: "Применить к схеме",
     applyGeometryFailed: "Не удалось применить геометрию к схеме",
+    applyGeometryResult: "Геометрия применена: сдвинуто {shifted} узлов, переразведено {rerouted} стрелок, пропущено {skipped} (узлов/стрелок)",
     resetCanvas: "Сбросить канвас",
     alignFailed: "Не удалось выровнять схему",
     resetCanvasConfirm: "Вы уверены? Все элементы схемы будут удалены. Это действие необратимо.",

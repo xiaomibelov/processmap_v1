@@ -356,8 +356,11 @@ test("gate: в коде применения DI доступен только ч
 });
 
 test("gate: направление зависимостей — apply не зависит от laneRowAlign (глобальная перекладка рядов удалена)", () => {
-  for (const f of ["laneRowAlign.js", "canvasGeometry.js"]) {
-    const src = readFileSync(join(HERE, f), "utf8");
+  // Комментарии strip'аем: шапка routing-модуля упоминает apply-модули
+  // декларативно (обратная зависимость запрещена) — это не импорт.
+  const stripComments = (src) => src.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  for (const f of ["laneRowAlign.js", "canvasGeometry.js", "canvasGeometryRouting.js"]) {
+    const src = stripComments(readFileSync(join(HERE, f), "utf8"));
     assert.ok(!src.includes("canvasGeometryApply"), `${f} не зависит от apply-модуля`);
   }
   const applySrc = readFileSync(join(HERE, "canvasGeometryApply.js"), "utf8");
