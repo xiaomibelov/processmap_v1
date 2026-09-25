@@ -1,4 +1,3 @@
-import { GHOST_VISIBILITY_PRESETS } from "./ghostVisibilityPresets.js";
 import { setGhostVisibility } from "./tobeOverlayUnderlayStore.js";
 import { useTobeOverlayUnderlayGhostVisibility } from "./useTobeOverlayUnderlay.js";
 import { t } from "../../../../../shared/i18n/index.js";

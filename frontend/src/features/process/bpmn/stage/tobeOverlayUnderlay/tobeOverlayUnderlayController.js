@@ -1,4 +1,6 @@
 import { createSingleOverlayViewer } from "../tobeOverlayMock/createMockOverlayViewers.js";
+import { GHOST_VISIBILITY_PRESETS, normalizeGhostVisibility } from "./ghostVisibilityPresets.js";
+import { getGhostVisibility, subscribeTobeOverlayUnderlay } from "./tobeOverlayUnderlayStore.js";
 
 // Контроллер underlay-режима TO BE overlay: один read-only NavigatedViewer
 // (ghost реальной AS IS) под живым editor-слоем. One-way sync editor → ghost
@@ -16,6 +18,20 @@ export function createTobeOverlayUnderlayController(options = {}) {
   let mounted = false;
   let xmlImported = false;
   let unbindViewboxSync = null;
+  let unbindGhostVisibility = null;
+
+  // T4: переключает CSS-модификатор пресета на ghost-контейнере (снимает
+  // прочие --faint|--medium|--strong, вешает текущий). Модификаторы живут
+  // на ghost-контейнере, а не на .bpmnLayer--underlayAsis-хосте: базовый
+  // класс держит только pointer-events/transition (tobeOverlayUnderlay.css).
+  function applyGhostVisibilityPreset(preset) {
+    if (!ghost?.container) return;
+    const next = normalizeGhostVisibility(preset);
+    for (const p of Object.values(GHOST_VISIBILITY_PRESETS)) {
+      ghost.container.classList.remove(p.cssClass);
+    }
+    ghost.container.classList.add(GHOST_VISIBILITY_PRESETS[next].cssClass);
+  }
 
   function bindViewboxSync(editor) {
     const editorEventBus = editor.get("eventBus");
@@ -66,7 +82,23 @@ export function createTobeOverlayUnderlayController(options = {}) {
       unbindViewboxSync = bindViewboxSync(editor);
       mounted = true;
     }
+    // T4: пресет видимости применяется при mount (текущий store-пресет,
+    // default medium) и дальше — по подписке на store (её отписка — в
+    // destroy()). Подписка живёт в контроллере, а не в BpmnStage: контроллер
+    // владеет ghost-контейнером и своим жизненным циклом (mount/destroy).
+    if (!unbindGhostVisibility) {
+      applyGhostVisibilityPreset(getGhostVisibility());
+      unbindGhostVisibility = subscribeTobeOverlayUnderlay(() => {
+        applyGhostVisibilityPreset(getGhostVisibility());
+      });
+    }
     return api;
+  }
+
+  // Публичный API пресета: normalize на входе; без mounted ghost — no-op
+  // (как setGhostVisible).
+  function setGhostVisibilityPreset(preset) {
+    applyGhostVisibilityPreset(preset);
   }
 
   function setGhostVisible(visible) {
@@ -78,6 +110,10 @@ export function createTobeOverlayUnderlayController(options = {}) {
     if (unbindViewboxSync) {
       unbindViewboxSync();
       unbindViewboxSync = null;
+    }
+    if (unbindGhostVisibility) {
+      unbindGhostVisibility();
+      unbindGhostVisibility = null;
     }
     try {
       ghost?.viewer?.destroy?.();
@@ -96,6 +132,7 @@ export function createTobeOverlayUnderlayController(options = {}) {
     mount,
     destroy,
     setGhostVisible,
+    setGhostVisibilityPreset,
     isMounted: () => mounted,
     hasViewer: () => !!ghost,
   };

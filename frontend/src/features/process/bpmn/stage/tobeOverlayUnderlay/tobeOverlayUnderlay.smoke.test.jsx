@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { setLocale, t } from "../../../../../shared/i18n/index.js";
-import { resetTobeOverlayUnderlayState, setTobeOverlayUnderlayActive, setTobeOverlayUnderlayAvailable } from "./tobeOverlayUnderlayStore.js";
+import { resetTobeOverlayUnderlayState, setGhostVisibility, setTobeOverlayUnderlayActive, setTobeOverlayUnderlayAvailable } from "./tobeOverlayUnderlayStore.js";
 
 // T2: гейты рендера контрола underlay (UI.md) — кнопка show/hide видна только
 // при непустом underlayAsisSid (проп из ProcessStageHeader: to_be-сессия со
@@ -136,8 +136,19 @@ describe("T4a occlusion spike (CSS-path)", () => {
     const underlay = underlayRaw.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(underlay).not.toMatch(/background/);
     expect(underlay).not.toMatch(/bpmnLayer--editor|bpmnLayer--diagram|display\s*:/);
-    // ghost-стилистика на месте (UI.md)
-    expect(underlay).toMatch(/\.bpmnLayer--underlayAsis \{\n  pointer-events: none;\n  opacity: 0\.3;\n  filter: grayscale\(0\.7\) saturate\(0\.4\);\n\}/);
+    // ghost-стилистика на месте (UI.md): базовый класс держит pointer-events
+    // + transition, значения висят на модификаторах (T4).
+    expect(underlay).toMatch(/\.bpmnLayer--underlayAsis \{\n  pointer-events: none;\n  transition: opacity 0\.15s ease;\n\}/);
+    // Без модификатора слой НЕ невидим: дефолт на ghost-контейнере = medium.
+    expect(underlay).toMatch(/\.tobeOverlayUnderlay-canvas \{\n  opacity: 0\.55;\n  filter: grayscale\(0\.35\) saturate\(0\.75\);\n/);
+    expect(underlay).toMatch(/\.bpmnLayer--underlayAsis--faint \{\n  opacity: 0\.30;\n  filter: grayscale\(0\.7\) saturate\(0\.4\);\n\}/);
+    expect(underlay).toMatch(/\.bpmnLayer--underlayAsis--medium \{\n  opacity: 0\.55;\n  filter: grayscale\(0\.35\) saturate\(0\.75\);\n\}/);
+    expect(underlay).toMatch(/\.bpmnLayer--underlayAsis--strong \{\n  opacity: 0\.85;\n  filter: none;\n\}/);
+    // Базовый класс не несёт значений видимости (иначе двойное затухание
+    // с ghost-контейнером).
+    const baseRule = underlay.match(/\.bpmnLayer--underlayAsis \{[^}]*\}/);
+    expect(baseRule).toBeTruthy();
+    expect(baseRule[0]).not.toMatch(/opacity: 0\.|filter:/);
   });
 
   it("фон стека — z-index 0, ниже слоёв (z-index 1): не окклюдирует ghost", async () => {
@@ -350,6 +361,74 @@ describe("tobeOverlayUnderlayController (T5)", () => {
     expect(src).toMatch(/from "\.\.\/tobeOverlayMock\/createMockOverlayViewers\.js"/);
     // Маркер контура на не-молчаливый catch синка.
     expect(src).toMatch(/\[tobe-underlay\] viewbox sync failed/);
+  });
+});
+
+// T4: CSS-модификаторы видимости ghost-слоя. Контейнер — DOM-узел ghost'а
+// (реальный контракт, внутренности diagram-js не мокаем — урок C1).
+const GHOST_MODIFIERS = [
+  "bpmnLayer--underlayAsis--faint",
+  "bpmnLayer--underlayAsis--medium",
+  "bpmnLayer--underlayAsis--strong",
+];
+
+function expectSingleModifier(container, expected) {
+  for (const cls of GHOST_MODIFIERS) {
+    expect(container.classList.contains(cls)).toBe(cls === expected);
+  }
+}
+
+describe("tobeOverlayUnderlayController ghost visibility preset (T4)", () => {
+  it("setGhostVisibilityPreset: один модификатор, повторный вызов переключает", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghostContainer } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    controller.setGhostVisibilityPreset("strong");
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--strong");
+
+    controller.setGhostVisibilityPreset("faint");
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--faint");
+  });
+
+  it("unknown-пресет нормализуется к medium (ровно один модификатор)", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghostContainer } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    controller.setGhostVisibilityPreset("strong");
+    controller.setGhostVisibilityPreset("не-существует");
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--medium");
+  });
+
+  it("mount применяет текущий store-пресет (default medium из чистого storage)", async () => {
+    window.localStorage.clear();
+    const editor = makeFakeEditor();
+    const { controller, ghostContainer } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--medium");
+  });
+
+  it("подписка на store живая: смена пресета применяется без вызова извне; destroy отписывает", async () => {
+    window.localStorage.clear();
+    setGhostVisibility("faint");
+    const editor = makeFakeEditor();
+    const { controller, ghostContainer } = makeControllerWithFakeGhost();
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--faint");
+
+    // Смена через store (как делает GhostVisibilityControl) — контроллер
+    // применяет сам, по подписке.
+    setGhostVisibility("strong");
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--strong");
+
+    controller.destroy();
+    setGhostVisibility("faint");
+    expectSingleModifier(ghostContainer, "bpmnLayer--underlayAsis--strong");
   });
 });
 

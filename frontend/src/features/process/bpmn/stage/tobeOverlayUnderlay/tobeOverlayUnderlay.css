@@ -9,6 +9,33 @@
 
 .bpmnLayer--underlayAsis {
   pointer-events: none;
-  opacity: 0.3;
+  transition: opacity 0.15s ease;
+}
+
+/* Ghost-контейнер (.tobeOverlayUnderlay-canvas внутри .bpmnCanvas).
+   ДЕФОЛТ = medium (UI.md D2): без модификатора слой остаётся приглушённым
+   medium-значениями, НЕ невидимым. Модификаторы faint/medium/strong висят
+   на ghost-контейнере (переключает tobeOverlayUnderlayController,
+   setGhostVisibilityPreset); базовый класс значений не несёт — иначе
+   opacity родителя и контейнера перемножились бы. transition живёт рядом
+   с меняемым opacity (на контейнере), иначе анимация не сработала бы. */
+.tobeOverlayUnderlay-canvas {
+  opacity: 0.55;
+  filter: grayscale(0.35) saturate(0.75);
+  transition: opacity 0.15s ease;
+}
+
+.bpmnLayer--underlayAsis--faint {
+  opacity: 0.30;
   filter: grayscale(0.7) saturate(0.4);
+}
+
+.bpmnLayer--underlayAsis--medium {
+  opacity: 0.55;
+  filter: grayscale(0.35) saturate(0.75);
+}
+
+.bpmnLayer--underlayAsis--strong {
+  opacity: 0.85;
+  filter: none;
 }
