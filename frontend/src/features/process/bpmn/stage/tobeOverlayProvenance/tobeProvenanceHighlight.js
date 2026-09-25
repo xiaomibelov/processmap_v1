@@ -58,6 +58,34 @@ export function badgeKeyForCount(n) {
   return "badgeMany";
 }
 
+// T12 (ruling контролёра): N бейджа — кардинальность ОПЕРАЦИИ, а не длина
+// reverse-списка. linkedOps = unique reverseEntry.map(toBeId):
+//   ровно 1 op  → N = |forward.get(op).asIsIds| (consolidated N→1: бейдж
+//                 «3 задачи AS IS → 1 операция» при длине списка 1);
+//   >1 ops      → N = |reverseEntry| (кавета сохраняется);
+//   0 ops       → null — бейдж не ставится.
+// Защитная ветка: 1 op без forward-записи/пустыми asIsIds → fallback на
+// |reverseEntry| (прежняя семантика), а не бросок. Чистая функция.
+export function badgeCountForHit(reverseEntry, forward) {
+  if (!Array.isArray(reverseEntry) || reverseEntry.length === 0) return null;
+  const opIds = [];
+  for (const item of reverseEntry) {
+    const id = String(item?.toBeId || "");
+    if (id && !opIds.includes(id)) opIds.push(id);
+  }
+  if (opIds.length === 0) return null;
+  if (opIds.length === 1) {
+    let n = 0;
+    try {
+      n = Number(forward?.get?.(opIds[0])?.asIsIds?.length) || 0;
+    } catch {
+      n = 0;
+    }
+    return n > 0 ? n : reverseEntry.length;
+  }
+  return reverseEntry.length;
+}
+
 export function initProvenanceHighlight({
   editorCanvas,
   editorEventBus,
@@ -240,9 +268,9 @@ export function initProvenanceHighlight({
       }
     }
     const primary = toBeIds[0];
-    if (primary && editorOverlays && typeof editorOverlays.add === "function") {
-      const n = list.length;
-      const text = tf(`tobeUnderlay.provenance.${badgeKeyForCount(n)}`, { n });
+    const badgeN = badgeCountForHit(list, getIndex?.()?.forward);
+    if (primary && badgeN !== null && editorOverlays && typeof editorOverlays.add === "function") {
+      const text = tf(`tobeUnderlay.provenance.${badgeKeyForCount(badgeN)}`, { n: badgeN });
       try {
         const overlay = editorOverlays.add(primary, PROV_BADGE_TYPE, {
           position: { top: -14, left: 0 },
