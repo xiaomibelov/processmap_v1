@@ -491,9 +491,10 @@ function computeLaneRowAlignPlanFromRegistry(registry) {
   return computeLaneRowAlignPlan({ nodes, connections });
 }
 
-// Один commandStack-хендлер на все мутации align → один шаг undo/redo.
-// Прямые мутации геометрии + DI (без modeling.*): стрелки только транслируются,
-// layoutConnection не вызывается.
+// Один commandStack-хендлер на все мутации align/applyGeometry → один шаг undo/redo.
+// Прямые мутации геометрии + DI (без modeling.*): стрелки либо транслируются
+// (op {dx,dy}), либо полностью переразводятся (op {waypoints} — контур
+// fix/canvas-geometry-apply-topology); layoutConnection не вызывается.
 function FpcAlignDiagramHandler() {}
 FpcAlignDiagramHandler.prototype.execute = function execute(context) {
   const changed = [];
@@ -523,18 +524,26 @@ FpcAlignDiagramHandler.prototype.execute = function execute(context) {
     context.records.push({
       kind: "connection",
       el: conn,
+      replace: Array.isArray(op.waypoints),
       waypoints: conn.waypoints.map((p) => ({
         x: p.x, y: p.y,
         original: p.original ? { x: p.original.x, y: p.original.y } : undefined,
       })),
       diWaypoints: diWaypoints ? diWaypoints.map((p) => ({ x: p.x, y: p.y })) : null,
     });
-    for (const p of conn.waypoints) {
-      p.x += op.dx; p.y += op.dy;
-      if (p.original) { p.original.x += op.dx; p.original.y += op.dy; }
-    }
-    if (diWaypoints) {
-      for (const p of diWaypoints) { p.x += op.dx; p.y += op.dy; }
+    if (Array.isArray(op.waypoints)) {
+      // Переразводка: полная замена waypoints (длина может отличаться).
+      const next = op.waypoints.map((p) => ({ x: p.x, y: p.y }));
+      conn.waypoints.splice(0, conn.waypoints.length, ...next.map((p) => ({ ...p })));
+      if (diWaypoints) diWaypoints.splice(0, diWaypoints.length, ...next.map((p) => ({ ...p })));
+    } else {
+      for (const p of conn.waypoints) {
+        p.x += op.dx; p.y += op.dy;
+        if (p.original) { p.original.x += op.dx; p.original.y += op.dy; }
+      }
+      if (diWaypoints) {
+        for (const p of diWaypoints) { p.x += op.dx; p.y += op.dy; }
+      }
     }
     changed.push(conn);
   }
@@ -550,18 +559,29 @@ FpcAlignDiagramHandler.prototype.revert = function revert(context) {
         b.x = rec.di.x; b.y = rec.di.y; b.width = rec.di.width; b.height = rec.di.height;
       }
     } else if (rec.kind === "connection") {
-      rec.el.waypoints.forEach((p, i) => {
-        const old = rec.waypoints[i];
-        if (!old) return;
-        p.x = old.x; p.y = old.y;
-        if (p.original && old.original) { p.original.x = old.original.x; p.original.y = old.original.y; }
-      });
-      if (rec.diWaypoints && rec.el.di && Array.isArray(rec.el.di.waypoint)) {
-        rec.el.di.waypoint.forEach((p, i) => {
-          const old = rec.diWaypoints[i];
+      if (rec.replace) {
+        // Восстановление после переразводки: возвращаем записанный массив целиком.
+        rec.el.waypoints.splice(0, rec.el.waypoints.length, ...rec.waypoints.map((p) => ({
+          x: p.x, y: p.y,
+          original: p.original ? { x: p.original.x, y: p.original.y } : undefined,
+        })));
+        if (rec.diWaypoints && rec.el.di && Array.isArray(rec.el.di.waypoint)) {
+          rec.el.di.waypoint.splice(0, rec.el.di.waypoint.length, ...rec.diWaypoints.map((p) => ({ x: p.x, y: p.y })));
+        }
+      } else {
+        rec.el.waypoints.forEach((p, i) => {
+          const old = rec.waypoints[i];
           if (!old) return;
           p.x = old.x; p.y = old.y;
+          if (p.original && old.original) { p.original.x = old.original.x; p.original.y = old.original.y; }
         });
+        if (rec.diWaypoints && rec.el.di && Array.isArray(rec.el.di.waypoint)) {
+          rec.el.di.waypoint.forEach((p, i) => {
+            const old = rec.diWaypoints[i];
+            if (!old) return;
+            p.x = old.x; p.y = old.y;
+          });
+        }
       }
     }
     changed.push(rec.el);
@@ -638,7 +658,11 @@ async function alignDiagramOnInstance(inst, options = {}) {
 }
 
 // «Применить к схеме» (canvas-geometry-apply): ресайз всех тасков до настроек
-// (центр-якорь) + раскладка рядов с зазором sequence_gap. Математика — в
+// (центр-якорь) + ЛОКАЛЬНАЯ нормализация зазоров вдоль потока (контур
+// fix/canvas-geometry-apply-topology: глобальная перекладка рядов удалена —
+// она ломала длинные цепочки; y узлов не меняются, вертикальные ветки едут
+// с родителем, boundary следует за хостом). Стрелки: общая дельта →
+// трансляция, разные дельты → переразводка waypoints. Математика — в
 // canvasGeometryApply.js; здесь только bpmn-js-вайринг по паттерну align:
 // один commandStack.execute (хендлер FpcAlignDiagramHandler), DI только el.di/conn.di.
 function computeGeometryApplyPlanFromRegistry(registry) {
@@ -655,6 +679,7 @@ function computeGeometryApplyPlanFromRegistry(registry) {
       height: Number(el.height || 0),
       laneKey: container.key,
       laneBounds: container.bounds,
+      attachedTo: el.host?.id || null,
     };
   });
   const connections = all
@@ -692,6 +717,12 @@ async function applyGeometryOnInstance(inst, options = {}) {
       const conn = registry.get(id);
       if (!conn || !Array.isArray(conn.waypoints) || conn.waypoints.length === 0) continue;
       connectionOps.push({ element: conn, dx: tr.dx, dy: tr.dy });
+    }
+    for (const [id, pts] of layout.connectionWaypoints || []) {
+      if (!Array.isArray(pts) || pts.length < 2) continue;
+      const conn = registry.get(id);
+      if (!conn || !Array.isArray(conn.waypoints) || conn.waypoints.length === 0) continue;
+      connectionOps.push({ element: conn, waypoints: pts });
     }
     if (shapeOps.length === 0 && connectionOps.length === 0) {
       return { ok: true, noop: true, xml: null };
