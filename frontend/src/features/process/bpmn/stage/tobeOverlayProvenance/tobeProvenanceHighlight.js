@@ -77,6 +77,16 @@ export function initProvenanceHighlight({
   const reverseGhostMarked = new Set();
   let badgeOverlays = [];
   let pointerDown = null;
+  // T10-fix: diagram-js по клику в пустоту editor-canvas БЕЗУСЛОВНО фаерит
+  // selection.changed с пустым selection (InteractionEvents → element.click
+  // → SelectionBehavior → Selection.select(null), Selection.js ~L125) — это
+  // артефакт собственного клика обратной подсветки. Флаг поглощает РОВНО
+  // ОДИН такой пустой флэт, пока применённая обратная подсветка не стёрта
+  // синхронно, до paint. Таймеры не нужны: весь pipeline клика синхронен
+  // (pointerup → click → select), race на destroy невозможен. Честные пустые
+  // selection (Escape, программный clear, клик в пустоту без ghost-hit) флаг
+  // не трогает — подавляем только если reverse-hit реально применился.
+  let suppressNextEmptySelectionClear = false;
 
   function ghostRegistryHolder() {
     try {
@@ -141,13 +151,18 @@ export function initProvenanceHighlight({
   // Прямая подсветка (T9): новый selection (элемент TO BE) → forward.get(id)
   // → каждый существующий asIsId на ghost-registry маркером-предком + dim.
   // Новый selection снимает и обратную подсветку (T10). Пустой selection /
-  // элемент без записи → молчаливое снятие (empty-state — отдельный T11).
+  // элемент без записи → молчаливое снятие — КРОМЕ одного пустого флэта,
+  // артефакта собственного клика обратной подсветки (T10-fix).
   function onSelectionChanged(event) {
-    clearLinked();
-    clearAncestors();
     const selection = event?.newSelection;
     const element = Array.isArray(selection) ? selection[0] : selection;
     const elementId = typeof element === "string" ? element : String(element?.id || "");
+    if (!elementId && suppressNextEmptySelectionClear) {
+      suppressNextEmptySelectionClear = false;
+      return;
+    }
+    clearLinked();
+    clearAncestors();
     if (!elementId) return;
     let entry = null;
     try {
@@ -179,8 +194,16 @@ export function initProvenanceHighlight({
   // Обратная подсветка (T10): ghostId → reverse.get(ghostId) → связанные
   // TO BE маркером tobeProvLinked (существующие в editor elementRegistry),
   // ghostId — tobeProvAncestor, бейдж N→1 на primary (первый списка).
+  // T10-fix: успешный apply вооружает suppressNextEmptySelectionClear —
+  // неминуемый пустой selection.changed собственного клика (select(null))
+  // будет поглощён. Старший непотреблённый флаг сбрасывается на входе
+  // (pipeline клика синхронен: флэт либо уже пришёл, либо не придёт никогда).
   function runReverseHit(event) {
+    suppressNextEmptySelectionClear = false;
     clearLinked();
+    // Клик по ghost — «мимо» для TO BE-selection: прошлую прямую подсветку
+    // снимаем сразу (diagram-js selection при этом клике тоже очищает).
+    clearAncestors();
     const ghost = ghostRegistryHolder();
     if (!ghost?.registry) return;
     const point = eventToDiagramPoint(event, editorCanvas);
@@ -193,6 +216,7 @@ export function initProvenanceHighlight({
       list = null;
     }
     if (!Array.isArray(list) || list.length === 0) return;
+    suppressNextEmptySelectionClear = true;
     addGhostMarker(ghost.canvas, ghostId);
     reverseGhostMarked.add(ghostId);
     const toBeIds = [];
@@ -260,6 +284,7 @@ export function initProvenanceHighlight({
   }
 
   function destroy() {
+    suppressNextEmptySelectionClear = false;
     clearLinked();
     clearAncestors();
     try {

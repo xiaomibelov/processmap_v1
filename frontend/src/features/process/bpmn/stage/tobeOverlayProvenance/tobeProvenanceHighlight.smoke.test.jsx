@@ -292,3 +292,84 @@ describe("T10: обратная подсветка (клик по ghost → link
     expect(editorOverlays.addCalls).toEqual([]);
   });
 });
+
+// T10-fix (review round 1, Critical): обратная подсветка стиралась собственным
+// же кликом — diagram-js по клику в пустоту editor-canvas БЕЗУСЛОВНО фаерит
+// selection.changed с пустым selection (InteractionEvents → element.click →
+// SelectionBehavior → Selection.select(null)). Реплика реального pipeline на
+// фейковом eventBus: pointerup(→reverse-hit) → click → selection.changed(null).
+describe("T10-fix: обратная подсветка переживает click → select(null) диаграммы", () => {
+  // Полный жест клика по точке: pointerdown + pointerup (reverse-hit) →
+  // нативный click → пустой selection.changed от Selection.select(null).
+  function clickWithDiagramPipeline(container, eventBus, { x, y, target = null } = {}) {
+    const opts = { bubbles: true, clientX: x, clientY: y };
+    container.dispatchEvent(new MouseEvent("pointerdown", opts));
+    (target || container).dispatchEvent(new MouseEvent("pointerup", opts));
+    (target || container).dispatchEvent(new MouseEvent("click", opts));
+    eventBus.emit("selection.changed", { newSelection: [] });
+  }
+
+  it("pointerup(reverse-hit) → click → selection.changed(null): linked/ancestor/badge ВЫЖИВАЮТ", () => {
+    const { eventBus, editorCanvas, editorOverlays, editorContainer, ghostCanvas } = setup();
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 450, y: 10 });
+    // Пустой флэт поглощён: ничего не снято.
+    expect(editorCanvas.removeMarkerCalls).toEqual([]);
+    expect(ghostCanvas.removeMarkerCalls).toEqual([]);
+    expect(editorOverlays.removeCalls).toEqual([]);
+    // И подсветка реально применена.
+    expect(editorCanvas.addMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(ghostCanvas.addMarkerCalls).toEqual([["AsIs_3", "tobeProvAncestor"]]);
+    expect(editorOverlays.addCalls.length).toBe(1);
+  });
+
+  it("честный сброс после: клик в пустоту БЕЗ ghost-hit + selection.changed(null) — всё снято", () => {
+    const { eventBus, editorCanvas, editorOverlays, editorContainer, ghostCanvas } = setup();
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 450, y: 10 });
+    // Второй клик мимо любых ghost-rect: reverse-hit без попадания — НЕ вооружает подавление.
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 950, y: 900 });
+    expect(editorCanvas.removeMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(ghostCanvas.removeMarkerCalls).toEqual([["AsIs_3", "tobeProvAncestor"]]);
+    expect(editorOverlays.removeCalls.length).toBe(1);
+    expect(editorOverlays.addCalls.length).toBe(1);
+  });
+
+  it("два клика подряд по ghost: оба применяются и выживают, бейдж без дубля (add 2, remove 1)", () => {
+    const { eventBus, editorCanvas, editorOverlays, editorContainer, ghostCanvas } = setup();
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 450, y: 10 });
+    editorCanvas.removeMarkerCalls.length = 0;
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 410, y: 20 });
+    expect(editorCanvas.removeMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(editorCanvas.addMarkerCalls.filter((c) => c[1] === "tobeProvLinked").length).toBe(2);
+    // add=2: второй клик честно снял и переставил ancestor (залежек нет).
+    expect(ghostCanvas.addMarkerCalls.filter((c) => c[1] === "tobeProvAncestor" && c[0] === "AsIs_3").length).toBe(2);
+    expect(editorOverlays.addCalls.length).toBe(2);
+    expect(editorOverlays.removeCalls.length).toBe(1);
+  });
+
+  it("клик по ghost → клик по TO BE-элементу: прямая T9 срабатывает, игнор НЕ залипает", () => {
+    const { eventBus, editorCanvas, editorOverlays, editorContainer, ghostCanvas, ghostContainer } = setup();
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 450, y: 10 });
+
+    // Клик по элементу TO BE (target с data-element-id): reverse пропущен,
+    // selection.changed НЕпустой — прямая подсветка T9.
+    const shape = document.createElement("g");
+    shape.setAttribute("data-element-id", "Task_a");
+    editorContainer.appendChild(shape);
+    clickWithDiagramPipeline(editorContainer, eventBus, { x: 10, y: 10, target: shape });
+    eventBus.emit("selection.changed", { newSelection: [{ id: "Task_a" }] });
+    expect(editorCanvas.removeMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(editorOverlays.removeCalls.length).toBe(1);
+    expect(ghostCanvas.addMarkerCalls).toEqual([
+      ["AsIs_3", "tobeProvAncestor"],
+      ["AsIs_1", "tobeProvAncestor"],
+      ["AsIs_2", "tobeProvAncestor"],
+    ]);
+    // Прямая подсветка T9 применена: dim на ghost-контейнере.
+    expect(ghostContainer.classList.contains("provenance-dim")).toBe(true);
+
+    // Игнор не залип: следующий честный пустой selection всё снимает.
+    eventBus.emit("selection.changed", { newSelection: [] });
+    expect(ghostCanvas.removeMarkerCalls).toEqual([["AsIs_3", "tobeProvAncestor"], ["AsIs_1", "tobeProvAncestor"], ["AsIs_2", "tobeProvAncestor"]]);
+    expect(ghostContainer.classList.contains("provenance-dim")).toBe(false);
+  });
+});
