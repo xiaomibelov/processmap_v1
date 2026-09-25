@@ -468,3 +468,27 @@ describe("tobeOverlayUnderlay eventBus unsubscribe (T5b)", () => {
     expect(editor.api.editorViewboxSetCalls).toBe(0);
   });
 });
+
+// T9: read-only ghost-доступы для provenance-подсветки (registry/canvas/
+// container в одном холдере). До mount / после destroy — null.
+describe("tobeOverlayUnderlayController getGhostAccess (T9)", () => {
+  it("до mount — null; после mount — холдер сервисов ghost-viewer; destroy — null", async () => {
+    const editor = makeFakeEditor();
+    const { controller, ghost, ghostContainer } = makeControllerWithFakeGhost();
+    expect(controller.getGhostAccess()).toBeNull();
+
+    const host = document.createElement("div");
+    await controller.mount({ container: host, xml: UNDERLAY_XML, editor: editor.api });
+
+    const access = controller.getGhostAccess();
+    expect(access).toBeTruthy();
+    // Фейковый viewer elementRegistry не отдаёт (реальный — diagram-js);
+    // контракт: null вместо undefined, canvas/контейнер — реальные ссылки.
+    expect(access.registry).toBeNull();
+    expect(access.canvas).toBe(ghost.canvas);
+    expect(access.container).toBe(ghostContainer);
+
+    controller.destroy();
+    expect(controller.getGhostAccess()).toBeNull();
+  });
+});

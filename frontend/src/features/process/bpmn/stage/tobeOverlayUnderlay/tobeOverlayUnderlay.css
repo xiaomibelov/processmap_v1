@@ -39,3 +39,28 @@
   opacity: 0.85;
   filter: none;
 }
+
+/* T9: provenance-подсветка на ghost-слое (прямая: selection TO BE → предки
+   AS IS). Маркер-предок — янтарный контур по образцу fpcBottleneckMedium
+   (.djs-element.<marker> .djs-visual > :is(...)); скоуп под
+   .tobeOverlayUnderlay-canvas — префикс изоляции от сессионных слоёв.
+   Фоновых/дисплейных правил здесь нет (инвариант T4a-спайка). */
+.tobeOverlayUnderlay-canvas .djs-element.tobeProvAncestor .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: #F59E0B !important;
+  stroke-width: 2px !important;
+  fill: rgba(245, 158, 11, 0.15) !important;
+}
+
+.tobeOverlayUnderlay-canvas .djs-connection.tobeProvAncestor .djs-visual > path {
+  stroke: #F59E0B !important;
+  stroke-width: 2px !important;
+}
+
+/* Dim-режим: всё НЕ-подсвеченное на ghost приглушается. Эффект МУЛЬТИПЛИКА-
+   ТИВЕН поверх пресета видимости faint/medium/strong (opacity/filter
+   контейнера перемножаются с правилом элемента) — осознанное допущение
+   брифа T9: подсветка предков важнее точного пресета на время selection. */
+.tobeOverlayUnderlay-canvas.provenance-dim .djs-element:not(.tobeProvAncestor) {
+  opacity: 0.35;
+  filter: grayscale(0.6);
+}

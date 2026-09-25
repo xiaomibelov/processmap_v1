@@ -128,11 +128,28 @@ export function createTobeOverlayUnderlayController(options = {}) {
     xmlImported = false;
   }
 
+  // T9: read-only доступы для provenance-подсветки: ghost elementRegistry
+  // (hit-test/существование), ghost canvas (addMarker/removeMarker), ghost
+  // контейнер (CSS-класс provenance-dim). До mount / после destroy — null.
+  function getGhostAccess() {
+    if (!ghost?.viewer) return null;
+    try {
+      return {
+        registry: ghost.viewer.get("elementRegistry") ?? null,
+        canvas: ghost.viewer.get("canvas") ?? null,
+        container: ghost.container ?? null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   const api = {
     mount,
     destroy,
     setGhostVisible,
     setGhostVisibilityPreset,
+    getGhostAccess,
     isMounted: () => mounted,
     hasViewer: () => !!ghost,
   };

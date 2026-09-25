@@ -63,12 +63,20 @@ import {
 } from "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlayStore";
 import {
   useTobeOverlayUnderlayActive,
+  useTobeOverlayUnderlayAvailable,
   useTobeOverlayUnderlayVisible,
 } from "../../features/process/bpmn/stage/tobeOverlayUnderlay/useTobeOverlayUnderlay";
 import {
+  getTobeOverlayProvenanceState,
   loadProvenanceForSession,
   resetProvenanceSessionState,
 } from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeOverlayProvenanceStore.js";
+import {
+  useTobeOverlayProvenanceStatus,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/useTobeOverlayProvenance.js";
+import {
+  initProvenanceHighlight,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenanceHighlight.js";
 import {
   runImmediateEditorFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
@@ -1887,6 +1895,42 @@ const BpmnStage = forwardRef(function BpmnStage({
       resetProvenanceSessionState();
     };
   }, [sessionId]);
+
+  // T9: прямая подсветка provenance — init highlight-контроллера, когда
+  // подложка смонтирована (available) и индекс ready. Read-only контакт:
+  // eventBus/canvas/overlays по образцу #1034; ghost-доступы — через
+  // getGhostAccess underlay-контроллера (registry/canvas/container).
+  const underlayAvailable = useTobeOverlayUnderlayAvailable();
+  const provStatus = useTobeOverlayProvenanceStatus();
+  const provHighlightRef = useRef(null);
+
+  useEffect(() => {
+    const canRun = !!(tobeOverlayUnderlayFlag && underlayActive && underlayAvailable && diagramReady);
+    if (!canRun) return undefined;
+    if (provStatus !== "ready") {
+      try { provHighlightRef.current?.destroy?.(); } catch {}
+      provHighlightRef.current = null;
+      return undefined;
+    }
+    if (provHighlightRef.current) return undefined;
+    const editor = modelerRef.current || viewerRef.current;
+    const ctl = underlayControllerRef.current;
+    const editorEventBus = editor?.get?.("eventBus");
+    const editorCanvas = editor?.get?.("canvas");
+    const ghostContainer = ctl?.getGhostAccess?.()?.container ?? null;
+    if (!editorEventBus || !editorCanvas || !ghostContainer || !ctl?.isMounted?.()) return undefined;
+    provHighlightRef.current = initProvenanceHighlight({
+      editorCanvas,
+      editorEventBus,
+      getGhostRegistry: () => ctl.getGhostAccess(),
+      getIndex: () => getTobeOverlayProvenanceState().index,
+      ghostContainer,
+    });
+    return () => {
+      try { provHighlightRef.current?.destroy?.(); } catch {}
+      provHighlightRef.current = null;
+    };
+  }, [tobeOverlayUnderlayFlag, underlayActive, underlayAvailable, diagramReady, provStatus]);
 
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {
