@@ -90,7 +90,7 @@ function makeIndex() {
   return { forward, reverse, source: "both" };
 }
 
-function setup({ ghostElements, editorElements } = {}) {
+function setup({ ghostElements, editorElements, index: customIndex } = {}) {
   const eventBus = makeFakeEventBus();
   const editorContainer = document.createElement("div");
   const editorCanvas = makeFakeCanvas({ container: editorContainer });
@@ -100,7 +100,7 @@ function setup({ ghostElements, editorElements } = {}) {
   const ghostCanvas = makeFakeCanvas({});
   const ghostContainer = document.createElement("div");
   ghostContainer.className = "tobeOverlayUnderlay-canvas";
-  const index = makeIndex();
+  const index = customIndex || makeIndex();
   const highlight = initProvenanceHighlight({
     editorCanvas,
     editorEventBus: eventBus,
@@ -208,5 +208,87 @@ describe("T9: прямая подсветка (selection → предки на g
       h.destroy();
       expect(eventBus.listenerCount("selection.changed")).toBe(baseline);
     }
+  });
+});
+
+describe("T10: обратная подсветка (клик по ghost → linked TO BE + бейдж N→1)", () => {
+  it("клик БЕЗ drag по ghost-элементу: linked-маркеры, ancestor на ghost, бейдж с формой текста", () => {
+    const { editorCanvas, editorOverlays, editorContainer, ghostCanvas } = setup();
+    click(editorContainer, { x: 450, y: 10 }); // внутри rect AsIs_3 (x=400..500)
+    expect(editorCanvas.addMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(ghostCanvas.addMarkerCalls).toEqual([["AsIs_3", "tobeProvAncestor"]]);
+    expect(editorOverlays.addCalls.length).toBe(1);
+    const badge = editorOverlays.addCalls[0];
+    expect(badge.element).toBe("Task_b");
+    expect(badge.type).toBe("tobe-prov-badge");
+    expect(badge.descriptor.position).toEqual({ top: -14, left: 0 });
+    // n = reverse.get(ghostId).length = 1 → badgeOne.
+    expect(badge.descriptor.html).toBe('<span class="tobeProvBadge">1 задача AS IS → 1 операция</span>');
+  });
+
+  it("n=2 → badgeFew («{n} задачи AS IS → 1 операция»), бейдж на primary (первый списка)", () => {
+    const index = makeIndex();
+    index.reverse.set("AsIs_3", [
+      { toBeId: "Task_b", fate: "transformed_to", ruleId: "R01_move" },
+      { toBeId: "Task_a", fate: "transformed_to", ruleId: "R02_merge" },
+    ]);
+    const { editorCanvas, editorOverlays, editorContainer } = setup({ index });
+    click(editorContainer, { x: 450, y: 10 });
+    expect(editorCanvas.addMarkerCalls).toEqual([["Task_b", "tobeProvLinked"], ["Task_a", "tobeProvLinked"]]);
+    const badge = editorOverlays.addCalls[0];
+    expect(badge.element).toBe("Task_b");
+    expect(badge.descriptor.html).toBe('<span class="tobeProvBadge">2 задачи AS IS → 1 операция</span>');
+  });
+
+  it("клик в пустоту (промах по ghost): обратная подсветка и бейдж сняты", () => {
+    const { editorCanvas, editorOverlays, editorContainer, ghostCanvas } = setup();
+    click(editorContainer, { x: 450, y: 10 });
+    editorCanvas.removeMarkerCalls.length = 0;
+    ghostCanvas.removeMarkerCalls.length = 0;
+    click(editorContainer, { x: 950, y: 900 });
+    expect(editorCanvas.removeMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(ghostCanvas.removeMarkerCalls).toEqual([["AsIs_3", "tobeProvAncestor"]]);
+    expect(editorOverlays.removeCalls.length).toBe(1);
+    expect(editorOverlays.addCalls.length).toBe(1);
+  });
+
+  it("клик по элементу TO BE (target с data-element-id): обратный сценарий НЕ запускается", () => {
+    const { editorCanvas, editorOverlays, editorContainer } = setup();
+    const shape = document.createElement("g");
+    shape.setAttribute("data-element-id", "Task_a");
+    editorContainer.appendChild(shape);
+    click(editorContainer, { x: 10, y: 10, target: shape });
+    expect(editorCanvas.addMarkerCalls).toEqual([]);
+    expect(editorOverlays.addCalls).toEqual([]);
+  });
+
+  it("drag (> 5px): обратный сценарий не запускается", () => {
+    const { editorCanvas, editorOverlays, editorContainer } = setup();
+    editorContainer.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 450, clientY: 10 }));
+    editorContainer.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 480, clientY: 10 }));
+    expect(editorCanvas.addMarkerCalls).toEqual([]);
+    expect(editorOverlays.addCalls).toEqual([]);
+  });
+
+  it("новый selection после обратной подсветки: linked + бейдж сняты", () => {
+    const { eventBus, editorCanvas, editorOverlays, editorContainer } = setup();
+    click(editorContainer, { x: 450, y: 10 });
+    editorCanvas.removeMarkerCalls.length = 0;
+    eventBus.emit("selection.changed", { newSelection: [{ id: "Task_a" }] });
+    expect(editorCanvas.removeMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(editorOverlays.removeCalls.length).toBe(1);
+  });
+
+  it("destroy после обратной подсветки: overlays.remove вызван, клик после destroy — no-op", () => {
+    const { highlight, editorCanvas, editorOverlays, editorContainer, ghostCanvas } = setup();
+    click(editorContainer, { x: 450, y: 10 });
+    highlight.destroy();
+    expect(editorOverlays.removeCalls.length).toBe(1);
+    expect(ghostCanvas.removeMarkerCalls).toEqual([["AsIs_3", "tobeProvAncestor"]]);
+    editorCanvas.addMarkerCalls.length = 0;
+    editorOverlays.addCalls.length = 0;
+    click(editorContainer, { x: 450, y: 10 });
+    expect(editorCanvas.addMarkerCalls).toEqual([]);
+    expect(editorOverlays.addCalls).toEqual([]);
   });
 });

@@ -1356,6 +1356,13 @@ export const ru = {
       medium: "Средне",
       strong: "Чётко",
     },
+    // T10: бейдж обратной подсветки (N→1 consolidated). Три формы —
+    // выбор через badgeKeyForCount (RU-грамматика: 1 / 2..4 / много).
+    provenance: {
+      badgeOne: "1 задача AS IS → 1 операция",
+      badgeFew: "{n} задачи AS IS → 1 операция",
+      badgeMany: "{n} задач AS IS → 1 операция",
+    },
   },
 };
 

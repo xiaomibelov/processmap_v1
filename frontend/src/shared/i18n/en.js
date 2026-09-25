@@ -652,6 +652,13 @@ export const en = {
       medium: "Medium",
       strong: "Sharp",
     },
+    // T10: reverse-highlight badge (N→1 consolidated). Three forms —
+    // picked by badgeKeyForCount.
+    provenance: {
+      badgeOne: "1 AS IS task → 1 operation",
+      badgeFew: "{n} AS IS tasks → 1 operation",
+      badgeMany: "{n} AS IS tasks → 1 operation",
+    },
   },
   topbar: {
     org: "Organization",

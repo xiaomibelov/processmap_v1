@@ -1,0 +1,34 @@
+/* Provenance-подсветка TO BE (feature/tobe-overlay-visibility-provenance-v1,
+   T10 — обратная: клик по ghost AS IS → связанные TO BE + бейдж N→1).
+   Отдельный файл от tobeOverlayUnderlay.css сознательно: там инвариант
+   T4a-спайки запрещает background/display-правила, бейджу фон нужен.
+   Editor-side селекторы (.tobeProvLinked, .tobeProvBadge) не скоуплены под
+   underlay-контейнер — маркеры живут на сессионном editor-canvas; имя
+   класса с префиксом tobeProv — изоляция от прочих маркеров. */
+
+/* Linked-маркер на TO BE-элементах: пунктирный янтарный контур (аналог
+   маркера-предка .tobeProvAncestor на ghost-слое). */
+.djs-element.tobeProvLinked .djs-visual > :is(rect, circle, ellipse, polygon, path) {
+  stroke: #F59E0B !important;
+  stroke-dasharray: 4 3 !important;
+  stroke-width: 2px !important;
+}
+
+.djs-connection.tobeProvLinked .djs-visual > path {
+  stroke: #F59E0B !important;
+  stroke-dasharray: 4 3 !important;
+  stroke-width: 2px !important;
+}
+
+/* Бейдж N→1: маленькая янтарная плашка над целевой операцией. */
+.tobeProvBadge {
+  display: inline-block;
+  white-space: nowrap;
+  background: #F59E0B;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  pointer-events: none;
+}

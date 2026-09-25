@@ -165,6 +165,7 @@ import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
 import "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlay.css";
+import "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenance.css";
 import {
   patchOverlaysPrototype,
   setShowOverlaysDuringPan,
@@ -1917,11 +1918,15 @@ const BpmnStage = forwardRef(function BpmnStage({
     const ctl = underlayControllerRef.current;
     const editorEventBus = editor?.get?.("eventBus");
     const editorCanvas = editor?.get?.("canvas");
+    const editorOverlays = editor?.get?.("overlays");
+    const editorRegistry = editor?.get?.("elementRegistry");
     const ghostContainer = ctl?.getGhostAccess?.()?.container ?? null;
     if (!editorEventBus || !editorCanvas || !ghostContainer || !ctl?.isMounted?.()) return undefined;
     provHighlightRef.current = initProvenanceHighlight({
       editorCanvas,
       editorEventBus,
+      editorOverlays,
+      editorRegistry,
       getGhostRegistry: () => ctl.getGhostAccess(),
       getIndex: () => getTobeOverlayProvenanceState().index,
       ghostContainer,
