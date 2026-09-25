@@ -640,6 +640,19 @@ export const en = {
       },
     },
   },
+  // TO BE underlay: AS IS underlay control (show/hide + ghost visibility
+  // preset). Pair dictionary: shared/i18n/ru.js.
+  tobeUnderlay: {
+    toggle: "AS IS underlay",
+    toggleHidden: "(hidden)",
+    unavailable: "Underlay unavailable",
+    visibility: {
+      label: "Underlay visibility",
+      faint: "Ghost",
+      medium: "Medium",
+      strong: "Sharp",
+    },
+  },
   topbar: {
     org: "Organization",
     user: "User",

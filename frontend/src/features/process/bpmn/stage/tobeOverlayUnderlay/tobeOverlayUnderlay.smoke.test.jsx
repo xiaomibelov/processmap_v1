@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { setLocale, t } from "../../../../../shared/i18n/index.js";
 import { resetTobeOverlayUnderlayState, setTobeOverlayUnderlayActive, setTobeOverlayUnderlayAvailable } from "./tobeOverlayUnderlayStore.js";
 
 // T2: гейты рендера контрола underlay (UI.md) — кнопка show/hide видна только
@@ -8,6 +9,9 @@ import { resetTobeOverlayUnderlayState, setTobeOverlayUnderlayActive, setTobeOve
 // связью); пустое состояние (as_is/без связи) — контрола нет, без ошибок.
 describe("TobeOverlayUnderlayControls (T2 gates)", () => {
   beforeEach(() => {
+    // Детерминированная локаль: jsdom-детект отдаёт en, продуктовый
+    // дефолт — ru.
+    setLocale("ru");
     resetTobeOverlayUnderlayState();
   });
 
@@ -43,14 +47,15 @@ describe("TobeOverlayUnderlayControls (T2 gates)", () => {
     try {
       const toggle = container.querySelector('[data-testid="tobe-underlay-toggle"]');
       expect(toggle).toBeTruthy();
-      expect(toggle.textContent).toBe("AS IS-подложка");
+      expect(toggle.textContent).toBe(t("tobeUnderlay.toggle"));
 
       await act(async () => {
         toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       const store = await import("./tobeOverlayUnderlayStore.js");
       expect(store.getTobeOverlayUnderlayState().visible).toBe(false);
-      expect(container.querySelector('[data-testid="tobe-underlay-toggle"]').textContent).toBe("AS IS-подложка (скрыта)");
+      expect(container.querySelector('[data-testid="tobe-underlay-toggle"]').textContent)
+        .toBe(`${t("tobeUnderlay.toggle")} ${t("tobeUnderlay.toggleHidden")}`);
     } finally {
       await act(async () => {
         root.unmount();
@@ -68,7 +73,7 @@ describe("TobeOverlayUnderlayControls (T2 gates)", () => {
       const unavailable = container.querySelector('[data-testid="tobe-underlay-unavailable"]');
       expect(unavailable).toBeTruthy();
       expect(unavailable.disabled).toBe(true);
-      expect(unavailable.textContent).toBe("Подложка недоступна");
+      expect(unavailable.textContent).toBe(t("tobeUnderlay.unavailable"));
     } finally {
       await act(async () => {
         root.unmount();

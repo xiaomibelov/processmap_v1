@@ -1344,6 +1344,19 @@ export const ru = {
       },
     },
   },
+  // TO BE underlay: контрол подложки AS IS (show/hide + пресет видимости
+  // ghost-слоя). Парный словарь: shared/i18n/en.js.
+  tobeUnderlay: {
+    toggle: "AS IS-подложка",
+    toggleHidden: "(скрыта)",
+    unavailable: "Подложка недоступна",
+    visibility: {
+      label: "Видимость подложки",
+      faint: "Призрак",
+      medium: "Средне",
+      strong: "Чётко",
+    },
+  },
 };
 
 export function trStatusInvite(status) {

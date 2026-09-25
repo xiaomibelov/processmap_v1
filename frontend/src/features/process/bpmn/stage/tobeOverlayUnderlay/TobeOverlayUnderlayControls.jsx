@@ -1,3 +1,5 @@
+import { t } from "../../../../../shared/i18n/index.js";
+import GhostVisibilityControl from "./GhostVisibilityControl.jsx";
 import {
   setTobeOverlayUnderlayVisible,
 } from "./tobeOverlayUnderlayStore.js";
@@ -29,7 +31,7 @@ export default function TobeOverlayUnderlayControls({ underlayAsisSid = null }) 
         title="Связанная AS IS-сессия недоступна"
         data-testid="tobe-underlay-unavailable"
       >
-        Подложка недоступна
+        {t("tobeUnderlay.unavailable")}
       </button>
     );
   }
@@ -37,14 +39,18 @@ export default function TobeOverlayUnderlayControls({ underlayAsisSid = null }) 
   if (!active) return null;
 
   return (
-    <button
-      type="button"
-      className="secondaryBtn h-8 px-2 text-xs"
-      onClick={() => setTobeOverlayUnderlayVisible(!visible)}
-      title="Показать/скрыть AS IS-подложку (реальная схема связанной сессии)"
-      data-testid="tobe-underlay-toggle"
-    >
-      AS IS-подложка{visible ? "" : " (скрыта)"}
-    </button>
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        className="secondaryBtn h-8 px-2 text-xs"
+        onClick={() => setTobeOverlayUnderlayVisible(!visible)}
+        title="Показать/скрыть AS IS-подложку (реальная схема связанной сессии)"
+        data-testid="tobe-underlay-toggle"
+      >
+        {t("tobeUnderlay.toggle")}
+        {visible ? "" : ` ${t("tobeUnderlay.toggleHidden")}`}
+      </button>
+      <GhostVisibilityControl />
+    </div>
   );
 }
