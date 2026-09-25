@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.158",
+  currentVersion: "v1.0.159",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.159",
+      changes: [
+        "«Применить к схеме»: связи через одну сторону шлюза (fan-in/fan-out) больше не наезжают друг на друга — якоря разносятся вдоль грани с зазором канала; неразводимый остаток по-прежнему честно пропускается со статистикой.",
+      ],
+    },
     {
       version: "v1.0.158",
       changes: [
