@@ -46,6 +46,40 @@ function strictlyInside(p, r) {
 
 export { strictlyInside };
 
+// --- коридор выхода boundary-хоста ---
+
+/**
+ * Коридор выхода для исходящей связи boundary-эвента: полоса от якоря до выхода
+ * за пределы inflate'd bbox хоста, шириной 1 ячейка сетки по обе стороны оси.
+ * Ось — перпендикуляр из ближайшей грани хоста (boundary в углу: ближайшая
+ * грань; тупик здесь — честный пропуск уровнем выше).
+ * Единый источник corridor-rect: используется и grid-subtraction'ом роутера,
+ * и валидацией (согласованность по построению).
+ * @returns {Rect|null} null — якорь не у какой-либо грани (внутри тела/вдали).
+ */
+export function computeExitCorridor(hostRect, anchor) {
+  const G = ROUTING_GRID;
+  const M = ROUTING_MARGIN;
+  const faces = [
+    { d: Math.abs(anchor.y - (hostRect.y + hostRect.height)), side: "s" },
+    { d: Math.abs(anchor.y - hostRect.y), side: "n" },
+    { d: Math.abs(anchor.x - (hostRect.x + hostRect.width)), side: "e" },
+    { d: Math.abs(anchor.x - hostRect.x), side: "w" },
+  ].filter((f) => f.d <= G &&
+    (f.side === "s" || f.side === "n"
+      ? anchor.x >= hostRect.x - G && anchor.x <= hostRect.x + hostRect.width + G
+      : anchor.y >= hostRect.y - G && anchor.y <= hostRect.y + hostRect.height + G));
+  if (!faces.length) return null;
+  faces.sort((a, b) => a.d - b.d || "snew".indexOf(a.side) - "snew".indexOf(b.side));
+  const f = faces[0].side;
+  const ax = snap(anchor.x);
+  const ay = snap(anchor.y);
+  if (f === "s") return { x: ax - G, y: hostRect.y + hostRect.height, width: 3 * G, height: M + G };
+  if (f === "n") return { x: ax - G, y: hostRect.y - M - G, width: 3 * G, height: M + G };
+  if (f === "e") return { x: hostRect.x + hostRect.width, y: ay - G, width: M + G, height: 3 * G };
+  return { x: hostRect.x - M - G, y: ay - G, width: M + G, height: 3 * G };
+}
+
 /**
  * Пересечение отрезка с ВНУТРЕННОСТЬЮ прямоугольника. Касание грани — не пересечение.
  */
@@ -87,16 +121,29 @@ function distToRect(p, r) {
 /**
  * Connectivity-gate одной связи.
  * @param {{source:Rect,target:Rect,waypoints:Array<{x,y}>,foreignRects:Array<Rect>,
+ *          hostExits?: Array<{hostId?:string,host:Rect,corridor:Rect|null}>,
  *          tolerance?:number,endSlack?:number}} input
  *   tolerance — допуск «на границе» (default 1); endSlack — допуск расстояния
  *   до своей фигуры для endpoint'а (default 0; для трансляций — 20: bpmn-js
  *   кропит отрисовку к контуру, мелкий дрейф после ресайза незаметен).
+ *   hostExits — для исходящих boundary-связей: host-bbox входит в foreignRects,
+ *   но пересечение с ним разрешено ТОЛЬКО внутри коридора выхода (corridor:null
+ *   → любое пересечение с хостом invalid, fail-closed).
  * @returns {{ok:true}|{ok:false,reason:string}}
  */
 export function validateConnectionGeometry(input) {
   const { source, target, waypoints, foreignRects } = input;
   const tolerance = input.tolerance ?? 1;
   const endSlack = input.endSlack ?? 0;
+  const hostExits = input.hostExits || [];
+  // Сопоставление host↔foreign-rect: план передаёт КОПИИ ({id,...r}), unit-вход —
+  // один объект. Ключ — hostId с fallback на идентичность объектов (review bh1).
+  const exitById = new Map();
+  const exitByRef = new Map();
+  for (const he of hostExits) {
+    if (he.hostId !== undefined && he.hostId !== null) exitById.set(he.hostId, he.corridor);
+    if (he.host) exitByRef.set(he.host, he.corridor);
+  }
   if (!Array.isArray(waypoints) || waypoints.length < 2) {
     return { ok: false, reason: "few_waypoints" };
   }
@@ -108,7 +155,28 @@ export function validateConnectionGeometry(input) {
   const endpointOk = (p, r) => onBoundary(p, r, tolerance) || distToRect(p, r) <= endSlack;
   if (!endpointOk(first, source)) return { ok: false, reason: "start_detached" };
   if (!endpointOk(last, target)) return { ok: false, reason: "end_detached" };
+  const inRect = (p, r) => r && p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
   for (const r of foreignRects || []) {
+    const corridor = exitById.has(r && r.id) ? exitById.get(r.id) : exitByRef.get(r);
+    if (corridor !== undefined) {
+      // host boundary: внутри host-bbox разрешены ТОЛЬКО коридор выхода и
+      // собственное тело boundary-эвента (круг сидит на границе, его
+      // «внутренняя» половина — легальное перекрытие, не проход телом).
+      const allowed = (p) => inRect(p, corridor) || pointInRect(p, source);
+      for (const p of waypoints) {
+        if (strictlyInside(p, r) && !allowed(p)) {
+          return { ok: false, reason: "point_inside_host_outside_corridor" };
+        }
+      }
+      for (let i = 1; i < waypoints.length; i += 1) {
+        const a = waypoints[i - 1];
+        const b = waypoints[i];
+        if (segmentRectCross(a, b, r) && !(allowed(a) && allowed(b))) {
+          return { ok: false, reason: "segment_crosses_host_outside_corridor" };
+        }
+      }
+      continue;
+    }
     for (const p of waypoints) {
       if (strictlyInside(p, r)) return { ok: false, reason: "point_inside_foreign" };
     }
@@ -203,6 +271,11 @@ function sideAnchors(rect, toward) {
  *                                        // unit-вызовы с частичным пулом — вне
  *                                        // контракта (origin'ы расходятся).
  *   blockedRects?: Array<Rect>,         // доп. препятствия (коридоры конфликтов)
+ *   exitHost?: Rect,                    // host boundary-эвента (для исходящих
+ *                                        // boundary-связей): host ДОЛЖЕН быть в
+ *                                        // foreignRects; его ячейки блокируются
+ *                                        // кроме коридора выхода (computeExitCorridor
+ *                                        // от выбранного якоря — единый источник)
  *   expansionBudget?: number,
  * }} input
  * @returns {Array<{x,y}>|null} waypoints (кратны сетке) или null.
@@ -211,6 +284,7 @@ export function routeConnection(input) {
   const { source, target } = input;
   const foreign = (input.foreignRects || []).map((r) => inflateRect(r, ROUTING_MARGIN));
   const extra = (input.blockedRects || []).map((r) => inflateRect(r, ROUTING_GRID));
+  const exitHost = input.exitHost || null;
   const occupied = input.occupied || new Set();
   const budget = input.expansionBudget ?? ROUTING_EXPANSION_BUDGET;
 
@@ -287,9 +361,30 @@ export function routeConnection(input) {
   const stops = sideAnchors(target, { x: source.x + source.width / 2, y: source.y + source.height / 2 });
 
   for (const start of starts) {
+    // boundary-host: коридор выхода от выбранного якоря; якорь вне граней —
+    // не подходит (выход только через коридор).
+    let corridor = null;
+    if (exitHost) {
+      corridor = computeExitCorridor(exitHost, start);
+      if (!corridor) continue;
+    }
     for (const stop of stops) {
       const [si, sj] = cellOf(start);
       const [ti, tj] = cellOf(stop);
+      // grid-subtraction коридора: ячейки внутри corridor-rect разблокируются
+      const cleared = [];
+      if (corridor) {
+        const ci0 = Math.max(0, Math.floor((corridor.x - minX) / ROUTING_GRID));
+        const cj0 = Math.max(0, Math.floor((corridor.y - minY) / ROUTING_GRID));
+        const ci1 = Math.min(w - 1, Math.floor((corridor.x + corridor.width - minX) / ROUTING_GRID));
+        const cj1 = Math.min(h - 1, Math.floor((corridor.y + corridor.height - minY) / ROUTING_GRID));
+        for (let j = cj0; j <= cj1; j += 1) {
+          for (let i = ci0; i <= ci1; i += 1) {
+            const idx = j * w + i;
+            if (base[idx]) { base[idx] = 0; cleared.push(idx); }
+          }
+        }
+      }
       if (blockedAt(si, sj) || blockedAt(ti, tj)) continue;
       const gScore = new Float64Array(w * h).fill(Infinity);
       const dirOf = new Int8Array(w * h).fill(-1);
@@ -324,7 +419,11 @@ export function routeConnection(input) {
         }
       }
       heap.length = 0;
-      if (!found) continue;
+      if (!found) {
+        // откат grid-subtraction коридора перед следующей попыткой якоря
+        for (const idx of cleared) base[idx] = 1;
+        continue;
+      }
 
       // реконструкция пути
       const cells = [];
@@ -347,6 +446,16 @@ export function routeConnection(input) {
         prevDir = d;
       }
       pts.push({ x: stop.x, y: stop.y });
+
+      // Якоря лежат на границах фигур и могут быть не кратны сетке (y=198);
+      // стыки якорь↔сетка доводим промежуточной точкой — ортогональность.
+      if (pts.length > 1 && pts[0].x !== pts[1].x && pts[0].y !== pts[1].y) {
+        pts.splice(1, 0, { x: pts[1].x, y: pts[0].y });
+      }
+      const n = pts.length;
+      if (n > 1 && pts[n - 2].x !== pts[n - 1].x && pts[n - 2].y !== pts[n - 1].y) {
+        pts.splice(n - 1, 0, { x: pts[n - 1].x, y: pts[n - 2].y });
+      }
 
       // occupancy: ячейки пути + 4-соседи (разнос каналов ≥10px), без своих фигур
       for (const idx2 of cells) {

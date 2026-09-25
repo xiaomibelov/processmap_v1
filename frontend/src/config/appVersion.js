@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.157",
+  currentVersion: "v1.0.158",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.158",
+      changes: [
+        "«Применить к схеме»: стрелки из boundary-эвентов выходят через коридор — тело хоста снова препятствие (раньше хост игнорировался целиком, и стрелка могла пройти сквозь него); при тупике связь честно пропускается со статистикой.",
+      ],
+    },
     {
       version: "v1.0.157",
       changes: [
