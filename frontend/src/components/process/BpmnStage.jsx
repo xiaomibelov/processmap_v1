@@ -78,6 +78,10 @@ import {
   initProvenanceHighlight,
 } from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenanceHighlight.js";
 import {
+  noteProvenanceSelectionSeen,
+  resetProvenanceEmptyHint,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenanceEmptyState.js";
+import {
   runImmediateEditorFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
 import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync";
@@ -1894,6 +1898,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     return () => {
       resetProvenanceSessionState();
+      resetProvenanceEmptyHint();
     };
   }, [sessionId]);
 
@@ -1936,6 +1941,26 @@ const BpmnStage = forwardRef(function BpmnStage({
       provHighlightRef.current = null;
     };
   }, [tobeOverlayUnderlayFlag, underlayActive, underlayAvailable, diagramReady, provStatus]);
+
+  // T11: empty-state trigger — первый selection.changed с непустым selection
+  // при status empty (только факт клика, без индекса; hint разбирает UI).
+  useEffect(() => {
+    if (provStatus !== "empty" || !tobeOverlayUnderlayFlag || !underlayActive || !diagramReady) {
+      return undefined;
+    }
+    const editor = modelerRef.current || viewerRef.current;
+    const eventBus = editor?.get?.("eventBus");
+    if (!eventBus?.on) return undefined;
+    const onEmptySelectionChanged = (event) => {
+      const selection = event?.newSelection;
+      const hasSelection = Array.isArray(selection) ? selection.length > 0 : !!selection;
+      if (hasSelection) noteProvenanceSelectionSeen();
+    };
+    eventBus.on("selection.changed", onEmptySelectionChanged);
+    return () => {
+      try { eventBus.off("selection.changed", onEmptySelectionChanged); } catch {}
+    };
+  }, [provStatus, tobeOverlayUnderlayFlag, underlayActive, diagramReady]);
 
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {

@@ -653,11 +653,15 @@ export const en = {
       strong: "Sharp",
     },
     // T10: reverse-highlight badge (N→1 consolidated). Three forms —
-    // picked by badgeKeyForCount.
+    // picked by badgeKeyForCount. T11: empty-state hint (explains WHY links
+    // are absent).
     provenance: {
       badgeOne: "1 AS IS task → 1 operation",
       badgeFew: "{n} AS IS tasks → 1 operation",
       badgeMany: "{n} AS IS tasks → 1 operation",
+      empty:
+        "AS IS links unavailable: this TO BE was built manually or created before tracing existed. Create TO BE via “Transform AS IS” to see operation provenance.",
+      dismiss: "Got it",
     },
   },
   topbar: {

@@ -32,3 +32,43 @@
   line-height: 1.4;
   pointer-events: none;
 }
+
+/* T11: empty-state hint — одноразовая подсказка под группой underlay-
+   контролов в хедер-слоте (absolute под relative-обёрткой контролов). */
+.tobeProvEmptyHint {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #1f2937;
+  color: #f9fafb;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.tobeProvEmptyHint-text {
+  flex: 1 1 auto;
+}
+
+.tobeProvEmptyHint-dismiss {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: #F59E0B;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
+.tobeProvEmptyHint-dismiss:hover {
+  text-decoration: underline;
+}
