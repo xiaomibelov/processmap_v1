@@ -289,7 +289,14 @@ test.describe("tobe-overlay-visibility (T5)", () => {
       if (!url.includes("/api/sessions/")) return;
       const method = req.method();
       const isPresence = /\/api\/sessions\/[^/?#]+\/presence/.test(url);
-      if (["PUT", "PATCH", "DELETE"].includes(method) && !isPresence) {
+      // Мутации: POST тоже (notes/answer/operations/versions/ai/questions…);
+      // presence исключается regex'ом (POST/DELETE presence — noise).
+      // Исключение №2: POST /api/sessions/note-aggregates — sid-less batch
+      // READ агрегатов заметок (POST из-за тела запроса; логи: 200 read-only,
+      // штатный трафик открытия канваса). Не мутация — noise, иначе спека
+      // падает на собственном boot (зафиксировано в task-T5-report.md).
+      const isBatchRead = /\/api\/sessions\/note-aggregates\/?(\?|#|$)/.test(url);
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !isPresence && !isBatchRead) {
         diagramMutations.push({ method, url });
         return;
       }
