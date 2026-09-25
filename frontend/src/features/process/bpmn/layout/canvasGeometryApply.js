@@ -27,6 +27,7 @@ import {
   CANVAS_GEOMETRY_BOUNDS,
 } from "./canvasGeometry.js";
 import {
+  computeExitCorridor,
   findChannelConflicts,
   routeConnection,
   validateConnectionGeometry,
@@ -334,13 +335,13 @@ export function computeGeometryApplyPlan(input, geometry) {
   // reroute → откат к трансляции; невалидная трансляция → связь без изменений
   // + stats.connectionsSkipped. Пост-проход разводит остаточные конфликты
   // каналов (коллинеарные наложения / параллельные ближе 10px).
-  // Boundary-исходящие связи: хост boundary-эвента не считается препятствием
-  // (круг boundary сидит на границе хоста — выход из-под тела хоста легален
-  // по семантике BPMN; строгий запрет стены делает такие связи неразводимыми).
-  // Осознанное ограничение (review n1): исключение bbox-wide — маршрут BE→X
-  // теоретически может пройти ТЕЛОМ через bbox хоста (не только «выходом из-под
-  // него»); якоря sideAnchors + inflate делают это маловероятным, валидация
-  // согласована (хост исключён из foreign для таких связей).
+  // Boundary-исходящие связи (контур fix/canvas-geometry-routing-boundary-host):
+  // хост boundary-эвента — препятствие как для всех, КРОМЕ коридора выхода —
+  // полосы от якоря эвента до выхода за пределы inflate'd bbox хоста
+  // (круг boundary сидит на границе хоста; полный запрет делал связи
+  // неразводимыми, bbox-wide исключение допускало проход телом — n1 #1044).
+  // Коридор — от computeExitCorridor (routing-модуль, единый источник):
+  // один и тот же rect для grid-subtraction и для валидации.
   const attachedHost = new Map();
   for (const node of nodes) {
     if (node.attachedTo && finalRects.has(node.attachedTo)) attachedHost.set(node.id, node.attachedTo);
@@ -351,13 +352,19 @@ export function computeGeometryApplyPlan(input, geometry) {
   const occupied = new Set();
   const occupiedKeysByConn = new Map();
 
+  const hostExitFor = (conn, firstWaypoint) => {
+    const hostId = attachedHost.get(conn.sourceId);
+    if (!hostId) return [];
+    const host = finalRects.get(hostId);
+    if (!host) return [];
+    // hostId — ключ сопоставления с копиями rect в foreignRects (validate, review bh1)
+    return [{ hostId, host, corridor: computeExitCorridor(host, firstWaypoint) }];
+  };
+
   const foreignFor = (conn) => {
     const out = [];
-    const hostOfSource = attachedHost.get(conn.sourceId);
-    const hostOfTarget = attachedHost.get(conn.targetId);
     for (const [id, r] of finalRects) {
       if (id === conn.sourceId || id === conn.targetId) continue;
-      if (id === hostOfSource || id === hostOfTarget) continue;
       out.push({ id, ...r });
     }
     return out;
@@ -370,6 +377,7 @@ export function computeGeometryApplyPlan(input, geometry) {
       target: finalRects.get(conn.targetId),
       waypoints: pts,
       foreignRects: foreignFor(conn),
+      hostExits: hostExitFor(conn, pts[0]),
       tolerance: 1,
       endSlack: 0,
     }).ok;
@@ -379,17 +387,20 @@ export function computeGeometryApplyPlan(input, geometry) {
       target: finalRects.get(conn.targetId),
       waypoints: pts,
       foreignRects: foreignFor(conn),
+      hostExits: hostExitFor(conn, pts[0]),
       tolerance: 1,
       endSlack: 20, // трансляция сохраняет исходную форму: мелкий дрейф endpoint'ов после ресайза кропится отрисовкой
     }).ok;
   const routeWithOccupancy = (conn, blockedRects = []) => {
     const before = occupied.size;
+    const exitHostId = attachedHost.get(conn.sourceId);
     const pts = routeConnection({
       source: finalRects.get(conn.sourceId),
       target: finalRects.get(conn.targetId),
       foreignRects: foreignFor(conn),
       occupied,
       blockedRects,
+      exitHost: exitHostId ? finalRects.get(exitHostId) : null,
     });
     if (!pts) return null;
     occupiedKeysByConn.set(conn.id, [...occupied].slice(before));

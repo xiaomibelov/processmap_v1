@@ -16,6 +16,7 @@ import {
   resolveChannelConflicts,
 } from "./canvasGeometryApply.js";
 import {
+  computeExitCorridor,
   segmentRectCross,
   findChannelConflicts,
 } from "./canvasGeometryRouting.js";
@@ -97,11 +98,25 @@ function classifyOutputs(fixtureNodes, fixtureConnections, geometry) {
     if (kind === "untouched") continue; // выход плана не затрагивает
     const s = rects.get(c.sourceId);
     const t = rects.get(c.targetId);
-    // хост boundary-эндпоинта — не препятствие (семантика BPMN, как в гейте)
+    // хост boundary-источника — препятствие с коридором выхода (как в гейте):
+    // пересечение сегментов с телом хоста вне коридора — отдельный сторож ниже.
     const hostS = attachedHost.get(c.sourceId);
-    const hostT = attachedHost.get(c.targetId);
-    const foreign = fixtureNodes.filter((n) => n.id !== c.sourceId && n.id !== c.targetId &&
-      n.id !== hostS && n.id !== hostT).map((n) => ({ id: n.id, ...rects.get(n.id) }));
+    const corridor = hostS ? computeExitCorridor(rects.get(hostS), pts[0]) : null;
+    const foreign = fixtureNodes.filter((n) => n.id !== c.sourceId && n.id !== c.targetId)
+      .map((n) => ({ id: n.id, ...rects.get(n.id) }));
+    if (hostS) {
+      const hostRect = rects.get(hostS);
+      const allowed = (p) => (corridor && p.x >= corridor.x && p.x <= corridor.x + corridor.width &&
+        p.y >= corridor.y && p.y <= corridor.y + corridor.height) ||
+        (p.x >= s.x && p.x <= s.x + s.width && p.y >= s.y && p.y <= s.y + s.height);
+      for (let i = 1; i < pts.length; i += 1) {
+        const a = pts[i - 1]; const b = pts[i];
+        const clipped = Math.max(a.x, b.x) > hostRect.x && Math.min(a.x, b.x) < hostRect.x + hostRect.width &&
+                        Math.max(a.y, b.y) > hostRect.y && Math.min(a.y, b.y) < hostRect.y + hostRect.height;
+        assert.ok(!clipped || (allowed(a) && allowed(b)),
+          `${c.id}: сегмент ${i} телом хоста ${hostS} вне коридора выхода`);
+      }
+    }
     if (pts.some((p) => p.x < STRESS_LANE.x || p.x > STRESS_LANE.x + STRESS_LANE.width ||
                         p.y < STRESS_LANE.y || p.y > STRESS_LANE.y + STRESS_LANE.height)) {
       report.hypA.push(c.id);
@@ -226,4 +241,130 @@ test("topology: routing-инварианты сохранены (0 bbox-пере
   assert.deepEqual(r.coincident, []);
   assert.deepEqual(r.hypB, []);
   assert.deepEqual(r.hypC, []);
+});
+
+// --- boundary-host corridor: plan-level (контур fix/canvas-geometry-routing-boundary-host) ---
+
+function boundaryHostFixtures({ cage = false } = {}) {
+  const G = { taskWidth: 170, taskHeight: 100, sequenceGap: 120 };
+  const lane = { x: -400, y: -300, width: 1600, height: 1200 };
+  const t = (id, x, y, extra = {}) => ({
+    id, type: "bpmn:Task", x, y, width: 130, height: 80, laneKey: "l", laneBounds: lane, ...extra,
+  });
+  const nodes = [
+    t("P", -150, 100), t("H", 100, 100),
+    { id: "BE", type: "bpmn:BoundaryEvent", x: 200, y: 162, width: 36, height: 36,
+      laneKey: "l", laneBounds: lane, attachedTo: "H" },
+    t("T", 193, 320),
+  ];
+  if (cage) {
+    // клетка вокруг T: перекрытия в 10px+ на каждом шве — seals при inflate 10
+    nodes.push(t("CN", 203, 200, { width: 190, height: 120 }));
+    nodes.push(t("CS", 203, 410, { width: 190, height: 120 }));
+    nodes.push(t("CW", 103, 300, { width: 120, height: 220 }));
+    nodes.push(t("CE", 383, 300, { width: 120, height: 220 }));
+  }
+  const connections = [
+    { id: "c_p_h", sourceId: "P", targetId: "H", waypoints: [{ x: -20, y: 140 }, { x: 100, y: 140 }] },
+    // исходные waypoints в DI-формате: выход с окружности BE → верх T
+    { id: "c_be_t", sourceId: "BE", targetId: "T", waypoints: [{ x: 218, y: 180 }, { x: 258, y: 360 }] },
+  ];
+  return { nodes, connections, geometry: G };
+}
+
+function finalRectsOf(plan, nodes) {
+  const rects = new Map(nodes.map((n) => [n.id, { x: n.x, y: n.y, width: n.width, height: n.height }]));
+  for (const [id, p] of plan.positions) rects.set(id, p);
+  return rects;
+}
+
+function bodyCrossingsOutsideCorridor(pts, host, corridor, ownRect = null) {
+  const inC = (p) => (corridor && p.x >= corridor.x && p.x <= corridor.x + corridor.width &&
+    p.y >= corridor.y && p.y <= corridor.y + corridor.height) ||
+    (ownRect && p.x >= ownRect.x && p.x <= ownRect.x + ownRect.width &&
+     p.y >= ownRect.y && p.y <= ownRect.y + ownRect.height);
+  const bad = [];
+  for (let i = 1; i < pts.length; i += 1) {
+    const a = pts[i - 1]; const b = pts[i];
+    const clipped = Math.max(a.x, b.x) > host.x && Math.min(a.x, b.x) < host.x + host.width &&
+                    Math.max(a.y, b.y) > host.y && Math.min(a.y, b.y) < host.y + host.height;
+    if (clipped && !(inC(a) && inC(b))) bad.push([a, b]);
+  }
+  return bad;
+}
+
+test("boundary-host (plan): BE→T не должна проходить телом хоста вне коридора", () => {
+  const { nodes, connections, geometry } = boundaryHostFixtures();
+  const plan = computeGeometryApplyPlan({ nodes, connections }, geometry);
+  const rects = finalRectsOf(plan, nodes);
+  const host = rects.get("H");
+  const c = connections.find((x) => x.id === "c_be_t");
+  const pts = plan.connectionWaypoints.get("c_be_t") ||
+    (plan.connectionTranslations.get("c_be_t")
+      ? c.waypoints.map((p) => ({ x: p.x + 40, y: p.y })) : null);
+  assert.ok(pts, "связь должна быть в выходе плана (reroute или translation)");
+  const corridor = computeExitCorridor(host, pts[0]);
+  const bad = bodyCrossingsOutsideCorridor(pts, host, corridor, rects.get("BE"));
+  assert.deepEqual(bad, [], "сегменты телом хоста вне коридора запрещены");
+});
+
+test("boundary-host (plan): тупик — коридор упирается в клетку → честный connectionsSkipped", () => {
+  const { nodes, connections, geometry } = boundaryHostFixtures({ cage: true });
+  const plan = computeGeometryApplyPlan({ nodes, connections }, geometry);
+  assert.ok(plan.stats.connectionsSkipped >= 1, "нерзводимая связь честно пропущена");
+  assert.equal(plan.connectionWaypoints.has("c_be_t"), false, "c_be_t не разведена");
+  assert.equal(plan.connectionTranslations.has("c_be_t"), false, "c_be_t не транслирована (не хуже исходной)");
+});
+
+test("boundary-host (регресс bh1): boundary центрирован на верхней грани хоста — связь разведена, skipped 0", () => {
+  // Repro review: хост едет по потоку (S→T1, дефицит зазора), BE центрирован на
+  // ВЕРХНЕЙ грани T1 (дефолт-рендер bpmn-js), цель BE едет с тем же сдвигом.
+  // До фикса lookup (по ссылке против копий foreignFor) хост валидировался как
+  // обычное препятствие → ложный connectionsSkipped: 1 (регресс v1.0.157).
+  const G = { taskWidth: 170, taskHeight: 100, sequenceGap: 120 };
+  const lane = { x: -400, y: -300, width: 1600, height: 1200 };
+  const t = (id, x, y, extra = {}) => ({
+    id, type: "bpmn:Task", x, y, width: 130, height: 80, laneKey: "l", laneBounds: lane, ...extra,
+  });
+  const nodes = [
+    t("S", -150, 100), t("T1", 100, 100),
+    { id: "BE", type: "bpmn:BoundaryEvent", x: 187, y: 72, width: 36, height: 36,
+      laneKey: "l", laneBounds: lane, attachedTo: "T1" },
+    t("T2", 400, 300),
+  ];
+  const connections = [
+    { id: "c_s_t1", sourceId: "S", targetId: "T1", waypoints: [{ x: -20, y: 140 }, { x: 100, y: 140 }] },
+    // исходные waypoints center-to-center — worst case для валидации
+    { id: "c_be_t2", sourceId: "BE", targetId: "T2", waypoints: [{ x: 205, y: 90 }, { x: 465, y: 340 }] },
+  ];
+  const plan = computeGeometryApplyPlan({ nodes, connections }, G);
+  assert.equal(plan.stats.connectionsSkipped, 0, "ложный пропуск запрещён (bh1)");
+  const pts = plan.connectionWaypoints.get("c_be_t2");
+  const tr = plan.connectionTranslations.get("c_be_t2");
+  assert.ok(pts || tr, "связь разведена (reroute) или транслирована");
+  const rects = finalRectsOf(plan, nodes);
+  const host = rects.get("T1");
+  if (pts) {
+    const corridor = computeExitCorridor(host, pts[0]);
+    const bad = bodyCrossingsOutsideCorridor(pts, host, corridor, rects.get("BE"));
+    assert.deepEqual(bad, [], "сегменты не проходят телом хоста вне коридора");
+  }
+});
+
+test("boundary-host (регресс #1044): topology BE1→T6 по-прежнему разводится", () => {
+  const plan = computeGeometryApplyPlan(
+    { nodes: TOPOLOGY_NODES, connections: TOPOLOGY_CONNECTIONS },
+    TOPOLOGY_GEOMETRY
+  );
+  const pts = plan.connectionWaypoints.get("c_BE_T6");
+  assert.ok(pts, "BE1→T6 разводится роутером");
+  assert.ok(pts.length >= 2, "≥2 waypoints");
+  const rects = new Map(TOPOLOGY_NODES.map((n) => [n.id, { x: n.x, y: n.y, width: n.width, height: n.height }]));
+  for (const [id, p] of plan.positions) rects.set(id, p);
+  const be = rects.get("BE1"); const t6 = rects.get("T6");
+  const onB = (p, r) => (Math.abs(p.x - r.x) <= 1 || Math.abs(p.x - (r.x + r.width)) <= 1 ||
+    Math.abs(p.y - r.y) <= 1 || Math.abs(p.y - (r.y + r.height)) <= 1) &&
+    p.x >= r.x - 1 && p.x <= r.x + r.width + 1 && p.y >= r.y - 1 && p.y <= r.y + r.height + 1;
+  assert.ok(onB(pts[0], be), "первая точка на границе BE1");
+  assert.ok(onB(pts[pts.length - 1], t6), "последняя точка на границе T6");
 });

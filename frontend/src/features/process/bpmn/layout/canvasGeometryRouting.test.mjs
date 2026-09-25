@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  computeExitCorridor,
   routeConnection,
   findChannelConflicts,
   validateConnectionGeometry,
@@ -148,4 +149,112 @@ test("findChannelConflicts: коллинеарное совпадение и б�
     ["b", [{ x: 200, y: 0 }, { x: 200, y: 300 }]],
   ]));
   assert.equal(crossing.length, 0, "перпендикулярное пересечение стрелок — норма BPMN");
+});
+
+// --- boundary-host: коридор выхода (контур fix/canvas-geometry-routing-boundary-host) ---
+
+// Коридор — штатный экспорт routing-модуля (единый источник для роутера и валидации).
+
+function collectBodyOutsideCorridor(pts, host, corridor, ownRect = null) {
+  const allowed = (p) => (corridor && p.x >= corridor.x && p.x <= corridor.x + corridor.width &&
+    p.y >= corridor.y && p.y <= corridor.y + corridor.height) ||
+    (ownRect && p.x >= ownRect.x && p.x <= ownRect.x + ownRect.width &&
+     p.y >= ownRect.y && p.y <= ownRect.y + ownRect.height);
+  const bad = [];
+  for (let i = 1; i < pts.length; i += 1) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    // сегмент, пересекающий ВНУТРЕННОСТЬ хоста, обязан быть целиком в разрешённой зоне
+    const clipped = Math.max(a.x, b.x) > host.x && Math.min(a.x, b.x) < host.x + host.width &&
+                    Math.max(a.y, b.y) > host.y && Math.min(a.y, b.y) < host.y + host.height;
+    if (clipped && !(allowed(a) && allowed(b))) bad.push([a, b]);
+  }
+  return bad;
+}
+const assertNoBodyOutsideCorridor = Object.assign(
+  (pts, host, corridor, ownRect = null) => {
+    const bad = collectBodyOutsideCorridor(pts, host, corridor, ownRect);
+    assert.deepEqual(bad, [], `сегменты телом хоста вне коридора: ${JSON.stringify(bad)}`);
+  },
+  { collect: collectBodyOutsideCorridor }
+);
+
+test("boundary-host characterization: без хоста в foreign (семантика v1.0.157) маршрут идёт телом — мотивация коридора", () => {
+  // boundary на нижней грани хоста, цель прямо над ним. Воспроизводит n1 #1044:
+  // bbox-wide исключение хоста допускало проход телом. Тест-сторож: фиксирует,
+  // ЧТО именно запрещает коридор (на старом поведении bad > 0).
+  const host = { x: 0, y: 0, width: 200, height: 100 };
+  const be = { x: 90, y: 90, width: 20, height: 20 };
+  const t = { x: 50, y: -80, width: 100, height: 80 };
+  const pts = routeConnection({ source: be, target: t, foreignRects: [], occupied: new Set() });
+  assert.ok(pts, "маршрут есть");
+  const corridor = computeExitCorridor(host, pts[0]);
+  assert.ok(corridor, "коридор определён");
+  const before = assertNoBodyOutsideCorridor.collect(pts, host, corridor, be);
+  assert.ok(before.length > 0, "без хоста в foreign маршрут проходит телом (класс бага подтверждён)");
+});
+
+test("boundary-host GREEN-API: хост в foreignRects + exitHost → выход только через коридор", () => {
+  const host = { x: 0, y: 0, width: 200, height: 100 };
+  const be = { x: 90, y: 90, width: 20, height: 20 };
+  const t = { x: 50, y: -80, width: 100, height: 80 };
+  const pts = routeConnection({ source: be, target: t, foreignRects: [host], exitHost: host, occupied: new Set() });
+  assert.ok(pts, "маршрут разводится через коридор");
+  const corridor = computeExitCorridor(host, pts[0]);
+  assert.ok(corridor, "коридор выхода определён");
+  assertNoBodyOutsideCorridor(pts, host, corridor, be);
+});
+
+test("computeExitCorridor: ось ближайшей грани, ширина 1 ячейка по обе стороны", () => {
+  const host = { x: 0, y: 0, width: 200, height: 100 };
+  const south = computeExitCorridor(host, { x: 100, y: 100 });
+  assert.deepEqual(south, { x: 90, y: 100, width: 30, height: 20 });
+  const east = computeExitCorridor(host, { x: 200, y: 50 });
+  assert.deepEqual(east, { x: 200, y: 40, width: 20, height: 30 });
+  const north = computeExitCorridor(host, { x: 60, y: 0 });
+  assert.deepEqual(north, { x: 50, y: -20, width: 30, height: 20 });
+  assert.equal(computeExitCorridor(host, { x: 100, y: 50 }), null, "якорь внутри тела — коридора нет");
+});
+
+test("validate: hostExits — тело хоста вне коридора invalid, коридор ок, грань ок", () => {
+  const host = { x: 0, y: 0, width: 200, height: 100 };
+  const corridor = { x: 90, y: 100, width: 30, height: 20 };
+  const base = { source: { x: 90, y: 90, width: 20, height: 20 }, target: { x: 300, y: 120, width: 100, height: 80 } };
+  const hostExits = [{ host, corridor }];
+  const throughBody = validateConnectionGeometry({
+    ...base, foreignRects: [host], hostExits,
+    waypoints: [{ x: 100, y: 90 }, { x: 100, y: 20 }, { x: 300, y: 20 }],
+  });
+  assert.equal(throughBody.ok, false, "сквозь тело вне коридора — invalid");
+  const viaCorridor = validateConnectionGeometry({
+    ...base, foreignRects: [host], hostExits,
+    waypoints: [{ x: 100, y: 100 }, { x: 100, y: 120 }, { x: 300, y: 120 }],
+  });
+  assert.equal(viaCorridor.ok, true, "выход через коридор — ok");
+  const alongEdge = validateConnectionGeometry({
+    ...base, foreignRects: [host], hostExits,
+    waypoints: [{ x: 100, y: 100 }, { x: 180, y: 100 }, { x: 180, y: 160 }, { x: 300, y: 160 }],
+  });
+  assert.equal(alongEdge.ok, true, "скольжение по грани хоста — ок (не внутренность)");
+  const noCorridor = validateConnectionGeometry({
+    ...base, foreignRects: [host], hostExits: [{ host, corridor: null }],
+    // точка строго внутри тела хоста вне коридора и вне тела boundary
+    waypoints: [{ x: 100, y: 100 }, { x: 100, y: 80 }, { x: 300, y: 80 }],
+  });
+  assert.equal(noCorridor.ok, false, "corridor:null → проход по телу хоста invalid (fail-closed)");
+});
+
+test("boundary-host: коридор занят occupied → null (честный пропуск)", () => {
+  const host = { x: 0, y: 0, width: 200, height: 100 };
+  const be = { x: 90, y: 90, width: 20, height: 20 };
+  const t = { x: 50, y: -80, width: 100, height: 80 };
+  // grid origin роутера (source/target, foreign пуст): minX=snap(50-100), minY=snap(-80-100)
+  const minX = Math.round((Math.min(be.x, t.x) - 100) / 10) * 10;
+  const minY = Math.round((Math.min(be.y, t.y) - 100) / 10) * 10;
+  const occ3 = new Set();
+  for (let y = 70; y <= 150; y += 10) {
+    for (let x = 70; x <= 150; x += 10) occ3.add(`${(x - minX) / 10},${(y - minY) / 10}`);
+  }
+  const pts = routeConnection({ source: be, target: t, foreignRects: [], exitHost: host, occupied: occ3 });
+  assert.equal(pts, null, "тупик: коридор и выходы заняты → null");
 });
