@@ -70,6 +70,22 @@ export function hitTestRectId(point, rects, tolerance = DEFAULT_TOLERANCE) {
   return bestId;
 }
 
+// Чтение di.bounds элемента. bpmn-js 18 (bpmn-io/bpmn-js#1472) определяет
+// `businessObject.di` как ГЕТТЕР, БРОСАЮЩИЙ при прямом доступе — di живёт
+// только на diagram-элементе (element.di). Реальный ghost registry
+// (NavigatedViewer) убивал обратный hit-test исключением (T12 e2e, D-B).
+// Читаем СНАЧАЛА element.di (каноничный путь); businessObject.di — только
+// как fallback для старых фейков registry, и строго в try/catch.
+function readDiBounds(element) {
+  const fromElement = element?.di?.bounds;
+  if (fromElement) return fromElement;
+  try {
+    return element?.businessObject?.di?.bounds ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Адаптер под diagram-js ElementRegistry: единственная точка контакта
 // с diagram-js. Тянет у элементов di.bounds {x,y,width,height} + id через
 // registry API (forEach по registry), делегируя в hitTestRectId.
@@ -79,8 +95,7 @@ export function hitTestGhostRegistry(point, ghostElementRegistry, tolerance = DE
   if (typeof forEach !== "function") return null;
   const rects = [];
   forEach.call(ghostElementRegistry, (element) => {
-    const bo = element?.businessObject || element;
-    const bounds = bo?.di?.bounds;
+    const bounds = readDiBounds(element);
     if (!bounds) return;
     rects.push({ id: element.id, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
   });

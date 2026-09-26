@@ -15,6 +15,10 @@ import { extractProvenanceFromBpmnXml } from "../../../../technologist/workspace
 import { buildProvenanceIndex } from "./provenanceIndex.js";
 
 let state = { status: "idle", index: null, sessionKey: null };
+// Ключ последнего запрошенного load — маркер против transient-mount гонки
+// (T8 fix, T12 e2e): teardown-ресет сбрасывает sessionKey в null, но поздний
+// ответ по ТОМУ ЖЕ ключу валиден и должен примениться, а не потеряться.
+let lastRequestedKey = null;
 const listeners = new Set();
 
 // sessionId -> index | null. null — закэшированный факт "данных нет":
@@ -47,10 +51,18 @@ export function subscribeTobeOverlayProvenance(listener) {
   };
 }
 
-// Применяет загруженный индекс ТОЛЬКО если состояние всё ещё ждёт этот ключ
-// (loading под ним). Поздний ответ по сменённой сессии — в кэш, не в state.
+// Применяет загруженный индекс ТОЛЬКО если он относится к актуальному ключу.
+// Допускаем также применение после transient-reset: teardown на смену
+// sessionId сбросил состояние в idle/null, но поздний ответ по последнему
+// запрошенному ключу валиден (иначе индекс терялся навсегда — флаки ~1/2
+// на живом стеке, T12 e2e). Готовый результат (ready/empty) не перезаписываем.
 function applyLoaded(key, index) {
-  if (state.sessionKey !== key || state.status !== "loading") return;
+  const matchesCurrent = state.sessionKey === key;
+  const matchesAfterTransientReset = state.status === "idle"
+    && state.sessionKey === null
+    && lastRequestedKey === key;
+  if (!matchesCurrent && !matchesAfterTransientReset) return;
+  if (state.status === "ready" || state.status === "empty") return;
   setState({ status: index ? "ready" : "empty", index, sessionKey: key });
 }
 
@@ -62,12 +74,21 @@ export async function loadProvenanceForSession({ sessionId, fetchXml, fetchMeta 
     return;
   }
   if (cache.has(key)) {
-    applyLoaded(key, cache.get(key));
+    const cached = cache.get(key);
+    if (state.sessionKey === key && state.status === "loading") {
+      applyLoaded(key, cached);
+    } else {
+      // Кэшированный результат по актуальному/повторно запрошенному ключу
+      // применяем напрямую — в том числе из idle после transient-reset
+      // (иначе applyLoaded отклонил бы и индекс застрял, T8 fix).
+      setState({ status: cached ? "ready" : "empty", index: cached, sessionKey: key });
+    }
     return;
   }
   // In-flight или уже загружено под этим ключом — дублирующий вызов не нужен.
   if (state.sessionKey === key && state.status !== "idle") return;
 
+  lastRequestedKey = key;
   setState({ status: "loading", index: null, sessionKey: key });
   try {
     const [xmlRes, metaRes] = await Promise.all([fetchXml(key), fetchMeta(key)]);

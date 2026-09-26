@@ -154,3 +154,44 @@ test("resetProvenanceSessionState: состояние idle, кэш сброше�
   await loadProvenanceForSession({ sessionId: "s1", fetchXml, fetchMeta });
   assert.equal(calls.xml, 2, "после reset кэш не должен давать второй бесплатный вызов");
 });
+
+// T8 fix (T12 e2e, D-A): transient-mount гонка. Fetch #1 стартовал и
+// завис; midway BpmnStage пережил transient unmount (wizard→schema) —
+// teardown-ресет сбросил состояние и кэш; эффект адаптера не перезапустился
+// (deps не изменились) → fetch #1 resolve: кэш обновлён, applyLoaded ОТКЛОНЁН
+// (статус idle/sessionKey null) → индекс НАВСЕГДА потерян (флаки ~1/2 на
+// живом стеке). Фикс: (а) поздний ответ КЭШИРУЕТСЯ и ПРИМЕНЯЕТСЯ при любом
+// повторном load того же ключа из кэша, даже из idle; (б) applyLoaded
+// применяет поздний ответ, если ключ совпал и статус ещё не ready/empty.
+test("transient-mount: fetch resolve после reset → повторный load применяет ИЗ КЭША без нового fetch", async () => {
+  const gate = { release: null };
+  const slow = new Promise((resolve) => { gate.release = resolve; });
+  let xmlCalls = 0;
+  const embedded = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:pm="http://processmap.ai/schema/bpmn/1.0" id="D1" targetNamespace="http://bpmn.io/schema/bpmn">
+<bpmn:process id="P1" isExecutable="false"><bpmn:userTask id="op_x"><bpmn:extensionElements><pm:Trace fate="transformed_to" rule_id="R"><pm:derived_from>a1</pm:derived_from></pm:Trace></bpmn:extensionElements></bpmn:userTask></bpmn:process></bpmn:definitions>`;
+  const fetchXml = async () => {
+    xmlCalls += 1;
+    await slow;
+    return { ok: true, status: 200, xml: embedded };
+  };
+  const fetchMeta = async () => ({ ok: true, status: 200, provenance: null });
+
+  const first = loadProvenanceForSession({ sessionId: "s1", fetchXml, fetchMeta });
+  assert.equal(getTobeOverlayProvenanceState().status, "loading");
+  // transient unmount: ресет ПОКА fetch в полёте
+  resetProvenanceSessionState();
+  assert.equal(getTobeOverlayProvenanceState().status, "idle");
+  gate.release();
+  await first;
+  // ФИКС T8: поздний ответ применился ЧЕРЕЗ transient-reset (idle/null +
+  // lastRequestedKey) — индекс не потерян без повторного вызова.
+  assert.equal(getTobeOverlayProvenanceState().status, "ready");
+  // Повторный load того же ключа — идемпотентен, из кэша, без нового fetch.
+  await loadProvenanceForSession({ sessionId: "s1", fetchXml, fetchMeta });
+  assert.equal(xmlCalls, 1, "повторный load не должен требовать нового fetch");
+  const state = getTobeOverlayProvenanceState();
+  assert.equal(state.status, "ready");
+  assert.equal(state.sessionKey, "s1");
+  assert.ok(state.index?.forward?.get("op_x"));
+});

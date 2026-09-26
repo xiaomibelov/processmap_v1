@@ -90,3 +90,27 @@ test("hitTestGhostRegistry: пустой registry -> null", () => {
   const registry = { forEach(fn) {} };
   assert.equal(hitTestGhostRegistry({ x: 50, y: 40 }, registry), null);
 });
+
+// T10 fix round 3 (T12 e2e, D-B): bpmn-js 18 (bpmn-io/bpmn-js#1472) делает
+// `businessObject.di` ГЕТТЕРОМ, БРОСАЮЩИМ при прямом доступе — di живёт на
+// diagram-элементе. Реальный ghost registry (NavigatedViewer) убивал обратный
+// hit-test исключением. Реплика: businessObject.di — throwing getter.
+test("hitTestGhostRegistry: bpmn-js 18 #1472 — businessObject.di бросает, di на элементе", () => {
+  const throwingBo = () => ({
+    get di() {
+      throw new Error("Tried to access di from the businessObject (bpmn-js#1472)");
+    },
+  });
+  const elements = [
+    { id: "Ghost_1", di: { bounds: { x: 0, y: 0, width: 100, height: 80 } }, businessObject: throwingBo() },
+    { id: "Ghost_2", di: { bounds: { x: 200, y: 0, width: 100, height: 80 } }, businessObject: throwingBo() },
+  ];
+  const registry = {
+    forEach(fn) {
+      for (const el of elements) fn(el);
+    },
+  };
+  assert.equal(hitTestGhostRegistry({ x: 50, y: 40 }, registry), "Ghost_1");
+  assert.equal(hitTestGhostRegistry({ x: 250, y: 40 }, registry), "Ghost_2");
+  assert.equal(hitTestGhostRegistry({ x: 150, y: 40 }, registry), null);
+});
