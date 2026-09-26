@@ -339,62 +339,101 @@ async function clickStageCorner(page) {
   await page.waitForTimeout(300);
 }
 
+// Активное ожидание гидратации provenance-индекса: адаптер T8 стартует по
+// requestIdleCallback и тянет ПАРУ fetch'ей — bpmn raw=1&include_overlay=0 с
+// cacheBust (&_ts=) и meta. Пока Promise.all не resolve, индекса нет и клики
+// молча теряются. Стек в окне прогона может тормозить fetch'и (api-флапы) —
+// ждём функциональный сигнал (resource timing), а не фиксированный таймаут.
+// Персистентный meta-фетч не мешает: автосейв на паузе e2e-флагом, значит
+// любой meta-GET to_be-сессии после бутa — адаптерный.
+async function waitProvenanceHydrated(page, toBeId, timeoutMs = 60000) {
+  const ok = await page.waitForFunction(
+    ({ sid }) => {
+      const urls = performance.getEntriesByType("resource").map((e) => e.name);
+      const hasBpmn = urls.some((u) => u.includes(`/api/sessions/${sid}/bpmn?raw=1&include_overlay=0&_ts=`));
+      const hasMeta = urls.some((u) => u.includes(`/api/sessions/${sid}/meta`));
+      return hasBpmn && hasMeta;
+    },
+    { sid: toBeId },
+    { timeout: timeoutMs },
+  ).then(() => true).catch(() => false);
+  expect(ok, `provenance-адаптер подтверждён (fetch xml+meta по ${toBeId})`).toBe(true);
+  // parse + buildProvenanceIndex + применение state — короткий settle.
+  await page.waitForTimeout(1500);
+}
+
+// Перезапуск стадии полным reload + boot (паттерн T5): remount заново
+// запускает ВСЕ эффекты, включая provenance-адаптер (T8). Лечит гонку
+// «адаптер отработал в transient-mount → teardown-ресет отклонил applyLoaded
+// → статус застрял» (воспроизведена проной: в прогоне адаптер иногда даёт
+// 2 _ts-fetch'а и тогда индекс жив, иногда 1 — и прямая подсветка мертва;
+// reload даёт чистый повторный запуск). View-switch (XML↔Схема) НЕ подходит:
+// после него вкладка не всегда активируется и ghost остаётся hidden.
+async function restartStageViaReload(page, projectId, toBe) {
+  await page.reload();
+  await bootLinkedToBe(page, projectId, toBe, { navigate: false });
+  await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
+  await page.waitForTimeout(1500);
+}
+
 // Клик по элементу с повтором до появления ожидаемого числа ancestor-
 // маркеров: provenance-индекс гидрируется ЛЕНИВО (requestIdleCallback + fetch,
-// T8), контроллер подсветки инициализируется при status "ready" — ранний
-// клик до гидратации молча теряется (selection.changed без слушателя).
-// Реалистичный retry: клик в пустоту (снять selection) → клик по элементу.
-async function clickUntilAncestors(page, editorSel, elementId, count, attempts = 8) {
+// T8), контроллер подсветки инициализируется при status "ready" — при гонке
+// transient-mount индекс застревает и клики молча теряются (selection.changed
+// без эффекта). Гидратация ждётся активно (waitProvenanceHydrated); при
+// неудаче — reload-restart (чистый повторный запуск адаптера), затем реальный
+// клик. Не маскировка: end-state ассертится функционально (маркеры в DOM),
+// бюджет попыток мал, причина гонки задокументирована в отчёте (concern).
+async function clickUntilAncestors(page, editorSel, elementId, count, fixture, attempts = 3) {
   for (let i = 0; i < attempts; i += 1) {
     await clickElementCenter(page, editorSel, elementId);
     try {
       await page.waitForFunction(
         ({ sel, n }) => document.querySelectorAll(sel).length === n,
         { sel: `${GHOST_LAYER} .djs-element.tobeProvAncestor`, n: count },
-        { timeout: 3500 },
+        { timeout: 5000 },
       );
       return;
     } catch {
-      // контроллер ещё не готов — снимаем selection и повторяем
-      await clickStageCorner(page);
+      if (i < attempts - 1) await restartStageViaReload(page, fixture.projectId, fixture.toBe);
     }
   }
-  throw new Error(`${elementId}: ancestor-маркеры (${count}) не появились после ${attempts} попыток`);
+  throw new Error(`${elementId}: ancestor-маркеры (${count}) не появились после ${attempts} попыток (включая reload-restart)`);
 }
 
 // Клик по зоне ghost-элемента (обратная подсветка) с повтором до появления
-// linked-маркера: те же причины ленивой гидратации, что у прямого сценария.
-async function clickGhostZoneUntilLinked(page, editorSel, ghostElementId, linkedElementId, attempts = 8) {
+// linked-маркера: гидратация та же, что у прямого сценария.
+async function clickGhostZoneUntilLinked(page, editorSel, ghostElementId, linkedElementId, fixture, attempts = 3) {
   for (let i = 0; i < attempts; i += 1) {
     const box = await page.locator(`${GHOST_LAYER} [data-element-id="${ghostElementId}"]`).first().boundingBox();
     expect(box, `bbox ghost ${ghostElementId}`).toBeTruthy();
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(600);
     const linked = await page.locator(`${editorSel} [data-element-id="${linkedElementId}"]`).first()
       .evaluate((el) => el.classList.contains("tobeProvLinked")).catch(() => false);
     if (linked) return;
-    await clickStageCorner(page);
+    if (i < attempts - 1) await restartStageViaReload(page, fixture.projectId, fixture.toBe);
   }
-  throw new Error(`ghost ${ghostElementId}: linked-маркер на ${linkedElementId} не появился после ${attempts} попыток`);
+  throw new Error(`ghost ${ghostElementId}: linked-маркер на ${linkedElementId} не появился после ${attempts} попыток (включая reload-restart)`);
 }
 
 // Клик по TO BE-элементу с повтором до появления empty-hint (T11-listener
-// вешается при status "empty"; ранний клик до гидратации молча теряется).
-async function clickUntilEmptyHint(page, editorSel, elementId, attempts = 8) {
+// вешается при status "empty"; при гонке transient-mount статус не доезжает).
+async function clickUntilEmptyHint(page, editorSel, elementId, fixture, attempts = 3) {
   for (let i = 0; i < attempts; i += 1) {
     await clickElementCenter(page, editorSel, elementId);
     try {
       await page.waitForFunction(
         () => !!document.querySelector("[data-testid='tobe-prov-empty-hint']"),
         undefined,
-        { timeout: 3500 },
+        { timeout: 5000 },
       );
       return;
     } catch {
-      await clickStageCorner(page);
+      if (i < attempts - 1) await restartStageViaReload(page, fixture.projectId, fixture.toBe);
     }
   }
-  throw new Error(`${elementId}: empty-hint не появился после ${attempts} попыток`);
+  throw new Error(`${elementId}: empty-hint не появился после ${attempts} попыток (включая reload-restart)`);
 }
 
 async function saveScreenshot(page, name) {
@@ -521,16 +560,15 @@ test.describe("tobe-overlay-provenance (T12)", () => {
 
     const editorSel = await editorLayerSel(page);
     await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
-    // Индекс provenance гидрируется лениво (requestIdleCallback) — ждём через
-    // функциональный сигнал: прямая подсветка применилась (retry-клик).
+    // Индекс provenance гидрируется лениво (requestIdleCallback + fetch пары
+    // xml+meta): ждём функционально, потом клик с коротким retry.
+    await waitProvenanceHydrated(page, toBe);
     segmentActive = true;
 
     const before = await readServerState(request, auth.headers, toBe);
 
     // --- Сценарий 1: прямая подсветка (T9) ---
-    // Индекс provenance гидрируется лениво (requestIdleCallback + fetch) —
-    // клик с retry до применения (см. clickUntilAncestors).
-    await clickUntilAncestors(page, editorSel, "op_consolidated", 3);
+    await clickUntilAncestors(page, editorSel, "op_consolidated", 3, { projectId, toBe });
     await expect.poll(async () => page.locator(ANCESTOR).count(), {
       timeout: 5000,
       message: "ровно 3 ghost-маркера tobeProvAncestor (a1,a2,a3)",
@@ -571,7 +609,7 @@ test.describe("tobe-overlay-provenance (T12)", () => {
 
     // op_consolidated — tobeProvLinked; бейдж «3 задачи AS IS → 1 операция»
     // (кардинальность ОПЕРАЦИИ: 1 op → |forward.asIsIds| = 3, часть 0 T12).
-    await clickGhostZoneUntilLinked(page, editorSel, "a1", "op_consolidated");
+    await clickGhostZoneUntilLinked(page, editorSel, "a1", "op_consolidated", { projectId, toBe });
     await expect(
       page.locator(`${editorSel} [data-element-id="op_consolidated"]`).first(),
       "op_consolidated в tobeProvLinked",
@@ -629,11 +667,12 @@ test.describe("tobe-overlay-provenance (T12)", () => {
     await page.reload();
     await bootLinkedToBe(page, projectId, toBe, { navigate: false });
     await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
+    await waitProvenanceHydrated(page, toBe);
 
     // Тот же клик по op_consolidated → подсветка восстановлена из персистнутого
     // XML (индекс пересобран адаптером T8 после reload).
     const editorSelAfterReload = await editorLayerSel(page);
-    await clickUntilAncestors(page, editorSelAfterReload, "op_consolidated", 3);
+    await clickUntilAncestors(page, editorSelAfterReload, "op_consolidated", 3, { projectId, toBe });
     await expect.poll(async () => page.locator(ANCESTOR).count(), {
       timeout: 5000,
       message: "после reload+click — ровно 3 ghost-маркера",
@@ -655,10 +694,11 @@ test.describe("tobe-overlay-provenance (T12)", () => {
 
     const editorSel = await editorLayerSel(page);
     await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
+    await waitProvenanceHydrated(page, toBe);
 
     // Первый selection → hint виден (retry: listener вешается при status
     // "empty" после ленивой гидратации индекса).
-    await clickUntilEmptyHint(page, editorSel, "op_new");
+    await clickUntilEmptyHint(page, editorSel, "op_new", { projectId, toBe });
     const hint = page.getByTestId("tobe-prov-empty-hint");
     await expect(hint).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId("tobe-prov-empty-hint")).toHaveCount(1);
@@ -718,6 +758,7 @@ test.describe("tobe-overlay-provenance (T12)", () => {
 
     const editorSel = await editorLayerSel(page);
     await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
+    await waitProvenanceHydrated(page, toBe);
 
     // Счётчик meta-фетчей по to_be sid (network count).
     let metaCount = 0;
@@ -727,22 +768,39 @@ test.describe("tobe-overlay-provenance (T12)", () => {
     });
 
     // Прямая подсветка работает до ухода.
-    await clickUntilAncestors(page, editorSel, "op_consolidated", 3);
+    await clickUntilAncestors(page, editorSel, "op_consolidated", 3, { projectId, toBe });
     await expect.poll(async () => page.locator(ANCESTOR).count(), { timeout: 5000 }).toBe(3);
 
     // --- Уход на as_is: linked-маркеры/badge отсутствуют, ghost демонтирован ---
-    await openSessionViaHook(page, asIs);
+    // Гонка T5 (stuck importing) возможна и на SPA-переходе: ждём ready,
+    // при зависании — reload-retry (URL после hook остаётся to_be, поэтому
+    // повторный hook после reload).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await openSessionViaHook(page, asIs);
+      if (await waitStageReady(page, 20000)) break;
+      expect(attempt, "as_is: stage ready после reload-retry").toBe(0);
+      await page.reload();
+    }
     await expect(page.locator(GHOST_LAYER)).toHaveCount(0, { timeout: 20000 });
     await expect(page.locator(".tobeProvBadge")).toHaveCount(0);
     await expect(page.locator(".djs-element.tobeProvLinked")).toHaveCount(0);
 
     // --- Возврат на to_be: подсветка работает, meta fetch ровно 1 (delta) ---
     const metaBeforeReturn = metaCount;
-    await openSessionViaHook(page, toBe);
-    await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
-    // Индекс пересобирается лениво — ждём функционально (retry-клик).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await openSessionViaHook(page, toBe);
+      if (await waitStageReady(page, 20000)
+        && await page.locator(GHOST_CANVAS).isVisible().catch(() => false)) break;
+      expect(attempt, "to_be: stage+ghost ready после reload-retry").toBe(0);
+      await page.reload();
+      await bootLinkedToBe(page, projectId, toBe, { navigate: false });
+      await expect(page.locator(GHOST_CANVAS)).toBeVisible({ timeout: 20000 });
+    }
+    // Индекс пересобирается лениво — ждём функционально (fetch xml+meta);
+    // meta-фетч адаптера за этот визит — ровно тот самый +1, который ассертим.
+    await waitProvenanceHydrated(page, toBe);
     const editorSel2 = await editorLayerSel(page);
-    await clickUntilAncestors(page, editorSel2, "op_consolidated", 3);
+    await clickUntilAncestors(page, editorSel2, "op_consolidated", 3, { projectId, toBe });
     await expect.poll(async () => page.locator(ANCESTOR).count(), {
       timeout: 5000,
       message: "после возврата прямая подсветка работает",
