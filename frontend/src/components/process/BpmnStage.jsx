@@ -513,6 +513,27 @@ function computeLaneRowAlignPlanFromRegistry(registry) {
 // Прямые мутации геометрии + DI (без modeling.*): стрелки либо транслируются
 // (op {dx,dy}), либо полностью переразводятся (op {waypoints} — контур
 // fix/canvas-geometry-apply-topology); layoutConnection не вызывается.
+// Подписи (контур fix/canvas-geometry-labels-follow): третий массив labelOps —
+// label связи следует за владельцем (translate: {dx,dy}; reroute: пересадка
+// {center} на середину самого длинного сегмента нового маршрута), label узла
+// сдвигается вместе с узлом. DI label — di.label.bounds (bpmndi:BPMNLabel):
+// у label-элемента el.di указывает на ТОТ ЖЕ DI владельца (BPMNShape/Edge,
+// bpmn-js BpmnImporter#addLabel), поэтому доступ только через element.di —
+// businessObject.di в bpmn-js бросающий геттер (контрактный тест
+// BpmnStage.align-reset.test.mjs).
+function readLabelDiBounds(el) {
+  const ownerDi = (el && el.di) || null;
+  const labelDi = (ownerDi && ownerDi.label) || null;
+  const b = (labelDi && labelDi.bounds) || null;
+  if (!b) return null;
+  const x = Number(b.x);
+  const y = Number(b.y);
+  const width = Number(b.width);
+  const height = Number(b.height);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  return { x, y, width, height };
+}
 function FpcAlignDiagramHandler() {}
 FpcAlignDiagramHandler.prototype.execute = function execute(context) {
   const changed = [];
@@ -565,6 +586,28 @@ FpcAlignDiagramHandler.prototype.execute = function execute(context) {
     }
     changed.push(conn);
   }
+  for (const op of context.labelOps || []) {
+    const el = op.element;
+    const diBounds = readLabelDiBounds(el);
+    context.records.push({
+      kind: "label",
+      el,
+      x: el.x, y: el.y, width: el.width, height: el.height,
+      di: diBounds ? { x: diBounds.x, y: diBounds.y, width: diBounds.width, height: diBounds.height } : null,
+    });
+    if (op.center) {
+      // Пересадка label на новый маршрут: центр label → точка placement'а.
+      el.x = op.center.x - el.width / 2;
+      el.y = op.center.y - el.height / 2;
+    } else {
+      el.x += op.dx; el.y += op.dy;
+    }
+    if (diBounds) {
+      diBounds.x = el.x; diBounds.y = el.y;
+      diBounds.width = el.width; diBounds.height = el.height;
+    }
+    changed.push(el);
+  }
   return changed;
 };
 FpcAlignDiagramHandler.prototype.revert = function revert(context) {
@@ -575,6 +618,14 @@ FpcAlignDiagramHandler.prototype.revert = function revert(context) {
       if (rec.di && rec.el.di && rec.el.di.bounds) {
         const b = rec.el.di.bounds;
         b.x = rec.di.x; b.y = rec.di.y; b.width = rec.di.width; b.height = rec.di.height;
+      }
+    } else if (rec.kind === "label") {
+      rec.el.x = rec.x; rec.el.y = rec.y; rec.el.width = rec.width; rec.el.height = rec.height;
+      if (rec.di) {
+        const b = readLabelDiBounds(rec.el);
+        if (b) {
+          b.x = rec.di.x; b.y = rec.di.y; b.width = rec.di.width; b.height = rec.di.height;
+        }
       }
     } else if (rec.kind === "connection") {
       if (rec.replace) {
@@ -682,7 +733,9 @@ async function alignDiagramOnInstance(inst, options = {}) {
 // с родителем, boundary следует за хостом). Стрелки: общая дельта →
 // трансляция, разные дельты → переразводка waypoints. Математика — в
 // canvasGeometryApply.js; здесь только bpmn-js-вайринг по паттерну align:
-// один commandStack.execute (хендлер FpcAlignDiagramHandler), DI только el.di/conn.di.
+// один commandStack.execute (хендлер FpcAlignDiagramHandler), DI только el.di/
+// conn.di + di.label.bounds подписей (пересадка label — контур
+// fix/canvas-geometry-labels-follow, labelOps внутри того же шага undo).
 function computeGeometryApplyPlanFromRegistry(registry) {
   const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : [];
   const elements = all.filter(isLayoutableFlowNode);
@@ -698,6 +751,7 @@ function computeGeometryApplyPlanFromRegistry(registry) {
       laneKey: container.key,
       laneBounds: container.bounds,
       attachedTo: el.host?.id || null,
+      label: readLabelDiBounds(el),
     };
   });
   const connections = all
@@ -707,6 +761,7 @@ function computeGeometryApplyPlanFromRegistry(registry) {
       sourceId: el.source?.id || el.businessObject?.sourceRef?.id || null,
       targetId: el.target?.id || el.businessObject?.targetRef?.id || null,
       waypoints: el.waypoints,
+      label: readLabelDiBounds(el),
     }));
   return computeGeometryApplyPlan({ nodes, connections }, getCanvasGeometry());
 }
@@ -742,7 +797,28 @@ async function applyGeometryOnInstance(inst, options = {}) {
       if (!conn || !Array.isArray(conn.waypoints) || conn.waypoints.length === 0) continue;
       connectionOps.push({ element: conn, waypoints: pts });
     }
-    if (shapeOps.length === 0 && connectionOps.length === 0) {
+    // Label-follow (контур fix/canvas-geometry-labels-follow): подписи следуют
+    // за владельцем тем же commandStack-шагом (один undo на всё применение).
+    const labelOps = [];
+    for (const [id, delta] of layout.shapeLabelDeltas || []) {
+      const element = registry.get(id);
+      const labelEl = element && element.label ? element.label : null;
+      if (!labelEl) continue;
+      labelOps.push({ element: labelEl, dx: delta.dx, dy: delta.dy });
+    }
+    for (const [id, delta] of layout.connectionLabelDeltas || []) {
+      const conn = registry.get(id);
+      const labelEl = conn && conn.label ? conn.label : null;
+      if (!labelEl) continue;
+      labelOps.push({ element: labelEl, dx: delta.dx, dy: delta.dy });
+    }
+    for (const [id, center] of layout.connectionLabelPlacements || []) {
+      const conn = registry.get(id);
+      const labelEl = conn && conn.label ? conn.label : null;
+      if (!labelEl) continue;
+      labelOps.push({ element: labelEl, center });
+    }
+    if (shapeOps.length === 0 && connectionOps.length === 0 && labelOps.length === 0) {
       return { ok: true, noop: true, xml: null, stats: layout.stats || null };
     }
 
@@ -752,7 +828,7 @@ async function applyGeometryOnInstance(inst, options = {}) {
       commandStack.registerHandler("fpc.applyGeometry", FpcAlignDiagramHandler);
       commandStack.__fpcApplyGeometryHandlerRegistered = true;
     }
-    commandStack.execute("fpc.applyGeometry", { shapeOps, connectionOps });
+    commandStack.execute("fpc.applyGeometry", { shapeOps, connectionOps, labelOps });
 
     if (canvas && typeof canvas.zoom === "function") {
       canvas.zoom("fit-viewport");

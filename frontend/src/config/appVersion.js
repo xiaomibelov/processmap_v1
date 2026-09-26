@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.160",
+  currentVersion: "v1.0.161",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.161",
+      changes: [
+        "«Применить к схеме»: подписи больше не остаются на старых координатах — подпись связи едет вместе со стрелкой (при переразводке встаёт на середину самого длинного сегмента нового маршрута), подпись шлюза/события — вместе с узлом; отмена действия возвращает и подписи.",
+      ],
+    },
     {
       version: "v1.0.160",
       changes: [
