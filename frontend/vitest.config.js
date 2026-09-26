@@ -7,7 +7,7 @@ export default mergeConfig(
     test: {
       environment: "jsdom",
       globals: true,
-      include: ["src/**/*.smoke.test.jsx"],
+      include: ["src/**/*.smoke.test.jsx", "src/**/*.vitest.mjs"],
     },
   })
 );

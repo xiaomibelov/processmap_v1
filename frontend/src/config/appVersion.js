@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.160",
+  currentVersion: "v1.0.162",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.162",
+      changes: [
+        "«Применить к схеме» больше не падает на сохранении после переразводки стрелок: координаты стрелок пишутся в схему корректно, сохранение проходит, а при реальном сбое сохранения применение геометрии откатывается как и раньше.",
+        "Если сервер сообщает, что такая схема уже сохранена, кнопка больше не показывает ложную ошибку и не откатывает применённую геометрию.",
+      ],
+    },
     {
       version: "v1.0.160",
       changes: [

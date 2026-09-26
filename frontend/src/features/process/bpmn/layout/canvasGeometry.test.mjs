@@ -93,10 +93,13 @@ test("gate: align-поток сам по себе на каноне — getCanva
   const bpmnStage = readFileSync(
     join(here, "..", "..", "..", "..", "components", "process", "BpmnStage.jsx"), "utf8");
   const alignStart = bpmnStage.indexOf("function alignDiagramOnInstance");
-  const alignEnd = bpmnStage.indexOf("function computeGeometryApplyPlanFromRegistry");
+  const alignEnd = bpmnStage.indexOf("function resetCanvasOnInstance");
   assert.ok(alignStart > 0 && alignEnd > alignStart, "регион alignDiagramOnInstance найден");
   const alignRegion = bpmnStage.slice(alignStart, alignEnd);
   assert.ok(!alignRegion.includes("getCanvasGeometry"), "align не читает настройки геометрии");
-  assert.ok(bpmnStage.includes("getCanvasGeometry"), "apply-поток читает настройки через getCanvasGeometry");
-  assert.ok(bpmnStage.includes("computeGeometryApplyPlan"), "apply-поток использует computeGeometryApplyPlan");
+  // fix/canvas-apply-persist-validation: apply-поток (включая чтение
+  // getCanvasGeometry) перенесён в canvasGeometryApplyInstance.js.
+  const applyInstance = readFileSync(join(here, "canvasGeometryApplyInstance.js"), "utf8");
+  assert.ok(applyInstance.includes("getCanvasGeometry"), "apply-поток читает настройки через getCanvasGeometry");
+  assert.ok(applyInstance.includes("computeGeometryApplyPlan"), "apply-поток использует computeGeometryApplyPlan");
 });
