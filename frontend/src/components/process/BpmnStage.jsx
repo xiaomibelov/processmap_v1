@@ -16,6 +16,7 @@ import {
   wrapOpsTransport,
 } from "../../features/telemetry/canvasEventCapture.js";
 import { saveCoordinator } from "../../features/session/saveCoordinator.js";
+import { withTimeoutPromise, DEFAULT_PERSIST_TIMEOUT_MS } from "../../features/session/withTimeoutPromise.js";
 import { apiPostSessionOperations } from "../../lib/api.js";
 import {
   setOpsReconcileRuntime,
@@ -5560,7 +5561,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       count: persistStartCount,
     });
     logBpmnTrace("persist.put.before", out, { sid, hint: hintBase, rev });
-      const r = await ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase, options && typeof options === "object" ? options : {});
+    // Таймаут persist (контур fix/canvas-apply-persist-softlock): зависший
+    // saveRaw не должен вешать apply/«Сохранение…» навсегда. Ошибка/таймаут
+    // идут в штатную ветку ниже: setErr + SAVE_PERSIST_FAIL + {ok:false} →
+    // applyGeometryOnInstance делает undo и возвращает ошибку (error-тост).
+    let r;
+    try {
+      r = await withTimeoutPromise(
+        ensureBpmnPersistence().saveRaw(sid, out, rev, hintBase, options && typeof options === "object" ? options : {}),
+        DEFAULT_PERSIST_TIMEOUT_MS,
+        `persist(${hintBase}) timeout`,
+      );
+    } catch (persistError) {
+      r = { ok: false, status: 0, error: String(persistError?.message || persistError || "persist failed") };
+    }
     traceProcess("bpmn.persist_xml_snapshot_backend", {
       sid,
       hint: hintBase,

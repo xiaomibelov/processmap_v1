@@ -309,12 +309,36 @@ export default function createBpmnCoordinator(options = {}) {
     schedulePendingReplay();
   }
 
+  // Таймаут persist (контур fix/canvas-apply-persist-softlock): зависший
+  // saveRaw не должен блокировать lane/очередь и статус «Сохранение…»
+  // навсегда (stage-приёмка: «Сохранение…» >15 мин, 0 PUT). Значение по
+  // умолчанию покрывает transport-timeout (10s) + reconcile с запасом.
+  const persistTimeoutMs = Math.max(1000, asNumber(options?.persistTimeoutMs, 30000));
+
   async function persistRaw(sid, xml, rev, reason, options = {}) {
     const saveRaw = persistence?.saveRaw;
     if (typeof saveRaw !== "function") {
       return { ok: false, error: "saveRaw unavailable", status: 0 };
     }
-    return await saveRaw(sid, xml, rev, reason, options);
+    try {
+      // Таймаут ВНУТРИ lane-задачи: при зависании задача завершается ошибкой
+      // и освобождает очередь для следующих сохранений (не мягкий лок).
+      return await withTimeout(
+        () => saveRaw(sid, xml, rev, reason, options),
+        persistTimeoutMs,
+        `saveRaw(${asText(reason) || "save"})`,
+      );
+    } catch (error) {
+      // Rejection/таймаут нормализуем в контракт результата — вызывающие
+      // ветки (autosave/apply persist) идут через persisted?.ok, не через try.
+      const isTimeout = /timeout/i.test(String(error?.message || ""));
+      return {
+        ok: false,
+        status: 0,
+        errorCode: isTimeout ? "persist_timeout" : "persist_failed",
+        error: asText(error?.message || error || "persist failed"),
+      };
+    }
   }
 
   function preparePersistedXml(xmlText, meta = {}) {

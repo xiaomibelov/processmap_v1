@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.159",
+  currentVersion: "v1.0.160",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.160",
+      changes: [
+        "«Применить к схеме» больше не может зависнуть на сохранении: persist и автосохранение получили таймаут 30 секунд с честной ошибкой, отказ сохранения откатывает применение геометрии и показывает уведомление вместо бесконечного «Сохранение…».",
+      ],
+    },
     {
       version: "v1.0.159",
       changes: [
