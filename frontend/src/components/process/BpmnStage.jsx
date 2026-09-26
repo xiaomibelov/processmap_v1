@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 
-import { apiPatchSession } from "../../lib/api/sessionApi";
+import { apiGetSessionMeta, apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
@@ -64,8 +64,24 @@ import {
 } from "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlayStore";
 import {
   useTobeOverlayUnderlayActive,
+  useTobeOverlayUnderlayAvailable,
   useTobeOverlayUnderlayVisible,
 } from "../../features/process/bpmn/stage/tobeOverlayUnderlay/useTobeOverlayUnderlay";
+import {
+  getTobeOverlayProvenanceState,
+  loadProvenanceForSession,
+  resetProvenanceSessionState,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeOverlayProvenanceStore.js";
+import {
+  useTobeOverlayProvenanceStatus,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/useTobeOverlayProvenance.js";
+import {
+  initProvenanceHighlight,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenanceHighlight.js";
+import {
+  noteProvenanceSelectionSeen,
+  resetProvenanceEmptyHint,
+} from "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenanceEmptyState.js";
 import {
   runImmediateEditorFanout,
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
@@ -154,6 +170,7 @@ import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
 import "../../features/process/bpmn/stage/tobeOverlayUnderlay/tobeOverlayUnderlay.css";
+import "../../features/process/bpmn/stage/tobeOverlayProvenance/tobeProvenance.css";
 import {
   patchOverlaysPrototype,
   setShowOverlaysDuringPan,
@@ -1840,6 +1857,111 @@ const BpmnStage = forwardRef(function BpmnStage({
       underlayControllerSidRef.current = null;
     };
   }, []);
+
+  // TO BE provenance (feature/tobe-overlay-visibility-provenance-v1, T8): lazy
+  // fetch индекса происхождения (raw XML TO BE + meta.sidecar) по образцу
+  // underlay-адаптера: флаг подложки + active + diagramReady →
+  // requestIdleCallback. Кэш/сброс и mid-flight-гард — в
+  // tobeOverlayProvenanceStore (per sessionId); fetch-функции — инъекцией
+  // (store unit-тестируется без сети). Гейт тот же, что у подложки:
+  // provenance бесполезна без ghost-слоя AS IS.
+  useEffect(() => {
+    const enabled = !!(tobeOverlayUnderlayFlag && underlayActive && sessionId && diagramReady);
+    if (!enabled) return undefined;
+    let cancelled = false;
+    const cancelSchedule = (() => {
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+        const handle = window.requestIdleCallback(runLoad, { timeout: 2000 });
+        return () => {
+          try { window.cancelIdleCallback?.(handle); } catch {}
+        };
+      }
+      const timer = setTimeout(runLoad, 0);
+      return () => clearTimeout(timer);
+    })();
+    function runLoad() {
+      if (cancelled) return;
+      void loadProvenanceForSession({
+        sessionId,
+        fetchXml: (sid) => apiGetBpmnXml(sid, { raw: true, includeOverlay: false, cacheBust: true }),
+        fetchMeta: (sid) => apiGetSessionMeta(sid),
+      });
+    }
+    return () => {
+      cancelled = true;
+      cancelSchedule();
+    };
+  }, [tobeOverlayUnderlayFlag, underlayActive, sessionId, diagramReady]);
+
+  // T8 teardown: смена сессии — полный сброс provenance-состояния (кэш +
+  // индекс). Поздний in-flight ответ прежней сессии не применится: store
+  // сверяет sessionKey на момент resolve.
+  useEffect(() => {
+    return () => {
+      resetProvenanceSessionState();
+      resetProvenanceEmptyHint();
+    };
+  }, [sessionId]);
+
+  // T9: прямая подсветка provenance — init highlight-контроллера, когда
+  // подложка смонтирована (available) и индекс ready. Read-only контакт:
+  // eventBus/canvas/overlays по образцу #1034; ghost-доступы — через
+  // getGhostAccess underlay-контроллера (registry/canvas/container).
+  const underlayAvailable = useTobeOverlayUnderlayAvailable();
+  const provStatus = useTobeOverlayProvenanceStatus();
+  const provHighlightRef = useRef(null);
+
+  useEffect(() => {
+    const canRun = !!(tobeOverlayUnderlayFlag && underlayActive && underlayAvailable && diagramReady);
+    if (!canRun) return undefined;
+    if (provStatus !== "ready") {
+      try { provHighlightRef.current?.destroy?.(); } catch {}
+      provHighlightRef.current = null;
+      return undefined;
+    }
+    if (provHighlightRef.current) return undefined;
+    const editor = modelerRef.current || viewerRef.current;
+    const ctl = underlayControllerRef.current;
+    const editorEventBus = editor?.get?.("eventBus");
+    const editorCanvas = editor?.get?.("canvas");
+    const editorOverlays = editor?.get?.("overlays");
+    const editorRegistry = editor?.get?.("elementRegistry");
+    const ghostContainer = ctl?.getGhostAccess?.()?.container ?? null;
+    if (!editorEventBus || !editorCanvas || !ghostContainer || !ctl?.isMounted?.()) return undefined;
+    provHighlightRef.current = initProvenanceHighlight({
+      editorCanvas,
+      editorEventBus,
+      editorOverlays,
+      editorRegistry,
+      getGhostRegistry: () => ctl.getGhostAccess(),
+      getIndex: () => getTobeOverlayProvenanceState().index,
+      ghostContainer,
+    });
+    return () => {
+      try { provHighlightRef.current?.destroy?.(); } catch {}
+      provHighlightRef.current = null;
+    };
+  }, [tobeOverlayUnderlayFlag, underlayActive, underlayAvailable, diagramReady, provStatus]);
+
+  // T11: empty-state trigger — первый selection.changed с непустым selection
+  // при status empty (только факт клика, без индекса; hint разбирает UI).
+  useEffect(() => {
+    if (provStatus !== "empty" || !tobeOverlayUnderlayFlag || !underlayActive || !diagramReady) {
+      return undefined;
+    }
+    const editor = modelerRef.current || viewerRef.current;
+    const eventBus = editor?.get?.("eventBus");
+    if (!eventBus?.on) return undefined;
+    const onEmptySelectionChanged = (event) => {
+      const selection = event?.newSelection;
+      const hasSelection = Array.isArray(selection) ? selection.length > 0 : !!selection;
+      if (hasSelection) noteProvenanceSelectionSeen();
+    };
+    eventBus.on("selection.changed", onEmptySelectionChanged);
+    return () => {
+      try { eventBus.off("selection.changed", onEmptySelectionChanged); } catch {}
+    };
+  }, [provStatus, tobeOverlayUnderlayFlag, underlayActive, diagramReady]);
 
   const v2PropertyPreviewMapRef = useRef({});
   useEffect(() => {

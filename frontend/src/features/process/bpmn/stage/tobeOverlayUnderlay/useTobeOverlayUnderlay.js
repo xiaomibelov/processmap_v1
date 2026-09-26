@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { getTobeOverlayUnderlayState, subscribeTobeOverlayUnderlay } from "./tobeOverlayUnderlayStore.js";
+import {
+  getGhostVisibility,
+  getTobeOverlayUnderlayState,
+  hydrateGhostVisibility,
+  subscribeTobeOverlayUnderlay,
+} from "./tobeOverlayUnderlayStore.js";
 
 export function useTobeOverlayUnderlayActive() {
   return useSyncExternalStore(
@@ -22,5 +27,17 @@ export function useTobeOverlayUnderlayAvailable() {
     subscribeTobeOverlayUnderlay,
     () => getTobeOverlayUnderlayState().available,
     () => getTobeOverlayUnderlayState().available,
+  );
+}
+
+// Пресет видимости ghost-подложки (faint/medium/strong). Перед подпиской
+// лениво гидрирует persisted-значение из localStorage (idempotent — один раз
+// за модуль); дальше getGhostVisibility работает без обращения к storage.
+export function useTobeOverlayUnderlayGhostVisibility() {
+  hydrateGhostVisibility();
+  return useSyncExternalStore(
+    subscribeTobeOverlayUnderlay,
+    () => getGhostVisibility(),
+    () => getGhostVisibility(),
   );
 }

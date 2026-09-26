@@ -640,6 +640,30 @@ export const en = {
       },
     },
   },
+  // TO BE underlay: AS IS underlay control (show/hide + ghost visibility
+  // preset). Pair dictionary: shared/i18n/ru.js.
+  tobeUnderlay: {
+    toggle: "AS IS underlay",
+    toggleHidden: "(hidden)",
+    unavailable: "Underlay unavailable",
+    visibility: {
+      label: "Underlay visibility",
+      faint: "Ghost",
+      medium: "Medium",
+      strong: "Sharp",
+    },
+    // T10: reverse-highlight badge (N→1 consolidated). Three forms —
+    // picked by badgeKeyForCount. T11: empty-state hint (explains WHY links
+    // are absent).
+    provenance: {
+      badgeOne: "1 AS IS task → 1 operation",
+      badgeFew: "{n} AS IS tasks → 1 operation",
+      badgeMany: "{n} AS IS tasks → 1 operation",
+      empty:
+        "AS IS links unavailable: this TO BE was built manually or created before tracing existed. Create TO BE via “Transform AS IS” to see operation provenance.",
+      dismiss: "Got it",
+    },
+  },
   topbar: {
     org: "Organization",
     user: "User",

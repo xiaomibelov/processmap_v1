@@ -1344,6 +1344,30 @@ export const ru = {
       },
     },
   },
+  // TO BE underlay: контрол подложки AS IS (show/hide + пресет видимости
+  // ghost-слоя). Парный словарь: shared/i18n/en.js.
+  tobeUnderlay: {
+    toggle: "AS IS-подложка",
+    toggleHidden: "(скрыта)",
+    unavailable: "Подложка недоступна",
+    visibility: {
+      label: "Видимость подложки",
+      faint: "Призрак",
+      medium: "Средне",
+      strong: "Чётко",
+    },
+    // T10: бейдж обратной подсветки (N→1 consolidated). Три формы —
+    // выбор через badgeKeyForCount (RU-грамматика: 1 / 2..4 / много).
+    // T11: empty-state hint (объясняет ПОЧЕМУ связей нет).
+    provenance: {
+      badgeOne: "1 задача AS IS → 1 операция",
+      badgeFew: "{n} задачи AS IS → 1 операция",
+      badgeMany: "{n} задач AS IS → 1 операция",
+      empty:
+        "Связь с AS IS не показана: эта TO BE собрана вручную или создана до того, как появилась трассировка. Создайте TO BE через «Трансформацию AS IS», чтобы видеть происхождение операций.",
+      dismiss: "Понятно",
+    },
+  },
 };
 
 export function trStatusInvite(status) {
