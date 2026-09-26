@@ -48,3 +48,22 @@ test("align handler reads DI via diagram element only (no businessObject.di)", (
   assert.match(handlerBody, /\bconn\.di\b/);
   assert.match(handlerBody, /\brec\.el\.di\b/);
 });
+
+test("applyGeometry: подписи следуют за владельцем через labelOps в том же шаге undo", () => {
+  // Контур fix/canvas-geometry-labels-follow: label связи (translate/reroute)
+  // и label узла собираются в labelOps и уходят одним commandStack.execute
+  // вместе со shapeOps/connectionOps — один шаг undo на всё применение.
+  const applyStart = source.indexOf("async function applyGeometryOnInstance");
+  const applyEnd = source.indexOf("function resetCanvasOnInstance");
+  const applyBody = applyStart >= 0 && applyEnd > applyStart
+    ? source.slice(applyStart, applyEnd)
+    : "";
+  assert.ok(applyBody.length > 0, "apply body slice found");
+  assert.match(applyBody, /layout\.shapeLabelDeltas/);
+  assert.match(applyBody, /layout\.connectionLabelDeltas/);
+  assert.match(applyBody, /layout\.connectionLabelPlacements/);
+  assert.match(applyBody, /commandStack\.execute\(\s*["']fpc\.applyGeometry["'],\s*\{\s*shapeOps,\s*connectionOps,\s*labelOps\s*\}\s*\)/);
+  // DI label — только через element.di (di.label.bounds); businessObject.di
+  // бросающий геттер bpmn-js.
+  assert.equal(applyBody.includes("businessObject.di"), false);
+});
