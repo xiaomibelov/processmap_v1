@@ -21,6 +21,9 @@
 //    препятствий и occupancy-каналами (canvasGeometryRouting.js);
 //    connectivity-gate fail-closed: невалидный reroute → трансляция,
 //    невалидная трансляция → связь без изменений + stats.connectionsSkipped.
+// 6. Подписи следуют за владельцем (контур fix/canvas-geometry-labels-follow):
+//    label связи — translate: тот же {dx,dy}; reroute: пересадка на середину
+//    самого длинного сегмента нового маршрута; label узла — сдвиг с узлом.
 
 import {
   CANON_GEOMETRY_DEFAULTS,
@@ -38,6 +41,57 @@ import {
 // горизонтали. Без проверки по dy вертикально стоящие ноды (target.cx ≥
 // source.cx на равных x) получали бы «отрицательный зазор» и улетали вправо.
 const HORIZONTAL_DY_TOLERANCE = 60;
+
+// --- Фаза 6: подписи следуют за владельцем (fix/canvas-geometry-labels-follow) ---
+//
+// bpmn-js хранит подпись в DI владельца: bpmndi:BPMNEdge/bpmndi:BPMNShape →
+// di.label.bounds (edge label у именованных потоков, external label у шлюзов/
+// событий). План двигает узлы и waypoints, но label раньше не учитывал —
+// после apply подписи оставались на старых координатах (одинокие тексты в
+// пустоте). Здесь label-слой поверх готовых решений плана (математику
+// сдвигов/роутинг не трогаем):
+//   - translate связи → label получает тот же {dx,dy}, что waypoints;
+//   - reroute связи → label пересаживается на ближайшую точку нового
+//     маршрута: середину самого длинного сегмента (детерминированно: при
+//     равенстве длин побеждает первый строго самый длинный сегмент);
+//   - узел с external label → label сдвигается вместе с узлом.
+// Операции уходят в те же shapeOps/connectionOps хендлера (labelOps внутри
+// context) — один шаг undo/redo на всё применение, revert-записи как у waypoints.
+
+// Точка пересадки label на новый маршрут: середина самого длинного сегмента.
+// Tie-break детерминирован и зафиксирован тестом canvasGeometryApplyLabels:
+// при равных длинах побеждает ПЕРВЫЙ сегмент (сравнение строго `>`, не `>=`).
+export function computeLabelPlacementOnRoute(waypoints) {
+  if (!Array.isArray(waypoints) || waypoints.length < 2) return null;
+  let bestIdx = 0;
+  let bestLen = -1;
+  for (let i = 0; i < waypoints.length - 1; i += 1) {
+    const a = waypoints[i];
+    const b = waypoints[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len > bestLen) {
+      bestLen = len;
+      bestIdx = i;
+    }
+  }
+  const a = waypoints[bestIdx];
+  const b = waypoints[bestIdx + 1];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+// Label-границы из входа (nodes/connections) — защита вглубь: битые/неполные
+// bounds трактуем как «label нет» (owner без изменений label не получает).
+function readInputLabel(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const x = Number(raw.x);
+  const y = Number(raw.y);
+  const width = Number(raw.width);
+  const height = Number(raw.height);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  return { x, y, width, height };
+}
+
 
 function coerceInt(value) {
   if (typeof value === "boolean" || value === null || value === undefined) return null;
@@ -235,6 +289,9 @@ function findSafetyViolators(postRects, flowEdges, shift, pinned) {
  *   positions: Map<string,{x,y,width,height}>,
  *   connectionTranslations: Map<string,{dx,dy}>,
  *   connectionWaypoints: Map<string,Array<{x,y}>>,
+ *   shapeLabelDeltas: Map<string,{dx,dy}>,
+ *   connectionLabelDeltas: Map<string,{dx,dy}>,
+ *   connectionLabelPlacements: Map<string,{x,y}>,
  *   stats: {tasksResized,nodesShifted,nodesSkipped,connectionsTranslated,connectionsRerouted},
  *   noop: boolean,
  * }}
@@ -249,6 +306,9 @@ export function computeGeometryApplyPlan(input, geometry) {
       positions: new Map(),
       connectionTranslations: new Map(),
       connectionWaypoints: new Map(),
+      shapeLabelDeltas: new Map(),
+      connectionLabelDeltas: new Map(),
+      connectionLabelPlacements: new Map(),
       stats: emptyStats(),
       noop: true,
     };
@@ -353,6 +413,8 @@ export function computeGeometryApplyPlan(input, geometry) {
 
   const connectionTranslations = new Map();
   const connectionWaypoints = new Map();
+  const connectionLabelDeltas = new Map();
+  const connectionLabelPlacements = new Map();
   const occupied = new Set();
   const occupiedKeysByConn = new Map();
   // Anchor spreading (контур gateway-fan): реестр занятых якорей и hard-block
@@ -476,6 +538,15 @@ export function computeGeometryApplyPlan(input, geometry) {
       connectionWaypoints.set(conn.id, op.pts);
       stats.connectionsRerouted += 1;
     }
+    // Label-follow (фаза 6): label связи следует за владельцем в apply-моменте.
+    if (readInputLabel(conn.label)) {
+      if (op.kind === "translate") {
+        connectionLabelDeltas.set(conn.id, { dx: op.tr.dx, dy: op.tr.dy });
+      } else {
+        const center = computeLabelPlacementOnRoute(op.pts);
+        if (center) connectionLabelPlacements.set(conn.id, center);
+      }
+    }
   }
 
   // Пост-проход каналов (вынесен в чистую функцию — тестируем напрямую).
@@ -492,7 +563,25 @@ export function computeGeometryApplyPlan(input, geometry) {
 
   const noop = positions.size === 0 &&
     connectionTranslations.size === 0 && connectionWaypoints.size === 0;
-  return { positions, connectionTranslations, connectionWaypoints, stats, noop };
+  // Label-follow (фаза 6): label узла (external label шлюзов/событий) сдвигается
+  // вместе с узлом — дельта label-операции равна дельте позиции. Только узлы
+  // с валидным label из входа и реальным изменением позиции.
+  const shapeLabelDeltas = new Map();
+  for (const [id, pos] of positions) {
+    const node = nodes.find((n) => n.id === id);
+    if (!node || !readInputLabel(node.label)) continue;
+    shapeLabelDeltas.set(id, { dx: pos.x - Number(node.x), dy: pos.y - Number(node.y) });
+  }
+  return {
+    positions,
+    connectionTranslations,
+    connectionWaypoints,
+    shapeLabelDeltas,
+    connectionLabelDeltas,
+    connectionLabelPlacements,
+    stats,
+    noop,
+  };
 }
 
 // resolveChannelConflicts — пост-проход каналов: развести остаточные конфликты
