@@ -284,7 +284,11 @@ export function initProvenanceHighlight({
   }
 
   // Клик по editor-canvas: только БЕЗ drag (≤ 5px) и БЕЗ editor-hit (клик по
-  // элементу TO BE — сценарий T9; ищем ближайший [data-element-id] от target).
+  // элементу TO BE — сценарий T9; ищем ближайший shape/connection). Только
+  // .djs-shape/.djs-connection — НЕ любой [data-element-id]: bpmn-js вешает
+  // data-element-id на КОРНЕВУЮ группу процесса (g.layer-root-1), предок всех
+  // фигур — гард по любому data-element-id делал обратный сценарий
+  // недостижимым на любом «пустом» клике (T12 e2e, R1, fix round 2).
   function onPointerDown(event) {
     pointerDown = { x: Number(event?.clientX), y: Number(event?.clientY) };
   }
@@ -297,7 +301,7 @@ export function initProvenanceHighlight({
     const dy = Number(event?.clientY) - down.y;
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
     if (Math.hypot(dx, dy) > CLICK_DRAG_TOLERANCE_PX) return;
-    const hit = event?.target?.closest?.("[data-element-id]");
+    const hit = event?.target?.closest?.(".djs-shape, .djs-connection");
     if (hit) return;
     runReverseHit(event);
   }

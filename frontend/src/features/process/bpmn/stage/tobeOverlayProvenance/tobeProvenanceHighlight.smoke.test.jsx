@@ -252,14 +252,31 @@ describe("T10: обратная подсветка (клик по ghost → link
     expect(editorOverlays.addCalls.length).toBe(1);
   });
 
-  it("клик по элементу TO BE (target с data-element-id): обратный сценарий НЕ запускается", () => {
+  it("клик по shape TO BE (реплика diagram-js: .djs-element.djs-shape + data-element-id): обратный сценарий НЕ запускается", () => {
     const { editorCanvas, editorOverlays, editorContainer } = setup();
     const shape = document.createElement("g");
+    shape.setAttribute("class", "djs-element djs-shape");
     shape.setAttribute("data-element-id", "Task_a");
     editorContainer.appendChild(shape);
     click(editorContainer, { x: 10, y: 10, target: shape });
     expect(editorCanvas.addMarkerCalls).toEqual([]);
     expect(editorOverlays.addCalls).toEqual([]);
+  });
+
+  // T10 fix round 2 (T12 e2e, R1): bpmn-js рендерит корневую группу процесса
+  // как <g class="layer-root-1" data-element-id="Process_…"> — ПРЕДОК всех
+  // фигур. Гард «клик по элементу» по любому data-element-id матчил её на
+  // каждом «пустом» клике → обратная подсветка была недостижима. Клик по
+  // пустоте ВНУТРИ root-группы обязан запускать hit-test.
+  it("клик по пустоте внутри root-группы (layer-root-1 + data-element-id): hit-test ЗАПУСКАЕТСЯ", () => {
+    const { editorCanvas, editorOverlays, editorContainer } = setup();
+    const root = document.createElement("g");
+    root.setAttribute("class", "layer-root-1");
+    root.setAttribute("data-element-id", "Process_tobe_x");
+    editorContainer.appendChild(root);
+    click(editorContainer, { x: 450, y: 10, target: root });
+    expect(editorCanvas.addMarkerCalls).toEqual([["Task_b", "tobeProvLinked"]]);
+    expect(editorOverlays.addCalls.length).toBe(1);
   });
 
   it("drag (> 5px): обратный сценарий не запускается", () => {
@@ -350,9 +367,11 @@ describe("T10-fix: обратная подсветка переживает clic
     const { eventBus, editorCanvas, editorOverlays, editorContainer, ghostCanvas, ghostContainer } = setup();
     clickWithDiagramPipeline(editorContainer, eventBus, { x: 450, y: 10 });
 
-    // Клик по элементу TO BE (target с data-element-id): reverse пропущен,
-    // selection.changed НЕпустой — прямая подсветка T9.
+    // Клик по shape TO BE (реплика diagram-js: .djs-element.djs-shape +
+    // data-element-id): reverse пропущен, selection.changed НЕпустой —
+    // прямая подсветка T9.
     const shape = document.createElement("g");
+    shape.setAttribute("class", "djs-element djs-shape");
     shape.setAttribute("data-element-id", "Task_a");
     editorContainer.appendChild(shape);
     clickWithDiagramPipeline(editorContainer, eventBus, { x: 10, y: 10, target: shape });
