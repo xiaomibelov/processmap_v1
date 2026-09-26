@@ -20,14 +20,6 @@ export function useTobeOverlayProvenanceStatus() {
   );
 }
 
-export function useTobeOverlayProvenanceIndex() {
-  return useSyncExternalStore(
-    subscribeTobeOverlayProvenance,
-    () => getTobeOverlayProvenanceState().index,
-    () => getTobeOverlayProvenanceState().index,
-  );
-}
-
 // T11: видимость empty-state hint — status empty И первый selection был И
 // не dismissed. getSnapshot возвращает ПРИМИТИВ (boolean): свежий объект из
 // getState ломал бы useSyncExternalStore (maximum update depth).
